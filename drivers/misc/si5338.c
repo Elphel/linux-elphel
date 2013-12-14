@@ -35,8 +35,6 @@
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
 
-
-
 #define REG5338_PAGE               255
 #define REG5338_PAGE_MASK            1
 #define REG5338_DEV_CONFIG2          2
@@ -49,6 +47,16 @@
 #define INFREQMIN                     5000000LL
 #define INFREQMAX                   710000000LL
 #define INFREQDIV                    40000000LL /* divide input frequency if above */
+
+#define SPREAD_RATE_MIN                 31500   /* 31.5 KHz */
+#define SPREAD_RATE_MAX                 63000   /* 63 KHz */
+#define SPREAD_AMP_MIN                     10   /* 0.1% */
+#define SPREAD_AMP_MAX                    500   /* 5.0% */
+#define SPREAD_AMP_DENOM                10000   /* 0.01% amplitude step */
+
+#define SPREAD_RATE_DFLT                31500   /* 31.5 KHz */
+#define SPREAD_AMP_DFLT                    50   /* 0.5% */
+
 
 #define MSINT_MIN                  8 /* not considering 4,6 */
 #define MSINT_MAX                  567
@@ -228,14 +236,66 @@
 #define AWE_SOFT_RESET             0xf602
 
 
+
+#define AWE_MS0_SSUPP2_07_00      0x11fff
+#define AWE_MS0_SSUPP2_14_08      0x1207f
 #define AWE_MS0_SSUPP3_07_00      0x121ff /* set them to 0 - default==1 */
 #define AWE_MS0_SSUPP3_14_08      0x1227f
+#define AWE_MS0_SSUPP1_07_00      0x123ff
+#define AWE_MS0_SSUPP1_11_08      0x1240f
+#define AWE_MS0_SSUDP1_03_00      0x124f0
+#define AWE_MS0_SSUDP1_11_04      0x125ff
+#define AWE_MS0_SSDNP2_07_00      0x126ff
+#define AWE_MS0_SSDNP2_14_08      0x1277f
+#define AWE_MS0_SSDNP3_07_00      0x128ff
+#define AWE_MS0_SSDNP3_14_08      0x1297f
+#define AWE_MS0_SSDNP1_07_00      0x12aff
+#define AWE_MS0_SSDNP1_11_08      0x12b0f
+
+#define AWE_MS1_SSUPP2_07_00      0x12fff
+#define AWE_MS1_SSUPP2_14_08      0x1307f
 #define AWE_MS1_SSUPP3_07_00      0x131ff
 #define AWE_MS1_SSUPP3_14_08      0x1327f
+#define AWE_MS1_SSUPP1_07_00      0x133ff
+#define AWE_MS1_SSUPP1_11_08      0x1340f
+#define AWE_MS1_SSUDP1_03_00      0x134f0
+#define AWE_MS1_SSUDP1_11_04      0x135ff
+#define AWE_MS1_SSDNP2_07_00      0x136ff
+#define AWE_MS1_SSDNP2_14_08      0x1377f
+#define AWE_MS1_SSDNP3_07_00      0x138ff
+#define AWE_MS1_SSDNP3_14_08      0x1397f
+#define AWE_MS1_SSDNP1_07_00      0x13aff
+#define AWE_MS1_SSDNP1_11_08      0x13b0f
+
+#define AWE_MS2_SSUPP2_07_00      0x13fff
+#define AWE_MS2_SSUPP2_14_08      0x1407f
 #define AWE_MS2_SSUPP3_07_00      0x141ff
 #define AWE_MS2_SSUPP3_14_08      0x1427f
+#define AWE_MS2_SSUPP1_07_00      0x143ff
+#define AWE_MS2_SSUPP1_11_08      0x1440f
+#define AWE_MS2_SSUDP1_03_00      0x144f0
+#define AWE_MS2_SSUDP1_11_04      0x145ff
+#define AWE_MS2_SSDNP2_07_00      0x146ff
+#define AWE_MS2_SSDNP2_14_08      0x1477f
+#define AWE_MS2_SSDNP3_07_00      0x148ff
+#define AWE_MS2_SSDNP3_14_08      0x1497f
+#define AWE_MS2_SSDNP1_07_00      0x14aff
+#define AWE_MS2_SSDNP1_11_08      0x14b0f
+
+#define AWE_MS3_SSUPP2_07_00      0x14fff
+#define AWE_MS3_SSUPP2_14_08      0x1507f
 #define AWE_MS3_SSUPP3_07_00      0x151ff
 #define AWE_MS3_SSUPP3_14_08      0x1527f
+#define AWE_MS3_SSUPP1_07_00      0x153ff
+#define AWE_MS3_SSUPP1_11_08      0x1540f
+#define AWE_MS3_SSUDP1_03_00      0x154f0
+#define AWE_MS3_SSUDP1_11_04      0x155ff
+#define AWE_MS3_SSDNP2_07_00      0x156ff
+#define AWE_MS3_SSDNP2_14_08      0x1577f
+#define AWE_MS3_SSDNP3_07_00      0x158ff
+#define AWE_MS3_SSDNP3_14_08      0x1597f
+#define AWE_MS3_SSDNP1_07_00      0x15aff
+#define AWE_MS3_SSDNP1_11_08      0x15b0f
 
 
 
@@ -259,6 +319,9 @@ struct si5338_data_t {
 	u64 input_frequency3;
 	u64 input_frequency4;
 	u64 input_frequency56;
+	u32 ss_on_freq_change; /* 0 - disable SS when frequency is changed, 1 - update SS.  +2 reset MS after starting SS*/ 
+	u32 spread_spectrum_rate[4]; /* in Hz */
+	u32 spread_spectrum_amp[4]; /* in 0.01% */
 //	u64 pll_frequency;
 	int reg_addr;   /* used for raw register r/w */
 	int last_page;  /* value of last page accessed (bit 0 of register 255) */
@@ -364,11 +427,39 @@ static const char *pll_setup_names[]={"pll_freq_fract", "pll_freq_int", "pll_by_
 static const char *out_freq_setup_names[]={
 		"out0_freq_fract", "out1_freq_fract", "out2_freq_fract", "out3_freq_fract",
 		"out0_freq_int",   "out1_freq_int",   "out2_freq_int",   "out3_freq_int", NULL};
-static u32 awe_msx_ssup3[4][3]=
-    {{AWE_MS0_SSUPP3_07_00,AWE_MS0_SSUPP3_14_08,0},
-	 {AWE_MS1_SSUPP3_07_00,AWE_MS1_SSUPP3_14_08,0},
-	 {AWE_MS2_SSUPP3_07_00,AWE_MS2_SSUPP3_14_08,0},
-	 {AWE_MS3_SSUPP3_07_00,AWE_MS3_SSUPP3_14_08,0}};
+
+static u32 awe_msx_ssup[4][3][3]=
+	{{{AWE_MS0_SSUPP1_07_00,AWE_MS0_SSUPP1_11_08,0},
+	  {AWE_MS0_SSUPP2_07_00,AWE_MS0_SSUPP2_14_08,0},
+	  {AWE_MS0_SSUPP3_07_00,AWE_MS0_SSUPP3_14_08,0}},
+	 {{AWE_MS1_SSUPP1_07_00,AWE_MS1_SSUPP1_11_08,0},
+	  {AWE_MS1_SSUPP2_07_00,AWE_MS1_SSUPP2_14_08,0},
+	  {AWE_MS1_SSUPP3_07_00,AWE_MS1_SSUPP3_14_08,0}},
+	 {{AWE_MS2_SSUPP1_07_00,AWE_MS2_SSUPP1_11_08,0},
+	  {AWE_MS2_SSUPP2_07_00,AWE_MS2_SSUPP2_14_08,0},
+	  {AWE_MS2_SSUPP3_07_00,AWE_MS2_SSUPP3_14_08,0}},
+	 {{AWE_MS3_SSUPP1_07_00,AWE_MS3_SSUPP1_11_08,0},
+	  {AWE_MS3_SSUPP2_07_00,AWE_MS3_SSUPP2_14_08,0},
+	  {AWE_MS3_SSUPP3_07_00,AWE_MS3_SSUPP3_14_08,0}}};
+static u32 awe_msx_ssdn[4][3][3]=
+	{{{AWE_MS0_SSDNP1_07_00,AWE_MS0_SSDNP1_11_08,0},
+	  {AWE_MS0_SSDNP2_07_00,AWE_MS0_SSDNP2_14_08,0},
+	  {AWE_MS0_SSDNP3_07_00,AWE_MS0_SSDNP3_14_08,0}},
+	 {{AWE_MS1_SSDNP1_07_00,AWE_MS1_SSDNP1_11_08,0},
+	  {AWE_MS1_SSDNP2_07_00,AWE_MS1_SSDNP2_14_08,0},
+	  {AWE_MS1_SSDNP3_07_00,AWE_MS1_SSDNP3_14_08,0}},
+	 {{AWE_MS2_SSDNP1_07_00,AWE_MS2_SSDNP1_11_08,0},
+	  {AWE_MS2_SSDNP2_07_00,AWE_MS2_SSDNP2_14_08,0},
+	  {AWE_MS2_SSDNP3_07_00,AWE_MS2_SSDNP3_14_08,0}},
+	 {{AWE_MS3_SSDNP1_07_00,AWE_MS3_SSDNP1_11_08,0},
+	  {AWE_MS3_SSDNP2_07_00,AWE_MS3_SSDNP2_14_08,0},
+	  {AWE_MS3_SSDNP3_07_00,AWE_MS3_SSDNP3_14_08,0}}};
+static u32 awe_msx_ssud[4][3]=
+	 {{AWE_MS0_SSUDP1_03_00,AWE_MS0_SSUDP1_11_04,0},
+	  {AWE_MS1_SSUDP1_03_00,AWE_MS1_SSUDP1_11_04,0},
+	  {AWE_MS2_SSUDP1_03_00,AWE_MS2_SSUDP1_11_04,0},
+	  {AWE_MS3_SSUDP1_03_00,AWE_MS3_SSUDP1_11_04,0}};
+
 static const u32 awe_rdiv_in[]=      {AWE_R0DIV_IN,  AWE_R1DIV_IN,  AWE_R2DIV_IN,  AWE_R3DIV_IN};
 static const u32 awe_rdiv_k[]=       {AWE_R0DIV,     AWE_R1DIV,     AWE_R2DIV,     AWE_R3DIV};
 static const u32 awe_drv_fmt[]=      {AWE_DRV0_FMT,  AWE_DRV1_FMT,  AWE_DRV2_FMT,  AWE_DRV3_FMT};
@@ -441,6 +532,15 @@ static ssize_t ms_abc_store(struct device *dev, struct device_attribute *attr, c
 
 static ssize_t ms_powerdown_show (struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t ms_powerdown_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+static ssize_t ms_reset_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+
+
+static ssize_t ss_change_freq_mode_show(struct device *dev, struct device_attribute *attr, char *buf);
+static ssize_t ss_change_freq_mode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+static ssize_t ss_vals_show(struct device *dev, struct device_attribute *attr, char *buf);
+static ssize_t ss_vals_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+static ssize_t ss_regs_hex_show(struct device *dev, struct device_attribute *attr, char *buf);
+static ssize_t ss_regs_hex_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 
 static ssize_t pre_init_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 static ssize_t post_init_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
@@ -503,12 +603,24 @@ static int get_out_frequency_txt(struct device *dev, char *buf, int chn);
 static ssize_t output_config_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 static int configure_output_driver(struct device *dev, const char * name, int chn);
 
-
-
-/* -------------------------------------- */
 static int remove_common_factor(u64 * num_denom);
 static int _verify_output_channel(struct i2c_client *client,int chn);
+static int get_ss_vals(struct device *dev, char * buf, int chn);
+static int get_ss_state(struct i2c_client *client, int chn);
+static int set_ss_state(struct i2c_client *client, int state, int chn);
+static int get_ss_down_rate(struct i2c_client *client, int chn);
+static int get_ss_down_amplitude(struct i2c_client *client, int chn);
+static int store_ss_down_parameters(struct i2c_client *client, u32 rate, u32 amp, int chn);
+static int set_ss_down(struct i2c_client *client, int chn);
+static int ss_pre_freq_change(struct i2c_client *client, int chn);
+static int ss_post_freq_change(struct i2c_client *client, int chn);
+
+static int calc_ss_down_to_regs(struct i2c_client *client, u32 * up_regs, u32 * down_regs, u32 * updown_reg, int chn);
+static int get_ss_regs(struct i2c_client *client, u32 * up_regs, u32 * down_regs, u32 * updown_reg, int chn);
+static int set_ss_regs(struct i2c_client *client, u32 * up_regs, u32 * down_regs, u32 * updown_reg, int chn);
+
 static int disable_spread_spectrum(struct i2c_client *client,int chn);
+static int enable_spread_spectrum(struct i2c_client *client,int chn);
 static int get_drv_powerdown(struct i2c_client *client, int chn);
 static int set_drv_powerdown(struct i2c_client *client, int typ, int chn);
 static int get_drv_disable(struct i2c_client *client, int chn);
@@ -538,6 +650,7 @@ static s64 get_output_src_frequency(struct i2c_client *client, u64 *out_freq, in
 static int pre_init(struct i2c_client *client, int clear_all);
 
 static int post_init(struct i2c_client *client, int timeout); /*1 in timeout ~ 0.1ms - i2c read register */
+static int reset_ms(struct i2c_client *client, int wait_cycles);
 static int get_status(struct i2c_client *client);
 static int power_up_down_needed_ms(struct i2c_client *client);
 static int disable_output(struct i2c_client *client, int chn);
@@ -680,6 +793,7 @@ static DEVICE_ATTR(ms0_powerdown,  SYSFS_PERMISSIONS,  ms_powerdown_show,  ms_po
 static DEVICE_ATTR(ms1_powerdown,  SYSFS_PERMISSIONS,  ms_powerdown_show,  ms_powerdown_store);
 static DEVICE_ATTR(ms2_powerdown,  SYSFS_PERMISSIONS,  ms_powerdown_show,  ms_powerdown_store);
 static DEVICE_ATTR(ms3_powerdown,  SYSFS_PERMISSIONS,  ms_powerdown_show,  ms_powerdown_store);
+static DEVICE_ATTR(ms_reset, SYSFS_PERMISSIONS & SYSFS_WRITEONLY,  NULL,  ms_reset_store);
 
 static struct attribute *multisynth_attrs[] = {
 	&dev_attr_ms0_p123.attr,
@@ -696,12 +810,44 @@ static struct attribute *multisynth_attrs[] = {
 	&dev_attr_ms1_powerdown.attr,
 	&dev_attr_ms2_powerdown.attr,
 	&dev_attr_ms3_powerdown.attr,
+	&dev_attr_ms_reset.attr,
 	NULL
 };
 static const struct attribute_group dev_attr_multisynth_group = {
 	.attrs = multisynth_attrs,
 	.name  = "multiSynth",
 };
+
+/* Spread spectrum group */
+static DEVICE_ATTR(ss_change_freq_mode, SYSFS_PERMISSIONS,  ss_change_freq_mode_show, ss_change_freq_mode_store);
+static DEVICE_ATTR(ss0_values,   SYSFS_PERMISSIONS,  ss_vals_show,     ss_vals_store);
+static DEVICE_ATTR(ss1_values,   SYSFS_PERMISSIONS,  ss_vals_show,     ss_vals_store);
+static DEVICE_ATTR(ss2_values,   SYSFS_PERMISSIONS,  ss_vals_show,     ss_vals_store);
+static DEVICE_ATTR(ss3_values,   SYSFS_PERMISSIONS,  ss_vals_show,     ss_vals_store);
+static DEVICE_ATTR(ss0_regs_hex, SYSFS_PERMISSIONS,  ss_regs_hex_show, ss_regs_hex_store);
+static DEVICE_ATTR(ss1_regs_hex, SYSFS_PERMISSIONS,  ss_regs_hex_show, ss_regs_hex_store);
+static DEVICE_ATTR(ss2_regs_hex, SYSFS_PERMISSIONS,  ss_regs_hex_show, ss_regs_hex_store);
+static DEVICE_ATTR(ss3_regs_hex, SYSFS_PERMISSIONS,  ss_regs_hex_show, ss_regs_hex_store);
+static struct attribute *spread_spectrum_attrs[] = {
+	&dev_attr_ss_change_freq_mode.attr,
+	&dev_attr_ss0_values.attr,
+	&dev_attr_ss1_values.attr,
+	&dev_attr_ss2_values.attr,
+	&dev_attr_ss3_values.attr,
+	&dev_attr_ss0_regs_hex.attr,
+	&dev_attr_ss1_regs_hex.attr,
+	&dev_attr_ss2_regs_hex.attr,
+	&dev_attr_ss3_regs_hex.attr,
+	&dev_attr_ms_reset.attr,
+	NULL
+};
+static const struct attribute_group dev_attr_spread_spectrum_group = {
+	.attrs = spread_spectrum_attrs,
+	.name  = "spread_spectrum",
+};
+
+
+
 
 static DEVICE_ATTR(pre_init,         SYSFS_PERMISSIONS & SYSFS_WRITEONLY,  NULL,           pre_init_store);
 static DEVICE_ATTR(pre_init_clear,   SYSFS_PERMISSIONS & SYSFS_WRITEONLY,  NULL,           pre_init_store);
@@ -1125,6 +1271,14 @@ static ssize_t output_description_show (struct device *dev, struct device_attrib
 		buf+=rc;
 		len+=rc;
 
+//show spread spectum settings
+		rc=sprintf(buf,", ");
+		buf+=rc;
+		len+=rc;
+		if (((rc=get_ss_vals(dev, buf, i)))<0) return rc;
+		buf+=rc;
+		len+=rc;
+		
 		rc=sprintf(buf,"\n");
 		buf+=rc;
 		len+=rc;
@@ -1228,6 +1382,7 @@ static int si5338_sysfs_register(struct device *dev)
 		if (((retval = sysfs_create_group(&dev->kobj, &dev_attr_multisynth_group)))<0) return retval;
 		if (((retval = sysfs_create_group(&dev->kobj, &dev_attr_pll_group)))<0) return retval;
 		if (((retval = sysfs_create_group(&dev->kobj, &dev_attr_output_group)))<0) return retval;
+		if (((retval = sysfs_create_group(&dev->kobj, &dev_attr_spread_spectrum_group)))<0) return retval;
 #ifdef GENERATE_EXTRA
 		if (((retval = sysfs_create_group(&dev->kobj, &dev_attr_output_extra_group)))<0) return retval;
 #endif
@@ -1675,6 +1830,124 @@ static ssize_t ms_powerdown_store(struct device *dev, struct device_attribute *a
     if (((rc=set_ms_powerdown(client, data, chn)))<0) return rc;
     return count;
 }
+
+static ssize_t ms_reset_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct i2c_client *client =       to_i2c_client(dev);
+	reset_ms(client, 10);
+	return count;
+}
+
+static ssize_t ss_change_freq_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int mode;
+	struct i2c_client *client =       to_i2c_client(dev);
+	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
+	mode=clientdata->ss_on_freq_change;
+	switch (mode) {
+	case 0: return sprintf(buf, "%d - turn spread spectrum off on frequency change\n",mode);
+	case 1: return sprintf(buf, "%d - recalculate spread spectrum on frequency change, do not reset MS\n",mode);
+	case 2: return sprintf(buf, "%d - turn spread spectrum off on frequency change, reset MS when SS is turned on\n",mode);
+	case 3: return sprintf(buf, "%d - recalculate spread spectrum on frequency change, do not reset MS\n",mode);
+	default: return sprintf(buf, "%d - invalid mode\n",mode);
+	}
+}
+
+static ssize_t ss_change_freq_mode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int num_items, mode;
+	struct i2c_client *client =       to_i2c_client(dev);
+	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
+	num_items=sscanf(buf, "%d", &mode);
+	if (num_items && (mode>=0) && (mode<=3)){
+		clientdata->ss_on_freq_change=mode;
+		return count;
+	}
+	return -EINVAL;
+}
+
+static ssize_t ss_vals_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int chn,len;
+	if (((chn=get_chn_from_name(attr->attr.name)))<0) return chn;
+	if (((len= get_ss_vals(dev, buf, chn)))<0) return len;
+	sprintf (buf+len,"\n");
+	return len+1;
+}
+
+static ssize_t ss_vals_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int chn, rc, state, num_items;
+	u32 rate,amp;
+	struct i2c_client *client =       to_i2c_client(dev);
+	if (((chn=get_chn_from_name(attr->attr.name)))<0) return chn;
+	/* get current values */
+	if (((state= get_ss_state(client, chn)))<0) return state;
+	if (((rate=  get_ss_down_rate(client, chn)))<0) return rate;
+	if (((amp=   get_ss_down_amplitude(client, chn)))<0) return amp;
+	num_items=sscanf(buf, "%d %d %d", &state, &rate, &amp);
+	if (num_items>1){
+		if (((rc= store_ss_down_parameters(client, rate, amp, chn)))<0) return rc;
+	}
+	if (num_items>0){
+		if (state) {
+			/* calculate and set SS registers */
+			if (((rc=set_ss_down(client, chn)))<0) return rc;
+			/* enable SS, optionally reset MS */
+			if (((rc=enable_spread_spectrum(client, chn)))<0) return rc;
+		} else {
+			if (((rc=disable_spread_spectrum(client, chn)))<0) return rc;
+		}
+		if (((rc=set_ss_state(client, 1, chn)))<0) return rc;
+//static int enable_spread_spectrum(struct i2c_client *client,int chn)
+		
+	}
+    return count;
+}
+
+static ssize_t ss_regs_hex_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int chn, rc;
+	u32 regs[7];
+	u32 *updown_reg, *up_regs, *down_regs;
+	struct i2c_client *client =       to_i2c_client(dev);
+	updown_reg=&regs[0];
+	down_regs=&regs[1];
+	up_regs=&regs[4];
+
+	if (((chn=get_chn_from_name(attr->attr.name)))<0) return chn;
+	if (((rc= get_ss_regs(client, up_regs, down_regs, updown_reg, chn)))<0) return rc;
+	return sprintf(buf, "updown_par=0x%x down_pars=0x%x 0x%x 0x%x up_pars= 0x%x 0x%x 0x%x\n",
+			regs[0], regs[1], regs[2], regs[3], regs[4], regs[5], regs[6]);
+}
+
+static ssize_t ss_regs_hex_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int chn, rc, num_items;
+	u32 regs[7];
+	u32 *updown_reg, *up_regs, *down_regs;
+	struct i2c_client *client =       to_i2c_client(dev);
+	updown_reg=&regs[0];
+	down_regs=&regs[1];
+	up_regs=&regs[4];
+
+	if (((chn=get_chn_from_name(attr->attr.name)))<0) return chn;
+	if (((rc= get_ss_regs(client, up_regs, down_regs, updown_reg, chn)))<0) return rc;
+
+	num_items=sscanf(buf, "%x %x %x %x %x %x %x", &regs[0], &regs[1], &regs[2], &regs[3], &regs[4], &regs[5], &regs[6]);
+	if (num_items>0){
+		if (num_items<5) up_regs=NULL;
+		if (num_items<2) down_regs=NULL;
+		if (((rc= set_ss_regs(client, up_regs, down_regs, updown_reg, chn)))<0) return rc;
+	}
+    return count;
+}
+
+
+
+
+
+
 
 static ssize_t pre_init_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -2311,13 +2584,218 @@ static int _verify_output_channel(struct i2c_client *client,int chn)
 	return 0;
 }
 
+static int get_ss_vals(struct device *dev, char * buf, int chn)
+{
+	int state;
+	u32 rate,amp;
+	struct i2c_client *client =       to_i2c_client(dev);
+	if (((state= get_ss_state(client, chn)))<0) return state;
+	if (((amp=   get_ss_down_amplitude(client, chn)))<0) return amp;
+	if (((rate=  get_ss_down_rate(client, chn)))<0) return rate;
+	return sprintf(buf, "Spread spectrum is %s, down amplitude= %d ( *0.01%%), spread rate= %d Hz", state?"ON":"OFF", amp, rate);
+}
+
+static int get_ss_state(struct i2c_client *client, int chn)
+{
+	int rc;
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	return read_field(client, awe_ms_ssmode[chn]);
+}
+
+static int set_ss_state(struct i2c_client *client, int state, int chn)
+{
+	int rc;
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	 return write_field(client, state , awe_ms_ssmode[chn]);
+}
+
+static int get_ss_down_rate(struct i2c_client *client, int chn)
+{
+	int rc;
+	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	return clientdata->spread_spectrum_rate[chn]; /* in Hz */
+}
+
+static int get_ss_down_amplitude(struct i2c_client *client, int chn)
+{
+	int rc;
+	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	return clientdata->spread_spectrum_amp[chn];
+}
+
+
+/* store required parameters - they will be needed to recalculate SS registers after MS frequency change */
+static int store_ss_down_parameters(struct i2c_client *client, u32 rate, u32 amp, int chn) /* chn 0,1,2,3 */
+{
+	int rc;
+	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	if ((rate < SPREAD_RATE_MIN) || (rate > SPREAD_RATE_MAX)){
+		dev_err(&client->dev, "Invalid spread spectrum rate %u - should be in [%u,%u]Hz\n",rate,SPREAD_RATE_MIN,SPREAD_AMP_MAX);
+		return - EINVAL;
+	}
+	if ((amp < SPREAD_AMP_MIN) || (amp > SPREAD_AMP_MAX)){
+		dev_err(&client->dev, "Invalid spread spectrum amplitude %u - should be in [%u,%u] (*0.01%%)\n",amp,SPREAD_AMP_MIN,SPREAD_AMP_MAX);
+		return - EINVAL;
+	}
+	clientdata->spread_spectrum_rate[chn]=rate; /* in Hz */
+	clientdata->spread_spectrum_amp[chn]=amp; /* in 0.01% */
+	return 0;
+}
+
+/* recalculate and set SS registers, disable SS if invalid */
+static int set_ss_down(struct i2c_client *client, int chn) /* chn 0,1,2,3 */
+{
+	int rc;
+	u32 ssud,ssup[3],ssdn[3];
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	/* calculate spread spectrum registers */
+	if (((rc=calc_ss_down_to_regs(client, ssup, ssdn, &ssud, chn)))<0) return rc;
+	if (rc!=0){
+		 return disable_spread_spectrum(client,chn); /* SS parameters were never set*/
+	}
+	/* set spread spectrum registers */
+	if (((rc=set_ss_regs(client, ssup, ssdn, &ssud, chn)))<0) return rc;
+#if 0	
+	/* enable spread spectrum mode */
+	if (((rc=enable_spread_spectrum(client, chn)))<0) return rc;
+#endif	
+	return 0;
+}
+
+static int ss_pre_freq_change(struct i2c_client *client, int chn) /* chn 0,1,2,3 */
+{
+	int rc;
+	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	if ((clientdata->ss_on_freq_change & 1)==0) {
+		dev_dbg(&client->dev, "Disabling spread spectrum before changing MS%d divider",chn);
+		if (((rc=disable_spread_spectrum(client, chn)))<0) return rc;
+	}
+	return 0;
+}
+
+static int ss_post_freq_change(struct i2c_client *client, int chn) /* chn 0,1,2,3 */
+{
+	int rc, ss_state;
+	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	if (((ss_state=get_ss_state(client,chn)))<0) return ss_state;
+	if (ss_state){
+		/* recalculate and set SS registers */
+		dev_dbg(&client->dev, "Recalculating spread spectrum after changing MS%d divider",chn);
+		if (((rc=set_ss_down(client,chn)))<0) return rc;
+		if (clientdata->ss_on_freq_change & 2) {
+			reset_ms(client, 10);
+		}
+	}
+	return 0;
+}
+
+
+static int calc_ss_down_to_regs(struct i2c_client *client, u32 * up_regs, u32 * down_regs, u32 * updown_reg, int chn) /* chn 0,1,2,3 */
+{
+	int rc;
+	u32 ssud;
+	u64 ms_freq, xy[2];
+	u32 p123[3];
+	u64 ms[3];
+	u32 rate, amp;
+	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	rate=clientdata->spread_spectrum_rate[chn]; /* in Hz */
+	amp=clientdata->spread_spectrum_amp[chn]; /* in 0.01% */
+
+	if ((rate==0) || (amp==0)) return 1; /* Should disable SS */
+	
+	if ((rate < SPREAD_RATE_MIN) || (rate > SPREAD_RATE_MAX)){
+		dev_err(&client->dev, "*Invalid spread spectrum rate %u - should be in [%u,%u]Hz\n",rate,SPREAD_RATE_MIN,SPREAD_AMP_MAX);
+		return - EINVAL;
+	}
+	if ((amp < SPREAD_AMP_MIN) || (amp > SPREAD_AMP_MAX)){
+		dev_err(&client->dev, "*Invalid spread spectrum amplitude %u - should be in [%u,%u] (*0.01%%)\n",amp,SPREAD_AMP_MIN,SPREAD_AMP_MAX);
+		return - EINVAL;
+	}
+	if (((rc=get_pll_ms_freq(client, &ms_freq, chn)))<0) return rc;
+	if (ms_freq==0){
+		dev_err(&client->dev, "MS%d frequency is not set, can not apply spread spectrum\n",chn);
+		return - EINVAL;
+	}
+	if (((rc=get_ms_p123(client,p123, chn)))<0) return rc;
+	p123_to_ms(ms,p123);
+	ssud=(u32) div64_u64(ms_freq,rate << 2);
+	if (updown_reg) updown_reg[0]= ssud;
+	if (down_regs){
+		xy[0]=6400000000LL*(ms[0]*ms[2]+ms[1]);
+		xy[0]=div64_u64(xy[0],ms[2]);
+		xy[1]= 100000000LL*(10000-amp)*ssud;
+		remove_common_factor(xy);
+		down_regs[0]= (u32) div64_u64(xy[0],xy[1]);
+		down_regs[2]= (u32)xy[1];
+		down_regs[1]= (u32)xy[0] -  down_regs[2]*down_regs[0];
+	}
+	if (up_regs){
+		up_regs[0]=0;
+		up_regs[1]=1;
+		up_regs[2]=0;
+	}
+	return 0;
+}
+
+static int get_ss_regs(struct i2c_client *client, u32 * up_regs, u32 * down_regs, u32 * updown_reg, int chn) /* chn 0,1,2,3 */
+{
+	int i;
+	s64 rc;
+	if (((rc=_verify_output_channel(client,chn)))<0) return (int) rc;
+	if (up_regs) for (i=0;i<3;i++){
+		if (((rc=read_multireg64 (client,  awe_msx_ssup[chn][i])))<0) return (int) rc;
+		up_regs[i]= (u32) rc;
+	}
+	if (down_regs) for (i=0;i<3;i++){
+		if (((rc=read_multireg64 (client,  awe_msx_ssdn[chn][i])))<0) return (int) rc;
+		down_regs[i]= (u32) rc;
+	}
+	if (updown_reg) {
+		if (((updown_reg[0]=read_multireg64 (client,  awe_msx_ssud[chn])))<0) return (int) updown_reg[0];
+	}
+		return 0;
+}
+static int set_ss_regs(struct i2c_client *client, u32 * up_regs, u32 * down_regs, u32 * updown_reg, int chn) /* chn 0,1,2,3, */
+{
+	int i,rc;
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	if (up_regs) for (i=0;i<3;i++){
+		if (((rc=write_multireg64 (client, (u64) up_regs[i], awe_msx_ssup[chn][i])))<0) return rc;
+	}
+	if (down_regs) for (i=0;i<3;i++){
+		if (((rc=write_multireg64 (client, (u64) down_regs[i], awe_msx_ssdn[chn][i])))<0) return rc;
+	}
+	if (updown_reg) {
+		if (((rc=write_multireg64 (client, (u64) updown_reg[0], awe_msx_ssud[chn])))<0) return rc;
+	}
+	return 0;
+}
+
 static int disable_spread_spectrum(struct i2c_client *client,int chn)
 {
 	int rc;
 	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
 	/* disable spread spectrum - only this register was changed to 0 from default 1 */
-	if (((rc=write_multireg64(client, 0 , awe_msx_ssup3[chn])))<0) return rc;
-	if (((rc=write_field(client, 0 , awe_ms_ssmode[chn])))<0) return rc;
+	if (((rc=write_multireg64(client, 0 , awe_msx_ssup[chn][2])))<0) return rc;
+	if (((rc=set_ss_state(client, 0, chn)))<0) return rc;
+	return 0;
+}
+static int enable_spread_spectrum(struct i2c_client *client,int chn)
+{
+	int rc;
+	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	if (((rc=set_ss_state(client, 1, chn)))<0) return rc;
+	if (clientdata->ss_on_freq_change & 2) {
+		if (((rc=reset_ms(client, 10)))<0) return rc; /* 10 - wait cycles */
+	}
 	return 0;
 }
 
@@ -2855,12 +3333,20 @@ static int post_init(struct i2c_client *client, int timeout) /*1 in timeout ~ 0.
 	if (((rc=write_field(client, 5,  AWE_REG47_72     )))<0) return rc; /* set 47[7:2] to 000101b */
 	if (((rc=write_field(client, 1,  AWE_FCAL_OVRD_EN     )))<0) return rc; /* SET PLL to use FCAL values, set FCAL_OVRD_EN=1 */
 	/* only needed if using down-spread. Won't hurt to do anyway */
-	if (((rc=write_field(client, 1,  AWE_MS_RESET      )))<0) return rc; /* SET MS RESET=1 */
-	for (i=0;i<10;i++) get_status(client); /* wait 1 ms */
-	if (((rc=write_field(client, 0,  AWE_MS_RESET      )))<0) return rc; /* SET MS RESET=0 */
+	if (((rc=reset_ms(client, 10)))<0) return rc;
 	if (((rc=write_field(client, 0,  AWE_OUT_ALL_DIS )))<0) return rc; /* enable all (enabled individually) outputs */
 	write_field(client, 0,  AWE_SOFT_RESET       );      /* Not documented - what to do with the soft reset bit - clearing */
 	if (((rc=power_up_down_needed_ms(client)))<0) return rc;
+	return 0;
+}
+
+static int reset_ms(struct i2c_client *client, int wait_cycles)
+{
+	int i,rc;
+	dev_dbg(&client->dev, "Resetting MS dividers");
+	if (((rc=write_field(client, 1,  AWE_MS_RESET      )))<0) return rc; /* SET MS RESET=1 */
+	for (i=0;i<wait_cycles;i++) get_status(client); /* wait 1 ms */
+	if (((rc=write_field(client, 0,  AWE_MS_RESET      )))<0) return rc; /* SET MS RESET=0 */
 	return 0;
 }
 
@@ -3092,12 +3578,19 @@ static int set_ms_p123(struct i2c_client *client,u32 * p123, int chn) /* chn 0,1
 		else p123[0]=256;
 		p123[1]=0;
 		p123[2]=1;
-		dev_info(&client->dev, "Using high speed divisor option on channel",chn);
+		dev_info(&client->dev, "Using high speed divisor option on ms%d",chn);
 	} else hs=0;
 	if (((rc=write_field(client, hs, awe_ms_hs[chn])))<0) return rc;
-
+	/* optionally disable spread spectrum before changing frequency */
+	if (chn<4){
+		if (((rc=ss_pre_freq_change(client, chn)))<0) return rc;
+	}
 	for (i=0;i<3;i++){
 		if (((rc=write_multireg64(client, (u64) p123[i], awe_msx[chn][i])))<0) return rc;
+	}
+	/* optionally enable spread spectrum after changing frequency, reset MS */
+	if (chn<4){
+		if (((rc=ss_post_freq_change(client, chn)))<0) return rc;
 	}
 	return 0;
 }
@@ -3852,6 +4345,7 @@ static void si5338_init_of(struct i2c_client *client)
 	u16 page_reg;
 	char buf[40];
 	u64 freq[3];
+	u32 rate,amp;
 	struct si5338_setup_data  {
 		u8		page;
 		u8		reg;
@@ -3998,6 +4492,34 @@ static void si5338_init_of(struct i2c_client *client)
 				}
 			}
 		}
+		/* setting spread spectrum parameters */
+		for (n=0;n<4;n++){
+			sprintf(buf,"si5338,spread_spectrum_%d",n);
+			config_data = of_get_property(client->dev.of_node, buf, &len);
+			if (config_data && (len>0)){
+				len /= sizeof(*config_data);
+				rate=get_ss_down_rate(client, n);
+				amp= get_ss_down_amplitude(client, n);
+				if (len>1) amp =  be32_to_cpup(&config_data[1]);
+				if (len>2) rate = be32_to_cpup(&config_data[2]);
+				if (store_ss_down_parameters(client, rate, amp, n)==0){ 
+					dev_info(&client->dev,"Set spread spectrum parameters for MS%d, amplitude=%d (*0.01%%), rate=%d Hz, %s\n",
+							n,amp,rate,config_data[0]?"ON":"OFF");
+				} else {
+					dev_err(&client->dev,"Failed to set spread spectrum parameters for MS%d, amplitude=%d (*0.01%%), rate=%d Hz, %s\n",
+							n,amp,rate,config_data[0]?"ON":"OFF");
+					continue;
+				}
+				if (config_data[0]){ /* enable SS */
+					if ((set_ss_down(client, n)==0) && /* calculate and set SS registers */
+							(set_ss_state(client, 1, n)==0)){ // enable SS. Not using enable_spread_spectrum() as we'll reset MS later anyway
+						dev_info(&client->dev,"Spread spectrum enabled for MS%d\n",n);
+					} else {
+						dev_info(&client->dev,"Fail to enable spread spectrum for MS%d\n",n);
+					}
+				}
+			}
+		}
 	} else {
 		dev_info(&client->dev,"Device tree data not found for %s\n",client->name);
 	}
@@ -4056,10 +4578,15 @@ static int si5338_i2c_probe(struct i2c_client *client,
 	clientdata->input_frequency3=0;
 	clientdata->input_frequency4=0;
 	clientdata->input_frequency56=0;
+	clientdata->ss_on_freq_change=0;  /* 0 - disable SS when frequency is changed, 1 - update SS.  +2 reset MS after starting SS*/ 
+
+	for (i=0;i<4;i++){
+		clientdata->spread_spectrum_rate[i]=SPREAD_RATE_DFLT; /* 31.5 KHz */
+		clientdata->spread_spectrum_amp[i]=SPREAD_AMP_DFLT; /* 0.5% */
+	}
 	si5338_init_of(client);
 	return 0;
 }
-
 
 static int si5338_i2c_remove(struct i2c_client *client)
 {
