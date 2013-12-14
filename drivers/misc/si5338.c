@@ -417,6 +417,7 @@ static const struct si5338_drv_t drv_configs []={
 static const char *out_dis_states[]= {"dis_hi-z","dis_low","dis_high","dis_always_on", NULL};
 static const char *out_en_states[]=  {"output_en","output_dis", NULL};
 static const char *out_pwr_states[]= {"output_power_up","output_power_down", NULL};
+static const char *ms_pwr_states[]=  {"ms_power_up","ms_power_down", NULL};
 
 
 
@@ -530,8 +531,10 @@ static ssize_t ms_p123_store(struct device *dev, struct device_attribute *attr, 
 static ssize_t ms_abc_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t ms_abc_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 
-static ssize_t ms_powerdown_show (struct device *dev, struct device_attribute *attr, char *buf);
-static ssize_t ms_powerdown_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+static ssize_t ms_pwr_states_show(struct device *dev, struct device_attribute *attr, char *buf);
+static ssize_t ms_pwr_states_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+static int set_ms_pwr_states(struct device *dev, const char * name, int chn);
+static int get_ms_powerup_state(struct device *dev, char * buf, int chn);
 static ssize_t ms_reset_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 
 
@@ -559,12 +562,15 @@ static ssize_t out_div_by_freq_store(struct device *dev, struct device_attribute
 static ssize_t out_freq_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t out_freq_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 
+static ssize_t out_pwr_states_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t out_pwr_states_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 static int set_out_pwr_states(struct device *dev, const char * name, int chn);
 static int get_powerup_state(struct device *dev, char * buf, int chn);
+static ssize_t out_en_states_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t out_en_states_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 static int set_out_en_states(struct device *dev, const char * name, int chn);
 static int get_enabled_state(struct device *dev, char * buf, int chn);
+static ssize_t out_dis_states_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t out_dis_states_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 static int set_out_dis_states(struct device *dev, const char * name, int chn);
 static int get_disabled_state(struct device *dev, char * buf, int chn);
@@ -594,6 +600,7 @@ static char * get_drv_txt(struct i2c_client *client, int chn);
 #endif
 
 static int make_config_out (struct device *dev);
+static ssize_t status_show (struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t output_description_show (struct device *dev, struct device_attribute *attr, char *buf);
 
 static ssize_t output_route_show(struct device *dev, struct device_attribute *attr, char *buf);
@@ -642,6 +649,7 @@ static int get_out_frequency(struct i2c_client *client, u64* out_freq, int chn);
 static int get_out_source(struct i2c_client *client, int chn);
 static int set_out_source(struct i2c_client *client, int chn, int src);
 
+static int get_out_ms(struct i2c_client *client, int chn);
 static int get_out_route(struct i2c_client *client, char* buf, int chn);
 static int set_out_route(struct i2c_client *client, const char* route, int chn);
 static int set_out_frequency_and_route (struct i2c_client *client, u64 *out_freq, int chn, int int_div);
@@ -789,10 +797,9 @@ static DEVICE_ATTR(ms3_p123, SYSFS_PERMISSIONS,  ms_p123_show, ms_p123_store);
 static DEVICE_ATTR(ms3_abc,  SYSFS_PERMISSIONS,  ms_abc_show,  ms_abc_store);
 static DEVICE_ATTR(msn_p123, SYSFS_PERMISSIONS,  ms_p123_show, ms_p123_store);
 static DEVICE_ATTR(msn_abc,  SYSFS_PERMISSIONS,  ms_abc_show,  ms_abc_store);
-static DEVICE_ATTR(ms0_powerdown,  SYSFS_PERMISSIONS,  ms_powerdown_show,  ms_powerdown_store);
-static DEVICE_ATTR(ms1_powerdown,  SYSFS_PERMISSIONS,  ms_powerdown_show,  ms_powerdown_store);
-static DEVICE_ATTR(ms2_powerdown,  SYSFS_PERMISSIONS,  ms_powerdown_show,  ms_powerdown_store);
-static DEVICE_ATTR(ms3_powerdown,  SYSFS_PERMISSIONS,  ms_powerdown_show,  ms_powerdown_store);
+
+static DEVICE_ATTR(ms_power_down,  SYSFS_PERMISSIONS,  ms_pwr_states_show,  ms_pwr_states_store);
+static DEVICE_ATTR(ms_power_up,    SYSFS_PERMISSIONS,  ms_pwr_states_show,  ms_pwr_states_store);
 static DEVICE_ATTR(ms_reset, SYSFS_PERMISSIONS & SYSFS_WRITEONLY,  NULL,  ms_reset_store);
 
 static struct attribute *multisynth_attrs[] = {
@@ -806,10 +813,8 @@ static struct attribute *multisynth_attrs[] = {
 	&dev_attr_ms3_abc.attr,
 	&dev_attr_msn_p123.attr,
 	&dev_attr_msn_abc.attr,
-	&dev_attr_ms0_powerdown.attr,
-	&dev_attr_ms1_powerdown.attr,
-	&dev_attr_ms2_powerdown.attr,
-	&dev_attr_ms3_powerdown.attr,
+	&dev_attr_ms_power_down.attr,
+	&dev_attr_ms_power_up.attr,
 	&dev_attr_ms_reset.attr,
 	NULL
 };
@@ -971,6 +976,9 @@ static const struct attribute_group dev_attr_output_group = {
 	.name  = "output_clocks",
 };
 /* output drivers */
+/* NOTE: state of the outputs changes with clock only, changing "dis_low" to "dis_high" does not work when disabled.
+ * Going through "dis_always_on" works
+ */
 #ifdef GENERATE_EXTRA
 static DEVICE_ATTR(drv0_powerdown,     SYSFS_PERMISSIONS,                   drv_powerdown_show,      drv_powerdown_store);
 static DEVICE_ATTR(drv1_powerdown,     SYSFS_PERMISSIONS,                   drv_powerdown_show,      drv_powerdown_store);
@@ -1105,12 +1113,15 @@ static const struct attribute_group dev_attr_output_extra_group = {
 
 /* root directory */
 static DEVICE_ATTR(outputs,   SYSFS_PERMISSIONS & SYSFS_READONLY,  output_description_show, NULL);
+static DEVICE_ATTR(status,    SYSFS_PERMISSIONS & SYSFS_READONLY,  status_show, NULL);
+
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_pre_init.attr,
 		&dev_attr_pre_init_clear.attr,
 		&dev_attr_post_init.attr,
 		&dev_attr_outputs.attr,
-	NULL
+		&dev_attr_status.attr,
+	    NULL
 };
 static const struct attribute_group dev_attr_root_group = {
 	.attrs = root_dev_attrs,
@@ -1162,8 +1173,8 @@ static int make_config_out(struct device *dev)
 	/*  add outputs disabled states (write only) */
 	for (iout=0;out_dis_states[iout];iout++) {
 		dev_attrs[index].attr.name=out_dis_states[iout];
-		dev_attrs[index].attr.mode=SYSFS_PERMISSIONS & SYSFS_WRITEONLY;
-		dev_attrs[index].show=NULL;
+		dev_attrs[index].attr.mode=SYSFS_PERMISSIONS;
+		dev_attrs[index].show=out_dis_states_show;
 		dev_attrs[index].store=out_dis_states_store;
 		pattrs[index]=&(dev_attrs[index].attr);
 		index++;
@@ -1171,8 +1182,8 @@ static int make_config_out(struct device *dev)
 	/*  add outputs enable (write only) */
 	for (iout=0;out_en_states[iout];iout++) {
 		dev_attrs[index].attr.name=out_en_states[iout];
-		dev_attrs[index].attr.mode=SYSFS_PERMISSIONS & SYSFS_WRITEONLY;
-		dev_attrs[index].show=NULL;
+		dev_attrs[index].attr.mode=SYSFS_PERMISSIONS;
+		dev_attrs[index].show=out_en_states_show;
 		dev_attrs[index].store=out_en_states_store;
 		pattrs[index]=&(dev_attrs[index].attr);
 		index++;
@@ -1180,13 +1191,12 @@ static int make_config_out(struct device *dev)
 	/*  add outputs enable (write only) */
 	for (iout=0;out_pwr_states[iout];iout++) {
 		dev_attrs[index].attr.name=out_pwr_states[iout];
-		dev_attrs[index].attr.mode=SYSFS_PERMISSIONS & SYSFS_WRITEONLY;
-		dev_attrs[index].show=NULL;
+		dev_attrs[index].attr.mode=SYSFS_PERMISSIONS;
+		dev_attrs[index].show=out_pwr_states_show;
 		dev_attrs[index].store=out_pwr_states_store;
 		pattrs[index]=&(dev_attrs[index].attr);
 		index++;
 	}
-
 
 	/*  add outputs (readonly) */
 	for (iout=0;out_names[iout];iout++) {
@@ -1212,10 +1222,19 @@ static int make_config_out(struct device *dev)
 	return retval;
 }
 
+static ssize_t status_show (struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int status;
+	struct i2c_client *client = to_i2c_client(dev);
+	if (((status=get_status(client)))<0) return status;
+	return sprintf(buf,"%d input clock: %s, feedback clock: %s, PLL lock: %s, calibration: %s\n",
+			status,(status & 0x4)?"LOST":"OK",(status & 0x8)?"LOST":"OK",(status & 0x10)?"LOST":"OK",(status & 0x10)?"IN PROGRESS":"DONE");
+}
+
 static ssize_t output_description_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
-	int i,i1,rc,len=0,show_number;
-	struct i2c_client *client =       to_i2c_client(dev);
+	int i,i1,rc,len=0,show_number,ms;
+	struct i2c_client *client = to_i2c_client(dev);
 	for (i=0; out_names[i]; i++)	if (strcmp(attr->attr.name,out_names[i]) == 0) break;
 	if (!out_names[i]) return -EINVAL;
 	if (i==4) { /* all outputs */
@@ -1249,7 +1268,16 @@ static ssize_t output_description_show (struct device *dev, struct device_attrib
 		if (((rc=get_out_route(client, buf,i)))<0) return rc;
 		buf+=rc;
 		len+=rc;
-
+		/* Show MSx power state only if it is used fro the output */
+		if (((ms=get_out_ms(client,i))) >= 0){
+			rc=sprintf(buf,", ");
+			buf+=rc;
+			len+=rc;
+			if (((rc=get_ms_powerup_state(dev, buf,i)))<0) return rc;
+			buf+=rc;
+			len+=rc;
+		}
+		
 		rc=sprintf(buf,", disabled state: ");
 		buf+=rc;
 		len+=rc;
@@ -1270,8 +1298,7 @@ static ssize_t output_description_show (struct device *dev, struct device_attrib
 		if (((rc=get_enabled_state(dev, buf,i)))<0) return rc;
 		buf+=rc;
 		len+=rc;
-
-//show spread spectum settings
+		/* show spread spectum settings */
 		rc=sprintf(buf,", ");
 		buf+=rc;
 		len+=rc;
@@ -1289,7 +1316,7 @@ static ssize_t output_description_show (struct device *dev, struct device_attrib
 static ssize_t output_route_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int chn,rc,len=0;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name);
 	if (((rc=get_out_route(client, buf,chn)))<0) return rc;
 	buf+=rc;
@@ -1303,7 +1330,7 @@ static ssize_t output_route_show(struct device *dev, struct device_attribute *at
 static ssize_t output_route_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int chn, rc;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name);
 	if (((rc=set_out_route(client, buf, chn)))<0) return rc;
     return count;
@@ -1315,7 +1342,7 @@ static ssize_t output_route_store(struct device *dev, struct device_attribute *a
 static int get_output_description (struct device *dev, char * buf, int chn)
 {
 	int drv_type, drv_vdd, drv_trim, drv_invert,i;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((i=_verify_output_channel(client,chn)))<0) return i;
 	if (((drv_type=  get_drv_type    (client,  chn)))<0) return drv_type;
 	if (((drv_vdd=   get_drv_vdd     (client,  chn)))<0) return drv_vdd;
@@ -1336,7 +1363,7 @@ static int get_out_frequency_txt(struct device *dev, char *buf, int chn)
 {
 	int rc;
 	u64 out_freq[3];
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((rc=get_out_frequency(client, out_freq, chn)))<0) return sprintf (buf,"Not set");
 	if (out_freq[1]==0) return sprintf(buf, "%lld Hz",out_freq[0]);
     return sprintf(buf, "%lld-%lld/%lld Hz",out_freq[0],out_freq[1],out_freq[2]);
@@ -1357,7 +1384,7 @@ static ssize_t output_config_store(struct device *dev, struct device_attribute *
 static int configure_output_driver(struct device *dev, const char * name, int chn)
 {
 	int i,rc;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	dev_dbg(dev,"name=%s chn=%d", name,chn);
 
 	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
@@ -1393,7 +1420,7 @@ static int si5338_sysfs_register(struct device *dev)
 
 static ssize_t invalidate_cache_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	invalidate_cache(client);
     return count;
 }
@@ -1412,14 +1439,14 @@ static ssize_t raw_address_store(struct device *dev, struct device_attribute *at
 
 static ssize_t raw_data_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct si5338_data_t *clientdata= i2c_get_clientdata(client);
 	int data= read_reg(client, clientdata->reg_addr);
     return sprintf(buf, "%d\n",data);
 }
 static ssize_t raw_data_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct si5338_data_t *clientdata= i2c_get_clientdata(client);
 	int data;
     sscanf(buf, "%du", &data);
@@ -1441,14 +1468,14 @@ static ssize_t raw_hex_address_store(struct device *dev, struct device_attribute
 
 static ssize_t raw_hex_data_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct si5338_data_t *clientdata= i2c_get_clientdata(client);
 	int data= read_reg(client, clientdata->reg_addr);
     return sprintf(buf, "0x%02x\n",data);
 }
 static ssize_t raw_hex_data_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct si5338_data_t *clientdata= i2c_get_clientdata(client);
 	int data;
     sscanf(buf, "%x", &data);
@@ -1459,7 +1486,7 @@ static ssize_t raw_hex_data_store(struct device *dev, struct device_attribute *a
 static ssize_t raw_hex_all_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int low_addr=0,reg,data,rc,len=0, count=PAGE_SIZE;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 //	struct si5338_data_t *clientdata= i2c_get_clientdata(client);
 	for (reg=low_addr;reg<=LAST_REG;reg++) if (count>10){
 		if ((reg & 0xf) ==0){
@@ -1498,7 +1525,7 @@ static ssize_t raw_hex_adwe_show (struct device *dev, struct device_attribute *a
 static ssize_t raw_hex_adwe_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	const char hex_digits[]="0123456789abcdefABCDEF";
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct si5338_data_t *clientdata= i2c_get_clientdata(client);
 	int adwe,rc=0;
 	int left=count,num_bytes;
@@ -1524,7 +1551,7 @@ static ssize_t raw_hex_adwe_store(struct device *dev, struct device_attribute *a
 static ssize_t input_xtal_freq_txt_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	const char *txt[]= {"8MHz..11Mhz", "11MHz..19Mhz", "19MHz..26Mhz", "26MHz..30Mhz"};
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	int data= read_field (client, AWE_XTAL_FREQ);
     return sprintf(buf, "%s\n",(data>=0)?txt[data]:"error");
 }
@@ -1532,28 +1559,28 @@ static ssize_t input_xtal_freq_txt_show (struct device *dev, struct device_attri
 
 static ssize_t in_frequency12_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	s64 freq= get_in_frequency (client,0);
 	if (freq<0) return -EINVAL;
     return sprintf(buf, "%lld\n",freq);
 }
 static ssize_t in_frequency3_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	s64 freq= get_in_frequency (client,1);
 	if (freq<0) return -EINVAL;
     return sprintf(buf, "%lld\n",freq);
 }
 static ssize_t in_frequency4_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	s64 freq= get_in_frequency (client,2);
 	if (freq<0) return -EINVAL;
     return sprintf(buf, "%lld\n",freq);
 }
 static ssize_t in_frequency56_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	s64 freq= get_in_frequency (client,3);
 	if (freq<0) return -EINVAL;
     return sprintf(buf, "%lld\n",freq);
@@ -1562,7 +1589,7 @@ static ssize_t in_frequency12_store(struct device *dev, struct device_attribute 
 {
 	int rc;
 	u64 freq;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
     sscanf(buf, "%lld", &freq);
     if (((rc=set_in_frequency (client, freq,0)))<0) return rc;
     return count;
@@ -1571,7 +1598,7 @@ static ssize_t in_frequency12xo_store(struct device *dev, struct device_attribut
 {
 	int rc;
 	u64 freq;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
     sscanf(buf, "%lld", &freq);
     if (((rc=set_in_frequency (client, freq,4)))<0) return rc;
     return count;
@@ -1580,7 +1607,7 @@ static ssize_t in_frequency3_store(struct device *dev, struct device_attribute *
 {
 	int rc;
 	u64 freq;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
     sscanf(buf, "%lld", &freq);
     if (((rc=set_in_frequency (client, freq,1)))<0) return rc;
     return count;
@@ -1589,7 +1616,7 @@ static ssize_t in_frequency4_store(struct device *dev, struct device_attribute *
 {
 	int rc;
 	u64 freq;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
     sscanf(buf, "%lld", &freq);
     if (((rc=set_in_frequency (client, freq,2)))<0) return rc;
     return count;
@@ -1598,7 +1625,7 @@ static ssize_t in_frequency56_store(struct device *dev, struct device_attribute 
 {
 	int rc;
 	u64 freq;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
     sscanf(buf, "%lld", &freq);
     if (((rc=set_in_frequency (client, freq,3)))<0) return rc;
     return count;
@@ -1607,7 +1634,7 @@ static ssize_t in_frequency56_store(struct device *dev, struct device_attribute 
 static ssize_t in_p12_div_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int div, chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name)+1;
 	if (((div=get_in_pdiv(client,chn)))<0) return div;
     return sprintf(buf, "%d\n",div);
@@ -1615,7 +1642,7 @@ static ssize_t in_p12_div_show (struct device *dev, struct device_attribute *att
 static ssize_t in_p12_div_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int div,rc,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name)+1;
     sscanf(buf, "%d", &div);
     if (((rc=set_in_pdiv(client, div,chn)))<0) return rc;
@@ -1625,13 +1652,13 @@ static ssize_t in_p12_div_store(struct device *dev, struct device_attribute *att
 static ssize_t in_mux_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((data=get_in_mux(client)))<0) return data;
     return sprintf(buf, "%d\n",data);
 }
 static ssize_t in_mux_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	int data,rc;
 	sscanf(buf, "%d", &data);
     if (((rc=set_in_mux(client, data)))<0) return rc;
@@ -1641,20 +1668,20 @@ static ssize_t in_mux_txt_show (struct device *dev, struct device_attribute *att
 {
 	const char *mux_txt[]={"IN1/IN2(diff)","IN3(single ended)","IN1/IN2(xtal)"};
 	int data;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((data=get_in_mux(client)))<0) return data;
     return sprintf(buf, "%s\n",mux_txt[data]);
 }
 static ssize_t fb_mux_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((data=get_fb_mux(client)))<0) return data;
     return sprintf(buf, "%d\n",data);
 }
 static ssize_t fb_mux_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	int data,rc;
 	sscanf(buf, "%d", &data);
     if (((rc=set_fb_mux(client, data)))<0) return rc;
@@ -1664,7 +1691,7 @@ static ssize_t fb_mux_txt_show (struct device *dev, struct device_attribute *att
 {
 	const char *mux_fb_txt[]={"IN5/IN6(diff)","IN4(single ended)","No clock"};
 	int data;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((data=get_fb_mux(client)))<0) return data;
     return sprintf(buf, "%s\n",mux_fb_txt[data]);
 }
@@ -1672,13 +1699,13 @@ static ssize_t fb_mux_txt_show (struct device *dev, struct device_attribute *att
 static ssize_t in_pfd_ref_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((data=get_in_pfd_ref_fb(client,0)))<0) return data;
     return sprintf(buf, "%d\n",data);
 }
 static ssize_t in_pfd_ref_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	int data,rc;
 	sscanf(buf, "%d", &data);
     if (((rc=set_in_pfd_ref_fb(client, data,0)))<0) return rc;
@@ -1688,7 +1715,7 @@ static ssize_t in_pfd_ref_txt_show (struct device *dev, struct device_attribute 
 {
 	const char *pfd_ref_txt[]={"p1div_in(refclk)","p2div_in(fbclk)","p1div_out(refclk)","p2div_out(fbclk)","xoclk","noclk"};
 	int data;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((data=get_in_pfd_ref_fb(client,0)))<0) return data;
     return sprintf(buf, "%s\n",pfd_ref_txt[data]);
 }
@@ -1696,13 +1723,13 @@ static ssize_t in_pfd_ref_txt_show (struct device *dev, struct device_attribute 
 static ssize_t fb_external_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((data= get_fb_external(client)))<0) return data;
     return sprintf(buf, "%d\n",data);
 }
 static ssize_t fb_external_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	int data,rc;
 	sscanf(buf, "%d", &data);
     if (((rc=set_fb_external(client, data)))<0) return rc;
@@ -1712,13 +1739,13 @@ static ssize_t fb_external_store(struct device *dev, struct device_attribute *at
 static ssize_t in_pfd_fb_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((data=get_in_pfd_ref_fb(client,1)))<0) return data;
     return sprintf(buf, "%d\n",data);
 }
 static ssize_t in_pfd_fb_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	int data,rc;
 	sscanf(buf, "%d", &data);
     if (((rc=set_in_pfd_ref_fb(client, data,1)))<0) return rc;
@@ -1728,21 +1755,21 @@ static ssize_t in_pfd_fb_txt_show (struct device *dev, struct device_attribute *
 {
 	const char *pfd_fb_txt[]={"p2div_in(fbclk)","p1div_in(refclk)","p2div_out(fbclk)","p1div_out(refclk)","reserved","noclk"};
 	int data;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((data=get_in_pfd_ref_fb(client,1)))<0) return data;
     return sprintf(buf, "%s\n",pfd_fb_txt[data]);
 }
 
 static ssize_t pll_ref_frequency_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	s64 pll_in_freq= get_pll_in_frequency(client);
 	if (pll_in_freq<0) return (int) pll_in_freq;
     return sprintf(buf, "%lld\n",pll_in_freq);
 }
 static ssize_t pll_fb_frequency_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	s64 pll_fb_freq= get_pll_fb_frequency(client);
 	if (pll_fb_freq<0) return (int) pll_fb_freq;
     return sprintf(buf, "%lld\n",pll_fb_freq);
@@ -1751,7 +1778,7 @@ static ssize_t ms_p123_show(struct device *dev, struct device_attribute *attr, c
 {
 	int rc,chn;
 	u32 p123[3];
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (attr->attr.name[2]=='n') chn=4; /* exception for msn */
 	if (((rc=get_ms_p123(client,p123, chn)))<0) return rc;
@@ -1763,7 +1790,7 @@ static ssize_t ms_p123_store(struct device *dev, struct device_attribute *attr, 
 	int rc,chn;
 	u32 p123[3];
 	int num_items;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (attr->attr.name[2]=='n') chn=4; /* exception for msn */
 	num_items=sscanf(buf, "%u %u %u", &p123[0], &p123[1], &p123[2]);
@@ -1782,7 +1809,7 @@ static ssize_t ms_abc_show(struct device *dev, struct device_attribute *attr, ch
 	int rc,chn;
 	u32 p123[3];
 	u64 ms[3];
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (chn<0) chn=4; /* exception for msn - should have no digits*/
 	if (((rc=get_ms_p123(client,p123, chn)))<0) return rc;
@@ -1795,7 +1822,7 @@ static ssize_t ms_abc_store(struct device *dev, struct device_attribute *attr, c
 	u32 p123[3];
 	u64 ms[3];
 	int num_items;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (chn<0) chn=4; /* exception for msn - should have no digits*/
 	num_items=sscanf(buf, "%lld %lld %lld", &ms[0], &ms[1], &ms[2]);
@@ -1813,27 +1840,58 @@ static ssize_t ms_abc_store(struct device *dev, struct device_attribute *attr, c
     return count;
 }
 
-static ssize_t ms_powerdown_show (struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t ms_pwr_states_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	int data,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
-	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
-	if (((data=get_ms_powerdown(client,chn)))<0) return data;
-    return sprintf(buf, "%d\n",data);
+	int chn, i;
+	char * cp=buf;
+	struct i2c_client *client = to_i2c_client(dev);
+	for (chn=0;chn<4;chn++){
+		for (i=0; ms_pwr_states[i]; i++)	if (strcmp(attr->attr.name,ms_pwr_states[i]) == 0) {
+			if (i== get_ms_powerdown(client, chn)){
+				buf+=sprintf(buf," %d",chn);
+				break;
+			}
+		}
+	}
+	buf+=sprintf(buf,"\n");
+    return buf-cp;
 }
-static ssize_t ms_powerdown_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+
+static ssize_t ms_pwr_states_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	int data,rc,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
-	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
-	sscanf(buf, "%d", &data);
-    if (((rc=set_ms_powerdown(client, data, chn)))<0) return rc;
+	int chn, num_bytes,rc;
+	while ((rc=sscanf(buf, "%d%n", &chn,&num_bytes))){
+		dev_dbg(dev,"buf=%s rc==%d chn=%d num_bytes=%d", buf, rc,chn,num_bytes);
+		buf+=num_bytes;
+		if (((rc=set_ms_pwr_states(dev, attr->attr.name, chn)))<0) return rc;
+	}
     return count;
+}
+
+static int set_ms_pwr_states(struct device *dev, const char * name, int chn)
+{
+	int i,rc;
+	struct i2c_client *client = to_i2c_client(dev);
+	dev_dbg(dev,"name=%s chn=%d", name,chn);
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	for (i=0; ms_pwr_states[i]; i++)	if (strcmp(name,ms_pwr_states[i]) == 0) {
+	    if (((rc=set_ms_powerdown(client, i, chn)))<0) return rc;
+		return 0;
+	}
+	return -EINVAL;
+}
+
+static int get_ms_powerup_state(struct device *dev, char * buf, int chn)
+{
+	int index;
+	struct i2c_client *client = to_i2c_client(dev);
+	if (((index=get_ms_powerdown(client,chn)))<0) return index;
+	return sprintf (buf,ms_pwr_states[index]);
 }
 
 static ssize_t ms_reset_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	reset_ms(client, 10);
 	return count;
 }
@@ -1841,7 +1899,7 @@ static ssize_t ms_reset_store(struct device *dev, struct device_attribute *attr,
 static ssize_t ss_change_freq_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int mode;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
 	mode=clientdata->ss_on_freq_change;
 	switch (mode) {
@@ -1856,7 +1914,7 @@ static ssize_t ss_change_freq_mode_show(struct device *dev, struct device_attrib
 static ssize_t ss_change_freq_mode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int num_items, mode;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
 	num_items=sscanf(buf, "%d", &mode);
 	if (num_items && (mode>=0) && (mode<=3)){
@@ -1879,13 +1937,13 @@ static ssize_t ss_vals_store(struct device *dev, struct device_attribute *attr, 
 {
 	int chn, rc, state, num_items;
 	u32 rate,amp;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((chn=get_chn_from_name(attr->attr.name)))<0) return chn;
 	/* get current values */
 	if (((state= get_ss_state(client, chn)))<0) return state;
 	if (((rate=  get_ss_down_rate(client, chn)))<0) return rate;
 	if (((amp=   get_ss_down_amplitude(client, chn)))<0) return amp;
-	num_items=sscanf(buf, "%d %d %d", &state, &rate, &amp);
+	num_items=sscanf(buf, "%d %d %d", &state, &amp, &rate);
 	if (num_items>1){
 		if (((rc= store_ss_down_parameters(client, rate, amp, chn)))<0) return rc;
 	}
@@ -1910,7 +1968,7 @@ static ssize_t ss_regs_hex_show(struct device *dev, struct device_attribute *att
 	int chn, rc;
 	u32 regs[7];
 	u32 *updown_reg, *up_regs, *down_regs;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	updown_reg=&regs[0];
 	down_regs=&regs[1];
 	up_regs=&regs[4];
@@ -1926,7 +1984,7 @@ static ssize_t ss_regs_hex_store(struct device *dev, struct device_attribute *at
 	int chn, rc, num_items;
 	u32 regs[7];
 	u32 *updown_reg, *up_regs, *down_regs;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	updown_reg=&regs[0];
 	down_regs=&regs[1];
 	up_regs=&regs[4];
@@ -1943,16 +2001,10 @@ static ssize_t ss_regs_hex_store(struct device *dev, struct device_attribute *at
     return count;
 }
 
-
-
-
-
-
-
 static ssize_t pre_init_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int rc,clear_all;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	clear_all=strstr(attr->attr.name,"clear")?1:0;
 	if (((rc=pre_init(client,clear_all)))<0) return rc;
     return count;
@@ -1960,7 +2012,7 @@ static ssize_t pre_init_store(struct device *dev, struct device_attribute *attr,
 
 static ssize_t post_init_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	int rc,timeout=0;
 	sscanf(buf, "%d", &timeout);
 	if (timeout <=0) timeout=INIT_TIMEOUT;
@@ -1972,7 +2024,7 @@ static ssize_t pll_freq_show(struct device *dev, struct device_attribute *attr, 
 {
 	int rc;
 	u64 pll_freq[3];
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 
 	if (((rc=get_pll_freq(client,pll_freq)))<0) return rc;
     return sprintf(buf, "%lld %lld %lld\n",pll_freq[0],pll_freq[1],pll_freq[2]);
@@ -1980,7 +2032,7 @@ static ssize_t pll_freq_show(struct device *dev, struct device_attribute *attr, 
 
 static ssize_t pll_freq_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	int rc,int_div,by_out;
 	u64 freq[3];
 	int num_items;
@@ -2007,7 +2059,7 @@ static ssize_t pll_ms_freq_show(struct device *dev, struct device_attribute *att
 {
 	int rc,chn;
 	u64 ms_freq[3];
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((rc=get_pll_ms_freq(client, ms_freq, chn)))<0) return rc;
     return sprintf(buf, "%lld %lld %lld\n",ms_freq[0],ms_freq[1],ms_freq[2]);
@@ -2017,7 +2069,7 @@ static ssize_t pll_ms_freq_store(struct device *dev, struct device_attribute *at
 	int rc,chn,int_div;
 	u64 freq[3];
 	int num_items;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
     int_div=(strstr(attr->attr.name,"_fract"))?0:1; /* if includes 'fract' - 0, not - 1 */
 	num_items=sscanf(buf, "%lld %lld %lld", &freq[0], &freq[1], &freq[2]);
@@ -2033,14 +2085,14 @@ static ssize_t pll_ms_freq_store(struct device *dev, struct device_attribute *at
 static ssize_t out_source_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int out_src,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((out_src=get_out_source(client, chn)))<0) return out_src;
     return sprintf(buf, "%d\n",out_src);
 }
 static ssize_t out_source_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	int rc,chn;
 	int out_src;
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
@@ -2051,7 +2103,7 @@ static ssize_t out_source_store(struct device *dev, struct device_attribute *att
 static ssize_t out_source_txt_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int out_src,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((out_src=get_out_source(client, chn)))<0) return out_src;
 	switch (out_src){
@@ -2071,7 +2123,7 @@ static ssize_t out_source_freq_show(struct device *dev, struct device_attribute 
 {
 	int rc,chn;
 	u64 out_source_freq[3];
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((rc=get_output_src_frequency(client, out_source_freq, chn)))<0) return rc;
     return sprintf(buf, "%lld %lld %lld\n",out_source_freq[0],out_source_freq[1],out_source_freq[2]);
@@ -2080,14 +2132,14 @@ static ssize_t out_source_freq_show(struct device *dev, struct device_attribute 
 static ssize_t out_div_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int div,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((div=get_out_div(client,chn)))<0) return div;
     return sprintf(buf, "%d\n",div);
 }
 static ssize_t out_div_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	int div,rc,chn;
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
     sscanf(buf, "%d", &div);
@@ -2099,7 +2151,7 @@ static ssize_t out_freq_show(struct device *dev, struct device_attribute *attr, 
 {
 	int rc,chn;
 	u64 out_freq[3];
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((rc=get_out_frequency(client, out_freq, chn)))<0) return rc;
     return sprintf(buf, "%lld %lld %lld\n",out_freq[0],out_freq[1],out_freq[2]);
@@ -2110,7 +2162,7 @@ static ssize_t out_freq_store(struct device *dev, struct device_attribute *attr,
 	int rc,int_div,chn;
 	u64 freq[3];
 	int num_items;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
     int_div=(strstr(attr->attr.name,"_fract"))?0:1; /* if filename contains '_fract' - 0, not - 1 */
 
@@ -2125,7 +2177,7 @@ static ssize_t out_freq_store(struct device *dev, struct device_attribute *attr,
 
 static ssize_t out_div_by_freq_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	int rc,chn;
 	u64 freq[3];
 	int num_items;
@@ -2139,7 +2191,22 @@ static ssize_t out_div_by_freq_store(struct device *dev, struct device_attribute
 	return count;
 }
 
-
+static ssize_t out_pwr_states_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int chn, i;
+	char * cp=buf;
+	struct i2c_client *client = to_i2c_client(dev);
+	for (chn=0;chn<4;chn++){
+		for (i=0; out_pwr_states[i]; i++)	if (strcmp(attr->attr.name,out_pwr_states[i]) == 0) {
+			if (i== get_drv_powerdown(client, chn)){
+				buf+=sprintf(buf," %d",chn);
+				break;
+			}
+		}
+	}
+	buf+=sprintf(buf,"\n");
+    return buf-cp;
+}
 
 static ssize_t out_pwr_states_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -2155,7 +2222,7 @@ static ssize_t out_pwr_states_store(struct device *dev, struct device_attribute 
 static int set_out_pwr_states(struct device *dev, const char * name, int chn)
 {
 	int i,rc;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	dev_dbg(dev,"name=%s chn=%d", name,chn);
 	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
 	for (i=0; out_pwr_states[i]; i++)	if (strcmp(name,out_pwr_states[i]) == 0) {
@@ -2168,9 +2235,26 @@ static int set_out_pwr_states(struct device *dev, const char * name, int chn)
 static int get_powerup_state(struct device *dev, char * buf, int chn)
 {
 	int index;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((index=get_drv_powerdown(client,chn)))<0) return index;
 	return sprintf (buf,out_pwr_states[index]);
+}
+
+static ssize_t out_en_states_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int chn, i;
+	char * cp=buf;
+	struct i2c_client *client = to_i2c_client(dev);
+	for (chn=0;chn<4;chn++){
+		for (i=0; out_en_states[i]; i++)	if (strcmp(attr->attr.name,out_en_states[i]) == 0) {
+			if (i== get_drv_disable(client, chn)){
+				buf+=sprintf(buf," %d",chn);
+				break;
+			}
+		}
+	}
+	buf+=sprintf(buf,"\n");
+    return buf-cp;
 }
 
 static ssize_t out_en_states_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -2187,7 +2271,7 @@ static ssize_t out_en_states_store(struct device *dev, struct device_attribute *
 static int set_out_en_states(struct device *dev, const char * name, int chn)
 {
 	int i,rc;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	dev_dbg(dev,"name=%s chn=%d", name,chn);
 	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
 	for (i=0; out_en_states[i]; i++)	if (strcmp(name,out_en_states[i]) == 0) {
@@ -2200,11 +2284,27 @@ static int set_out_en_states(struct device *dev, const char * name, int chn)
 static int get_enabled_state(struct device *dev, char * buf, int chn)
 {
 	int index;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((index=get_drv_disable(client,chn)))<0) return index;
 	return sprintf (buf,out_en_states[index]);
 }
 
+static ssize_t out_dis_states_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int chn, i;
+	char * cp=buf;
+	struct i2c_client *client = to_i2c_client(dev);
+	for (chn=0;chn<4;chn++){
+		for (i=0; out_dis_states[i]; i++)	if (strcmp(attr->attr.name,out_dis_states[i]) == 0) {
+			if (i== get_drv_disabled_state(client, chn)){
+				buf+=sprintf(buf," %d",chn);
+				break;
+			}
+		}
+	}
+	buf+=sprintf(buf,"\n");
+    return buf-cp;
+}
 static ssize_t out_dis_states_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int chn, num_bytes,rc;
@@ -2219,7 +2319,7 @@ static ssize_t out_dis_states_store(struct device *dev, struct device_attribute 
 static int set_out_dis_states(struct device *dev, const char * name, int chn)
 {
 	int i,rc;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	dev_dbg(dev,"name=%s chn=%d", name,chn);
 	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
 	for (i=0; out_dis_states[i]; i++)	if (strcmp(name,out_dis_states[i]) == 0) {
@@ -2231,15 +2331,16 @@ static int set_out_dis_states(struct device *dev, const char * name, int chn)
 static int get_disabled_state(struct device *dev, char * buf, int chn)
 {
 	int index;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((index=get_drv_disabled_state(client,chn)))<0) return index;
 	return sprintf (buf,out_dis_states[index]);
 }
+
 #ifdef GENERATE_EXTRA
 static ssize_t drv_powerdown_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((data=get_drv_powerdown(client,chn)))<0) return data;
     return sprintf(buf, "%d\n",data);
@@ -2247,7 +2348,7 @@ static ssize_t drv_powerdown_show (struct device *dev, struct device_attribute *
 static ssize_t drv_powerdown_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int data,rc,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	sscanf(buf, "%d", &data);
     if (((rc=set_drv_powerdown(client, data, chn)))<0) return rc;
@@ -2256,7 +2357,7 @@ static ssize_t drv_powerdown_store(struct device *dev, struct device_attribute *
 static ssize_t drv_disable_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((data=get_drv_disable(client,chn)))<0) return data;
     return sprintf(buf, "%d\n",data);
@@ -2264,7 +2365,7 @@ static ssize_t drv_disable_show (struct device *dev, struct device_attribute *at
 static ssize_t drv_disable_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int data,rc,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	sscanf(buf, "%d", &data);
     if (((rc=set_drv_disable(client, data, chn)))<0) return rc;
@@ -2273,7 +2374,7 @@ static ssize_t drv_disable_store(struct device *dev, struct device_attribute *at
 static ssize_t drv_disabled_state_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((data=get_drv_disabled_state(client,chn)))<0) return data;
     return sprintf(buf, "%d\n",data);
@@ -2281,7 +2382,7 @@ static ssize_t drv_disabled_state_show (struct device *dev, struct device_attrib
 static ssize_t drv_disabled_state_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int data,rc,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	sscanf(buf, "%d", &data);
     if (((rc=set_drv_disabled_state(client, data, chn)))<0) return rc;
@@ -2290,7 +2391,7 @@ static ssize_t drv_disabled_state_store(struct device *dev, struct device_attrib
 static ssize_t drv_invert_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((data=get_drv_invert(client,chn)))<0) return data;
     return sprintf(buf, "%d\n",data);
@@ -2298,7 +2399,7 @@ static ssize_t drv_invert_show (struct device *dev, struct device_attribute *att
 static ssize_t drv_invert_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int data,rc,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	sscanf(buf, "%d", &data);
     if (((rc=set_drv_invert(client, data, chn)))<0) return rc;
@@ -2307,7 +2408,7 @@ static ssize_t drv_invert_store(struct device *dev, struct device_attribute *att
 static ssize_t drv_invert_txt_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((data=get_drv_invert(client,chn)))<0) return data;
 	switch (data) {
@@ -2322,7 +2423,7 @@ static ssize_t drv_invert_txt_show (struct device *dev, struct device_attribute 
 static ssize_t drv_type_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((data=get_drv_type(client,chn)))<0) return data;
     return sprintf(buf, "%d\n",data);
@@ -2330,7 +2431,7 @@ static ssize_t drv_type_show (struct device *dev, struct device_attribute *attr,
 static ssize_t drv_type_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int data,rc,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	sscanf(buf, "%d", &data);
     if (((rc=set_drv_type(client, data, chn)))<0) return rc;
@@ -2340,7 +2441,7 @@ static ssize_t drv_type_store(struct device *dev, struct device_attribute *attr,
 static ssize_t drv_type_txt_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((data=get_drv_type(client,chn)))<0) return data;
 	switch (data) {
@@ -2359,7 +2460,7 @@ static ssize_t drv_type_txt_show (struct device *dev, struct device_attribute *a
 static ssize_t drv_vdd_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((data=get_drv_vdd(client,chn)))<0) return data;
     return sprintf(buf, "%d\n",data);
@@ -2367,7 +2468,7 @@ static ssize_t drv_vdd_show (struct device *dev, struct device_attribute *attr, 
 static ssize_t drv_vdd_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int data,rc,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	sscanf(buf, "%d", &data);
     if (((rc=set_drv_vdd(client, data, chn)))<0) return rc;
@@ -2376,7 +2477,7 @@ static ssize_t drv_vdd_store(struct device *dev, struct device_attribute *attr, 
 static ssize_t drv_vdd_txt_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((data=get_drv_vdd(client,chn)))<0) return data;
 	switch (data) {
@@ -2390,7 +2491,7 @@ static ssize_t drv_vdd_txt_show (struct device *dev, struct device_attribute *at
 static ssize_t drv_trim_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int data,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((data=get_drv_trim(client,chn)))<0) return data;
     return sprintf(buf, "%d\n",data);
@@ -2399,7 +2500,7 @@ static ssize_t drv_trim_show (struct device *dev, struct device_attribute *attr,
 static ssize_t drv_auto_trim_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int data,rc,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	sscanf(buf, "%d", &data);
     if (((rc=update_drv_trim(client, data, chn)))<0) return rc;
@@ -2408,7 +2509,7 @@ static ssize_t drv_auto_trim_store(struct device *dev, struct device_attribute *
 static ssize_t drv_trim_any_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int data,rc,chn;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	sscanf(buf, "%d", &data);
     if (((rc=set_drv_trim_any(client, data, chn)))<0) return rc;
@@ -2419,7 +2520,7 @@ static ssize_t drv_txt_show (struct device *dev, struct device_attribute *attr, 
 {
 	int chn;
 	char * data;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	chn=get_chn_from_name(attr->attr.name); /* uses first digit in the name */
 	if (((data=get_drv_txt(client,chn)))==NULL) return -EINVAL;
     return sprintf(buf, "%s\n",data);
@@ -2588,7 +2689,7 @@ static int get_ss_vals(struct device *dev, char * buf, int chn)
 {
 	int state;
 	u32 rate,amp;
-	struct i2c_client *client =       to_i2c_client(dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	if (((state= get_ss_state(client, chn)))<0) return state;
 	if (((amp=   get_ss_down_amplitude(client, chn)))<0) return amp;
 	if (((rate=  get_ss_down_rate(client, chn)))<0) return rate;
@@ -3013,6 +3114,19 @@ static int set_out_source(struct i2c_client *client, int chn, int src)
 	}
 	return write_field (client, (u8) src, awe_rdiv_in[chn]);
 }
+
+static int get_out_ms(struct i2c_client *client, int chn)
+{
+	int rc,out_src;
+	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
+	if (((out_src=get_out_source(client, chn)))<0) return out_src;
+	switch (out_src){
+	case 5: return 0;
+	case 6: return chn;
+	}
+	return -1;
+}
+
 /* Examples:
  * "IN12:2:4"
  * "XO:1:1"
@@ -3489,7 +3603,7 @@ static int get_ms_powerdown(struct i2c_client *client, int chn)
 {
 	int rc;
 	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
-	return read_field (client, awe_drv_powerdown[chn]);
+	return read_field (client, awe_ms_powerdown[chn]);
 }
 
 static int set_ms_powerdown(struct i2c_client *client, int typ, int chn)
@@ -3497,7 +3611,7 @@ static int set_ms_powerdown(struct i2c_client *client, int typ, int chn)
 	int rc;
 	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
 	if (typ) typ=1;
-	return write_field (client, (u8) typ, awe_drv_powerdown[chn]);
+	return write_field (client, (u8) typ, awe_ms_powerdown[chn]);
 }
 
 static int ms_to_p123(u64* ms,u32 * p123)
