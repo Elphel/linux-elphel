@@ -475,6 +475,39 @@ static const u32 awe_drv_inv[]=      {AWE_DRV0_INV,  AWE_DRV1_INV,  AWE_DRV2_INV
 static const u32 awe_ms_hs[]=        {AWE_MS0_HS,    AWE_MS1_HS,    AWE_MS2_HS,    AWE_MS3_HS};
 static const u32 awe_ms_ssmode[]=    {AWE_MS0_SSMODE,AWE_MS1_SSMODE,AWE_MS2_SSMODE,AWE_MS3_SSMODE};
 
+/* (register_address << 8) | mask - created from SiLabs output */
+static const u32 register_masks[]= {
+		0x61d,0x1b80,0x1cff,0x1dff,0x1eff,0x1fff,0x20ff,0x21ff,
+		0x22ff,0x23ff,0x241f,0x251f,0x261f,0x271f,0x28ff,0x297f,
+		0x2a3f,0x2dff,0x2eff,0x2f3f,0x30ff,0x31ff,0x32ff,0x33ff,
+		0x34ff,0x35ff,0x36ff,0x37ff,0x38ff,0x39ff,0x3aff,0x3bff,
+		0x3cff,0x3dff,0x3e3f,0x3fff,0x40ff,0x41ff,0x42ff,0x43ff,
+		0x44ff,0x45ff,0x46ff,0x47ff,0x48ff,0x493f,0x4aff,0x4bff,
+		0x4cff,0x4dff,0x4eff,0x4fff,0x50ff,0x51ff,0x52ff,0x53ff,
+		0x543f,0x55ff,0x56ff,0x57ff,0x58ff,0x59ff,0x5aff,0x5bff,
+		0x5cff,0x5dff,0x5eff,0x5f3f,0x61ff,0x62ff,0x63ff,0x64ff,
+		0x65ff,0x66ff,0x67ff,0x68ff,0x69ff,0x6abf,0x6bff,0x6cff,
+		0x6dff,0x6eff,0x6fff,0x70ff,0x71ff,0x72ff,0x73ff,0x74ff,
+		0x75ff,0x76ff,0x77ff,0x78ff,0x79ff,0x7aff,0x7bff,0x7cff,
+		0x7dff,0x7eff,0x7fff,0x80ff,0x810f,0x820f,0x83ff,0x84ff,
+		0x85ff,0x86ff,0x87ff,0x88ff,0x89ff,0x8aff,0x8bff,0x8cff,
+		0x8dff,0x8eff,0x8fff,0x90ff,0x98ff,0x99ff,0x9aff,0x9bff,
+		0x9cff,0x9dff,0x9e0f,0x9f0f,0xa0ff,0xa1ff,0xa2ff,0xa3ff,
+		0xa4ff,0xa5ff,0xa6ff,0xa7ff,0xa8ff,0xa9ff,0xaaff,0xabff,
+		0xacff,0xadff,0xaeff,0xafff,0xb0ff,0xb1ff,0xb2ff,0xb3ff,
+		0xb4ff,0xb50f,0xb6ff,0xb7ff,0xb8ff,0xb9ff,0xbaff,0xbbff,
+		0xbcff,0xbdff,0xbeff,0xbfff,0xc0ff,0xc1ff,0xc2ff,0xc3ff,
+		0xc4ff,0xc5ff,0xc6ff,0xc7ff,0xc8ff,0xc9ff,0xcaff,0xcb0f,
+		0xccff,0xcdff,0xceff,0xcfff,0xd0ff,0xd1ff,0xd2ff,0xd3ff,
+		0xd4ff,0xd5ff,0xd6ff,0xd7ff,0xd8ff,0xd9ff,0xf202,0x11fff,
+		0x120ff,0x121ff,0x122ff,0x123ff,0x124ff,0x125ff,0x126ff,0x127ff,
+		0x128ff,0x129ff,0x12aff,0x12b0f,0x12fff,0x130ff,0x131ff,0x132ff,
+		0x133ff,0x134ff,0x135ff,0x136ff,0x137ff,0x138ff,0x139ff,0x13aff,
+		0x13b0f,0x13fff,0x140ff,0x141ff,0x142ff,0x143ff,0x144ff,0x145ff,
+		0x146ff,0x147ff,0x148ff,0x149ff,0x14aff,0x14b0f,0x14fff,0x150ff,
+		0x151ff,0x152ff,0x153ff,0x154ff,0x155ff,0x156ff,0x157ff,0x158ff,
+		0x159ff,0x15aff,0x15b0f};
+
 //AWE_MS0_SSMODE
 static const u8 out_div_values[]={1,2,4,8,16,32};
 
@@ -492,6 +525,7 @@ static ssize_t raw_hex_address_store(struct device *dev, struct device_attribute
 static ssize_t raw_hex_data_show (struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t raw_hex_data_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 static ssize_t raw_hex_all_show (struct device *dev, struct device_attribute *attr, char *buf);
+static ssize_t raw_hex_adwe_help_show (struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t raw_hex_adwe_show (struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t raw_hex_adwe_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 
@@ -667,6 +701,7 @@ static int disable_pll_in_fb_mux(struct i2c_client *client); /* to be explicitly
 
 
 static int set_pll_paremeters(struct i2c_client *client);
+static int is_set_up(struct i2c_client *client);
 static int set_misc_registers(struct i2c_client *client);
 static int get_ms_powerdown(struct i2c_client *client, int chn);
 static int set_ms_powerdown(struct i2c_client *client, int typ, int chn);
@@ -719,6 +754,8 @@ static DEVICE_ATTR(hex_address,      SYSFS_PERMISSIONS,                     raw_
 static DEVICE_ATTR(hex_data,         SYSFS_PERMISSIONS,                     raw_hex_data_show,   raw_hex_data_store);
 static DEVICE_ATTR(hex_all,          SYSFS_PERMISSIONS & SYSFS_READONLY,    raw_hex_all_show,    NULL);
 static DEVICE_ATTR(hex_adwe,         SYSFS_PERMISSIONS,                     raw_hex_adwe_show,   raw_hex_adwe_store);
+static DEVICE_ATTR(hex_adwe_help,    SYSFS_PERMISSIONS & SYSFS_READONLY,    raw_hex_adwe_help_show,  NULL);
+
 
 static struct attribute *raw_dev_attrs[] = {
 		&dev_attr_invalidate_cache.attr,
@@ -728,6 +765,7 @@ static struct attribute *raw_dev_attrs[] = {
 		&dev_attr_hex_data.attr,
 		&dev_attr_hex_all.attr,
 		&dev_attr_hex_adwe.attr,
+		&dev_attr_hex_adwe_help.attr,
 		NULL
 };
 
@@ -1512,12 +1550,29 @@ static ssize_t raw_hex_all_show (struct device *dev, struct device_attribute *at
 	}
 	return len;
 }
-static ssize_t raw_hex_adwe_show (struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t raw_hex_adwe_help_show (struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf,"Write only, provide single or multiple hex values in the form [0x]AAADDWW, where AAA is register address\n" \
-			            "DD - data byte and WW - write enable bits ( 1 - write, 0 - keep old)\n");
+	return sprintf(buf,"Setting one/multiple registers with masks in the form [0x]AAADDWW, where AAA is register address\n" \
+			           "DD - data byte and WW - write enable bits ( 1 - write, 0 - keep old)\n" \
+			           "When read, provides current register data that can be used in device tree.\n");
 
 }
+
+//static const u32 register_masks[]= {
+static ssize_t raw_hex_adwe_show (struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int i,data;
+	char * cp=buf;
+	struct i2c_client *client = to_i2c_client(dev);
+	for (i=0;i<ARRAY_SIZE(register_masks);i++){
+		if (((data=read_reg(client, register_masks[i]>>8)))<0) return data;
+		buf+=sprintf(buf," 0x%x",((register_masks[i] & 0x1ff00)<<8) | (register_masks[i] & 0xff) | ((data & 0xff)<<8));
+		if (((i+1) & 0x7)==0) buf+=sprintf(buf,"\n");  
+	}
+	buf+=sprintf(buf,"\n");
+	return buf-cp;
+}
+
 /*
  *  accepts single or multiple data, each [0x]AAADDWW - AAA - register address, DD - data byte, WW - write enable mask (1 - write, 0 - keep).
  *  Ignores any other characters, so same format as in dts with hex data is OK
@@ -2050,7 +2105,7 @@ static ssize_t pll_freq_store(struct device *dev, struct device_attribute *attr,
 		if (((rc=set_pll_freq       (client, freq, int_div)))<0) return rc;
 	}
 	if (((rc=set_pll_paremeters(client)))<0) return rc;
-	if (((rc=set_misc_registers(client)))<0) return rc;
+/*	if (((rc=set_misc_registers(client)))<0) return rc;*/  /* moved to pre_init() */
     return count;
 }
 
@@ -3371,6 +3426,7 @@ static u32 awe_fcal_ovrd[]={AWE_FCAL_OVRD_07_00, AWE_FCAL_OVRD_15_08, AWE_FCAL_O
 static int pre_init(struct i2c_client *client, int clear_all)
 {
 	int rc,chn;
+	if (((rc=set_misc_registers(client)))<0) return rc; /* setup miscelalneous registers */
 	if (((rc=write_field(client, 1,  AWE_OUT_ALL_DIS )))<0) return rc; /* disable all outputs */
 	if (((rc=write_field(client, 1,  AWE_DIS_LOS     )))<0) return rc; /* pause LOL */
 	if (clear_all){ /* clears outputs pll input/fb muxes to be set later */
@@ -3561,6 +3617,11 @@ static int set_pll_paremeters(struct i2c_client *client)
 	if (((rc=write_field(client, (u8) ms_pec, AWE_MS_PEC)))<0) return rc;
 	if (((rc=write_field(client, 3, AWE_PLL_EN)))<0) return rc; /* enable PLL */
 	return 0;
+}
+/* verify the chip is initilaized - returns 0 if power-up state, 5 if initialized, -1 if i2c register can not be read */
+static int is_set_up(struct i2c_client *client)
+{
+	return read_field(client,  AWE_MISC_47 );
 }
 
 static int set_misc_registers(struct i2c_client *client)
@@ -4445,8 +4506,6 @@ static int read_reg(struct i2c_client *client, u16 reg)
 	}
 	return rc;
 }
-//#define CACHE_INIT=1;
-//#define CACHE_VOLAT=2;
 
 static void si5338_init_of(struct i2c_client *client)
 {
@@ -4479,8 +4538,18 @@ static void si5338_init_of(struct i2c_client *client)
 		}
 		switch (init_type){
 		case 2:
-			dev_err(&client->dev,"Not yet implemented, initializing unconditionally\n");
+			// static int is_set_up(struct i2c_client *client);
+			i=is_set_up(client);
+			if (i<0){
+				dev_err(&client->dev,"Error reading i2c register, aborting initialization\n");
+				return;
+			} else if (i>0){
+				init_type=0;
+				dev_info(&client->dev,"Skipping conditional initialization (some driver variables will not be initialized)\n");
+				return;
+			}
 			init_type=1;
+			/* falling to initialization */
 		case 1:
 			pre_init(client,1); // clear outputs and muxes - they will be programmed later
 			break;
@@ -4530,7 +4599,7 @@ static void si5338_init_of(struct i2c_client *client)
 					if (set_pll_freq       (client, freq, n & 1)<0) return;
 				}
 				if (set_pll_paremeters(client)<0) return;
-				if (set_misc_registers(client)<0) return;
+/*				if (set_misc_registers(client)<0) return; */ /* moved to pre_init() */ 
 			}
 		}
 		/* setting MSn dividers (same channel as output), powering them up, setting output dividers and routing outputs */
