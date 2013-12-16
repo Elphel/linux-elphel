@@ -583,8 +583,8 @@ static ssize_t pre_init_store(struct device *dev, struct device_attribute *attr,
 static ssize_t post_init_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 static ssize_t pll_freq_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t pll_freq_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
-static ssize_t pll_ms_freq_show(struct device *dev, struct device_attribute *attr, char *buf);
-static ssize_t pll_ms_freq_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+static ssize_t ms_freq_show(struct device *dev, struct device_attribute *attr, char *buf);
+static ssize_t ms_freq_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 
 static ssize_t out_source_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t out_source_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
@@ -641,6 +641,7 @@ static ssize_t output_route_show(struct device *dev, struct device_attribute *at
 static ssize_t output_route_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 static int get_output_description (struct device *dev, char * buf, int chn);
 static int get_out_frequency_txt(struct device *dev, char *buf, int chn);
+static ssize_t output_config_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t output_config_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 static int configure_output_driver(struct device *dev, const char * name, int chn);
 
@@ -825,6 +826,16 @@ static const struct attribute_group dev_attr_input_group = {
 	.name  = "input",
 };
 
+/* has to have/not have '_fract' in the name */
+static DEVICE_ATTR(ms0_freq_fract,SYSFS_PERMISSIONS,  ms_freq_show,  ms_freq_store);
+static DEVICE_ATTR(ms0_freq_int,  SYSFS_PERMISSIONS,  ms_freq_show,  ms_freq_store);
+static DEVICE_ATTR(ms1_freq_fract,SYSFS_PERMISSIONS,  ms_freq_show,  ms_freq_store);
+static DEVICE_ATTR(ms1_freq_int,  SYSFS_PERMISSIONS,  ms_freq_show,  ms_freq_store);
+static DEVICE_ATTR(ms2_freq_fract,SYSFS_PERMISSIONS,  ms_freq_show,  ms_freq_store);
+static DEVICE_ATTR(ms2_freq_int,  SYSFS_PERMISSIONS,  ms_freq_show,  ms_freq_store);
+static DEVICE_ATTR(ms3_freq_fract,SYSFS_PERMISSIONS,  ms_freq_show,  ms_freq_store);
+static DEVICE_ATTR(ms3_freq_int,  SYSFS_PERMISSIONS,  ms_freq_show,  ms_freq_store);
+
 static DEVICE_ATTR(ms0_p123, SYSFS_PERMISSIONS,  ms_p123_show, ms_p123_store);
 static DEVICE_ATTR(ms0_abc,  SYSFS_PERMISSIONS,  ms_abc_show,  ms_abc_store);
 static DEVICE_ATTR(ms1_p123, SYSFS_PERMISSIONS,  ms_p123_show, ms_p123_store);
@@ -841,20 +852,29 @@ static DEVICE_ATTR(ms_power_up,    SYSFS_PERMISSIONS,  ms_pwr_states_show,  ms_p
 static DEVICE_ATTR(ms_reset, SYSFS_PERMISSIONS & SYSFS_WRITEONLY,  NULL,  ms_reset_store);
 
 static struct attribute *multisynth_attrs[] = {
-	&dev_attr_ms0_p123.attr,
-	&dev_attr_ms0_abc.attr,
-	&dev_attr_ms1_p123.attr,
-	&dev_attr_ms1_abc.attr,
-	&dev_attr_ms2_p123.attr,
-	&dev_attr_ms2_abc.attr,
-	&dev_attr_ms3_p123.attr,
-	&dev_attr_ms3_abc.attr,
-	&dev_attr_msn_p123.attr,
-	&dev_attr_msn_abc.attr,
-	&dev_attr_ms_power_down.attr,
-	&dev_attr_ms_power_up.attr,
-	&dev_attr_ms_reset.attr,
-	NULL
+		&dev_attr_ms0_freq_fract.attr,
+		&dev_attr_ms0_freq_int.attr,
+		&dev_attr_ms1_freq_fract.attr,
+		&dev_attr_ms1_freq_int.attr,
+		&dev_attr_ms2_freq_fract.attr,
+		&dev_attr_ms2_freq_int.attr,
+		&dev_attr_ms3_freq_fract.attr,
+		&dev_attr_ms3_freq_int.attr,
+
+		&dev_attr_ms0_p123.attr,
+		&dev_attr_ms0_abc.attr,
+		&dev_attr_ms1_p123.attr,
+		&dev_attr_ms1_abc.attr,
+		&dev_attr_ms2_p123.attr,
+		&dev_attr_ms2_abc.attr,
+		&dev_attr_ms3_p123.attr,
+		&dev_attr_ms3_abc.attr,
+		&dev_attr_msn_p123.attr,
+		&dev_attr_msn_abc.attr,
+		&dev_attr_ms_power_down.attr,
+		&dev_attr_ms_power_up.attr,
+		&dev_attr_ms_reset.attr,
+		NULL
 };
 static const struct attribute_group dev_attr_multisynth_group = {
 	.attrs = multisynth_attrs,
@@ -900,16 +920,6 @@ static DEVICE_ATTR(pll_freq_int,    SYSFS_PERMISSIONS,               pll_freq_sh
 static DEVICE_ATTR(pll_by_out_fract,SYSFS_PERMISSIONS,               pll_freq_show,  pll_freq_store);
 static DEVICE_ATTR(pll_by_out_int,  SYSFS_PERMISSIONS,               pll_freq_show,  pll_freq_store);
 
-/* has to have/not have '_fract' in the name */
-static DEVICE_ATTR(pll_ms0_freq_fract,SYSFS_PERMISSIONS,  pll_ms_freq_show,  pll_ms_freq_store);
-static DEVICE_ATTR(pll_ms0_freq_int,  SYSFS_PERMISSIONS,  pll_ms_freq_show,  pll_ms_freq_store);
-static DEVICE_ATTR(pll_ms1_freq_fract,SYSFS_PERMISSIONS,  pll_ms_freq_show,  pll_ms_freq_store);
-static DEVICE_ATTR(pll_ms1_freq_int,  SYSFS_PERMISSIONS,  pll_ms_freq_show,  pll_ms_freq_store);
-static DEVICE_ATTR(pll_ms2_freq_fract,SYSFS_PERMISSIONS,  pll_ms_freq_show,  pll_ms_freq_store);
-static DEVICE_ATTR(pll_ms2_freq_int,  SYSFS_PERMISSIONS,  pll_ms_freq_show,  pll_ms_freq_store);
-static DEVICE_ATTR(pll_ms3_freq_fract,SYSFS_PERMISSIONS,  pll_ms_freq_show,  pll_ms_freq_store);
-static DEVICE_ATTR(pll_ms3_freq_int,  SYSFS_PERMISSIONS,  pll_ms_freq_show,  pll_ms_freq_store);
-
 
 static struct attribute *pll_dev_attrs[] = {
 /*	&dev_attr_pre_init.attr,
@@ -920,14 +930,6 @@ static struct attribute *pll_dev_attrs[] = {
 	&dev_attr_pll_freq_int.attr,
 	&dev_attr_pll_by_out_fract.attr,
 	&dev_attr_pll_by_out_int.attr,
-	&dev_attr_pll_ms0_freq_fract.attr,
-	&dev_attr_pll_ms0_freq_int.attr,
-	&dev_attr_pll_ms1_freq_fract.attr,
-	&dev_attr_pll_ms1_freq_int.attr,
-	&dev_attr_pll_ms2_freq_fract.attr,
-	&dev_attr_pll_ms2_freq_int.attr,
-	&dev_attr_pll_ms3_freq_fract.attr,
-	&dev_attr_pll_ms3_freq_int.attr,
 	NULL
 };
 
@@ -1188,10 +1190,7 @@ static int make_config_out(struct device *dev)
 	for (iout=0;out_dis_states[iout];iout++) num_files++;
 	for (iout=0;out_en_states[iout];iout++) num_files++;
 	for (iout=0;out_pwr_states[iout];iout++) num_files++;
-
 	for (iout=0;out_names[iout];iout++) num_files++;
-
-
 	pattrs = devm_kzalloc(dev,(num_files+1)*sizeof(pattrs[0]), GFP_KERNEL);
 	if (!pattrs) return -ENOMEM;
 	dev_attrs = devm_kzalloc(dev, num_files*sizeof(dev_attrs[0]), GFP_KERNEL);
@@ -1202,13 +1201,12 @@ static int make_config_out(struct device *dev)
 	memset(attr_group, 0, sizeof(*attr_group));
 	for (index=0;index<num_types;index++) {
 		dev_attrs[index].attr.name=drv_configs[index].description;
-		dev_attrs[index].attr.mode=SYSFS_PERMISSIONS & SYSFS_WRITEONLY;
-		dev_attrs[index].show= NULL;
+		dev_attrs[index].attr.mode=SYSFS_PERMISSIONS;
+		dev_attrs[index].show= output_config_show;
 		dev_attrs[index].store=output_config_store;
 		pattrs[index]=&(dev_attrs[index].attr);
 	}
-
-	/*  add outputs disabled states (write only) */
+	/*  add outputs disabled states */
 	for (iout=0;out_dis_states[iout];iout++) {
 		dev_attrs[index].attr.name=out_dis_states[iout];
 		dev_attrs[index].attr.mode=SYSFS_PERMISSIONS;
@@ -1217,7 +1215,7 @@ static int make_config_out(struct device *dev)
 		pattrs[index]=&(dev_attrs[index].attr);
 		index++;
 	}
-	/*  add outputs enable (write only) */
+	/*  add outputs enable */
 	for (iout=0;out_en_states[iout];iout++) {
 		dev_attrs[index].attr.name=out_en_states[iout];
 		dev_attrs[index].attr.mode=SYSFS_PERMISSIONS;
@@ -1226,7 +1224,7 @@ static int make_config_out(struct device *dev)
 		pattrs[index]=&(dev_attrs[index].attr);
 		index++;
 	}
-	/*  add outputs enable (write only) */
+	/*  add outputs enable  */
 	for (iout=0;out_pwr_states[iout];iout++) {
 		dev_attrs[index].attr.name=out_pwr_states[iout];
 		dev_attrs[index].attr.mode=SYSFS_PERMISSIONS;
@@ -1235,7 +1233,6 @@ static int make_config_out(struct device *dev)
 		pattrs[index]=&(dev_attrs[index].attr);
 		index++;
 	}
-
 	/*  add outputs (readonly) */
 	for (iout=0;out_names[iout];iout++) {
 		dev_attrs[index].attr.name=out_names[iout];
@@ -1265,7 +1262,7 @@ static ssize_t status_show (struct device *dev, struct device_attribute *attr, c
 	int status;
 	struct i2c_client *client = to_i2c_client(dev);
 	if (((status=get_status(client)))<0) return status;
-	return sprintf(buf,"%d input clock: %s, feedback clock: %s, PLL lock: %s, calibration: %s\n",
+	return sprintf(buf,"0x%x input clock: %s, feedback clock: %s, PLL lock: %s, calibration: %s\n",
 			status,(status & 0x4)?"LOST":"OK",(status & 0x8)?"LOST":"OK",(status & 0x10)?"LOST":"OK",(status & 0x10)?"IN PROGRESS":"DONE");
 }
 
@@ -1405,6 +1402,30 @@ static int get_out_frequency_txt(struct device *dev, char *buf, int chn)
 	if (((rc=get_out_frequency(client, out_freq, chn)))<0) return sprintf (buf,"Not set");
 	if (out_freq[1]==0) return sprintf(buf, "%lld Hz",out_freq[0]);
     return sprintf(buf, "%lld-%lld/%lld Hz",out_freq[0],out_freq[1],out_freq[2]);
+}
+
+static ssize_t output_config_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int chn, i, rc;
+	char * cp=buf;
+	struct i2c_client *client = to_i2c_client(dev);
+	for (i=0; drv_configs[i].description; i++)	if (strcmp(attr->attr.name,drv_configs[i].description) == 0) {
+			break;
+	}
+	if (!drv_configs[i].description) return -EINVAL; /* filename does not exist - BUG */
+	for (chn=0;chn<4;chn++){
+		if (((rc=get_drv_type    (client, chn)))<0) return rc;
+		if (rc!=drv_configs[i].fmt) continue;
+		if (((rc=get_drv_vdd     (client, chn)))<0) return rc;
+		if (rc!=drv_configs[i].vdd) continue;
+		if (((rc=get_drv_trim    (client, chn)))<0) return rc;
+		if (rc!=drv_configs[i].trim) continue;
+		if (((rc=get_drv_invert  (client, chn)))<0) return rc;
+		if (rc!= (drv_configs[i].invert & 3)) continue;
+		buf+=sprintf(buf," %d",chn);
+	}
+	buf+=sprintf(buf,"\n");
+    return buf-cp;
 }
 
 static ssize_t output_config_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -2011,9 +2032,6 @@ static ssize_t ss_vals_store(struct device *dev, struct device_attribute *attr, 
 		} else {
 			if (((rc=disable_spread_spectrum(client, chn)))<0) return rc;
 		}
-		if (((rc=set_ss_state(client, 1, chn)))<0) return rc;
-//static int enable_spread_spectrum(struct i2c_client *client,int chn)
-		
 	}
     return count;
 }
@@ -2110,7 +2128,7 @@ static ssize_t pll_freq_store(struct device *dev, struct device_attribute *attr,
 }
 
 
-static ssize_t pll_ms_freq_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t ms_freq_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int rc,chn;
 	u64 ms_freq[3];
@@ -2119,7 +2137,7 @@ static ssize_t pll_ms_freq_show(struct device *dev, struct device_attribute *att
 	if (((rc=get_pll_ms_freq(client, ms_freq, chn)))<0) return rc;
     return sprintf(buf, "%lld %lld %lld\n",ms_freq[0],ms_freq[1],ms_freq[2]);
 }
-static ssize_t pll_ms_freq_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+static ssize_t ms_freq_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int rc,chn,int_div;
 	u64 freq[3];
@@ -2863,6 +2881,7 @@ static int calc_ss_down_to_regs(struct i2c_client *client, u32 * up_regs, u32 * 
 	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
 	rate=clientdata->spread_spectrum_rate[chn]; /* in Hz */
 	amp=clientdata->spread_spectrum_amp[chn]; /* in 0.01% */
+	dev_dbg(&client->dev,"rate=%d, amp=%d\n",rate,amp);
 
 	if ((rate==0) || (amp==0)) return 1; /* Should disable SS */
 	
@@ -2884,10 +2903,12 @@ static int calc_ss_down_to_regs(struct i2c_client *client, u32 * up_regs, u32 * 
 	ssud=(u32) div64_u64(ms_freq,rate << 2);
 	if (updown_reg) updown_reg[0]= ssud;
 	if (down_regs){
-		xy[0]=6400000000LL*(ms[0]*ms[2]+ms[1]);
+		xy[0]=6400000000LL*amp*(ms[0]*ms[2]+ms[1]);
 		xy[0]=div64_u64(xy[0],ms[2]);
 		xy[1]= 100000000LL*(10000-amp)*ssud;
+		dev_dbg(&client->dev,"x=0x%llx, y=0x%llx,\n",xy[0],xy[1]);
 		remove_common_factor(xy);
+		dev_dbg(&client->dev,"x=0x%llx, y=0x%llx,\n",xy[0],xy[1]);
 		down_regs[0]= (u32) div64_u64(xy[0],xy[1]);
 		down_regs[2]= (u32)xy[1];
 		down_regs[1]= (u32)xy[0] -  down_regs[2]*down_regs[0];
@@ -2897,6 +2918,8 @@ static int calc_ss_down_to_regs(struct i2c_client *client, u32 * up_regs, u32 * 
 		up_regs[1]=1;
 		up_regs[2]=0;
 	}
+	dev_dbg(&client->dev,"updown=0x%x, down[0]=0x%x, down[1]=0x%x, down[2]=0x%x, up[0]=0x%x, up[1]=0x%x, up[2]=0x%x\n",
+			updown_reg[0],down_regs[0],down_regs[1],down_regs[2],up_regs[0],up_regs[1],up_regs[2]);
 	return 0;
 }
 
@@ -2916,19 +2939,26 @@ static int get_ss_regs(struct i2c_client *client, u32 * up_regs, u32 * down_regs
 	if (updown_reg) {
 		if (((updown_reg[0]=read_multireg64 (client,  awe_msx_ssud[chn])))<0) return (int) updown_reg[0];
 	}
-		return 0;
+	return 0;
 }
 static int set_ss_regs(struct i2c_client *client, u32 * up_regs, u32 * down_regs, u32 * updown_reg, int chn) /* chn 0,1,2,3, */
 {
 	int i,rc;
 	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
-	if (up_regs) for (i=0;i<3;i++){
-		if (((rc=write_multireg64 (client, (u64) up_regs[i], awe_msx_ssup[chn][i])))<0) return rc;
+	if (up_regs){
+		dev_dbg(&client->dev,"up[0]=0x%x, up[1]=0x%x, up[2]=0x%x\n",up_regs[0],up_regs[1],up_regs[2]);
+		for (i=0;i<3;i++){
+			if (((rc=write_multireg64 (client, (u64) up_regs[i], awe_msx_ssup[chn][i])))<0) return rc;
+		}
 	}
-	if (down_regs) for (i=0;i<3;i++){
-		if (((rc=write_multireg64 (client, (u64) down_regs[i], awe_msx_ssdn[chn][i])))<0) return rc;
+	if (down_regs) {
+		dev_dbg(&client->dev,"down[0]=0x%x, down[1]=0x%x, down[2]=0x%x\n",down_regs[0],down_regs[1],down_regs[2]);
+		for (i=0;i<3;i++){
+			if (((rc=write_multireg64 (client, (u64) down_regs[i], awe_msx_ssdn[chn][i])))<0) return rc;
+		}
 	}
 	if (updown_reg) {
+		dev_dbg(&client->dev,"updown=0x%x\n",updown_reg[0]);
 		if (((rc=write_multireg64 (client, (u64) updown_reg[0], awe_msx_ssud[chn])))<0) return rc;
 	}
 	return 0;
@@ -4464,19 +4494,18 @@ static int write_reg(struct i2c_client *client, u16 reg, u8 val, u8 mask)
 	int rc,page;
 	struct si5338_data_t *clientdata = i2c_get_clientdata(client);
 	if (mask==0) return 0;
-	page=(reg >> 8) & REG5338_PAGE_MASK;
-	if (page != (clientdata->last_page)) { /* set page if needed */
-		if (((rc=_write_single_reg(client, REG5338_PAGE, page)))<0) return rc;
-	}
-//	dev_info(&client->dev,"reg=0x%x, val=0x%x, mask=0x%x\n", (int) reg, (int) val, (int) mask);
 	dev_dbg(&client->dev,"reg=0x%x, val=0x%x, mask=0x%x\n", (int) reg, (int) val, (int) mask);
 	if (mask !=0xff){
-	    if (((rc=read_reg(client, reg & 0xff)))<0) return rc;
+	    if (((rc=read_reg(client, reg)))<0) return rc; /* full register including page */
 	    val=((val ^ rc) & mask)^ rc;
 	    if ((val==rc) && !(clientdata->cache[reg].flags & CACHE_VOLAT)) {
 	    	dev_dbg(&client->dev,"No change and not volatile -> no write\n");
 	    	return 0;
 	    }
+	}
+	page=(reg >> 8) & REG5338_PAGE_MASK;
+	if (page != (clientdata->last_page)) { /* set page if needed */
+		if (((rc=_write_single_reg(client, REG5338_PAGE, page)))<0) return rc;
 	}
 	return  _write_single_reg(client, reg & 0xff, val);
 }
