@@ -35,7 +35,8 @@
 
 #define CACHE_INIT                      1
 #define CACHE_VOLAT                     2
-#define LAST_REG                      255
+
+#define LAST_REG                     0x33
 
 
 #define AWE_SCR1                   0x07ff
@@ -139,9 +140,6 @@
 #define AWE_PGSTAT_LDO2            0x1320
 #define AWE_PGSTAT_LDO3            0x1340
 #define AWE_PGSTAT_LDO4            0x1380
-
-
-#define LAST_REG                   255
 
 struct ltc3589_cache_t {
 	u8 flags;
@@ -638,9 +636,9 @@ static ssize_t mode_show (struct device *dev, struct device_attribute *attr, cha
 	char * cp=buf;
 	struct i2c_client *client = to_i2c_client(dev);
 	if (((rc=read_field(client,AWE_SCR1)))<0) return rc;
-	for (m=0;m<ARRAY_SIZE(modes);m++) if (strcmp(attr->attr.name,modes[m])) break;
+	for (m=0;m<ARRAY_SIZE(modes);m++) if (strcmp(attr->attr.name,modes[m])==0) break;
 	if (m>=ARRAY_SIZE(modes)) return -EINVAL;
-	for (i=0;i<4;i+=2) if (((rc>>i) & 3) == m) {
+	for (i=0;i<4;i++) if (((rc>>(2*i)) & 3) == m) {
 		if (buf!=cp) buf+=sprintf(buf," ");
 		buf+=sprintf(buf,"%s",chn_names[i]);
 	}
@@ -654,7 +652,7 @@ static ssize_t mode_store(struct device *dev, struct device_attribute *attr, con
 	int rc,mask,m,data;
 	u32 awe;
 	struct i2c_client *client = to_i2c_client(dev);
-	for (m=0;m<ARRAY_SIZE(modes);m++) if (strcmp(attr->attr.name,modes[m])) break;
+	for (m=0;m<ARRAY_SIZE(modes);m++) if (strcmp(attr->attr.name,modes[m])==0) break;
 	if (m>=ARRAY_SIZE(modes)) return -EINVAL;
 	mask=read_channel_mask(buf);
 	mask=((mask & 1)? 3:0) | ((mask & 2)? 0xc:0) | ((mask & 4)? 0x30:0) | ((mask & 8)? 0x40:0);
@@ -670,7 +668,7 @@ static ssize_t reference_select_show (struct device *dev, struct device_attribut
 	char * cp=buf;
 	struct i2c_client *client = to_i2c_client(dev);
 	if (((rc=read_field(client,AWE_VCCR)))<0) return rc;
-	for (m=0;m<ARRAY_SIZE(reference_sel);m++) if (strcmp(attr->attr.name,reference_sel[m])) break;
+	for (m=0;m<ARRAY_SIZE(reference_sel);m++) if (strcmp(attr->attr.name,reference_sel[m])==0) break;
 	if (m>=ARRAY_SIZE(reference_sel)) return -EINVAL;
 	for (i=0;i<4;i++) if (((rc>>(2*i+1)) & 1)==m){
 		chn=i;
@@ -692,7 +690,7 @@ static ssize_t reference_select_store(struct device *dev, struct device_attribut
 	int rc,mask,m,data;
 	u32 awe;
 	struct i2c_client *client = to_i2c_client(dev);
-	for (m=0;m<ARRAY_SIZE(reference_sel);m++) if (strcmp(attr->attr.name,reference_sel[m])) break;
+	for (m=0;m<ARRAY_SIZE(reference_sel);m++) if (strcmp(attr->attr.name,reference_sel[m])==0) break;
 	if (m>=ARRAY_SIZE(reference_sel)) return -EINVAL;
 	mask=read_channel_mask(buf);
 	mask=((mask & 1)? 2:0) | ((mask & 2)? 0x8:0) | ((mask & 4)? 0x20:0) | ((mask & 0x20)? 0x80:0);
@@ -741,11 +739,23 @@ static ssize_t field_store(struct device *dev, struct device_attribute *attr, co
 {
 	int rc,i;
 	int data;
+	u32 awe;
 	struct i2c_client *client = to_i2c_client(dev);
-	for (i=0;i<ARRAY_SIZE(named_fields);i++) if (strcmp(attr->attr.name,named_fields[i].name)) break;
-	if (i>=ARRAY_SIZE(named_fields)) return -EINVAL;
+	for (i=0;i<ARRAY_SIZE(named_fields);i++) if (strcmp(attr->attr.name,named_fields[i].name==0)) {
+		awe=named_fields[i].awe;
+		dev_dbg(dev,"i=%d, field name=%s awe=0x%04x\n", i, named_fields[i].name, (int) awe);
+		break;
+	}
+	if (i>=ARRAY_SIZE(named_fields)) {
+		for (i=0;i<ARRAY_SIZE(status_fields);i++) if (strcmp(attr->attr.name,status_fields[i].name)==0) {
+			awe=status_fields[i].awe;
+			dev_dbg(dev,"i=%d, status field name=%s awe=0x%04x\n", i, status_fields[i].name, (int) awe);
+			break;
+		}
+		if (i>=ARRAY_SIZE(status_fields)) return -EINVAL;
+	}
     sscanf(buf, "%du", &data);
-	if (((rc=write_field (client, data, named_fields[i].awe)))<0) return rc;
+	if (((rc=write_field (client, data, awe)))<0) return rc;
     return count;
 }
 
@@ -753,10 +763,22 @@ static ssize_t get_field_value (struct device *dev, const char* name, char *buf,
 {
 	int rc,i;
 	char * cp=buf;
+	u32 awe;
 	struct i2c_client *client = to_i2c_client(dev);
-	for (i=0;i<ARRAY_SIZE(named_fields);i++) if (strcmp(name,named_fields[i].name)) break;
-	if (i>=ARRAY_SIZE(named_fields)) return -EINVAL;
-	if (((rc=read_field(client,named_fields[i].awe)))<0) return rc;
+	for (i=0;i<ARRAY_SIZE(named_fields);i++) if (strcmp(name,named_fields[i].name)==0){
+		awe=named_fields[i].awe;
+		dev_dbg(dev,"i=%d, field name=%s awe=0x%04x\n", i, named_fields[i].name, (int) awe);
+		break;
+	}
+	if (i>=ARRAY_SIZE(named_fields)) {
+		for (i=0;i<ARRAY_SIZE(status_fields);i++) if (strcmp(name,status_fields[i].name)==0){
+			awe=status_fields[i].awe;
+			dev_dbg(dev,"i=%d, status field name=%s awe=0x%04x\n", i, status_fields[i].name, (int) awe);
+			break;
+		}
+		if (i>=ARRAY_SIZE(status_fields)) return -EINVAL;
+	}
+	if (((rc=read_field(client,awe)))<0) return rc;
 	buf+=sprintf(buf,"%d",rc);
 	if (newline) buf+=sprintf(buf,"\n");
 	return buf-cp;
@@ -971,10 +993,10 @@ static void ltc3589_init_of(struct i2c_client *client)
     int init_type=0; /* 0 - none, 1 - always, 2 - if not running (TODO) */
 	struct device_node *node = client->dev.of_node;
 	int len,i,n;
-	u16 page_reg;
-	char buf[40];
-	u64 freq[3];
 
+	char buf[40];
+
+	
 	struct ltc3589_setup_data  {
 		u8		page;
 		u8		reg;
