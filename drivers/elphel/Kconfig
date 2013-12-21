@@ -1,0 +1,11 @@
+#
+# Elphel devices
+#
+
+menu "Elphel devices"
+config LTC3589
+	tristate "Support LTC3589 voltage regulator"
+	depends on I2C && SYSFS
+	help
+	  Say Y here if you have a Elphel board 10393.
+endmenu
