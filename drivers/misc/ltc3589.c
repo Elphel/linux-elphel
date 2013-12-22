@@ -18,7 +18,6 @@
  *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/i2c.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -26,7 +25,7 @@
 #include <linux/mutex.h>
 #include <linux/string.h>
 #include <linux/of.h>
-#include <linux/math64.h>
+#include <linux/i2c/ltc3589.h>
  
 #define DRV_VERSION "1.0"
 #define SYSFS_PERMISSIONS         0644 /* default permissions for sysfs files */
@@ -39,107 +38,6 @@
 #define LAST_REG                     0x33
 
 
-#define AWE_SCR1                   0x07ff
-#define AWE_SCR1_MODE_SD1          0x0703
-#define AWE_SCR1_MODE_SD2          0x070c
-#define AWE_SCR1_MODE_SD3          0x0730
-#define AWE_SCR1_MODE_BB           0x0740
-
-#define AWE_OVEN                   0x10ff
-#define AWE_OVEN_EN_SD1            0x1001
-#define AWE_OVEN_EN_SD2            0x1002
-#define AWE_OVEN_EN_SD3            0x1004
-#define AWE_OVEN_EN_BB             0x1008
-#define AWE_OVEN_EN_LDO2           0x1010
-#define AWE_OVEN_EN_LDO3           0x1020
-#define AWE_OVEN_EN_LDO4           0x1040
-#define AWE_OVEN_ONLY              0x1080
-
-#define AWE_SCR2                   0x12ff
-#define AWE_SCR2_NOWAIT_SD1        0x1201
-#define AWE_SCR2_NOWAIT_SD2        0x1202
-#define AWE_SCR2_NOWAIT_SD3        0x1204
-#define AWE_SCR2_NOWAIT_BB         0x1208
-#define AWE_SCR2_NOWAIT_LDO2       0x1210
-#define AWE_SCR2_NOWAIT_LDO3       0x1220
-#define AWE_SCR2_NOWAIT_LDO4       0x1240
-#define AWE_SCR2_PGOOD_SHTDN_INH   0x1280
-
-#define AWE_VCCR                   0x20ff
-#define AWE_VCCR_SLEW_SD1          0x2001 /* self clearing bit */
-#define AWE_VCCR_REF_SEL_SD1       0x2002
-#define AWE_VCCR_SLEW_SD2          0x2004 /* self clearing bit */
-#define AWE_VCCR_REF_SEL_SD2       0x2008
-#define AWE_VCCR_SLEW_SD3          0x2010 /* self clearing bit */
-#define AWE_VCCR_REF_SEL_SD3       0x2020
-#define AWE_VCCR_SLEW_LDO2         0x2040 /* self clearing bit */
-#define AWE_VCCR_REF_SEL_LDO2      0x2080
-
-#define AWE_CLIRQ                  0x21ff
-
-#define AWE_B1DTV1                 0x23ff
-#define AWE_B1DTV1_REF             0x231f
-#define AWE_B1DTV1_PGMASK          0x2320
-#define AWE_B1DTV1_DVDT            0x23c0
-
-#define AWE_B1DTV2                 0x24ff
-#define AWE_B1DTV2_REF             0x241f
-#define AWE_B1DTV2_CLKRATE         0x2420
-#define AWE_B1DTV2_PHASE           0x2440
-#define AWE_B1DTV2_KEEP_ALIVE      0x2480
-
-#define AWE_VRRCR                  0x25ff
-#define AWE_VRRCR_SD1              0x2503
-#define AWE_VRRCR_SD2              0x250c
-#define AWE_VRRCR_SD3              0x2530
-#define AWE_VRRCR_LDO2             0x25c0
-
-#define AWE_B2DTV1                 0x26ff
-#define AWE_B2DTV1_REF             0x261f
-#define AWE_B2DTV1_PGMASK          0x2620
-
-#define AWE_B2DTV2                 0x27ff
-#define AWE_B2DTV2_REF             0x271f
-#define AWE_B2DTV2_CLKRATE         0x2720
-#define AWE_B2DTV2_PHASE           0x2740
-#define AWE_B2DTV2_KEEP_ALIVE      0x2780
-
-#define AWE_B3DTV1                 0x29ff
-#define AWE_B3DTV1_REF             0x291f
-#define AWE_B3DTV1_PGMASK          0x2920
-
-#define AWE_B3DTV2                 0x2aff
-#define AWE_B3DTV2_REF             0x2a1f
-#define AWE_B3DTV2_CLKRATE         0x2a20
-#define AWE_B3DTV2_PHASE           0x2a40
-#define AWE_B3DTV2_KEEP_ALIVE      0x2a80
-
-#define AWE_L2DTV1                 0x32ff
-#define AWE_L2DTV1_REF             0x321f
-#define AWE_L2DTV1_PGMASK          0x3220
-#define AWE_L2DTV1_KEEP_ALIVE      0x3280
-
-#define AWE_L2DTV2                 0x33ff
-#define AWE_L2DTV2_REF             0x331f
-#define AWE_L2DTV2_REF_LDO4        0x3360
-#define AWE_L2DTV2_MODE_LDO4       0x3380
-
-#define AWE_IRQSTAT                0x02ff
-#define AWE_IRQSTAT_PGOOD_TIMOUT   0x0208
-#define AWE_IRQSTAT_NEAR_UV        0x0210
-#define AWE_IRQSTAT_HARD_UV        0x0220
-#define AWE_IRQSTAT_NEAR_THERM     0x0240
-#define AWE_IRQSTAT_HARD_THERM     0x0280
-
-#define AWE_PGSTAT                 0x13ff
-#define AWE_PGSTAT_LDO1            0x1301
-#define AWE_PGSTAT_SD1             0x1302
-#define AWE_PGSTAT_SD2             0x1304
-#define AWE_PGSTAT_SD3             0x1308
-#define AWE_PGSTAT_BB              0x1310
-#define AWE_PGSTAT_LDO2            0x1320
-#define AWE_PGSTAT_LDO3            0x1340
-#define AWE_PGSTAT_LDO4            0x1380
 
 struct ltc3589_cache_t {
 	u8 flags;
@@ -163,56 +61,56 @@ struct named_fields_t {
 };
 
 static const struct named_fields_t status_fields[]={
-		{"power_good",           AWE_PGSTAT},
-		{"pgood_ldo1",           AWE_PGSTAT_LDO1},
-		{"pgood_sd1",            AWE_PGSTAT_SD1},
-		{"pgood_sd2",            AWE_PGSTAT_SD2},
-		{"pgood_sd3",            AWE_PGSTAT_SD3},
-		{"pgood_bb",             AWE_PGSTAT_BB},
-		{"pgood_ldo2",           AWE_PGSTAT_LDO2},
-		{"pgood_ldo3",           AWE_PGSTAT_LDO3},
-		{"pgood_ldo4",           AWE_PGSTAT_LDO4},
-		{"irqstat",              AWE_IRQSTAT},
-		{"irqstat_pgoot_timeout",AWE_IRQSTAT_PGOOD_TIMOUT},
-		{"irqstat_near_uv",      AWE_IRQSTAT_NEAR_UV},
-		{"irqstat_hard_uv",      AWE_IRQSTAT_HARD_UV},
-		{"irqstat_near_therm",   AWE_IRQSTAT_NEAR_THERM},
-		{"irqstat_hard_therm",   AWE_IRQSTAT_HARD_THERM},
+		{"power_good",           LTC3589_AWE_PGSTAT},
+		{"pgood_ldo1",           LTC3589_AWE_PGSTAT_LDO1},
+		{"pgood_sd1",            LTC3589_AWE_PGSTAT_SD1},
+		{"pgood_sd2",            LTC3589_AWE_PGSTAT_SD2},
+		{"pgood_sd3",            LTC3589_AWE_PGSTAT_SD3},
+		{"pgood_bb",             LTC3589_AWE_PGSTAT_BB},
+		{"pgood_ldo2",           LTC3589_AWE_PGSTAT_LDO2},
+		{"pgood_ldo3",           LTC3589_AWE_PGSTAT_LDO3},
+		{"pgood_ldo4",           LTC3589_AWE_PGSTAT_LDO4},
+		{"irqstat",              LTC3589_AWE_IRQSTAT},
+		{"irqstat_pgoot_timeout",LTC3589_AWE_IRQSTAT_PGOOD_TIMOUT},
+		{"irqstat_near_uv",      LTC3589_AWE_IRQSTAT_NEAR_UV},
+		{"irqstat_hard_uv",      LTC3589_AWE_IRQSTAT_HARD_UV},
+		{"irqstat_near_therm",   LTC3589_AWE_IRQSTAT_NEAR_THERM},
+		{"irqstat_hard_therm",   LTC3589_AWE_IRQSTAT_HARD_THERM},
 };
 static const struct named_fields_t named_fields[]={
-		{"ref1_sd1",        AWE_B1DTV1_REF},
-		{"ref2_sd1",        AWE_B1DTV2_REF},
-		{"ref1_sd2",        AWE_B2DTV1_REF},
-		{"ref2_sd2",        AWE_B2DTV2_REF},
-		{"ref1_sd3",        AWE_B3DTV1_REF},
-		{"ref2_sd3",        AWE_B3DTV2_REF},
-		{"ref1_ldo2",       AWE_L2DTV1_REF},
-		{"ref2_ldo2",       AWE_L2DTV2_REF},
-		{"ref_ldo4",        AWE_B1DTV1_REF},
-		{"dv_dt_sd1",       AWE_B1DTV1_DVDT},
-		{"pgood_mask_sd1",  AWE_B1DTV1_PGMASK},
-		{"pgood_mask_sd2",  AWE_B2DTV1_PGMASK},
-		{"pgood_mask_sd3",  AWE_B3DTV1_PGMASK},
-		{"pgood_mask_ldo21",AWE_L2DTV1_PGMASK},
-		{"clock_rate_sd1",  AWE_B1DTV2_CLKRATE},
-		{"clock_rate_sd2",  AWE_B2DTV2_CLKRATE},
-		{"clock_rate_sd3",  AWE_B3DTV2_CLKRATE},
-		{"clock_phase_sd1", AWE_B1DTV2_PHASE},
-		{"clock_phase_sd2", AWE_B2DTV2_PHASE},
-		{"clock_phase_sd3", AWE_B3DTV2_PHASE},
-		{"keep_alive_sd1",  AWE_B1DTV2_KEEP_ALIVE},
-		{"keep_alive_sd2",  AWE_B2DTV2_KEEP_ALIVE},
-		{"keep_alive_sd3",  AWE_B3DTV2_KEEP_ALIVE},
-		{"keep_alive_ldo2", AWE_L2DTV1_KEEP_ALIVE},
-		{"slew_rate_sd1",   AWE_VRRCR_SD1},
-		{"slew_rate_sd2",   AWE_VRRCR_SD2},
-		{"slew_rate_sd3",   AWE_VRRCR_SD3},
-		{"slew_rate_ldo2",  AWE_VRRCR_LDO2},
-		{"oven_ldo4",       AWE_L2DTV2_MODE_LDO4},
-		{"oven_only",       AWE_OVEN_ONLY},
+		{"ref1_sd1",        LTC3589_AWE_B1DTV1_REF},
+		{"ref2_sd1",        LTC3589_AWE_B1DTV2_REF},
+		{"ref1_sd2",        LTC3589_AWE_B2DTV1_REF},
+		{"ref2_sd2",        LTC3589_AWE_B2DTV2_REF},
+		{"ref1_sd3",        LTC3589_AWE_B3DTV1_REF},
+		{"ref2_sd3",        LTC3589_AWE_B3DTV2_REF},
+		{"ref1_ldo2",       LTC3589_AWE_L2DTV1_REF},
+		{"ref2_ldo2",       LTC3589_AWE_L2DTV2_REF},
+		{"ref_ldo4",        LTC3589_AWE_B1DTV1_REF},
+		{"dv_dt_sd1",       LTC3589_AWE_B1DTV1_DVDT},
+		{"pgood_mask_sd1",  LTC3589_AWE_B1DTV1_PGMASK},
+		{"pgood_mask_sd2",  LTC3589_AWE_B2DTV1_PGMASK},
+		{"pgood_mask_sd3",  LTC3589_AWE_B3DTV1_PGMASK},
+		{"pgood_mask_ldo21",LTC3589_AWE_L2DTV1_PGMASK},
+		{"clock_rate_sd1",  LTC3589_AWE_B1DTV2_CLKRATE},
+		{"clock_rate_sd2",  LTC3589_AWE_B2DTV2_CLKRATE},
+		{"clock_rate_sd3",  LTC3589_AWE_B3DTV2_CLKRATE},
+		{"clock_phase_sd1", LTC3589_AWE_B1DTV2_PHASE},
+		{"clock_phase_sd2", LTC3589_AWE_B2DTV2_PHASE},
+		{"clock_phase_sd3", LTC3589_AWE_B3DTV2_PHASE},
+		{"keep_alive_sd1",  LTC3589_AWE_B1DTV2_KEEP_ALIVE},
+		{"keep_alive_sd2",  LTC3589_AWE_B2DTV2_KEEP_ALIVE},
+		{"keep_alive_sd3",  LTC3589_AWE_B3DTV2_KEEP_ALIVE},
+		{"keep_alive_ldo2", LTC3589_AWE_L2DTV1_KEEP_ALIVE},
+		{"slew_rate_sd1",   LTC3589_AWE_VRRCR_SD1},
+		{"slew_rate_sd2",   LTC3589_AWE_VRRCR_SD2},
+		{"slew_rate_sd3",   LTC3589_AWE_VRRCR_SD3},
+		{"slew_rate_ldo2",  LTC3589_AWE_VRRCR_LDO2},
+		{"oven_ldo4",       LTC3589_AWE_L2DTV2_MODE_LDO4},
+		{"oven_only",       LTC3589_AWE_OVEN_ONLY},
 };
 
-static const int volatile_registers[]={AWE_IRQSTAT_PGOOD_TIMOUT, AWE_PGSTAT_LDO1, AWE_VCCR,-1};
+static const int volatile_registers[]={LTC3589_AWE_IRQSTAT_PGOOD_TIMOUT, LTC3589_AWE_PGSTAT_LDO1, LTC3589_AWE_VCCR,-1};
 static const char * chn_names[]={"SD1","SD2","SD3","BB","LDO1","LDO2","LDO3","LDO4"};
 static const char * modes[]={"continuous","burst","pulse_skip","invalid"};
 static const char * pwr_states[]={"power_off","power_on"};
@@ -276,6 +174,18 @@ static int ltc3589_sysfs_register(struct device *dev);
 static void ltc3589_init_of(struct i2c_client *client);
 static int ltc3589_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id);
 static int ltc3589_i2c_remove(struct i2c_client *client);
+
+int read_field_ltc3589 (struct i2c_client *client, u32 awe)
+{
+	return read_field (client, awe);
+}
+EXPORT_SYMBOL_GPL(read_field_ltc3589);
+
+int write_field_ltc3589 (struct i2c_client *client, u8 data, u32 awe)
+{
+	return write_field (client, data, awe);
+}
+EXPORT_SYMBOL_GPL(write_field_ltc3589);
 
 /* raw access to i2c registers, need to set address (9 bits) first, then r/w data */
 
@@ -588,7 +498,7 @@ static ssize_t power_wait_on_off_show (struct device *dev, struct device_attribu
 	char * cp=buf;
 	u32 awe;
 	struct i2c_client *client = to_i2c_client(dev);
-	awe=   ((strcmp(attr->attr.name,wait_states[0])==0) || (strcmp(attr->attr.name,wait_states[1])==0))?AWE_SCR2:AWE_OVEN;
+	awe=   ((strcmp(attr->attr.name,wait_states[0])==0) || (strcmp(attr->attr.name,wait_states[1])==0))?LTC3589_AWE_SCR2:LTC3589_AWE_OVEN;
 	invert=((strcmp(attr->attr.name,pwr_states[0])==0) || (strcmp(attr->attr.name,wait_states[0])==0))?0xff:0;
 	if (((rc=read_field(client,awe)))<0) return rc;
 	rc=((rc & 0xf) | 0x10 | ((rc & 0x70)<<1)) ^ invert;
@@ -605,7 +515,7 @@ static ssize_t power_wait_on_off_store(struct device *dev, struct device_attribu
 	int rc,mask,data;
 	u32 awe;
 	struct i2c_client *client = to_i2c_client(dev);
-	awe= ((strcmp(attr->attr.name,wait_states[0])==0) || (strcmp(attr->attr.name,wait_states[1])==0))?AWE_SCR2:AWE_OVEN;
+	awe= ((strcmp(attr->attr.name,wait_states[0])==0) || (strcmp(attr->attr.name,wait_states[1])==0))?LTC3589_AWE_SCR2:LTC3589_AWE_OVEN;
 	data=((strcmp(attr->attr.name,pwr_states[0])==0) || (strcmp(attr->attr.name,wait_states[0])==0))?0:0xff;
 	mask=read_channel_mask(buf);
 	mask=(mask & 0xf) | ((mask >> 1) & 0x70);
@@ -618,7 +528,7 @@ static ssize_t pgood_timeout_inhibit_show (struct device *dev, struct device_att
 {
 	int rc;
 	struct i2c_client *client = to_i2c_client(dev);
-	if (((rc=read_field(client,AWE_SCR2_PGOOD_SHTDN_INH)))<0) return rc;
+	if (((rc=read_field(client,LTC3589_AWE_SCR2_PGOOD_SHTDN_INH)))<0) return rc;
 	return sprintf(buf, "%d\n",rc);
 }
 static ssize_t pgood_timeout_inhibit_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -626,7 +536,7 @@ static ssize_t pgood_timeout_inhibit_store(struct device *dev, struct device_att
 	int rc,data;
 	struct i2c_client *client = to_i2c_client(dev);
     sscanf(buf, "%d", &data);
-	if (((rc=write_field(client,data?1:0,AWE_SCR2_PGOOD_SHTDN_INH)))<0) return rc;
+	if (((rc=write_field(client,data?1:0,LTC3589_AWE_SCR2_PGOOD_SHTDN_INH)))<0) return rc;
     return count;
 }
 
@@ -635,7 +545,7 @@ static ssize_t mode_show (struct device *dev, struct device_attribute *attr, cha
 	int rc,m,i;
 	char * cp=buf;
 	struct i2c_client *client = to_i2c_client(dev);
-	if (((rc=read_field(client,AWE_SCR1)))<0) return rc;
+	if (((rc=read_field(client,LTC3589_AWE_SCR1)))<0) return rc;
 	for (m=0;m<ARRAY_SIZE(modes);m++) if (strcmp(attr->attr.name,modes[m])==0) break;
 	if (m>=ARRAY_SIZE(modes)) return -EINVAL;
 	for (i=0;i<4;i++) if (((rc>>(2*i)) & 3) == m) {
@@ -656,7 +566,7 @@ static ssize_t mode_store(struct device *dev, struct device_attribute *attr, con
 	if (m>=ARRAY_SIZE(modes)) return -EINVAL;
 	mask=read_channel_mask(buf);
 	mask=((mask & 1)? 3:0) | ((mask & 2)? 0xc:0) | ((mask & 4)? 0x30:0) | ((mask & 8)? 0x40:0);
-	awe = (AWE_SCR1 & 0xff00) | mask;
+	awe = (LTC3589_AWE_SCR1 & 0xff00) | mask;
 	data= m | (m<<2) | (m<<4) | (m<<6);
 	if (((rc=write_field (client, data, awe)))<0) return rc;
     return count;
@@ -667,7 +577,7 @@ static ssize_t reference_select_show (struct device *dev, struct device_attribut
 	int rc,m,i,chn;
 	char * cp=buf;
 	struct i2c_client *client = to_i2c_client(dev);
-	if (((rc=read_field(client,AWE_VCCR)))<0) return rc;
+	if (((rc=read_field(client,LTC3589_AWE_VCCR)))<0) return rc;
 	for (m=0;m<ARRAY_SIZE(reference_sel);m++) if (strcmp(attr->attr.name,reference_sel[m])==0) break;
 	if (m>=ARRAY_SIZE(reference_sel)) return -EINVAL;
 	for (i=0;i<4;i++) if (((rc>>(2*i+1)) & 1)==m){
@@ -695,7 +605,7 @@ static ssize_t reference_select_store(struct device *dev, struct device_attribut
 	mask=read_channel_mask(buf);
 	mask=((mask & 1)? 2:0) | ((mask & 2)? 0x8:0) | ((mask & 4)? 0x20:0) | ((mask & 0x20)? 0x80:0);
 	
-	awe = (AWE_VCCR & 0xff00) | mask;
+	awe = (LTC3589_AWE_VCCR & 0xff00) | mask;
 	data= m?0xff:0;
 	if (((rc=write_field (client, data, awe)))<0) return rc;
     return count;
@@ -706,7 +616,7 @@ static ssize_t reference_select_go_show (struct device *dev, struct device_attri
 	int rc,i,chn;
 	char * cp=buf;
 	struct i2c_client *client = to_i2c_client(dev);
-	if (((rc=read_field(client,AWE_VCCR)))<0) return rc;
+	if (((rc=read_field(client,LTC3589_AWE_VCCR)))<0) return rc;
 	for (i=0;i<4;i++) if ((rc>>(2*i)) & 1){
 		chn=i;
 		if (i==3) chn=5 ; /* LDO2 */
@@ -724,7 +634,7 @@ static ssize_t reference_select_go_store(struct device *dev, struct device_attri
 	struct i2c_client *client = to_i2c_client(dev);
 	mask=read_channel_mask(buf);
 	mask=((mask & 1)? 1:0) | ((mask & 2)? 0x4:0) | ((mask & 4)? 0x10:0) | ((mask & 0x20)? 0x40:0);
-	awe = (AWE_VCCR & 0xff00) | mask;
+	awe = (LTC3589_AWE_VCCR & 0xff00) | mask;
 	data= 0xff;
 	if (((rc=write_field (client, data, awe)))<0) return rc;
     return count;
@@ -741,7 +651,7 @@ static ssize_t field_store(struct device *dev, struct device_attribute *attr, co
 	int data;
 	u32 awe;
 	struct i2c_client *client = to_i2c_client(dev);
-	for (i=0;i<ARRAY_SIZE(named_fields);i++) if (strcmp(attr->attr.name,named_fields[i].name==0)) {
+	for (i=0;i<ARRAY_SIZE(named_fields);i++) if (strcmp(attr->attr.name,named_fields[i].name)==0) {
 		awe=named_fields[i].awe;
 		dev_dbg(dev,"i=%d, field name=%s awe=0x%04x\n", i, named_fields[i].name, (int) awe);
 		break;
@@ -788,7 +698,7 @@ static ssize_t irq_show (struct device *dev, struct device_attribute *attr, char
 {
 	int rc;
 	struct i2c_client *client = to_i2c_client(dev);
-	if (((rc=read_field(client,AWE_IRQSTAT)))<0) return rc;
+	if (((rc=read_field(client,LTC3589_AWE_IRQSTAT)))<0) return rc;
 	return sprintf(buf,"%d\n",rc);
 }
 
@@ -797,13 +707,13 @@ static ssize_t irq_show_txt (struct device *dev, struct device_attribute *attr, 
 	int rc;
 	char * cp=buf;
 	struct i2c_client *client = to_i2c_client(dev);
-	if (((rc=read_field(client,AWE_IRQSTAT)))<0) return rc;
+	if (((rc=read_field(client,LTC3589_AWE_IRQSTAT)))<0) return rc;
 	buf += sprintf(buf,"0x%02x",rc);
-	if (rc & AWE_IRQSTAT_PGOOD_TIMOUT) buf += sprintf(buf,"PGOOD timeout");
-	if (rc & AWE_IRQSTAT_NEAR_UV)      buf += sprintf(buf,", Near undervoltage");
-	if (rc & AWE_IRQSTAT_HARD_UV)      buf += sprintf(buf,", Hard undervoltage");
-	if (rc & AWE_IRQSTAT_NEAR_THERM)   buf += sprintf(buf,", Near undervoltage");
-	if (rc & AWE_IRQSTAT_HARD_THERM)   buf += sprintf(buf,", Hard undervoltage");
+	if (rc & LTC3589_AWE_IRQSTAT_PGOOD_TIMOUT) buf += sprintf(buf,"PGOOD timeout");
+	if (rc & LTC3589_AWE_IRQSTAT_NEAR_UV)      buf += sprintf(buf,", Near undervoltage");
+	if (rc & LTC3589_AWE_IRQSTAT_HARD_UV)      buf += sprintf(buf,", Hard undervoltage");
+	if (rc & LTC3589_AWE_IRQSTAT_NEAR_THERM)   buf += sprintf(buf,", Near undervoltage");
+	if (rc & LTC3589_AWE_IRQSTAT_HARD_THERM)   buf += sprintf(buf,", Hard undervoltage");
 	buf += sprintf(buf,"\n");
 	return buf-cp;
 }
@@ -812,7 +722,7 @@ static ssize_t irq_store(struct device *dev, struct device_attribute *attr, cons
 {
 	int rc;
 	struct i2c_client *client = to_i2c_client(dev);
-	if (((rc=write_field (client, 0, AWE_CLIRQ)))<0) return rc;
+	if (((rc=write_field (client, 0, LTC3589_AWE_CLIRQ)))<0) return rc;
     return count;
 }
 static ssize_t pwr_bad_good_show (struct device *dev, struct device_attribute *attr, char *buf)
@@ -820,7 +730,7 @@ static ssize_t pwr_bad_good_show (struct device *dev, struct device_attribute *a
 	int rc,i,pg;
 	char * cp=buf;
 	struct i2c_client *client = to_i2c_client(dev);
-	if (((rc=read_field(client,AWE_PGSTAT)))<0) return rc;
+	if (((rc=read_field(client,LTC3589_AWE_PGSTAT)))<0) return rc;
 	pg=(rc & 0xe0) | ((rc>>1) & 0xff) | ((rc << 4) & 0x10);
 	
 	if (strstr(attr->attr.name,"bad")){
@@ -835,7 +745,7 @@ static int get_chn_mode(struct device *dev, char *buf, int chn) /* 0..3 */
 	int rc;
 	struct i2c_client *client = to_i2c_client(dev);
 	if ((chn<0) || (chn>3)) return 0;
-	if (((rc=read_field(client,AWE_SCR1)))<0) return rc;
+	if (((rc=read_field(client,LTC3589_AWE_SCR1)))<0) return rc;
 	return sprintf (buf,"%s",modes[(rc >> (chn<<1)) &3]);
 }
 static int get_chn_pwr(struct device *dev, char *buf, int chn) /* 0..7 */
@@ -843,7 +753,7 @@ static int get_chn_pwr(struct device *dev, char *buf, int chn) /* 0..7 */
 	int rc;
 	struct i2c_client *client = to_i2c_client(dev);
 	if ((chn<0) || (chn>7)) return 0;
-	if (((rc=read_field(client,AWE_OVEN)))<0) return rc;
+	if (((rc=read_field(client,LTC3589_AWE_OVEN)))<0) return rc;
 	rc=(rc & 0xf) | 0x10 | ((rc & 0x70)<<1);
 	return sprintf (buf,"%s",pwr_states[(rc >> chn) & 1]);
 }
@@ -852,7 +762,7 @@ static int get_chn_wait(struct device *dev, char *buf, int chn) /* 0..7 */
 	int rc;
 	struct i2c_client *client = to_i2c_client(dev);
 	if ((chn<0) || (chn>7)) return 0;
-	if (((rc=read_field(client,AWE_SCR2)))<0) return rc;
+	if (((rc=read_field(client,LTC3589_AWE_SCR2)))<0) return rc;
 	rc=(rc & 0xf) | 0x10 | ((rc & 0x70)<<1);
 	return sprintf (buf,"%s",wait_states[(rc >> chn) & 1]);
 }
@@ -863,7 +773,7 @@ static int get_ref_sel_go(struct device *dev, char *buf, int chn) /* 0..7 */
 	struct i2c_client *client = to_i2c_client(dev);
 	if ((chn<0) || ((chn>2) && (chn!=5))) return 0;
 	if (chn==5) chn=3;
-	if (((rc=read_field(client,AWE_VCCR)))<0) return rc;
+	if (((rc=read_field(client,LTC3589_AWE_VCCR)))<0) return rc;
 	rc =(rc >> (2*chn)) & 3;
 	return sprintf (buf,"%s%s",reference_sel[(rc>>1)&1],(rc&1)?" (slewing)":"");
 }
@@ -1197,7 +1107,7 @@ static int ltc3589_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	int i,rc=0;
 	struct ltc3589_data_t *clientdata = NULL;
 	/* initialize i2c ... */
-	if (read_field (client, AWE_IRQSTAT_PGOOD_TIMOUT)<0) {
+	if (read_field (client, LTC3589_AWE_IRQSTAT_PGOOD_TIMOUT)<0) {
 		dev_err(&client->dev, "%s: chip not detected\n",id->name);
 		return -EIO;
 	}
