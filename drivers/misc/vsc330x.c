@@ -296,8 +296,8 @@ static int make_group (struct device *dev, const char * name, int port_mask, mod
 		ssize_t (*show)(struct device *dev, struct device_attribute *attr,
 				char *buf),
 		ssize_t (*store)(struct device *dev, struct device_attribute *attr,
-				 const char *buf, size_t count)
-){
+				 const char *buf, size_t count))
+{
 	int retval=-1;
 	int port,index=0,num_regs;
 	struct attribute **pattrs; /* array of pointers to attibutes */
@@ -790,7 +790,7 @@ static void vsc330x_init_of(struct i2c_client *client)
 			    dev_dbg(&client->dev,"page=0x%02x, reg=0x%02x, data=0x%02x, mask=0x%02x \n",
 			    		(int)setup_data.page, (int)setup_data.reg,(int)setup_data.data,(int)setup_data.mask);
 			    if (((rc=write_page_with_mask(client, (setup_data.page==0xff)?-1:setup_data.page, setup_data.reg,
-			    		setup_data.data, setup_data.mask)))<0) return rc;
+			    		setup_data.data, setup_data.mask)))<0) return;
 			}
 		} else {
 			dev_info(&client->dev,"'vsc330x,configuration_data' not found\n");
