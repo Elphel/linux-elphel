@@ -24,8 +24,11 @@
 #include <linux/types.h>
 #include <linux/device.h>
 #include <linux/i2c.h>
-int read_field_ltc3589 (struct i2c_client *client, u32 awe);
-int write_field_ltc3589 (struct i2c_client *client, u8 data, u32 awe);
+int ltc3589_read_field(struct i2c_client *client, u32 awe);
+int ltc3589_write_field(struct i2c_client *client, u8 data, u32 awe);
+int ltc3589_write_adwe(struct i2c_client *client, u32 adwe);
+void ltc3589_set_simulate(struct i2c_client *client, int simulate);
+
 #define LTC3589_AWE_SCR1                   0x07ff
 #define LTC3589_AWE_SCR1_MODE_SD1          0x0703
 #define LTC3589_AWE_SCR1_MODE_SD2          0x070c

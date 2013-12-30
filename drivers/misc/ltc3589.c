@@ -17,7 +17,7 @@
  *!  You should have received a copy of the GNU General Public License
  *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+#undef DEBUG /* should be before linux/module.h - enables dev_dbg at boot in this file */
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -175,17 +175,32 @@ static void ltc3589_init_of(struct i2c_client *client);
 static int ltc3589_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id);
 static int ltc3589_i2c_remove(struct i2c_client *client);
 
-int read_field_ltc3589 (struct i2c_client *client, u32 awe)
+int ltc3589_read_field (struct i2c_client *client, u32 awe)
 {
 	return read_field (client, awe);
 }
-EXPORT_SYMBOL_GPL(read_field_ltc3589);
+EXPORT_SYMBOL_GPL(ltc3589_read_field);
 
-int write_field_ltc3589 (struct i2c_client *client, u8 data, u32 awe)
+int ltc3589_write_field (struct i2c_client *client, u8 data, u32 awe)
 {
 	return write_field (client, data, awe);
 }
-EXPORT_SYMBOL_GPL(write_field_ltc3589);
+EXPORT_SYMBOL_GPL(ltc3589_write_field);
+
+int ltc3589_write_adwe(struct i2c_client *client, u32 adwe)
+{
+	return write_adwe(client, adwe);
+}
+EXPORT_SYMBOL_GPL(ltc3589_write_adwe);
+
+
+void ltc3589_set_simulate(struct i2c_client *client, int simulate)
+{
+	struct ltc3589_data_t *clientdata=i2c_get_clientdata(client);
+	clientdata->simulate=simulate;
+}
+EXPORT_SYMBOL_GPL(ltc3589_set_simulate);
+
 
 /* raw access to i2c registers, need to set address (9 bits) first, then r/w data */
 
@@ -915,6 +930,7 @@ static void ltc3589_init_of(struct i2c_client *client)
 	};
 	struct ltc3589_setup_data setup_data;
 	__be32 * setup_data_be32= (__be32 *) &setup_data;
+/* add stuff */	
 #if 0	
 	if (node) {
 		init_type_string = of_get_property(client->dev.of_node, "ltc3589,init", &len);
@@ -934,7 +950,7 @@ static void ltc3589_init_of(struct i2c_client *client)
 				return;
 			} else if (i>0){
 				init_type=0;
-				dev_info(&client->dev,"Skipping conditional initialization (some driver variables will not be initialized)\n");
+				dev_dbg(&client->dev,"Skipping conditional initialization (some driver variables will not be initialized)\n");
 				return;
 			}
 			init_type=1;
@@ -948,7 +964,7 @@ static void ltc3589_init_of(struct i2c_client *client)
 		if (config_data){
 			len /= sizeof(*config_data);
 			dev_dbg(&client->dev,"Read %d values\n",len);
-			dev_info(&client->dev,"Found %d items in 'ltc3589,configuration_data' in the Device Tree\n",len);
+			dev_dbg(&client->dev,"Found %d items in 'ltc3589,configuration_data' in the Device Tree\n",len);
 			for (i=0;i<len;i++){
 				*setup_data_be32=config_data[i];
 				page_reg=setup_data.reg+(setup_data.page<<8);
@@ -963,7 +979,7 @@ static void ltc3589_init_of(struct i2c_client *client)
 			sprintf(buf,"ltc3589,%s",in_freq_names[n]);
 			config_data = of_get_property(client->dev.of_node, buf, &len);
 			if (config_data && (len>0)){
-				dev_info(&client->dev,"Found '%s', value = %d (0x%x)\n",buf,(int)(be32_to_cpup(config_data)),(int)(be32_to_cpup(config_data)));
+				dev_dbg(&client->dev,"Found '%s', value = %d (0x%x)\n",buf,(int)(be32_to_cpup(config_data)),(int)(be32_to_cpup(config_data)));
 				if (set_in_frequency(client, be32_to_cpup(config_data),n)<0) return; /* 32 bits are sufficient here */
 			}
 		}
@@ -981,7 +997,7 @@ static void ltc3589_init_of(struct i2c_client *client)
 					freq[1]=be32_to_cpup(&config_data[1]);
 					freq[2]=be32_to_cpup(&config_data[2]);
 				}
-				dev_info(&client->dev,"Found '%s', value = %lld+(%lld/%lld)\n",buf,freq[0],freq[1],freq[2]);
+				dev_dbg(&client->dev,"Found '%s', value = %lld+(%lld/%lld)\n",buf,freq[0],freq[1],freq[2]);
 				if (n & 2){ /* by output */
 					if (set_pll_freq_by_out(client, freq, n & 1)<0) return;
 				} else { /* directly set  PLL frequency */
@@ -1005,7 +1021,7 @@ static void ltc3589_init_of(struct i2c_client *client)
 					freq[1]=be32_to_cpup(&config_data[1]);
 					freq[2]=be32_to_cpup(&config_data[2]);
 				}
-				dev_info(&client->dev,"Found '%s', value = %lld+(%lld/%lld)\n",buf,freq[0],freq[1],freq[2]);
+				dev_dbg(&client->dev,"Found '%s', value = %lld+(%lld/%lld)\n",buf,freq[0],freq[1],freq[2]);
 				if (set_out_frequency_and_route(client, freq, n&3, n>>2)<0) return;
 			}
 		}
@@ -1017,7 +1033,7 @@ static void ltc3589_init_of(struct i2c_client *client)
 				len /= sizeof(*config_data);
 				for (i=0;i<len;i++){
 					*setup_data_be32=config_data[i];
-					dev_info(&client->dev,"Setting '%s', channel %d",buf,setup_data.mask);
+					dev_dbg(&client->dev,"Setting '%s', channel %d",buf,setup_data.mask);
 					if (configure_output_driver(&client->dev, drv_configs[n].description, setup_data.mask)<0) return;
 				}
 			}
@@ -1031,7 +1047,7 @@ static void ltc3589_init_of(struct i2c_client *client)
 				len /= sizeof(*config_data);
 				for (i=0;i<len;i++){
 					*setup_data_be32=config_data[i];
-					dev_info(&client->dev,"Setting '%s', channel %d",buf,setup_data.mask);
+					dev_dbg(&client->dev,"Setting '%s', channel %d",buf,setup_data.mask);
 					if (set_drv_disable(client, n, setup_data.mask)<0) return;
 				}
 			}
@@ -1045,7 +1061,7 @@ static void ltc3589_init_of(struct i2c_client *client)
 				len /= sizeof(*config_data);
 				for (i=0;i<len;i++){
 					*setup_data_be32=config_data[i];
-					dev_info(&client->dev,"Setting '%s', channel %d",buf,setup_data.mask);
+					dev_dbg(&client->dev,"Setting '%s', channel %d",buf,setup_data.mask);
 					if (set_drv_powerdown(client, n, setup_data.mask)<0) return;
 				}
 			}
@@ -1059,7 +1075,7 @@ static void ltc3589_init_of(struct i2c_client *client)
 				len /= sizeof(*config_data);
 				for (i=0;i<len;i++){
 					*setup_data_be32=config_data[i];
-					dev_info(&client->dev,"Setting '%s', channel %d",buf,setup_data.mask);
+					dev_dbg(&client->dev,"Setting '%s', channel %d",buf,setup_data.mask);
 					if (set_drv_disable(client, n, setup_data.mask)<0) return;
 				}
 			}
@@ -1075,7 +1091,7 @@ static void ltc3589_init_of(struct i2c_client *client)
 				if (len>1) amp =  be32_to_cpup(&config_data[1]);
 				if (len>2) rate = be32_to_cpup(&config_data[2]);
 				if (store_ss_down_parameters(client, rate, amp, n)==0){ 
-					dev_info(&client->dev,"Set spread spectrum parameters for MS%d, amplitude=%d (*0.01%%), rate=%d Hz, %s\n",
+					dev_dbg(&client->dev,"Set spread spectrum parameters for MS%d, amplitude=%d (*0.01%%), rate=%d Hz, %s\n",
 							n,amp,rate,config_data[0]?"ON":"OFF");
 				} else {
 					dev_err(&client->dev,"Failed to set spread spectrum parameters for MS%d, amplitude=%d (*0.01%%), rate=%d Hz, %s\n",
@@ -1085,9 +1101,9 @@ static void ltc3589_init_of(struct i2c_client *client)
 				if (config_data[0]){ /* enable SS */
 					if ((set_ss_down(client, n)==0) && /* calculate and set SS registers */
 							(set_ss_state(client, 1, n)==0)){ // enable SS. Not using enable_spread_spectrum() as we'll reset MS later anyway
-						dev_info(&client->dev,"Spread spectrum enabled for MS%d\n",n);
+						dev_dbg(&client->dev,"Spread spectrum enabled for MS%d\n",n);
 					} else {
-						dev_info(&client->dev,"Fail to enable spread spectrum for MS%d\n",n);
+						dev_dbg(&client->dev,"Fail to enable spread spectrum for MS%d\n",n);
 					}
 				}
 			}
@@ -1130,7 +1146,6 @@ static int ltc3589_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	ltc3589_init_of(client);
 	return 0;
 }
-
 
 static int ltc3589_i2c_remove(struct i2c_client *client)
 {
