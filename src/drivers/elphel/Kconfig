@@ -1,12 +1,18 @@
-#
-# Elphel devices
-#
-
+#                                                                                                                                    
+# Elphel devices                                                                                                                     
+#                                                                                                                                    
+                                                                                                                                     
 menu "Elphel devices"
 config ELPHEL393
-	tristate "Support Elphel 10393 board voltage regulator"
-# add more 
-#	depends on I2C && SYSFS
-	help
-	  Say Y here if you have a Elphel board 10393.
-endmenu
+        tristate "Support Elphel 10393 board voltage regulator, DMA memory allocator"
+# add more
+#       depends on I2C && SYSFS
+        help
+          Say Y here if you have a Elphel board 10393.
+
+config ELPHELDRVONMICROZED
+        tristate "Provide only Elphel features which are compatible with Microzed"
+        help
+          Say Y here if you debug Elpel camera code on Microzed board.
+
+endmenu  
