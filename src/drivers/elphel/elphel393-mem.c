@@ -66,7 +66,7 @@ static void __exit elphelmem_exit(void)
 
 static ssize_t get_paddr(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf,"%x\n", (u32)elphel_buf.paddr);
+	return sprintf(buf,"0x%x\n", (u32)elphel_buf.paddr);
 }
 
 static ssize_t get_size(struct device *dev, struct device_attribute *attr, char *buf)
