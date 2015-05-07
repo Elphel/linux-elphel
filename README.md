@@ -24,7 +24,7 @@ Run Eclipse from its location directory and provide additional heap memory to it
 
 Project now is imported into Eclipse workspace.
 
- - C/C++ General → Preprocessor Include Paths → Entries → GNU C → CDT User Settings
+ - Project → Properties → C/C++ General → Preprocessor Include Paths → Entries → GNU C → CDT User Settings
  - [Add...] → Select "Preprocessor macros file" → `linux/include/generated/autoconf.h` → [OK]
  - [Add...] → Select "Preprocessor macros file" → `linux/include/linux/compiler.h` → [OK]
  - [Add...] → Select "Include file" → `linux/include/linux/kconfig.h` → [OK]
