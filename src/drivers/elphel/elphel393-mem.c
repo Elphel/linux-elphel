@@ -7,9 +7,12 @@
 #include <linux/dma-mapping.h>
 #include <linux/dma-direction.h>
 #include <asm/dma-mapping.h>
+#include <asm/outercache.h>
+#include <asm/cacheflush.h>
 
 #define SYSFS_PERMISSIONS         0644 /* default permissions for sysfs files */
 #define SYSFS_READONLY            0444
+#define SYSFS_WRITEONLY           0222
 
 
 static ssize_t get_paddr(struct device *dev, struct device_attribute *attr, char *buf);
@@ -66,19 +69,32 @@ static void __exit elphelmem_exit(void)
 
 static ssize_t get_paddr(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf,"0x%x\n", (u32)elphel_buf.paddr);
+	return sprintf(buf,"%x\n", (u32)elphel_buf.paddr);
 }
 
 static ssize_t get_size(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return sprintf(buf,"%u\n", elphel_buf.size);
 }
+static ssize_t get_cache(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf,"Write in this file to flush L1 and L2 caches.\n");
+}
+static ssize_t flush_cache(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	__cpuc_flush_dcache_area(elphel_buf.vaddr,elphel_buf.size);
+	outer_clean_range(elphel_buf.vaddr,elphel_buf.size);
+	outer_cache.inv_range(elphel_buf.vaddr,elphel_buf.size);
+	return count;
+}
 static DEVICE_ATTR(buffer_address,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_paddr,          NULL);
 static DEVICE_ATTR(buffer_pages,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_size,          NULL);
+static DEVICE_ATTR(buffer_flush,  SYSFS_PERMISSIONS,    get_cache,          flush_cache);
 
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_buffer_address.attr,
 		&dev_attr_buffer_pages.attr,
+		&dev_attr_buffer_flush.attr,
 	    NULL
 };
 
