@@ -79,13 +79,11 @@ static ssize_t get_cache(struct device *dev, struct device_attribute *attr, char
 }
 static ssize_t flush_cache(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	void *startaddr, *endaddr, *bufstart, *bufend;
+	void *startaddr, *endaddr;
 	unsigned long long offset, size;
 	offset = 0;
 	size = 0;
 	sscanf(buf, "%lli %lli", &offset, &size);
-	bufstart = elphel_buf.paddr;
-	bufend = bufstart + PAGE_SIZE*elphel_buf.size;
 	if (size == 0 || offset > elphel_buf.size*PAGE_SIZE || offset+PAGE_SIZE*size > elphel_buf.size*PAGE_SIZE)
 	{
 		startaddr = elphel_buf.vaddr;
