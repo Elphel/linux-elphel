@@ -24,9 +24,20 @@ Run Eclipse from its location directory and provide additional heap memory to it
 
 Project now is imported into Eclipse workspace.
 
- - Project → Properties → C/C++ General → Preprocessor Include Paths → Entries → GNU C → CDT User Settings
- - [Add...] → Select "Preprocessor macros file" → `linux/include/generated/autoconf.h` → [OK]
- - [Add...] → Select "Preprocessor macros file" → `linux/include/linux/compiler.h` → [OK]
- - [Add...] → Select "Include file" → `linux/include/linux/kconfig.h` → [OK]
+ - Project → Properties
+ - C/C++ General → Preprocessor Include Paths → Entries → GNU C → CDT User Settings
+   - [Add...] → Select "Preprocessor macros file" → `linux/include/generated/autoconf.h` → [OK]
+   - [Add...] → Select "Preprocessor macros file" → `linux/include/linux/compiler.h` → [OK]
+   - [Add...] → Select "Include file" → `linux/include/linux/kconfig.h` → [OK]
+ - C/C++ General → Indexer
+   - Check “Enable project specific setttings”
+   - Check “Enable indexer”
+   - Uncheck “Index source files not included in the build”
+   - Uncheck “Index unused headers”
+   - Check “Index header variants”
+   - Uncheck “Index source and header files opened in editor”
+   - Uncheck “Allow heuristic resolution of includes”
+   - Set size of files to be skipped >100MB (effectively disabling this feature)
+   - Uncheck all “Skip…” options
  - [OK] to close the Advanced Settings window.
  - Project → C/C++ Index → Rebuild
