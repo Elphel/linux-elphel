@@ -14,7 +14,6 @@
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
 
-
 static ssize_t get_paddr(struct device *dev, struct device_attribute *attr, char *buf);
 
 struct elphel_buf_t
@@ -35,12 +34,10 @@ static int __init elphelmem_init(void)
     struct device_node *node;
 	const __be32 *bufsize_be;
 
-	printk("======== Allocating memory buffer ========\n");
-
 	node = of_find_node_by_name(NULL, "elphel393-mem");
 	if (!node)
 	{
-		printk("ERROR: No node found\n");
+		printk("DMA buffer allocation ERROR: No device tree node found\n");
 		return -ENODEV;
 	}
 
@@ -51,7 +48,7 @@ static int __init elphelmem_init(void)
 
     if(elphel_buf.paddr)
     {
-    	printk("Allocated %u pages at address %x\n", (u32)elphel_buf.size, (u32)elphel_buf.paddr);
+    	printk("Allocated %u pages for DMA at address 0x%x\n", (u32)elphel_buf.size, (u32)elphel_buf.paddr);
     }
     else printk("ERROR allocating memory buffer");
 
@@ -60,7 +57,7 @@ static int __init elphelmem_init(void)
 
 static void __exit elphelmem_exit(void)
 {
-    printk("Goodbye Cruel World!\n");
+    printk("DMA buffer disabled\n");
 }
 
 
@@ -78,13 +75,30 @@ static ssize_t get_size(struct device *dev, struct device_attribute *attr, char 
 }
 static ssize_t get_cache(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf,"Write in this file to flush L1 and L2 caches.\n");
+	return sprintf(buf,"Flush L1/L2 caches to memory: write \"MEM_OFFSET NUMBER_OF_PAGES\" of memory region to be flushed into this file or \"1\" to flush all buffer memory.\n");
 }
 static ssize_t flush_cache(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	__cpuc_flush_dcache_area(elphel_buf.vaddr,elphel_buf.size);
-	outer_clean_range(elphel_buf.vaddr,elphel_buf.size);
-	outer_cache.inv_range(elphel_buf.vaddr,elphel_buf.size);
+	void *startaddr, *endaddr, *bufstart, *bufend;
+	unsigned long long offset, size;
+	offset = 0;
+	size = 0;
+	sscanf(buf, "%lli %lli", &offset, &size);
+	bufstart = elphel_buf.paddr;
+	bufend = bufstart + PAGE_SIZE*elphel_buf.size;
+	if (size == 0 || offset > elphel_buf.size*PAGE_SIZE || offset+PAGE_SIZE*size > elphel_buf.size*PAGE_SIZE)
+	{
+		startaddr = elphel_buf.vaddr;
+		endaddr = PAGE_SIZE*elphel_buf.size;
+	}
+	else
+	{
+		startaddr = elphel_buf.vaddr+offset;
+		endaddr = startaddr + PAGE_SIZE*size;
+	}
+	__cpuc_flush_dcache_area(startaddr,endaddr);
+	outer_clean_range(startaddr,endaddr);
+	outer_cache.inv_range(startaddr,endaddr);
 	return count;
 }
 static DEVICE_ATTR(buffer_address,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_paddr,          NULL);
