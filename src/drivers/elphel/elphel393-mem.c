@@ -75,28 +75,12 @@ static ssize_t get_size(struct device *dev, struct device_attribute *attr, char 
 }
 static ssize_t get_cache(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf,"Flush L1/L2 caches to memory: write \"MEM_OFFSET NUMBER_OF_PAGES\" of memory region to be flushed into this file or \"1\" to flush all buffer memory.\n");
+	return sprintf(buf,"Write into this file to flush L1/L2 caches to memory.\n");
 }
 static ssize_t flush_cache(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	void *startaddr, *endaddr;
-	unsigned long long offset, size;
-	offset = 0;
-	size = 0;
-	sscanf(buf, "%lli %lli", &offset, &size);
-	if (size == 0 || offset > elphel_buf.size*PAGE_SIZE || offset+PAGE_SIZE*size > elphel_buf.size*PAGE_SIZE)
-	{
-		startaddr = elphel_buf.vaddr;
-		endaddr = PAGE_SIZE*elphel_buf.size;
-	}
-	else
-	{
-		startaddr = elphel_buf.vaddr+offset;
-		endaddr = startaddr + PAGE_SIZE*size;
-	}
-	__cpuc_flush_dcache_area(startaddr,endaddr);
-	outer_clean_range(startaddr,endaddr);
-	outer_cache.inv_range(startaddr,endaddr);
+	__cpuc_flush_kern_all();
+	outer_flush_all();
 	return count;
 }
 static DEVICE_ATTR(buffer_address,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_paddr,          NULL);
