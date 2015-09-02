@@ -28,6 +28,7 @@
 #include <linux/of.h>
 
 #define DRV_VERSION "1.0"
+
 /* TODO: Descriptions from vsc3312 - check differences */
 #define I2C_PAGE_CONNECTION        0x00	/* When written to I2C_CURRENT_PAGE, makes registers 0..0xf control corresponding output (0..0xf) source
 					   (input number) bit 4 (+0x10) - turn output off, bits 3:0 - source */
@@ -99,7 +100,7 @@
 #define I2C_INTERFACE_MODE         0x79
 #define I2C_INTERFACE_MODE_DATA    0x02	/* i2c (1 - 4-wire)  */
 #define I2C_SOFTWARE_RESET         0x7a
-#define I2C_SOFTWARE_RESET_DATA    0x10	/* to reset, 0 - normal  */
+//#define I2C_SOFTWARE_RESET_DATA    0x10 /* to reset, 0 - normal  */ not used - but number 4 is used instead
 #define I2C_CURRENT_PAGE           0x7f
 #define PORT_PEFIX                 "port_"
 #define ALL_PORTS                  "all"
@@ -650,7 +651,10 @@ static int _init_device(struct i2c_client *client, int address_mode_data)
 	int rc;
     if (((rc=write_reg(client, I2C_INTERFACE_MODE, I2C_INTERFACE_MODE_DATA)))<0) return rc;
     if (address_mode_data >=0){ /* only write if needed, 3304 needs, 3312 - does not, 3308 - ? */
-        if (((rc=write_reg(client, I2C_SOFTWARE_RESET_DATA, address_mode_data)))<0) return rc;
+//        if (((rc=write_reg(client, I2C_SOFTWARE_RESET_DATA, address_mode_data)))<0) return rc;
+// this bug caused me to assemble a new board, urgently find vsc3304 chip,spend several days trying to troubleshoot...
+// Just five extra characters!
+        if (((rc=write_reg(client, I2C_SOFTWARE_RESET, address_mode_data)))<0) return rc;
     }
     if (((rc=write_reg(client, I2C_CURRENT_PAGE, 0)))<0) return rc;
 	return 0;
