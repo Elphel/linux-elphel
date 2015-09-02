@@ -7,10 +7,12 @@
 #include <linux/dma-mapping.h>
 #include <linux/dma-direction.h>
 #include <asm/dma-mapping.h>
+#include <asm/outercache.h>
+#include <asm/cacheflush.h>
 
 #define SYSFS_PERMISSIONS         0644 /* default permissions for sysfs files */
 #define SYSFS_READONLY            0444
-
+#define SYSFS_WRITEONLY           0222
 
 static ssize_t get_paddr(struct device *dev, struct device_attribute *attr, char *buf);
 
@@ -32,12 +34,10 @@ static int __init elphelmem_init(void)
     struct device_node *node;
 	const __be32 *bufsize_be;
 
-	printk("======== Allocating memory buffer ========\n");
-
 	node = of_find_node_by_name(NULL, "elphel393-mem");
 	if (!node)
 	{
-		printk("ERROR: No node found\n");
+		printk("DMA buffer allocation ERROR: No device tree node found\n");
 		return -ENODEV;
 	}
 
@@ -48,7 +48,7 @@ static int __init elphelmem_init(void)
 
     if(elphel_buf.paddr)
     {
-    	printk("Allocated %u pages at address %x\n", (u32)elphel_buf.size, (u32)elphel_buf.paddr);
+    	printk("Allocated %u pages for DMA at address 0x%x\n", (u32)elphel_buf.size, (u32)elphel_buf.paddr);
     }
     else printk("ERROR allocating memory buffer");
 
@@ -57,7 +57,7 @@ static int __init elphelmem_init(void)
 
 static void __exit elphelmem_exit(void)
 {
-    printk("Goodbye Cruel World!\n");
+    printk("DMA buffer disabled\n");
 }
 
 
@@ -73,12 +73,24 @@ static ssize_t get_size(struct device *dev, struct device_attribute *attr, char 
 {
 	return sprintf(buf,"%u\n", elphel_buf.size);
 }
+static ssize_t get_cache(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf,"Write into this file to flush L1/L2 caches to memory.\n");
+}
+static ssize_t flush_cache(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	__cpuc_flush_kern_all();
+	outer_flush_all();
+	return count;
+}
 static DEVICE_ATTR(buffer_address,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_paddr,          NULL);
 static DEVICE_ATTR(buffer_pages,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_size,          NULL);
+static DEVICE_ATTR(buffer_flush,  SYSFS_PERMISSIONS,    get_cache,          flush_cache);
 
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_buffer_address.attr,
 		&dev_attr_buffer_pages.attr,
+		&dev_attr_buffer_flush.attr,
 	    NULL
 };
 
