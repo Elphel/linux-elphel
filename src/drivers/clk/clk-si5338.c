@@ -3272,7 +3272,7 @@ static int set_out_route(struct i2c_client *client, const char* route, int chn)
 	int rc;
 	if (((rc=_verify_output_channel(client,chn)))<0) return rc;
 	/* parse string */
-	if ((strnicmp(cp,"in",2)==0)) {
+	if ((strncasecmp(cp,"in",2)==0)) {
 		cp+=2;
 		if ((strncmp(cp,"12",2)==0)) {
 			cp+=2;
@@ -3288,11 +3288,11 @@ static int set_out_route(struct i2c_client *client, const char* route, int chn)
 			src=3;
 		} else return -EINVAL; /* invalid input number(s) */
 		src_group=0;
-	} else if ((strnicmp(cp,"xo",2)==0)) {
+	} else if ((strncasecmp(cp,"xo",2)==0)) {
 		cp+=2;
 		src_group=1;
 		src=0;
-	} else if ((strnicmp(cp,"ms",2)==0)) {
+	} else if ((strncasecmp(cp,"ms",2)==0)) {
 		cp+=2;
 		src=cp[0]-'0';
 		cp++;
@@ -3301,7 +3301,7 @@ static int set_out_route(struct i2c_client *client, const char* route, int chn)
 		}
 		src_group=2;
 		div1=-1;
-	} else if ((strnicmp(cp,"no",2)==0)) {
+	} else if ((strncasecmp(cp,"no",2)==0)) {
 		cp+=2;
 		src_group=3;
 	} else return -EINVAL;
