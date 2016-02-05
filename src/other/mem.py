@@ -38,8 +38,9 @@ if (writeMode):
 with open("/dev/mem", "r+b") as f:
     page_addr=addr & (~(PAGE_SIZE-1))
     page_offs=addr-page_addr
-    if (page_addr>=0x80000000):
-        page_addr-= (1<<32)
+    #in python 2.7.11 works w/o negation
+    #if (page_addr>=0x80000000):
+    #    page_addr-= (1<<32)
     mm = mmap.mmap(f.fileno(), PAGE_SIZE, offset=page_addr)
     if writeMode:
         packedData=struct.pack(endian+"L",data)
