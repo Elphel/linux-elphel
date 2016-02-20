@@ -33,18 +33,17 @@
 									<listOptionValue builtIn="false" value="__GENKSYMS__=1"/>
 								</option>
 								<option id="gnu.c.compiler.option.include.paths.1702086126" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/arch/arm/include}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/include}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/arch/arm/include/generated}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/include}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/arch/arm/include/uapi}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/arch/arm/include/generated/uapi}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/include/uapi}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/include/generated/uapi}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/sysroots/x86_64-linux/usr/lib/armv7a-vfp-neon-poky-linux-gnueabi/gcc/arm-poky-linux-gnueabi/4.8.1/include}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/arch/arm/mach-vexpress/include}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/arch/arm/plat-versatile/include}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/drivers/scsi}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/arch/arm/boot/compressed}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/arch/arm/include}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/arch/arm/include/uapi}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/include/uapi}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/arch/arm/plat-versatile/include}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/drivers/scsi}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/arch/arm/boot/compressed}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/sysroots/x86_64-linux/usr/lib/arm-poky-linux-gnueabi/gcc/arm-poky-linux-gnueabi/5.3.0/include}&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.1925867123" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
 							</tool>
