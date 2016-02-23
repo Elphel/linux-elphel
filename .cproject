@@ -34,12 +34,12 @@
 								</option>
 								<option id="gnu.c.compiler.option.include.paths.1702086126" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/include}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/include/uapi}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/arch/arm/include}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/arch/arm/include/uapi}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/arch/arm/include/generated}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/arch/arm/include/generated/uapi}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/include/generated/uapi}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/arch/arm/include}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/arch/arm/include/uapi}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/include/uapi}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/arch/arm/plat-versatile/include}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/drivers/scsi}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/linux-elphel/linux/source/arch/arm/boot/compressed}&quot;"/>
@@ -82,5 +82,10 @@
 		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cross.exe.debug.903609687;cdt.managedbuild.config.gnu.cross.exe.debug.903609687.;cdt.managedbuild.tool.gnu.cross.c.compiler.1355562292;cdt.managedbuild.tool.gnu.c.compiler.input.88098367">
 			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
 		</scannerConfigBuildInfo>
+	</storageModule>
+	<storageModule moduleId="refreshScope" versionNumber="2">
+		<configuration configurationName="Default">
+			<resource resourceType="PROJECT" workspacePath="/linux-elphel"/>
+		</configuration>
 	</storageModule>
 </cproject>
