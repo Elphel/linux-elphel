@@ -19,6 +19,7 @@
 #include <linux/ahci_platform.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/of_address.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
@@ -39,6 +40,7 @@ static const struct of_device_id ahci_elphel_of_match[];
 struct elphel_ahci_priv {
 	u32 clb_offs;
 	u32 fb_offs;
+	u32 base_addr;
 };
 
 static int elphel_port_start(struct ata_port *ap)
@@ -53,6 +55,8 @@ static int elphel_port_start(struct ata_port *ap)
 	libahci_debug_init(ap->host);
 
 	dev_info(dev, "starting port %d", ap->port_no);
+	libahci_debug_wait_flag();
+
 	pp = devm_kzalloc(dev, sizeof(struct ahci_port_priv), GFP_KERNEL);
 	if (!pp)
 		return -ENOMEM;
@@ -68,15 +72,18 @@ static int elphel_port_start(struct ata_port *ap)
 	 * Set predefined addresses
 	 */
 	pp->cmd_slot = hpriv->mmio + dpriv->clb_offs;
-	pp->cmd_slot_dma = virt_to_phys(pp->cmd_slot);
+	//pp->cmd_slot_dma = virt_to_phys(pp->cmd_slot);
+	pp->cmd_slot_dma = 0x80000000 + dpriv->clb_offs;
 
 	pp->rx_fis = hpriv->mmio + dpriv->fb_offs;
-	pp->rx_fis_dma = virt_to_phys(pp->rx_fis);
+	//pp->rx_fis_dma = virt_to_phys(pp->rx_fis);
+	pp->rx_fis_dma = 0x80000000 + dpriv->fb_offs;
 
-	dev_info(dev, "cmd_slot and rx_fis addresses are set");
-	dev_info(dev, "\tmmio address: 0x%p", hpriv->mmio);
-	dev_info(dev, "\tcommand slot virtual address: 0x%p", pp->cmd_slot);
-	dev_info(dev, "\rx fis virtual address: 0x%p", pp->rx_fis);
+	/*printk(KERN_DEBUG "cmd_slot: 0x%p", pp->cmd_slot);
+	printk(KERN_DEBUG "cmd_slot_dma: 0x%08u", pp->cmd_slot_dma);
+	printk(KERN_DEBUG "rx_fis: 0x%p", pp->rx_fis);
+	printk(KERN_DEBUG "rx_fis_dma: 0x%08u", pp->rx_fis_dma);
+	printk(KERN_DEBUG "base_addr: 0x%08u", dpriv->base_addr);*/
 
 	/*
 	 * Save off initial list of interrupts to be enabled.
@@ -93,7 +100,10 @@ static int elphel_parse_prop(const struct device_node *devn,
 		struct device *dev,
 		struct elphel_ahci_priv *dpriv)
 {
+	u64 size;
+	unsigned int flags;
 	const __be32 *val;
+	struct resource res;
 
 	if (!devn) {
 		dev_err(dev, "device tree node is not found");
@@ -104,6 +114,14 @@ static int elphel_parse_prop(const struct device_node *devn,
 	dpriv->clb_offs = be32_to_cpup(val);
 	val = of_get_property(devn, PROP_NAME_FB_OFFS, NULL);
 	dpriv->fb_offs = be32_to_cpup(val);
+	val = of_get_address(devn, 0, NULL, NULL);
+	if (val != NULL) {
+		dpriv->base_addr = be32_to_cpu(val);
+		dev_info(dev, "base_addr: 0x%08u", dpriv->base_addr);
+	} else {
+		dev_err(dev, "can not get register address");
+	}
+	//of_address_to_resource(devn, 0, &res);
 
 	return 0;
 }
@@ -120,6 +138,7 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	unsigned int reg_val;
 
 	dev_info(&pdev->dev, "probing Elphel AHCI driver");
+
 	drv_priv = devm_kzalloc(dev, sizeof(struct elphel_ahci_priv), GFP_KERNEL);
 	if (!drv_priv)
 		return -ENOMEM;
@@ -148,6 +167,19 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	dev_info(dev, "HOST PI register: 0x%08x", reg_val);
 	reg_val = readl(hpriv->mmio + HOST_VERSION);
 	dev_info(dev, "HOST VS register: 0x%08x", reg_val);
+
+	phys_addr_t paddr = virt_to_phys(hpriv->mmio);
+	void *vaddr = phys_to_virt(paddr);
+	dev_err(dev, "current mmio virt addr: %p\n", hpriv->mmio);
+	dev_err(dev, "current mmio virt addr as uint: %u\n", hpriv->mmio);
+	dev_err(dev, "mmio phys addr: %u\n", paddr);
+	dev_err(dev, "mmio phys addr as tr: %p\n", paddr);
+	dev_err(dev, "back converted mmio virt addr: %p\n", vaddr);
+	//printk(KERN_DEBUG, "current mmio virt addr: %p\n", hpriv->mmio);
+	//printk(KERN_DEBUG, "mmio phys addr: %u\n", paddr);
+	//printk(KERN_DEBUG, "back converted mmio virt addr: %p\n", vaddr);
+	printk(KERN_DEBUG "======");
+
 
 	ret = ahci_platform_init_host(pdev, hpriv, &ahci_elphel_port_info,
 			&ahci_platform_sht);

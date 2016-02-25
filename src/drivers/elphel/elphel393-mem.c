@@ -1,3 +1,23 @@
+/*!***************************************************************************
+ *! FILE NAME  : elphel393-mem.c
+ *! DESCRIPTION: Reserve large memory range at boot time (when it is available)
+ *!              to use as a circular video buffer
+ *! Copyright (C) 2015 Elphel, Inc.
+ *! -----------------------------------------------------------------------------**
+ *!
+ *!  This program is free software: you can redistribute it and/or modify
+ *!  it under the terms of the GNU General Public License as published by
+ *!  the Free Software Foundation, either version 3 of the License, or
+ *!  (at your option) any later version.
+ *!
+ *!  This program is distributed in the hope that it will be useful,
+ *!  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *!  GNU General Public License for more details.
+ *!
+ *!  You should have received a copy of the GNU General Public License
+ *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *!****************************************************************************/
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/of.h>
@@ -9,30 +29,35 @@
 #include <asm/dma-mapping.h>
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
-
+#include "elphel393-mem.h"
 #define SYSFS_PERMISSIONS         0644 /* default permissions for sysfs files */
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
 
 static ssize_t get_paddr(struct device *dev, struct device_attribute *attr, char *buf);
-
+/*
 struct elphel_buf_t
 {
 	void *vaddr;
 	dma_addr_t paddr;
 	ssize_t size;
 };
-
-static struct elphel_buf_t elphel_buf = {
+*/
+static struct elphel_buf_t _elphel_buf = {
 	.vaddr = NULL,
 	.paddr = 0,
 	.size = 0
 };
 
+struct elphel_buf_t elphel_buf; // static can not be extern
+
+EXPORT_SYMBOL_GPL(elphel_buf);
 static int __init elphelmem_init(void)
 {
     struct device_node *node;
 	const __be32 *bufsize_be;
+
+	elphel_buf = _elphel_buf; // static can not be extern
 
 	node = of_find_node_by_name(NULL, "elphel393-mem");
 	if (!node)
@@ -42,13 +67,13 @@ static int __init elphelmem_init(void)
 	}
 
 	bufsize_be = (__be32 *)of_get_property(node, "memsize", NULL);
-	elphel_buf.size = be32_to_cpup(bufsize_be);
+	_elphel_buf.size = be32_to_cpup(bufsize_be);
 
-	elphel_buf.vaddr = dma_alloc_coherent(NULL,(elphel_buf.size*PAGE_SIZE),&(elphel_buf.paddr),GFP_KERNEL);
+	_elphel_buf.vaddr = dma_alloc_coherent(NULL,(_elphel_buf.size*PAGE_SIZE),&(_elphel_buf.paddr),GFP_KERNEL);
 
-    if(elphel_buf.paddr)
+    if(_elphel_buf.paddr)
     {
-    	printk("Allocated %u pages for DMA at address 0x%x\n", (u32)elphel_buf.size, (u32)elphel_buf.paddr);
+    	printk("Allocated %u pages for DMA at address 0x%x\n", (u32)_elphel_buf.size, (u32)_elphel_buf.paddr);
     }
     else printk("ERROR allocating memory buffer");
 
@@ -66,12 +91,12 @@ static void __exit elphelmem_exit(void)
 
 static ssize_t get_paddr(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf,"0x%x\n", (u32)elphel_buf.paddr);
+	return sprintf(buf,"0x%x\n", (u32)_elphel_buf.paddr);
 }
 
 static ssize_t get_size(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf,"%u\n", elphel_buf.size);
+	return sprintf(buf,"%u\n", _elphel_buf.size);
 }
 static ssize_t get_cache(struct device *dev, struct device_attribute *attr, char *buf)
 {

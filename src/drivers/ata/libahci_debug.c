@@ -15,7 +15,8 @@
 static struct dentry	*debug_root = NULL;
 static struct libahci_debug_list debug_list = {.debug = 0};
 static struct ahci_cmd	cmd;
-static struct simple_buff init_buff;
+static bool load_flag = false;
+volatile unsigned int *mem_buff;
 
 /*
  * Print PxIS (0x10) analysis
@@ -247,6 +248,7 @@ static int libahci_debug_host_show(struct seq_file *f, void *p)
 {
 	struct ata_host		*host = f->private;
 	struct host_regs	hr = {0};
+	phys_addr_t			buff_addr;
 
 	libahci_debug_read_host_regs(host, &hr);
 	seq_printf(f, "CAP:\t\t0x%08X\n", hr.CAP);
@@ -260,6 +262,9 @@ static int libahci_debug_host_show(struct seq_file *f, void *p)
 	seq_printf(f, "EM_LOC:\t\t0x%08X\n", hr.EM_LOC);
 	seq_printf(f, "EM_CTL:\t\t0x%08X\n", hr.EM_CTL);
 	seq_printf(f, "BOHC:\t\t0x%08X\n", hr.BOHC);
+
+	buff_addr = virt_to_phys(mem_buff);
+	seq_printf(f, "\nbuffer location:\t\t0x%08X\n", buff_addr);
 
 	return 0;
 }
@@ -315,7 +320,6 @@ static int libahci_debug_rdesc_open(struct inode *i_node, struct file *f)
 static int libahci_debug_events_open(struct inode *i_node, struct file *f)
 {
 	int					err = 0;
-	int					sz;
 	unsigned long		flags;
 	struct libahci_debug_list *list;
 	struct ata_port		*port = i_node->i_private;
@@ -343,13 +347,6 @@ static int libahci_debug_events_open(struct inode *i_node, struct file *f)
 
 	// Associate debug list entry with corresponding file
 	f->private_data = list;
-
-	// Copy the content of init buffer to libahci_debug_buff
-	/*if (init_buff.tail > init_buff.head) {
-		sz = init_buff.tail- init_buff.head;
-		memcpy(list->libahci_debug_buf, init_buff.buff, sz);
-		list->tail = sz;
-	}*/
 
 fail_handler:
 	return err;
@@ -479,19 +476,6 @@ void libahci_debug_event(const struct ata_port *port, char *msg, size_t msg_sz)
 			}
 			kfree(format_msg);
 		}
-	} else if (init_buff.initialized) {
-		// debugfs file is not open, write to tmp buffer
-		/*format_msg = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
-		if (format_msg != NULL) {
-				spin_lock_irqsave(&pos->debug_list_lock, flags);
-				len = snprintf(format_msg, LIBAHCI_DEBUG_BUFSZ, "%s %s\n", EVT_MARKER, msg);
-				for (i = 0; i < len; i++) {
-					init_buff.buff[(init_buff.tail+ i) % LIBAHCI_DEBUG_BUFSZ] = format_msg[i];
-				}
-				init_buff.tail = (init_buff.tail + len) % LIBAHCI_DEBUG_BUFSZ;
-				spin_unlock_irqrestore(&pos->debug_list_lock, flags);
-		}*/
-
 	}
 }
 EXPORT_SYMBOL_GPL(libahci_debug_event);
@@ -668,6 +652,70 @@ static int libahci_debug_fis_release(struct inode *i_node, struct file *f)
 	return 0;
 }
 
+static ssize_t libahci_debug_load(struct file *f, const char __user *buff, size_t buff_sz, loff_t *ppos)
+{
+	load_flag = true;
+
+	return buff_sz;
+}
+
+/*
+ * This function waits until the loading flag is set through debugfs file.
+ * The state of the flag is checked every 100ms.
+ */
+void libahci_debug_wait_flag(void)
+{
+	printk(KERN_DEBUG "%s Waiting for flag to be written to debugfs", MARKER);
+	while (load_flag == false) {
+		/*set_current_state(TASK_INTERRUPTIBLE);
+		schedule_timeout(msecs_to_jiffies(100));*/
+		msleep(500);
+	}
+	load_flag = false;
+}
+EXPORT_SYMBOL_GPL(libahci_debug_wait_flag);
+
+/*
+ * Copy controller registers to buffer memory
+ */
+void libahci_debug_state_dump(struct device *dev)
+{
+	static u32 page_cntr;
+	phys_addr_t v2p;
+	u32 *p2v;
+	int i;
+
+	if (!mem_buff) {
+		dev_err(dev, "dump buffer has not been allocated");
+		return;
+	}
+
+	v2p = virt_to_phys(mem_buff);
+	dev_info(dev, "write to buffer: 0x%08x", v2p);
+	mem_buff[0] = 0xdeadbeef;
+	for (i = 1; i < 100; i++) {
+		mem_buff[i] = 0xa5a5a5a5;
+	}
+	/*__cpu_flush_kern_all();
+	outer_flush_all();
+	for (i = 0; i < 100; i++) {
+		v2p = virt_to_phys(mem_buff + 4*i);
+		dev_info(dev, "read phys addr: 0x%x, data: 0x%08x", v2p, *(mem_buff + 4*i));
+	}*/
+}
+
+static void libahci_debug_buff_init(struct device *dev)
+{
+	dma_addr_t dma_handle;
+
+	dev_info(dev, "trying to allocate dump buffer");
+	mem_buff = dmam_alloc_coherent(dev, PAGE_SIZE, &dma_handle, GFP_KERNEL);
+	if (!mem_buff)
+		dev_err(dev, "unable to allocate memory");
+	else
+		dev_info(dev, "buffer allocated at 0x%08x", dma_handle);
+}
+
 static const struct file_operations libahci_debug_host_ops = {
 	.open				= libahci_debug_host_open,
 	.read				= seq_read,
@@ -703,6 +751,10 @@ static const struct file_operations libahci_debug_chdr_ops = {
 	.release			= libahci_debug_fis_release,
 };
 
+static const struct file_operations libahci_debug_load_ops= {
+		.write			= libahci_debug_load,
+};
+
 static int libahci_debug_init_sg(void)
 {
 	cmd.sg_buff = kzalloc(CMD_DMA_BUFSZ, GFP_KERNEL);
@@ -731,6 +783,9 @@ int libahci_debug_init(struct ata_host *host)
 	}
 	debugfs_create_file("rdesc_host", 0644,
 			debug_root, host, &libahci_debug_host_ops);
+	debugfs_create_file("loading", 0222,
+			debug_root, host, &libahci_debug_load_ops);
+
 	/* Create subdir for each port and add there several files:
 	 * one for port registers, one for port events log and
 	 * two files for working with FISes
@@ -752,13 +807,8 @@ int libahci_debug_init(struct ata_host *host)
 		goto fail_handler;
 	}
 
-	/*init_buff.buff = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
-	if (init_buff.buff == NULL) {
-		kfree(cmd.sg_buff);
-		goto fail_handler;
-	}
-	init_buff.initialized = true;*/
-
+	libahci_debug_buff_init(host->dev);
+	libahci_debug_state_dump(host->dev);
 	return 0;
 
 fail_handler:

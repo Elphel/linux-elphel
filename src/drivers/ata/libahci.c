@@ -602,6 +602,7 @@ static int ahci_scr_read(struct ata_link *link, unsigned int sc_reg, u32 *val)
 	int offset = ahci_scr_offset(link->ap, sc_reg);
 
 	int len;
+	u32 tmp;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
 		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "read port %u SATA status and control registers", link->ap->port_no);
@@ -612,7 +613,8 @@ static int ahci_scr_read(struct ata_link *link, unsigned int sc_reg, u32 *val)
 		*val = readl(port_mmio + offset);
 
 		if (msg_str != NULL) {
-			len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tport %u offset: 0x%x, value: 0x%x", link->ap->port_no, offset, *val);
+			tmp = readl(port_mmio + PORT_CMD);
+			len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tport %u offset: 0x%x, value: 0x%x, PxCMD: 0x%08x", link->ap->port_no, offset, *val, tmp);
 			libahci_debug_event(link->ap, msg_str, len);
 		}
 
@@ -1730,7 +1732,7 @@ static int ahci_hardreset(struct ata_link *link, unsigned int *class,
 	ata_tf_to_fis(&tf, 0, 0, d2h_fis);
 
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tprocced to sata_link_hardreset");
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tproceed to sata_link_hardreset");
 		libahci_debug_event(ap, msg_str, len);
 	}
 	rc = sata_link_hardreset(link, timing, deadline, &online,
@@ -2302,6 +2304,8 @@ unsigned int ahci_qc_issue(struct ata_queued_cmd *qc)
 		pp->fbs_last_dev = qc->dev->link->pmp;
 	}
 
+	//libahci_debug_wait_flag();
+
 	writel(1 << qc->tag, port_mmio + PORT_CMD_ISSUE);
 
 	ahci_sw_activity(qc->dev->link);
@@ -2531,7 +2535,7 @@ static void ahci_enable_fbs(struct ata_port *ap)
 
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
-	if (msg_str != NULL) {
+	if (msg_str != NULL && pp->fbs_supported) {
 		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "enable port %u FIS-based switching", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
@@ -2573,7 +2577,7 @@ static void ahci_disable_fbs(struct ata_port *ap)
 
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
-	if (msg_str != NULL) {
+	if (msg_str != NULL && pp->fbs_supported) {
 		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "disable port %u FIS-based switching", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);

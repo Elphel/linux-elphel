@@ -19,6 +19,10 @@
 #define CMD_DMA_BUFSZ	512
 #define PORT_RESERVED_2		40
 #define PORT_VENDOR_BYTES	16
+#define BUFFER_ADDRESS		0x38130000
+/* Buffer is 100 Mb*/
+#define BUFFER_PAGES		25600
+#define SEGMENT_SIZE		0x10000
 #define LIBAHCI_DEBUG_BUFSZ	16384
 
 struct libahci_debug_list {
@@ -31,13 +35,6 @@ struct libahci_debug_list {
 	struct mutex		read_mutex;
 	wait_queue_head_t	debug_wait;
 	spinlock_t			debug_list_lock;
-};
-
-struct simple_buff {
-	char				*buff;
-	int					head;
-	int					tail;
-	bool				initialized;
 };
 
 struct ahci_cmd_fis {
@@ -106,5 +103,7 @@ void libahci_debug_dump_irq(u32 status);
 void libahci_debug_dump_sg(const struct ata_queued_cmd *qc, const char *prefix);
 void libahci_debug_irq_notify(const struct ata_port *ap);
 void libahci_debug_exec_cmd(struct ata_port *ap);
+void libahci_debug_wait_flag(void);
+void libahci_debug_state_dump(struct device *dev);
 
 #endif /* _LIBAHCI_DEBUG_H_ */
