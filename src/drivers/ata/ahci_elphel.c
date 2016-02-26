@@ -79,11 +79,11 @@ static int elphel_port_start(struct ata_port *ap)
 	//pp->rx_fis_dma = virt_to_phys(pp->rx_fis);
 	pp->rx_fis_dma = 0x80000000 + dpriv->fb_offs;
 
-	/*printk(KERN_DEBUG "cmd_slot: 0x%p", pp->cmd_slot);
-	printk(KERN_DEBUG "cmd_slot_dma: 0x%08u", pp->cmd_slot_dma);
-	printk(KERN_DEBUG "rx_fis: 0x%p", pp->rx_fis);
-	printk(KERN_DEBUG "rx_fis_dma: 0x%08u", pp->rx_fis_dma);
-	printk(KERN_DEBUG "base_addr: 0x%08u", dpriv->base_addr);*/
+	/*dev_info(dev, "cmd_slot: 0x%p", pp->cmd_slot);
+	dev_info(dev, "cmd_slot_dma: 0x%08u", pp->cmd_slot_dma);
+	dev_info(dev, "rx_fis: 0x%p", pp->rx_fis);
+	dev_info(dev, "rx_fis_dma: 0x%08u", pp->rx_fis_dma);
+	dev_info(dev, "base_addr: 0x%08u", dpriv->base_addr);*/
 
 	/*
 	 * Save off initial list of interrupts to be enabled.
@@ -92,6 +92,9 @@ static int elphel_port_start(struct ata_port *ap)
 	pp->intr_mask = DEF_PORT_IRQ;
 
 	ap->private_data = pp;
+
+	libahci_debug_state_dump(ap);
+	libahci_debug_state_dump(ap);
 
 	return ahci_port_resume(ap);
 }
@@ -170,11 +173,11 @@ static int elphel_drv_probe(struct platform_device *pdev)
 
 	phys_addr_t paddr = virt_to_phys(hpriv->mmio);
 	void *vaddr = phys_to_virt(paddr);
-	dev_err(dev, "current mmio virt addr: %p\n", hpriv->mmio);
-	dev_err(dev, "current mmio virt addr as uint: %u\n", hpriv->mmio);
-	dev_err(dev, "mmio phys addr: %u\n", paddr);
-	dev_err(dev, "mmio phys addr as tr: %p\n", paddr);
-	dev_err(dev, "back converted mmio virt addr: %p\n", vaddr);
+	dev_err(dev, "current mmio virt addr: 0x%p\n", hpriv->mmio);
+	dev_err(dev, "current mmio virt addr as uint: 0x%08x\n", hpriv->mmio);
+	dev_err(dev, "mmio phys addr: 0x%08x\n", paddr);
+	dev_err(dev, "mmio phys addr as tr: 0x%p\n", paddr);
+	dev_err(dev, "back converted mmio virt addr: 0x%p\n", vaddr);
 	//printk(KERN_DEBUG, "current mmio virt addr: %p\n", hpriv->mmio);
 	//printk(KERN_DEBUG, "mmio phys addr: %u\n", paddr);
 	//printk(KERN_DEBUG, "back converted mmio virt addr: %p\n", vaddr);

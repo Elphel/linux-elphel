@@ -10,13 +10,16 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <linux/poll.h>
+#include <asm/outercache.h>
+#include <asm/cacheflush.h>
 #include "libahci_debug.h"
 
 static struct dentry	*debug_root = NULL;
 static struct libahci_debug_list debug_list = {.debug = 0};
 static struct ahci_cmd	cmd;
 static bool load_flag = false;
-volatile unsigned int *mem_buff;
+
+static struct mem_buffer mem_buff;
 
 /*
  * Print PxIS (0x10) analysis
@@ -248,7 +251,6 @@ static int libahci_debug_host_show(struct seq_file *f, void *p)
 {
 	struct ata_host		*host = f->private;
 	struct host_regs	hr = {0};
-	phys_addr_t			buff_addr;
 
 	libahci_debug_read_host_regs(host, &hr);
 	seq_printf(f, "CAP:\t\t0x%08X\n", hr.CAP);
@@ -263,8 +265,7 @@ static int libahci_debug_host_show(struct seq_file *f, void *p)
 	seq_printf(f, "EM_CTL:\t\t0x%08X\n", hr.EM_CTL);
 	seq_printf(f, "BOHC:\t\t0x%08X\n", hr.BOHC);
 
-	buff_addr = virt_to_phys(mem_buff);
-	seq_printf(f, "\nbuffer location:\t\t0x%08X\n", buff_addr);
+	seq_printf(f, "\nbuffer location:\t\t0x%08X\n", mem_buff.paddr);
 
 	return 0;
 }
@@ -461,8 +462,9 @@ void libahci_debug_event(const struct ata_port *port, char *msg, size_t msg_sz)
 			}
 
 			if (pos != NULL) {
+				//i = libahci_debug_state_dump(port);
 				spin_lock_irqsave(&pos->debug_list_lock, flags);
-				len = snprintf(format_msg, LIBAHCI_DEBUG_BUFSZ, "%s %s\n", EVT_MARKER, msg);
+				len = snprintf(format_msg, LIBAHCI_DEBUG_BUFSZ, "%s [%08u] %s\n", EVT_MARKER, i, msg);
 				for (i = 0; i < len; i++) {
 					pos->libahci_debug_buf[(pos->tail+ i) % LIBAHCI_DEBUG_BUFSZ] = format_msg[i];
 				}
@@ -675,45 +677,77 @@ void libahci_debug_wait_flag(void)
 }
 EXPORT_SYMBOL_GPL(libahci_debug_wait_flag);
 
+static void libahci_debug_buff_line(void *mem, u32 cntr)
+{
+	int i;
+	u32 *mem_ptr = mem;
+
+	mem_ptr[0] = cntr;
+	for (i = 1; i < MARKER_LEN; i++) {
+		mem_ptr[i] = 0xa5a5a5a5;
+	}
+}
+
 /*
- * Copy controller registers to buffer memory
+ * Copy controller registers to buffer memory and return the record number
  */
-void libahci_debug_state_dump(struct device *dev)
+unsigned int libahci_debug_state_dump(struct ata_port *ap)
 {
 	static u32 page_cntr;
-	phys_addr_t v2p;
-	u32 *p2v;
 	int i;
+	u32 tmp;
+	u32 ptr;
+	struct device *dev = ap->dev;
+	struct ahci_host_priv *hpriv = ap->host->private_data;
+	void __iomem *host_mmio = hpriv->mmio;
+	struct ahci_port_priv *ppriv = ap->private_data;
+	void __iomem *port_mmio = ahci_port_base(ap);
 
-	if (!mem_buff) {
+	if (!ap)
+		return 0;
+
+	if (!mem_buff.vaddr) {
 		dev_err(dev, "dump buffer has not been allocated");
-		return;
+		return 0;
 	}
 
-	v2p = virt_to_phys(mem_buff);
-	dev_info(dev, "write to buffer: 0x%08x", v2p);
-	mem_buff[0] = 0xdeadbeef;
-	for (i = 1; i < 100; i++) {
-		mem_buff[i] = 0xa5a5a5a5;
+	dev_info(dev, "dump page num: %u", page_cntr);
+	ptr = page_cntr * DUMP_LEN;
+	if (ptr + DUMP_LEN > SEGMENT_SIZE)
+		ptr = 0;
+	dev_info(dev, "current ptr: %u", ptr);
+	for (i = 0; i < GHC_SZ; i++) {
+		tmp = ioread32(host_mmio + 4 * i);
+		mem_buff.vaddr[ptr++] = tmp;
 	}
-	/*__cpu_flush_kern_all();
-	outer_flush_all();
-	for (i = 0; i < 100; i++) {
-		v2p = virt_to_phys(mem_buff + 4*i);
-		dev_info(dev, "read phys addr: 0x%x, data: 0x%08x", v2p, *(mem_buff + 4*i));
-	}*/
+	for (i = 0; i < PORT_REG_SZ; i++) {
+		tmp = ioread32(port_mmio + 4 * i);
+		mem_buff.vaddr[ptr++] = tmp;
+	}
+	for (i = 0; i < CLB_SZ; i++) {
+		tmp = ioread32(ppriv->cmd_slot);
+		mem_buff.vaddr[ptr++] = tmp;
+	}
+	for (i = 0; i < FIS_SZ; i++) {
+		tmp = ioread32(ppriv->rx_fis);
+		mem_buff.vaddr[ptr++] = tmp;
+	}
+	libahci_debug_buff_line(&mem_buff.vaddr[ptr + ALIGN_OFFSET], page_cntr);
+	//__cpuc_flush_kern_all();
+	//outer_flush_all();
+	page_cntr++;
+
+	return page_cntr;
 }
+EXPORT_SYMBOL_GPL(libahci_debug_state_dump);
 
 static void libahci_debug_buff_init(struct device *dev)
 {
-	dma_addr_t dma_handle;
-
-	dev_info(dev, "trying to allocate dump buffer");
-	mem_buff = dmam_alloc_coherent(dev, PAGE_SIZE, &dma_handle, GFP_KERNEL);
-	if (!mem_buff)
+	mem_buff.vaddr = dmam_alloc_coherent(dev, SEGMENT_SIZE, &mem_buff.paddr, GFP_KERNEL);
+	if (!mem_buff.vaddr)
 		dev_err(dev, "unable to allocate memory");
 	else
-		dev_info(dev, "buffer allocated at 0x%08x", dma_handle);
+		dev_info(dev, "dump buffer allocated");
 }
 
 static const struct file_operations libahci_debug_host_ops = {
@@ -808,7 +842,6 @@ int libahci_debug_init(struct ata_host *host)
 	}
 
 	libahci_debug_buff_init(host->dev);
-	libahci_debug_state_dump(host->dev);
 	return 0;
 
 fail_handler:

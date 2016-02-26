@@ -19,11 +19,21 @@
 #define CMD_DMA_BUFSZ	512
 #define PORT_RESERVED_2		40
 #define PORT_VENDOR_BYTES	16
-#define BUFFER_ADDRESS		0x38130000
-/* Buffer is 100 Mb*/
-#define BUFFER_PAGES		25600
-#define SEGMENT_SIZE		0x10000
 #define LIBAHCI_DEBUG_BUFSZ	16384
+
+/* Total size of dump buffer in bytes*/
+#define SEGMENT_SIZE		0x10000
+/* The sizes below are in DWORDs*/
+#define GHC_SZ			0x0B
+#define PORT_REG_SZ		0x20
+#define CLB_SZ			0x08
+#define FIS_SZ			0x40
+#define DUMP_LEN		0x240
+
+/* The length of delimiter line in memory */
+#define MARKER_LEN		0x10
+/* Offset to the end of nearest 16 DWORD string */
+#define ALIGN_OFFSET	0x0d
 
 struct libahci_debug_list {
 	unsigned int		debug;
@@ -51,6 +61,20 @@ struct ahci_cmd {
 	struct scatterlist	sg;
 	char				*sg_buff;
 	int					cmd_sent;
+};
+
+struct mem_buffer {
+	volatile u32 *vaddr;
+	dma_addr_t paddr;
+	ssize_t size;
+};
+
+struct dump_record {
+	u32 reg_ghc[GHC_SZ];
+	u32 reg_port[PORT_REG_SZ];
+	u32 reg_clb[CLB_SZ];
+	u32 reg_fis[FIS_SZ];
+	u32 cntr;
 };
 
 // AHCI Port registers
@@ -104,6 +128,6 @@ void libahci_debug_dump_sg(const struct ata_queued_cmd *qc, const char *prefix);
 void libahci_debug_irq_notify(const struct ata_port *ap);
 void libahci_debug_exec_cmd(struct ata_port *ap);
 void libahci_debug_wait_flag(void);
-void libahci_debug_state_dump(struct device *dev);
+unsigned int libahci_debug_state_dump(struct ata_port *ap);
 
 #endif /* _LIBAHCI_DEBUG_H_ */
