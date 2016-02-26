@@ -772,7 +772,7 @@ unsigned int libahci_debug_saxigp1_save(struct ata_port *ap, size_t dump_size)
 		return 0; // should be non-zero when error, 0 is OK usually
 	}
 	counter_save = (u32*) (pElphel_buf->vaddr + counter_offset);
-
+	dev_err(dev, "Copying 0x%x bytes of data from saxigp1 to memory",dump_size);
 	memcpy_fromio(pElphel_buf->vaddr  + buffer_offset + (page_cntr * dump_size), ioptr, dump_size);
 	counter_save[0] = page_cntr;
 	counter_save[1] = dump_size;
