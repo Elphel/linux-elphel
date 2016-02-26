@@ -35,10 +35,12 @@
 									<listOptionValue builtIn="false" value="KBUILD_BASENAME=KBUILD_STR(bounds)"/>
 									<listOptionValue builtIn="false" value="KBUILD_MODNAME=KBUILD_STR(bounds)"/>
 									<listOptionValue builtIn="false" value="__GENKSYMS__=1"/>
+									<listOptionValue builtIn="false" value="CONFIG_GPIOLIB=1"/>
 								</option>
 								<option id="gnu.c.compiler.option.include.paths.1702086126" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include/linux}"/>
+									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include/linux/gpio}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/arch/arm/include/generated}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/arch/arm/include/generated/uapi}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/include/generated/uapi}"/>
@@ -64,6 +66,7 @@
 								<option id="gnu.both.asm.option.include.paths.1017210607" name="Include paths (-I)" superClass="gnu.both.asm.option.include.paths" valueType="includePath">
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include/linux}"/>
+									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include/linux/gpio}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/arch/arm/include/generated}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/arch/arm/include/generated/uapi}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/include/generated/uapi}"/>
