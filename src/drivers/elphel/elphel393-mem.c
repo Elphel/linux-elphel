@@ -35,14 +35,7 @@
 #define SYSFS_WRITEONLY           0222
 
 static ssize_t get_paddr(struct device *dev, struct device_attribute *attr, char *buf);
-/*
-struct elphel_buf_t
-{
-	void *vaddr;
-	dma_addr_t paddr;
-	ssize_t size;
-};
-*/
+
 static struct elphel_buf_t _elphel_buf = {
 	.vaddr = NULL,
 	.paddr = 0,
@@ -51,6 +44,7 @@ static struct elphel_buf_t _elphel_buf = {
 
 struct elphel_buf_t elphel_buf; // static can not be extern
 
+
 EXPORT_SYMBOL_GPL(elphel_buf);
 static int __init elphelmem_init(void)
 {
@@ -58,6 +52,8 @@ static int __init elphelmem_init(void)
 	const __be32 *bufsize_be;
 
 	elphel_buf = _elphel_buf; // static can not be extern
+
+
 
 	node = of_find_node_by_name(NULL, "elphel393-mem");
 	if (!node)
