@@ -39,6 +39,7 @@
 								</option>
 								<option id="gnu.c.compiler.option.include.paths.1702086126" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include}"/>
+									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include/elphel}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include/linux}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include/linux/gpio}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/arch/arm/include/generated}"/>
@@ -65,6 +66,7 @@
 							<tool id="cdt.managedbuild.tool.gnu.assembler.base.1682827795" name="GCC Assembler" superClass="cdt.managedbuild.tool.gnu.assembler.base">
 								<option id="gnu.both.asm.option.include.paths.1017210607" name="Include paths (-I)" superClass="gnu.both.asm.option.include.paths" valueType="includePath">
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include}"/>
+									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include/elphel}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include/linux}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/source/include/linux/gpio}"/>
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/arch/arm/include/generated}"/>

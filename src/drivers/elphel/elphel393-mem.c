@@ -29,7 +29,7 @@
 #include <asm/dma-mapping.h>
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
-#include "elphel393-mem.h"
+#include <elphel/elphel393-mem.h>
 #define SYSFS_PERMISSIONS         0644 /* default permissions for sysfs files */
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
@@ -42,16 +42,16 @@ static struct elphel_buf_t _elphel_buf = {
 	.size = 0
 };
 
-struct elphel_buf_t elphel_buf; // static can not be extern
+struct elphel_buf_t *pElphel_buf; // static can not be extern
 
 
-EXPORT_SYMBOL_GPL(elphel_buf);
+EXPORT_SYMBOL_GPL(pElphel_buf);
 static int __init elphelmem_init(void)
 {
     struct device_node *node;
 	const __be32 *bufsize_be;
 
-	elphel_buf = _elphel_buf; // static can not be extern
+	pElphel_buf = &_elphel_buf; // static can not be extern
 
 
 
@@ -72,6 +72,10 @@ static int __init elphelmem_init(void)
     	printk("Allocated %u pages for DMA at address 0x%x\n", (u32)_elphel_buf.size, (u32)_elphel_buf.paddr);
     }
     else printk("ERROR allocating memory buffer");
+
+    printk("\nbuffer location:\t\t0x%08X\n", pElphel_buf->paddr);
+    printk("\nbuffer vaddr:\t\t0x%08X\n", pElphel_buf->vaddr);
+
 
     return 0;
 }

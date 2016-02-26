@@ -12,14 +12,31 @@
 #include <linux/poll.h>
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
+#include <elphel/elphel393-mem.h>
 #include "libahci_debug.h"
-
+#include <asm/io.h> // ioremap(), copy_fromio
+/*
+ struct elphel_buf_t
+{
+	void *vaddr;
+	dma_addr_t paddr;
+	ssize_t size;
+	memcpy(to,from,sizeof())
+};
+extern struct elphel_buf_t *pElphel_buf;
+*/
+static u32              page_cntr = 0;
 static struct dentry	*debug_root = NULL;
 static struct libahci_debug_list debug_list = {.debug = 0};
 static struct ahci_cmd	cmd;
 static bool load_flag = false;
+const size_t maxigp1_start = 0x80000000; // start of MAXIGP1 physical address range
+const size_t maxigp1_size =  0x3000; // size of register memory to save
+const size_t buffer_offset = 0x40000; // start of dumping area (0xxxx, 1xxxx and 2xxxx are used for dma buffers
+const size_t counter_offset = 0x3fff8; // save page counter and page size with this offset in the buffer
+static void * ioptr = 0; // keep iomemory mapped forever
 
-static struct mem_buffer mem_buff;
+//static struct mem_buffer mem_buff;
 
 /*
  * Print PxIS (0x10) analysis
@@ -265,7 +282,7 @@ static int libahci_debug_host_show(struct seq_file *f, void *p)
 	seq_printf(f, "EM_CTL:\t\t0x%08X\n", hr.EM_CTL);
 	seq_printf(f, "BOHC:\t\t0x%08X\n", hr.BOHC);
 
-	seq_printf(f, "\nbuffer location:\t\t0x%08X\n", mem_buff.paddr);
+	seq_printf(f, "\nbuffer location:\t\t0x%08X\n", pElphel_buf->paddr);
 
 	return 0;
 }
@@ -591,8 +608,8 @@ EXPORT_SYMBOL_GPL(libahci_debug_irq_notify);
 static int libahci_debug_fis_open(struct inode *i_node, struct file *f)
 {
 	struct ata_port		*ap = i_node->i_private;
-	const char			*name = f->f_path.dentry->d_name.name;
-	void				*buff = NULL;
+//	const char			*name = f->f_path.dentry->d_name.name;
+//	void				*buff = NULL;
 
 	/*if (strncmp(name, FILE_NAME_CFIS, 5) == 0) {
 		buff = kzalloc(sizeof(struct ahci_cmd_fis), GFP_KERNEL);
@@ -693,10 +710,11 @@ static void libahci_debug_buff_line(void *mem, u32 cntr)
  */
 unsigned int libahci_debug_state_dump(struct ata_port *ap)
 {
-	static u32 page_cntr;
+//	static u32 page_cntr;
 	int i;
 	u32 tmp;
 	u32 ptr;
+	u32 * buf = (u32 *) (pElphel_buf->vaddr);
 	struct device *dev = ap->dev;
 	struct ahci_host_priv *hpriv = ap->host->private_data;
 	void __iomem *host_mmio = hpriv->mmio;
@@ -706,7 +724,7 @@ unsigned int libahci_debug_state_dump(struct ata_port *ap)
 	if (!ap)
 		return 0;
 
-	if (!mem_buff.vaddr) {
+	if (!pElphel_buf->vaddr) {
 		dev_err(dev, "dump buffer has not been allocated");
 		return 0;
 	}
@@ -718,21 +736,21 @@ unsigned int libahci_debug_state_dump(struct ata_port *ap)
 	dev_info(dev, "current ptr: %u", ptr);
 	for (i = 0; i < GHC_SZ; i++) {
 		tmp = ioread32(host_mmio + 4 * i);
-		mem_buff.vaddr[ptr++] = tmp;
+		buf[ptr++] = tmp;
 	}
 	for (i = 0; i < PORT_REG_SZ; i++) {
 		tmp = ioread32(port_mmio + 4 * i);
-		mem_buff.vaddr[ptr++] = tmp;
+		buf[ptr++] = tmp;
 	}
 	for (i = 0; i < CLB_SZ; i++) {
 		tmp = ioread32(ppriv->cmd_slot);
-		mem_buff.vaddr[ptr++] = tmp;
+		buf[ptr++] = tmp;
 	}
 	for (i = 0; i < FIS_SZ; i++) {
 		tmp = ioread32(ppriv->rx_fis);
-		mem_buff.vaddr[ptr++] = tmp;
+		buf[ptr++] = tmp;
 	}
-	libahci_debug_buff_line(&mem_buff.vaddr[ptr + ALIGN_OFFSET], page_cntr);
+	libahci_debug_buff_line(pElphel_buf->vaddr +ptr + ALIGN_OFFSET, page_cntr);
 	//__cpuc_flush_kern_all();
 	//outer_flush_all();
 	page_cntr++;
@@ -741,13 +759,48 @@ unsigned int libahci_debug_state_dump(struct ata_port *ap)
 }
 EXPORT_SYMBOL_GPL(libahci_debug_state_dump);
 
+unsigned int libahci_debug_saxigp1_save(struct ata_port *ap, size_t dump_size)
+{
+	struct device *dev = ap->dev;
+	u32 * counter_save;
+	if (!ioptr) {
+		dev_err(dev, "saxigp1 memory is not mapped");
+		return 0; // should be non-zero when error, 0 is OK usually
+	}
+	if (!pElphel_buf->vaddr) {
+		dev_err(dev, "elphel_buf has not been allocated");
+		return 0; // should be non-zero when error, 0 is OK usually
+	}
+	counter_save = (u32*) (pElphel_buf->vaddr + counter_offset);
+
+	memcpy_fromio(pElphel_buf->vaddr  + buffer_offset + (page_cntr * dump_size), ioptr, dump_size);
+	counter_save[0] = page_cntr;
+	counter_save[1] = dump_size;
+
+	page_cntr++;
+
+	return page_cntr;
+}
+EXPORT_SYMBOL_GPL(libahci_debug_saxigp1_save);
+
+
 static void libahci_debug_buff_init(struct device *dev)
 {
+	dev_info(dev, "Nothing to allocate - using elphel_buf allocated at startup");
+/*
 	mem_buff.vaddr = dmam_alloc_coherent(dev, SEGMENT_SIZE, &mem_buff.paddr, GFP_KERNEL);
 	if (!mem_buff.vaddr)
 		dev_err(dev, "unable to allocate memory");
 	else
 		dev_info(dev, "dump buffer allocated");
+*/
+/*
+ const size_t maxigp1_start = 0x80000000; // start of MAXIGP1 physical address range
+ const size_t maxigp1_size = 0x3000; // size of register memory to save
+ */
+	ioptr =  ioremap_nocache(maxigp1_start, maxigp1_size);
+	dev_info(dev, "Mapped 0x%08x bytes from physical address 0x%08x to 0x%08x", maxigp1_size, maxigp1_start, (size_t) ioptr);
+	page_cntr = 0;
 }
 
 static const struct file_operations libahci_debug_host_ops = {

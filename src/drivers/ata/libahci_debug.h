@@ -129,5 +129,7 @@ void libahci_debug_irq_notify(const struct ata_port *ap);
 void libahci_debug_exec_cmd(struct ata_port *ap);
 void libahci_debug_wait_flag(void);
 unsigned int libahci_debug_state_dump(struct ata_port *ap);
+unsigned int libahci_debug_saxigp1_save(struct ata_port *ap, size_t dump_size);
+
 
 #endif /* _LIBAHCI_DEBUG_H_ */
