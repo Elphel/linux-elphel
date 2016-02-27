@@ -34,7 +34,12 @@ const size_t maxigp1_start = 0x80000000; // start of MAXIGP1 physical address ra
 const size_t maxigp1_size =  0x3000; // size of register memory to save
 const size_t buffer_offset = 0x40000; // start of dumping area (0xxxx, 1xxxx and 2xxxx are used for dma buffers
 const size_t counter_offset = 0x3fff8; // save page counter and page size with this offset in the buffer
+const size_t fsm_state_offset = 0xffc;
 static void * ioptr = 0; // keep iomemory mapped forever
+
+char *early_buff;
+
+static inline u32 libahci_debug_get_fsm_state(void);
 
 //static struct mem_buffer mem_buff;
 
@@ -462,6 +467,7 @@ void libahci_debug_event(const struct ata_port *port, char *msg, size_t msg_sz)
 {
 	int					len;
 	int					i;
+	u32					tmp;
 	char				*format_msg = NULL;
 	unsigned long		flags;
 	unsigned int		port_index = (port == NULL) ? 0 : port->port_no;
@@ -480,8 +486,11 @@ void libahci_debug_event(const struct ata_port *port, char *msg, size_t msg_sz)
 
 			if (pos != NULL) {
 				//i = libahci_debug_state_dump(port);
+				i = libahci_debug_saxigp1_save(port, 0x3000);
+				tmp = libahci_debug_get_fsm_state();
+
+				len = snprintf(format_msg, LIBAHCI_DEBUG_BUFSZ, "%s [%08u; fsm: 0x%08x] %s\n", EVT_MARKER, i, tmp, msg);
 				spin_lock_irqsave(&pos->debug_list_lock, flags);
-				len = snprintf(format_msg, LIBAHCI_DEBUG_BUFSZ, "%s [%08u] %s\n", EVT_MARKER, i, msg);
 				for (i = 0; i < len; i++) {
 					pos->libahci_debug_buf[(pos->tail+ i) % LIBAHCI_DEBUG_BUFSZ] = format_msg[i];
 				}
@@ -494,6 +503,10 @@ void libahci_debug_event(const struct ata_port *port, char *msg, size_t msg_sz)
 				wake_up_interruptible(&pos->debug_wait);
 			}
 			kfree(format_msg);
+		}
+	} else {
+		if (early_buff) {
+
 		}
 	}
 }
@@ -761,28 +774,44 @@ EXPORT_SYMBOL_GPL(libahci_debug_state_dump);
 
 unsigned int libahci_debug_saxigp1_save(struct ata_port *ap, size_t dump_size)
 {
-	struct device *dev = ap->dev;
+	struct device *dev;
 	u32 * counter_save;
-	if (!ioptr) {
-		dev_err(dev, "saxigp1 memory is not mapped");
-		return 0; // should be non-zero when error, 0 is OK usually
-	}
-	if (!pElphel_buf->vaddr) {
-		dev_err(dev, "elphel_buf has not been allocated");
-		return 0; // should be non-zero when error, 0 is OK usually
-	}
-	counter_save = (u32*) (pElphel_buf->vaddr + counter_offset);
-	dev_err(dev, "Copying 0x%x bytes of data from saxigp1 to memory",dump_size);
-	memcpy_fromio(pElphel_buf->vaddr  + buffer_offset + (page_cntr * dump_size), ioptr, dump_size);
-	counter_save[0] = page_cntr;
-	counter_save[1] = dump_size;
+	void *current_ptr;
+	static size_t bytes_copied;
+	const size_t end = 0x1000000;
+	u32 *start_ptr;
 
-	page_cntr++;
+	// ap pointer is not initialized on early loading stages, skip debug output
+	if (ap) {
+		dev = ap->dev;
+		if (!ioptr) {
+			dev_err(dev, "saxigp1 memory is not mapped");
+			return 0; // should be non-zero when error, 0 is OK usually
+		}
+		if (!pElphel_buf->vaddr) {
+			dev_err(dev, "elphel_buf has not been allocated");
+			return 0; // should be non-zero when error, 0 is OK usually
+		}
+	}
+
+	//if (bytes_copied < pElphel_buf->size * PAGE_SIZE - dump_size) {
+	if (bytes_copied < end) {
+		counter_save = (u32*) (pElphel_buf->vaddr + counter_offset);
+		start_ptr = (u32 *)(pElphel_buf->vaddr + buffer_offset + (page_cntr * dump_size));
+		//dev_err(dev, "Copying 0x%x bytes of data from saxigp1 to memory",dump_size);
+		memcpy_fromio(pElphel_buf->vaddr  + buffer_offset + (page_cntr * dump_size), ioptr, dump_size);
+		counter_save[0] = page_cntr;
+		counter_save[1] = dump_size;
+
+		page_cntr++;
+		bytes_copied += dump_size;
+	} else {
+		page_cntr = 0;
+	}
 
 	return page_cntr;
 }
 EXPORT_SYMBOL_GPL(libahci_debug_saxigp1_save);
-
 
 static void libahci_debug_buff_init(struct device *dev)
 {
@@ -801,6 +830,11 @@ static void libahci_debug_buff_init(struct device *dev)
 	ioptr =  ioremap_nocache(maxigp1_start, maxigp1_size);
 	dev_info(dev, "Mapped 0x%08x bytes from physical address 0x%08x to 0x%08x", maxigp1_size, maxigp1_start, (size_t) ioptr);
 	page_cntr = 0;
+}
+
+static inline u32 libahci_debug_get_fsm_state(void)
+{
+	return ioread32(ioptr + fsm_state_offset);
 }
 
 static const struct file_operations libahci_debug_host_ops = {
@@ -856,6 +890,17 @@ static int libahci_debug_init_sg(void)
 	return 0;
 }
 
+int libahci_debug_init_early(struct device *dev)
+{
+	early_buff = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (!early_buff) {
+		dev_err(dev, "unable to allocate mem for early buffer");
+		return -ENOMEM;
+	} else {
+		dev_info(dev, "early buffer allocated");
+	}
+}
+
 int libahci_debug_init(struct ata_host *host)
 {
 	int					i;
@@ -907,6 +952,7 @@ EXPORT_SYMBOL_GPL(libahci_debug_init);
 void libahci_debug_exit(void)
 {
 	kfree(cmd.sg_buff);
+	kfree(early_buff);
 	debugfs_remove_recursive(debug_root);
 }
 EXPORT_SYMBOL_GPL(libahci_debug_exit);

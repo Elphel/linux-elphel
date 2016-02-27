@@ -96,8 +96,8 @@ static int elphel_port_start(struct ata_port *ap)
 //	libahci_debug_state_dump(ap);
 //	libahci_debug_state_dump(ap);
 
-	libahci_debug_saxigp1_save(ap, 0x3000);
-	libahci_debug_saxigp1_save(ap, 0x3000);
+	//libahci_debug_saxigp1_save(ap, 0x3000);
+	//libahci_debug_saxigp1_save(ap, 0x3000);
 
 
 	return ahci_port_resume(ap);
