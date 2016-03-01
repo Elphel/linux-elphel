@@ -43,6 +43,9 @@ struct elphel_ahci_priv {
 	u32 base_addr;
 };
 
+
+// What about port_stop and freeing/unmapping ?
+// Or at least check if it is re-started and memory is already allocated/mapped
 static int elphel_port_start(struct ata_port *ap)
 {
 	void *mem;
@@ -52,6 +55,10 @@ static int elphel_port_start(struct ata_port *ap)
 	struct ahci_host_priv *hpriv = ap->host->private_data;
 	const struct elphel_ahci_priv *dpriv = hpriv->plat_data;
 
+//	const ssize_t align_cdt = 128;
+	const ssize_t align_cdt = 4096; // just trying - page align
+    u32 * dbg_p;
+    int   dbg_i;
 	libahci_debug_init(ap->host);
 
 	dev_info(dev, "starting port %d", ap->port_no);
@@ -61,12 +68,40 @@ static int elphel_port_start(struct ata_port *ap)
 	if (!pp)
 		return -ENOMEM;
 
+	// Seems that dmam_alloc_coherent() in Zynq does not really make it "coherent" (write buffers), but stream functions work
+	/*
+Command Table Descriptor Base Address (CTBA): Indicates the 32-bit physical address of
+the command table, which contains the command FIS, ATAPI Command, and PRD table. This
+address must be aligned to a 128-byte cache line, indicated by bits 06:00 being reserved.
+
 	mem = dmam_alloc_coherent(dev, AHCI_CMD_TBL_AR_SZ, &mem_dma, GFP_KERNEL);
 	if (!mem)
 		return -ENOMEM;
-	memset(mem, 0, AHCI_CMD_TBL_AR_SZ);
-	pp->cmd_tbl = mem;
-	pp->cmd_tbl_dma = mem_dma;
+	memset(mem, 0, AHCI_CMD_TBL_AR_SZ); // dmam_alloc_coherent() does this
+	void *dma_alloc_coherent(struct device *dev, size_t size, dma_addr_t *dma_handle, int flag);
+    dma_addr_t dma_map_single(struct device *dev, void *buffer, size_t size, enum dma_data_direction direction);
+    void dma_unmap_single(struct device *dev, dma_addr_t dma_addr, size_t size, enum dma_data_direction direction);
+	*/
+//	mem = devm_kzalloc(dev, AHCI_CMD_TBL_AR_SZ + align_cdt - 1, GFP_KERNEL);
+//	mem = devm_kmalloc(dev, AHCI_CMD_TBL_AR_SZ + align_cdt - 1, GFP_KERNEL); // let some junk be there
+	mem = devm_kmalloc(dev, 0x100000, GFP_KERNEL); // AHCI_CMD_TBL_AR_SZ = 0x16000
+	dbg_p = (u32*) mem;
+	for (dbg_i=0; dbg_i < ((AHCI_CMD_TBL_AR_SZ + align_cdt)>>2); dbg_i++) {
+		dbg_p[dbg_i] = dbg_i;
+	}
+	dbg_i = 0;
+	/*
+	if (((u32) mem) & (align_cdt - 1)) {
+//		mem += align_cdt - (((u32) mem) & (align_cdt - 1));
+		dbg_i = align_cdt - (((u32) mem) & (align_cdt - 1));
+	}
+*/
+	mem_dma = dma_map_single(dev, mem, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE); // maybe DMA_BIDIRECTIONAL, but currently we do not use DMA for received FISes
+
+	dev_info(dev, "ahci_elphel.c: dbg_i= 0x%08x, mem= 0x%08x, mem_dma= 0x%08x", dbg_i, (u32) mem, (u32) mem_dma);
+	pp->cmd_tbl = mem + dbg_i;
+	pp->cmd_tbl_dma = mem_dma + dbg_i;
+	dev_info(dev, "ahci_elphel.c: dbg_i= 0x%08x, pp->cmd_tbl= 0x%08x, pp->cmd_tbl_dma= 0x%08x", dbg_i, (u32) pp->cmd_tbl, (u32) pp->cmd_tbl_dma);
 
 	/*
 	 * Set predefined addresses
@@ -99,7 +134,7 @@ static int elphel_port_start(struct ata_port *ap)
 	//libahci_debug_saxigp1_save(ap, 0x3000);
 	//libahci_debug_saxigp1_save(ap, 0x3000);
 
-
+	dev_info(dev, "ahci_elphel.c: Calling  ahci_port_resume()");
 	return ahci_port_resume(ap);
 }
 
@@ -218,7 +253,7 @@ static unsigned int elphel_read_id(struct ata_device *dev, struct ata_taskfile *
 	if (err_mask)
 		return err_mask;
 
-	dev_info(d, "issue identify command");
+	dev_info(d, "elphel_read_id(): issue identify command finished");
 
 	return 0;
 }

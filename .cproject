@@ -38,6 +38,8 @@
 									<listOptionValue builtIn="false" value="CONFIG_GPIOLIB=1"/>
 									<listOptionValue builtIn="false" value="CONFIG_BLOCK=1"/>
 									<listOptionValue builtIn="false" value="CONFIG_HZ=100"/>
+									<listOptionValue builtIn="false" value="MODULE_ARCH_INIT={}"/>
+									<listOptionValue builtIn="false" value="CONFIG_MMU=1"/>
 								</option>
 								<option id="gnu.c.compiler.option.include.paths.1702086126" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
 									<listOptionValue builtIn="false" value="${workspace_loc:/linux-elphel/linux/include/generated}"/>

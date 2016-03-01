@@ -15,6 +15,7 @@
 #include <elphel/elphel393-mem.h>
 #include "libahci_debug.h"
 #include <asm/io.h> // ioremap(), copy_fromio
+#include <linux/jiffies.h>
 /*
  struct elphel_buf_t
 {
@@ -489,7 +490,7 @@ void libahci_debug_event(const struct ata_port *port, char *msg, size_t msg_sz)
 				i = libahci_debug_saxigp1_save(port, 0x3000);
 				tmp = libahci_debug_get_fsm_state();
 
-				len = snprintf(format_msg, LIBAHCI_DEBUG_BUFSZ, "%s [%08u; fsm: 0x%08x] %s\n", EVT_MARKER, i, tmp, msg);
+				len = snprintf(format_msg, LIBAHCI_DEBUG_BUFSZ, "%s [%08u; fsm: 0x%08x @0x%08x] %s\n", EVT_MARKER, i, tmp, jiffies, msg);
 				spin_lock_irqsave(&pos->debug_list_lock, flags);
 				for (i = 0; i < len; i++) {
 					pos->libahci_debug_buf[(pos->tail+ i) % LIBAHCI_DEBUG_BUFSZ] = format_msg[i];

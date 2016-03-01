@@ -19,9 +19,25 @@
  *!****************************************************************************/
 struct elphel_buf_t
 {
-	void *vaddr;
+	// Coherent DMA buffer
+	void      *vaddr;
 	dma_addr_t paddr;
-	ssize_t size;
+	ssize_t    size;
+
+	// Host to device stream DMA buffer
+	void      *h2d_vaddr;
+	dma_addr_t h2d_paddr;
+	ssize_t    h2d_size;
+
+	// Device to host stream DMA buffer
+	void      *d2h_vaddr;
+	dma_addr_t d2h_paddr;
+	ssize_t    d2h_size;
+
+	// Bidirectional stream DMA buffer
+	void      *bidir_vaddr;
+	dma_addr_t bidir_paddr;
+	ssize_t    bidir_size;
 };
 extern struct elphel_buf_t *pElphel_buf;
 

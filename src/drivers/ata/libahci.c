@@ -209,9 +209,15 @@ static void ahci_enable_ahci(void __iomem *mmio)
 
 	/* turn on AHCI_EN */
 	tmp = readl(mmio + HOST_CTL);
-	if (tmp & HOST_AHCI_EN)
+	if (tmp & HOST_AHCI_EN) {// MSB (0x80000000) is already set (RO in x393_sata)
+		if (msg_str != NULL) {
+			len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_enable_ahci() - already enabled");
+			libahci_debug_event(NULL, msg_str, len);
+			kfree(msg_str);
+			msg_str = NULL;
+		}
 		return;
-
+	}
 	/* Some controllers need AHCI_EN to be written multiple times.
 	 * Try a few times before giving up.
 	 */
@@ -224,6 +230,7 @@ static void ahci_enable_ahci(void __iomem *mmio)
 			len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "write HOST_AHCI_EN to HOST_CTL register");
 			libahci_debug_event(NULL, msg_str, len);
 			kfree(msg_str);
+			msg_str = NULL;
 		}
 
 		if (tmp & HOST_AHCI_EN)
@@ -547,6 +554,8 @@ void ahci_save_initial_config(struct device *dev, struct ahci_host_priv *hpriv)
 
 	if (!hpriv->start_engine)
 		hpriv->start_engine = ahci_start_engine;
+	dev_warn(dev, "ahci_save_initial_config() done\n");
+	//ahci_save_initial_config
 }
 EXPORT_SYMBOL_GPL(ahci_save_initial_config);
 
@@ -582,11 +591,11 @@ static void ahci_restore_initial_config(struct ata_host *host)
 static unsigned ahci_scr_offset(struct ata_port *ap, unsigned int sc_reg)
 {
 	static const int offset[] = {
-		[SCR_STATUS]		= PORT_SCR_STAT,
-		[SCR_CONTROL]		= PORT_SCR_CTL,
-		[SCR_ERROR]		= PORT_SCR_ERR,
-		[SCR_ACTIVE]		= PORT_SCR_ACT,
-		[SCR_NOTIFICATION]	= PORT_SCR_NTF,
+		[SCR_STATUS]		= PORT_SCR_STAT, // 0 -> 0x28
+		[SCR_CONTROL]		= PORT_SCR_CTL,  // 2 -> 0x2c
+		[SCR_ERROR]		    = PORT_SCR_ERR,  // 1 -> 0x30
+		[SCR_ACTIVE]		= PORT_SCR_ACT,  // 3 -> 0x34
+		[SCR_NOTIFICATION]	= PORT_SCR_NTF,  // 4 -> 0x3c
 	};
 	struct ahci_host_priv *hpriv = ap->host->private_data;
 
@@ -605,7 +614,7 @@ static int ahci_scr_read(struct ata_link *link, unsigned int sc_reg, u32 *val)
 	u32 tmp;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "read port %u SATA status and control registers", link->ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_scr_read() port=%u SATA status and control registers %u", link->ap->port_no,sc_reg);
 		libahci_debug_event(link->ap, msg_str, len);
 	}
 
@@ -614,7 +623,7 @@ static int ahci_scr_read(struct ata_link *link, unsigned int sc_reg, u32 *val)
 
 		if (msg_str != NULL) {
 			tmp = readl(port_mmio + PORT_CMD);
-			len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tport %u offset: 0x%x, value: 0x%x, PxCMD: 0x%08x", link->ap->port_no, offset, *val, tmp);
+			len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tport %u offset: 0x%x, value: 0x%x (current PxCMD=0x%08x)", link->ap->port_no, offset, *val, tmp);
 			libahci_debug_event(link->ap, msg_str, len);
 		}
 
@@ -635,7 +644,7 @@ static int ahci_scr_write(struct ata_link *link, unsigned int sc_reg, u32 val)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "write port %u SATA status and control registers", link->ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_scr_write(): port %u SATA status and control registers", link->ap->port_no);
 		libahci_debug_event(link->ap, msg_str, len);
 	}
 
@@ -663,9 +672,10 @@ void ahci_start_engine(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "start port %u command list DMA engine", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_start_engine() port %u set PxCMD.ST", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 	}
+	dev_info(ap->host->dev, "ahci_start_engine()\n");
 
 	/* start DMA */
 	tmp = readl(port_mmio + PORT_CMD);
@@ -689,32 +699,44 @@ int ahci_stop_engine(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "stop port %u command list DMA engine", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_stop_engine(): clear PxCMD.ST port %u command list DMA engine", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 	}
 
 	tmp = readl(port_mmio + PORT_CMD);
 
 	/* check if the HBA is idle */
-	if ((tmp & (PORT_CMD_START | PORT_CMD_LIST_ON)) == 0)
+	if ((tmp & (PORT_CMD_START | PORT_CMD_LIST_ON)) == 0){
+		if (msg_str != NULL) {
+			len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tDMA was not running, no need to stop: (PxCMD=0x%08x)", tmp);
+			libahci_debug_event(ap, msg_str, len);
+			kfree(msg_str);
+		}
 		return 0;
+	}
 
 	/* setting HBA to idle */
 	tmp &= ~PORT_CMD_START;
 	writel(tmp, port_mmio + PORT_CMD);
 
-	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\twrite to port %u register PxCMD, value: 0x%08x", ap->port_no, tmp);
-		libahci_debug_event(ap, msg_str, len);
-		kfree(msg_str);
-	}
 
 	/* wait for engine to stop. This could be as long as 500 msec */
 	tmp = ata_wait_register(ap, port_mmio + PORT_CMD,
 				PORT_CMD_LIST_ON, PORT_CMD_LIST_ON, 1, 500);
-	if (tmp & PORT_CMD_LIST_ON)
-		return -EIO;
 
+	if (tmp & PORT_CMD_LIST_ON) {
+		if (msg_str != NULL) {
+			len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\t FAILED waiting PORT_CMD_LIST_ON to clear, PxCMD, value: 0x%08x", tmp);
+			libahci_debug_event(ap, msg_str, len);
+			kfree(msg_str);
+		}
+		return -EIO;
+	}
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\t SUCCESS waiting PORT_CMD_LIST_ON to clear, PxCMD, value: 0x%08x", tmp);
+		libahci_debug_event(ap, msg_str, len);
+		kfree(msg_str);
+	}
 	return 0;
 }
 EXPORT_SYMBOL_GPL(ahci_stop_engine);
@@ -729,7 +751,7 @@ void ahci_start_fis_rx(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "start port %u FIS RX reception", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_start_fis_rx() port %u FIS RX reception (set PxCMD.FRE)", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -763,7 +785,7 @@ static int ahci_stop_fis_rx(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "stop port %u FIS RX reception", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_stop_fis_rx port %u FIS RX reception (clear PxCMD.FRE)", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -776,8 +798,11 @@ static int ahci_stop_fis_rx(struct ata_port *ap)
 	/* wait for completion, spec says 500ms, give it 1000 */
 	tmp = ata_wait_register(ap, port_mmio + PORT_CMD, PORT_CMD_FIS_ON,
 				PORT_CMD_FIS_ON, 10, 1000);
+	// Currently x393_sata receives FISes to register memory, it may become RO, so ignore
+#if 0
 	if (tmp & PORT_CMD_FIS_ON)
 		return -EBUSY;
+#endif
 
 	return 0;
 }
@@ -791,7 +816,7 @@ static void ahci_power_up(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "port %u wake up link", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_power_up() port %u wake up link", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -819,7 +844,7 @@ static int ahci_set_lpm(struct ata_link *link, enum ata_lpm_policy policy,
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "set port %u link power management", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_set_lpm() set port %u link power management", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -913,7 +938,7 @@ static void ahci_start_port(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "start port %u", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_start_port(): port %u", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -963,7 +988,7 @@ static int ahci_deinit_port(struct ata_port *ap, const char **emsg)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "stop port %u", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_deinit_port():port %u", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -994,7 +1019,7 @@ int ahci_reset_controller(struct ata_host *host)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "trying to reset host controller");
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_reset_controller()");
 		libahci_debug_event(NULL, msg_str, len);
 		kfree(msg_str);
 	}
@@ -1046,6 +1071,13 @@ static void ahci_sw_activity(struct ata_link *link)
 	struct ata_port *ap = link->ap;
 	struct ahci_port_priv *pp = ap->private_data;
 	struct ahci_em_priv *emp = &pp->em_priv[link->pmp];
+	int len;
+	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_sw_activity()");
+		libahci_debug_event(NULL, msg_str, len);
+		kfree(msg_str);
+	}
 
 	if (!(link->flags & ATA_LFLAG_SW_ACTIVITY))
 		return;
@@ -1064,6 +1096,13 @@ static void ahci_sw_activity_blink(unsigned long arg)
 	unsigned long led_message = emp->led_state;
 	u32 activity_led_state;
 	unsigned long flags;
+	int len;
+	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_sw_activity_blink()");
+		libahci_debug_event(NULL, msg_str, len);
+		kfree(msg_str);
+	}
 
 	led_message &= EM_MSG_LED_VALUE;
 	led_message |= ap->port_no | (link->pmp << 8);
@@ -1104,6 +1143,13 @@ static void ahci_init_sw_activity(struct ata_link *link)
 	struct ata_port *ap = link->ap;
 	struct ahci_port_priv *pp = ap->private_data;
 	struct ahci_em_priv *emp = &pp->em_priv[link->pmp];
+	int len;
+	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_init_sw_activity()");
+		libahci_debug_event(NULL, msg_str, len);
+		kfree(msg_str);
+	}
 
 	/* init activity stats, setup timer */
 	emp->saved_activity = emp->activity = 0;
@@ -1123,7 +1169,7 @@ int ahci_reset_em(struct ata_host *host)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "reset EM message logic");
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_reset_em(): reset EM message logic");
 		libahci_debug_event(NULL, msg_str, len);
 		kfree(msg_str);
 	}
@@ -1152,7 +1198,7 @@ static ssize_t ahci_transmit_led_message(struct ata_port *ap, u32 state,
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "send port %u LED message", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_transmit_led_message() send port %u LED message", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -1209,6 +1255,13 @@ static ssize_t ahci_led_show(struct ata_port *ap, char *buf)
 	struct ata_link *link;
 	struct ahci_em_priv *emp;
 	int rc = 0;
+	int len;
+	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_led_show()");
+		libahci_debug_event(ap, msg_str, len);
+		kfree(msg_str);
+	}
 
 	ata_for_each_link(link, ap, EDGE) {
 		emp = &pp->em_priv[link->pmp];
@@ -1224,6 +1277,13 @@ static ssize_t ahci_led_store(struct ata_port *ap, const char *buf,
 	int pmp;
 	struct ahci_port_priv *pp = ap->private_data;
 	struct ahci_em_priv *emp;
+	int len;
+	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_led_store()");
+		libahci_debug_event(ap, msg_str, len);
+		kfree(msg_str);
+	}
 
 	if (kstrtouint(buf, 0, &state) < 0)
 		return -EINVAL;
@@ -1252,6 +1312,13 @@ static ssize_t ahci_activity_store(struct ata_device *dev, enum sw_activity val)
 	struct ahci_port_priv *pp = ap->private_data;
 	struct ahci_em_priv *emp = &pp->em_priv[link->pmp];
 	u32 port_led_state = emp->led_state;
+	int len;
+	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_activity_store()");
+		libahci_debug_event(ap, msg_str, len);
+		kfree(msg_str);
+	}
 
 	/* save the desired Activity LED behavior */
 	if (val == OFF) {
@@ -1282,7 +1349,13 @@ static ssize_t ahci_activity_show(struct ata_device *dev, char *buf)
 	struct ata_port *ap = link->ap;
 	struct ahci_port_priv *pp = ap->private_data;
 	struct ahci_em_priv *emp = &pp->em_priv[link->pmp];
-
+	int len;
+	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_activity_show()");
+		libahci_debug_event(ap, msg_str, len);
+		kfree(msg_str);
+	}
 	/* display the saved value of activity behavior for this
 	 * disk.
 	 */
@@ -1300,7 +1373,7 @@ static void ahci_port_init(struct device *dev, struct ata_port *ap,
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "port %u init", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_port_init() port %u init", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -1335,7 +1408,7 @@ void ahci_init_controller(struct ata_host *host)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "init AHCI controller");
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_init_controller() ... and all enable ports");
 		libahci_debug_event(NULL, msg_str, len);
 		kfree(msg_str);
 	}
@@ -1361,6 +1434,13 @@ EXPORT_SYMBOL_GPL(ahci_init_controller);
 static void ahci_dev_config(struct ata_device *dev)
 {
 	struct ahci_host_priv *hpriv = dev->link->ap->host->private_data;
+	int len;
+	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_dev_config()");
+		libahci_debug_event(NULL, msg_str, len);
+		kfree(msg_str);
+	}
 
 	if (hpriv->flags & AHCI_HFLAG_SECT255) {
 		dev->max_sectors = 255;
@@ -1385,7 +1465,7 @@ unsigned int ahci_dev_classify(struct ata_port *ap)
 	tf.nsect	= (tmp)		& 0xff;
 
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "reading port %u signature: PxSIG = 0x%08x", ap->port_no, tmp);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_dev_classify(): reading port %u signature: PxSIG = 0x%08x", ap->port_no, tmp);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -1406,15 +1486,21 @@ void ahci_fill_cmd_slot(struct ahci_port_priv *pp, unsigned int tag,
 
 	pp->cmd_slot[tag].opts = cpu_to_le32(opts);
 	pp->cmd_slot[tag].status = 0;
-	pp->cmd_slot[tag].tbl_addr = cpu_to_le32(cmd_tbl_dma & 0xffffffff);
-	pp->cmd_slot[tag].tbl_addr_hi = cpu_to_le32((cmd_tbl_dma >> 16) >> 16);
+//	pp->cmd_slot[tag].tbl_addr = cpu_to_le32(cmd_tbl_dma & 0xffffffff);
+// Elphel - JUST TEMPORARILY
+//	pp->cmd_slot[tag].tbl_addr = cpu_to_le32(cmd_tbl_dma & 0xffffff80);
+//	pp->cmd_slot[tag].tbl_addr = cpu_to_le32((cmd_tbl_dma & 0xffffffff) +64); // All data correct
+	pp->cmd_slot[tag].tbl_addr = cpu_to_le32((cmd_tbl_dma & 0xffffffff)); // All data correct
 
+	pp->cmd_slot[tag].tbl_addr_hi = cpu_to_le32((cmd_tbl_dma >> 16) >> 16);
+/*
 	if (msg_str != NULL) {
 		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tfill command slot %u: DW0 = 0x%08x, DW1 = 0x%08x, DW2 = 0x%08x, DW3 = 0x%08x",
 				tag, pp->cmd_slot[tag].opts, pp->cmd_slot[tag].status, pp->cmd_slot[tag].tbl_addr, pp->cmd_slot[tag].tbl_addr_hi);
 		libahci_debug_event(NULL, msg_str, len);
 		kfree(msg_str);
 	}
+*/
 }
 EXPORT_SYMBOL_GPL(ahci_fill_cmd_slot);
 
@@ -1429,7 +1515,7 @@ int ahci_kick_engine(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "kick port %u DMA engine", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_kick_engine() kick port %u DMA engine", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 	}
 
@@ -1447,7 +1533,7 @@ int ahci_kick_engine(struct ata_port *ap)
 		goto out_restart;
 	}
 
-	if (!(hpriv->cap & HOST_CAP_CLO)) {
+	if (!(hpriv->cap & HOST_CAP_CLO)) { // 0x1000000 supports command list override (x393_sata - not)
 		rc = -EOPNOTSUPP;
 		goto out_restart;
 	}
@@ -1471,6 +1557,11 @@ int ahci_kick_engine(struct ata_port *ap)
 	/* restart engine */
  out_restart:
 	hpriv->start_engine(ap);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tahci_kick_engine() will return %d, busy was 0x%08x", rc, busy);
+		libahci_debug_event(ap, msg_str, len);
+	}
+
 	kfree(msg_str);
 	return rc;
 }
@@ -1489,7 +1580,7 @@ static int ahci_exec_polled_cmd(struct ata_port *ap, int pmp,
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "port %u command issue", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_exec_polled_cmd(), port %u command issue", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -1531,8 +1622,9 @@ int ahci_do_softreset(struct ata_link *link, unsigned int *class,
 
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	dev_info(ap->host->dev, "ahci_do_softreset()");
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "port %u softreset", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_do_softreset(): port %u softreset (complex actions follow)", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 	}
 
@@ -1614,7 +1706,7 @@ int ahci_do_softreset(struct ata_link *link, unsigned int *class,
  fail:
 	ata_link_err(link, "softreset failed (%s)\n", reason);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tsoftreset failed, reson code: %s", reason);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tsoftreset failed, reason code: %s", reason);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -1625,12 +1717,11 @@ int ahci_check_ready(struct ata_link *link)
 {
 	void __iomem *port_mmio = ahci_port_base(link->ap);
 	u8 status = readl(port_mmio + PORT_TFDATA) & 0xFF;
-
 	int len;
 	char *msg_str;
 	msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "read port %u Task File Data: PxTFD = 0x%02x ", link->ap->port_no, status);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_check_ready(): read port %u Task File Data: PxTFD = 0x%02x, ata_check_ready()->%d", link->ap->port_no, status,ata_check_ready(status));
 		libahci_debug_event(link->ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -1643,6 +1734,14 @@ static int ahci_softreset(struct ata_link *link, unsigned int *class,
 			  unsigned long deadline)
 {
 	int pmp = sata_srst_pmp(link);
+	int len;
+	char *msg_str;
+	msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_softreset()");
+		libahci_debug_event(link->ap, msg_str, len);
+		kfree(msg_str);
+	}
 
 	DPRINTK("ENTER\n");
 
@@ -1656,6 +1755,14 @@ static int ahci_bad_pmp_check_ready(struct ata_link *link)
 	u8 status = readl(port_mmio + PORT_TFDATA) & 0xFF;
 	u32 irq_status = readl(port_mmio + PORT_IRQ_STAT);
 
+	int len;
+	char *msg_str;
+	msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_bad_pmp_check_ready()");
+		libahci_debug_event(link->ap, msg_str, len);
+		kfree(msg_str);
+	}
 	/*
 	 * There is no need to check TFDATA if BAD PMP is found due to HW bug,
 	 * which can save timeout delay.
@@ -1674,6 +1781,14 @@ static int ahci_pmp_retry_softreset(struct ata_link *link, unsigned int *class,
 	int pmp = sata_srst_pmp(link);
 	int rc;
 	u32 irq_sts;
+	int len;
+	char *msg_str;
+	msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_pmp_retry_softreset()");
+		libahci_debug_event(link->ap, msg_str, len);
+		kfree(msg_str);
+	}
 
 	DPRINTK("ENTER\n");
 
@@ -1710,11 +1825,12 @@ static int ahci_hardreset(struct ata_link *link, unsigned int *class,
 	struct ata_taskfile tf;
 	bool online;
 	int rc;
+	dev_info(ap->host->dev, "ahci_hardreset()");
 
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "port %u hardreset", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_hardreset(): port %u hardreset", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 	}
 
@@ -1765,7 +1881,7 @@ static void ahci_postreset(struct ata_link *link, unsigned int *class)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "port %u postreset actions", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_postreset(): port %u postreset actions", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -1825,7 +1941,7 @@ static int ahci_pmp_qc_defer(struct ata_queued_cmd *qc)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "process qc_defer ata command for port %u", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_pmp_qc_defer(): process qc_defer ata command for port %u", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -1845,30 +1961,63 @@ static void ahci_qc_prep(struct ata_queued_cmd *qc)
 	u32 opts;
 	const u32 cmd_fis_len = 5; /* five dwords */
 	unsigned int n_elem;
+	u32 * elphel_dbg_ptr;
+	u32 elhel_dbg_buf[128];
+	int elphel_i;
 
+	/*
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "prepare command table information for port %u", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_qc_prep(): prepare command table information for port %u", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
-
+*/
 	/*
 	 * Fill in command table information.  First, the header,
 	 * a SATA Register - Host to Device command FIS.
 	 */
+
+	// Elphel; Need to wrap with dma_sync_single_for_cpu / dma_sync_single_for_device, move to in ahci_elphel.c
+	// dma_map_single(dev, mem, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
+	// void dma_sync_single_for_cpu(struct device *dev, dma_handle_t bus_addr, size_t size, enum dma_data_direction direction);
+//	dma_sync_single_for_cpu(qc->dev, pp->cmd_tbl_dma - 4096, AHCI_CMD_TBL_AR_SZ + 4096, DMA_TO_DEVICE);
+	dma_sync_single_for_cpu(qc->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
 	cmd_tbl = pp->cmd_tbl + qc->tag * AHCI_CMD_TBL_SZ;
 
+//	elphel_dbg_ptr = (u32*) cmd_tbl;
+
 	ata_tf_to_fis(&qc->tf, qc->dev->link->pmp, 1, cmd_tbl);
+	/*
+    for (elphel_i = 0; elphel_i < 128; elphel_i++){
+    	elhel_dbg_buf[elphel_i] = elphel_i + (elphel_i << 8);
+    }
+
+	ata_tf_to_fis(&qc->tf, qc->dev->link->pmp, 1, (u8*) elhel_dbg_buf);
+
+    for (elphel_i = 0; elphel_i < 128; elphel_i++){
+    	elphel_dbg_ptr[elphel_i] = elhel_dbg_buf[elphel_i];
+    }
+
+//	memset(cmd_tbl + AHCI_CMD_TBL_CDB, 0, 32); // Elphel - just to write smth.
+	elphel_dbg_ptr[1] = 1;
+	elphel_dbg_ptr[2] = 2;
+	elphel_dbg_ptr[3] = 3;
+	elphel_dbg_ptr[4] = 4;
+	elphel_dbg_ptr[5] = 5;
+	elphel_dbg_ptr[6] = 6;
+	elphel_dbg_ptr[7] = 7;
+	elphel_dbg_ptr[8] = 8;
+*/
 	if (is_atapi) {
 		memset(cmd_tbl + AHCI_CMD_TBL_CDB, 0, 32);
 		memcpy(cmd_tbl + AHCI_CMD_TBL_CDB, qc->cdb, qc->dev->cdb_len);
 
-		libahci_debug_dump_region(ap, (const u32 *)(cmd_tbl + AHCI_CMD_TBL_CDB), 4, "\tthis is ATAPI comman, dump ACMD region: ");
+//		libahci_debug_dump_region(ap, (const u32 *)(cmd_tbl + AHCI_CMD_TBL_CDB), 4, "\tthis is ATAPI command, dump ACMD region: ");
 	}
 
-	libahci_debug_dump_region(ap, (const u32 *)cmd_tbl, cmd_fis_len, "\twrite H2D register FIS; dump: ");
+//	libahci_debug_dump_region(ap, (const u32 *)cmd_tbl, cmd_fis_len, "\twrite H2D register FIS; dump: ");
 
 	n_elem = 0;
 	if (qc->flags & ATA_QCFLAG_DMAMAP)
@@ -1884,6 +2033,13 @@ static void ahci_qc_prep(struct ata_queued_cmd *qc)
 		opts |= AHCI_CMD_ATAPI | AHCI_CMD_PREFETCH;
 
 	ahci_fill_cmd_slot(pp, qc->tag, opts);
+
+	// Elphel move to ahci_elphel.c. See if the SG dma should also be handed to dma here
+	dma_sync_single_for_device(qc->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
+//	dma_sync_single_for_device(qc->dev, pp->cmd_tbl_dma - 4096, AHCI_CMD_TBL_AR_SZ+4096, DMA_TO_DEVICE);
+//	dma_sync_single_for_cpu   (qc->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
+//	dma_sync_single_for_device(qc->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
+//	dma_sync_single_for_device(qc->dev, pp->cmd_tbl_dma - 0xff0, AHCI_CMD_TBL_AR_SZ+ 0xff0, DMA_TO_DEVICE);
 }
 
 static void ahci_fbs_dec_intr(struct ata_port *ap)
@@ -1944,7 +2100,8 @@ static void ahci_error_intr(struct ata_port *ap, u32 irq_stat)
 		link = &ap->link;
 
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "handle port %u error", link->ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_error_intr(): handle port %u error, irq_stat=0x%08x, SERR=0x%08x",
+                       link->ap->port_no,irq_stat, ahci_scr_read(&ap->link, SCR_ERROR, &serror));
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -2021,7 +2178,7 @@ static void ahci_error_intr(struct ata_port *ap, u32 irq_stat)
 
 	/* okay, let's hand over to EH */
 
-	if (irq_stat & PORT_IRQ_FREEZE)
+	if (irq_stat & PORT_IRQ_FREEZE) //0x28c00050
 		ata_port_freeze(ap);
 	else if (fbs_need_dec) {
 		ata_link_abort(link);
@@ -2043,7 +2200,7 @@ static void ahci_handle_port_interrupt(struct ata_port *ap,
 	int len;
 	char *msg = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg != NULL) {
-		len = snprintf(msg, LIBAHCI_DEBUG_BUFSZ, "port %u interrupt handler, PxIS: 0x%x", ap->port_no, status);
+		len = snprintf(msg, LIBAHCI_DEBUG_BUFSZ, "ahci_handle_port_interrupt(): port %u interrupt handler, PxIS: 0x%x", ap->port_no, status);
 		libahci_debug_event(ap, msg, len);
 		libahci_debug_dump_irq(status);
 		libahci_debug_irq_notify(ap);
@@ -2273,7 +2430,7 @@ unsigned int ahci_qc_issue(struct ata_queued_cmd *qc)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "port %u queued command issue", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_qc_issue(): port %u queued command issue", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 	}
 
@@ -2324,7 +2481,7 @@ static bool ahci_qc_fill_rtf(struct ata_queued_cmd *qc)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "read port %u Received FIS and copy to Task File", qc->ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_qc_fill_rtf(): read port %u Received FIS and copy to Task File", qc->ap->port_no);
 		libahci_debug_event(qc->ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -2360,9 +2517,10 @@ static void ahci_freeze(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "freeze port %u", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_freeze(): freeze port %u", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 	}
+	dev_info(ap->host->dev, "ahci_freeze()\n");
 
 	/* turn IRQ off */
 	writel(0, port_mmio + PORT_IRQ_MASK);
@@ -2385,7 +2543,7 @@ static void ahci_thaw(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "thaw port %u", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_thaw(): thaw port %u", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -2406,7 +2564,7 @@ void ahci_error_handler(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "port %u error handler", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_error_handler(): port %u error handler", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -2431,7 +2589,7 @@ static void ahci_post_internal_cmd(struct ata_queued_cmd *qc)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "port %u post internal command", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_post_internal_cmd(): port %u post internal command", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -2453,7 +2611,7 @@ static void ahci_set_aggressive_devslp(struct ata_port *ap, bool sleep)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "set aggressive port %u device sleep", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_set_aggressive_devslp(): set aggressive port %u device sleep", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -2536,7 +2694,7 @@ static void ahci_enable_fbs(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL && pp->fbs_supported) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "enable port %u FIS-based switching", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_enable_fbs(): enable port %u FIS-based switching", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -2578,7 +2736,7 @@ static void ahci_disable_fbs(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL && pp->fbs_supported) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "disable port %u FIS-based switching", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_disable_fbs(): disable port %u FIS-based switching", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -2639,6 +2797,8 @@ static void ahci_pmp_detach(struct ata_port *ap)
 	void __iomem *port_mmio = ahci_port_base(ap);
 	struct ahci_port_priv *pp = ap->private_data;
 	u32 cmd;
+	int len;
+	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 
 	ahci_disable_fbs(ap);
 
@@ -2651,14 +2811,27 @@ static void ahci_pmp_detach(struct ata_port *ap)
 	/* see comment above in ahci_pmp_attach() */
 	if (!(ap->pflags & ATA_PFLAG_FROZEN))
 		writel(pp->intr_mask, port_mmio + PORT_IRQ_MASK);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_pmp_detach(), ap->flags=0x%08x PxCMD <= 0x%08x, IE=0x%08x",ap->pflags, cmd, readl(port_mmio + PORT_IRQ_MASK) );
+		libahci_debug_event(ap, msg_str, len);
+		kfree(msg_str);
+	}
 }
 
 int ahci_port_resume(struct ata_port *ap)
 {
+	int len;
+	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
+	if (msg_str != NULL) {
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_port_resume(): first form ahci_elphel.c - never got here? -wrong, got");
+		libahci_debug_event(ap, msg_str, len);
+		kfree(msg_str);
+	}
+
 	ahci_power_up(ap);
 	ahci_start_port(ap);
 
-	if (sata_pmp_attached(ap))
+	if (sata_pmp_attached(ap)) // false
 		ahci_pmp_attach(ap);
 	else
 		ahci_pmp_detach(ap);
@@ -2697,7 +2870,7 @@ static int ahci_port_start(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "starting port %u", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_port_start(): starting port %u", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -2798,7 +2971,7 @@ static void ahci_port_stop(struct ata_port *ap)
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "stopping port %u", ap->port_no);
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_port_stop(): stopping port %u", ap->port_no);
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
@@ -2893,7 +3066,7 @@ void ahci_set_em_messages(struct ahci_host_priv *hpriv,
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "store EM registers");
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_set_em_messages(): store EM registers");
 		libahci_debug_event(NULL, msg_str, len);
 		kfree(msg_str);
 	}
@@ -2984,7 +3157,7 @@ int ahci_host_activate(struct ata_host *host, int irq,
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
-		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "activate AHCI host");
+		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "ahci_host_activate(): activate AHCI host");
 		libahci_debug_event(NULL, msg_str, len);
 		kfree(msg_str);
 	}
