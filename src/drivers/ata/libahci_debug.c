@@ -698,7 +698,9 @@ static ssize_t libahci_debug_load(struct file *f, const char __user *buff, size_
  */
 void libahci_debug_wait_flag(void)
 {
+	char *msg_str = "waiting for flag to be written to debugfs";
 	printk(KERN_DEBUG "%s Waiting for flag to be written to debugfs", MARKER);
+	libahci_debug_event(NULL, msg_str, sizeof(*msg_str));
 	while (load_flag == false) {
 		/*set_current_state(TASK_INTERRUPTIBLE);
 		schedule_timeout(msecs_to_jiffies(100));*/

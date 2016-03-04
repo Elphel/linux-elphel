@@ -1493,14 +1493,14 @@ void ahci_fill_cmd_slot(struct ahci_port_priv *pp, unsigned int tag,
 	pp->cmd_slot[tag].tbl_addr = cpu_to_le32((cmd_tbl_dma & 0xffffffff)); // All data correct
 
 	pp->cmd_slot[tag].tbl_addr_hi = cpu_to_le32((cmd_tbl_dma >> 16) >> 16);
-/*
+
 	if (msg_str != NULL) {
 		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tfill command slot %u: DW0 = 0x%08x, DW1 = 0x%08x, DW2 = 0x%08x, DW3 = 0x%08x",
 				tag, pp->cmd_slot[tag].opts, pp->cmd_slot[tag].status, pp->cmd_slot[tag].tbl_addr, pp->cmd_slot[tag].tbl_addr_hi);
 		libahci_debug_event(NULL, msg_str, len);
 		kfree(msg_str);
 	}
-*/
+
 }
 EXPORT_SYMBOL_GPL(ahci_fill_cmd_slot);
 
@@ -1965,7 +1965,9 @@ static void ahci_qc_prep(struct ata_queued_cmd *qc)
 	u32 elhel_dbg_buf[128];
 	int elphel_i;
 
-	/*
+	// elphel test: set tag = 0, change to qc->tag in functions below
+	//unsigned int tag = 0;
+
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
@@ -1973,7 +1975,7 @@ static void ahci_qc_prep(struct ata_queued_cmd *qc)
 		libahci_debug_event(ap, msg_str, len);
 		kfree(msg_str);
 	}
-*/
+
 	/*
 	 * Fill in command table information.  First, the header,
 	 * a SATA Register - Host to Device command FIS.
@@ -1985,6 +1987,7 @@ static void ahci_qc_prep(struct ata_queued_cmd *qc)
 //	dma_sync_single_for_cpu(qc->dev, pp->cmd_tbl_dma - 4096, AHCI_CMD_TBL_AR_SZ + 4096, DMA_TO_DEVICE);
 	dma_sync_single_for_cpu(qc->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
 	cmd_tbl = pp->cmd_tbl + qc->tag * AHCI_CMD_TBL_SZ;
+	//cmd_tbl = pp->cmd_tbl + tag * AHCI_CMD_TBL_SZ;
 
 //	elphel_dbg_ptr = (u32*) cmd_tbl;
 
@@ -2017,11 +2020,20 @@ static void ahci_qc_prep(struct ata_queued_cmd *qc)
 //		libahci_debug_dump_region(ap, (const u32 *)(cmd_tbl + AHCI_CMD_TBL_CDB), 4, "\tthis is ATAPI command, dump ACMD region: ");
 	}
 
-//	libahci_debug_dump_region(ap, (const u32 *)cmd_tbl, cmd_fis_len, "\twrite H2D register FIS; dump: ");
+	libahci_debug_dump_region(ap, (const u32 *)cmd_tbl, cmd_fis_len, "\twrite H2D register FIS; dump: ");
 
 	n_elem = 0;
-	if (qc->flags & ATA_QCFLAG_DMAMAP)
+	if (qc->flags & ATA_QCFLAG_DMAMAP) {
 		n_elem = ahci_fill_sg(qc, cmd_tbl);
+
+		if (qc->dma_dir == DMA_TO_DEVICE) {
+			dev_info(&qc->dev->tdev, "%s: dma_sync_sg_for_device, qc->dma_dir: %d", __func__, qc->dma_dir);
+			dma_sync_sg_for_device(&qc->dev->tdev, qc->sg, qc->n_elem, qc->dma_dir);
+		} else if (qc->dma_dir == DMA_FROM_DEVICE) {
+			dev_info(&qc->dev->tdev, "%s: dma_sync_sg_for_cpu, qc->dma_dir: %d", __func__, qc->dma_dir);
+			dma_sync_sg_for_cpu(&qc->dev->tdev, qc->sg, qc->n_elem, qc->dma_dir);
+		}
+	}
 
 	/*
 	 * Fill in command slot information.
@@ -2033,6 +2045,7 @@ static void ahci_qc_prep(struct ata_queued_cmd *qc)
 		opts |= AHCI_CMD_ATAPI | AHCI_CMD_PREFETCH;
 
 	ahci_fill_cmd_slot(pp, qc->tag, opts);
+	//ahci_fill_cmd_slot(pp, tag, opts);
 
 	// Elphel move to ahci_elphel.c. See if the SG dma should also be handed to dma here
 	dma_sync_single_for_device(qc->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
@@ -2427,6 +2440,8 @@ unsigned int ahci_qc_issue(struct ata_queued_cmd *qc)
 	void __iomem *port_mmio = ahci_port_base(ap);
 	struct ahci_port_priv *pp = ap->private_data;
 
+	// elphel test: set tag = 0
+	//unsigned int tag = 0;
 	int len;
 	char *msg_str = kzalloc(LIBAHCI_DEBUG_BUFSZ, GFP_KERNEL);
 	if (msg_str != NULL) {
@@ -2443,10 +2458,12 @@ unsigned int ahci_qc_issue(struct ata_queued_cmd *qc)
 	if (qc->tf.protocol == ATA_PROT_NCQ) {
 		if (msg_str != NULL) {
 			len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\twrite port %u register PxSACT, value: 0x%08x", ap->port_no, (1 << qc->tag));
+			//len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\twrite port %u register PxSACT, value: 0x%08x", ap->port_no, (1 << tag));
 			libahci_debug_event(ap, msg_str, len);
 		}
 
 		writel(1 << qc->tag, port_mmio + PORT_SCR_ACT);
+		//writel(1 << tag, port_mmio + PORT_SCR_ACT);
 	}
 
 	if (pp->fbs_enabled && pp->fbs_last_dev != qc->dev->link->pmp) {
@@ -2461,9 +2478,8 @@ unsigned int ahci_qc_issue(struct ata_queued_cmd *qc)
 		pp->fbs_last_dev = qc->dev->link->pmp;
 	}
 
-	//libahci_debug_wait_flag();
-
 	writel(1 << qc->tag, port_mmio + PORT_CMD_ISSUE);
+	//writel(1 << tag, port_mmio + PORT_CMD_ISSUE);
 
 	ahci_sw_activity(qc->dev->link);
 

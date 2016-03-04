@@ -4893,6 +4893,16 @@ void ata_qc_complete(struct ata_queued_cmd *qc)
 	 * not synchronize with interrupt handler.  Only PIO task is
 	 * taken care of.
 	 */
+
+	dev_info(&qc->dev->tdev, "%s: qc->dma_dir: %d", __func__, qc->dma_dir);
+	if (qc->dma_dir == DMA_TO_DEVICE) {
+		dev_info(&qc->dev->tdev, "%s: dma_sync_sg_for_device, qc->dma_dir: %d", __func__, qc->dma_dir);
+		dma_sync_sg_for_device(&qc->dev->tdev, qc->sg, qc->n_elem, qc->dma_dir);
+	} else if (qc->dma_dir == DMA_FROM_DEVICE) {
+		dev_info(&qc->dev->tdev, "%s: dma_sync_sg_for_cpu, qc->dma_dir: %d", __func__, qc->dma_dir);
+		dma_sync_sg_for_cpu(&qc->dev->tdev, qc->sg, qc->n_elem, qc->dma_dir);
+	}
+
 	if (ap->ops->error_handler) {
 		struct ata_device *dev = qc->dev;
 		struct ata_eh_info *ehi = &dev->link->eh_info;

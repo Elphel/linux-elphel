@@ -134,6 +134,9 @@ address must be aligned to a 128-byte cache line, indicated by bits 06:00 being 
 	//libahci_debug_saxigp1_save(ap, 0x3000);
 	//libahci_debug_saxigp1_save(ap, 0x3000);
 
+	dev_info(dev, "flags (ATA_FLAG_xxx): %u", ap->flags);
+	dev_info(dev, "pflags (ATA_PFLAG_xxx): %u", ap->pflags);
+
 	dev_info(dev, "ahci_elphel.c: Calling  ahci_port_resume()");
 	return ahci_port_resume(ap);
 }
@@ -222,7 +225,6 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	//printk(KERN_DEBUG, "back converted mmio virt addr: %p\n", vaddr);
 	printk(KERN_DEBUG "======");
 
-
 	ret = ahci_platform_init_host(pdev, hpriv, &ahci_elphel_port_info,
 			&ahci_platform_sht);
 	if (ret) {
@@ -248,12 +250,28 @@ static unsigned int elphel_read_id(struct ata_device *dev, struct ata_taskfile *
 {
 	u32 err_mask;
 	struct device *d = &dev->tdev;
+	int i, len;
+	char *msg_str;
 
 	err_mask = ata_do_dev_read_id(dev, tf, id);
 	if (err_mask)
 		return err_mask;
 
-	dev_info(d, "elphel_read_id(): issue identify command finished");
+	dev_info(d, "elphel_read_id(): issue identify command finished\n");
+	/*dev_info(d, "dump IDENTIFY:\n");
+	msg_str = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!msg_str)
+		return 0;
+	len = 0;
+	for (i = 0; i < ATA_ID_WORDS; i++) {
+		if ((i % 16) == 0 && i != 0) {
+			dev_info(d, "%s\n", msg_str);
+			len = 0;
+		}
+		len += snprintf(msg_str + len, PAGE_SIZE - len, "0x%04x ", id[i]);
+	}
+	// print last string
+	dev_info(d, "%s\n", msg_str);*/
 
 	return 0;
 }
@@ -265,6 +283,7 @@ static struct ata_port_operations ahci_elphel_ops = {
 };
 
 static const struct ata_port_info ahci_elphel_port_info = {
+		AHCI_HFLAGS(AHCI_HFLAG_NO_NCQ),
 		.flags			= AHCI_FLAG_COMMON,
 		.pio_mask		= ATA_PIO4,
 		.udma_mask		= ATA_UDMA6,
@@ -273,6 +292,11 @@ static const struct ata_port_info ahci_elphel_port_info = {
 
 static struct scsi_host_template ahci_platform_sht = {
 		AHCI_SHT(DRV_NAME),
+		.can_queue			= 1,
+		.sg_tablesize		= AHCI_MAX_SG,
+		.dma_boundary		= AHCI_DMA_BOUNDARY,
+		.shost_attrs		= ahci_shost_attrs,
+		.sdev_attrs			= ahci_sdev_attrs,
 };
 
 static const struct of_device_id ahci_elphel_of_match[] = {
