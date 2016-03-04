@@ -2557,8 +2557,8 @@ static void ata_eh_link_report(struct ata_link *link)
 			qc->err_mask & AC_ERR_NCQ ? " <F>" : "");
 
 		// elphel test: crash driver here to stop its execution and preserve memory state
-		//u32 *tmp_str = NULL;
-		//ata_dev_err(qc->dev, "test: %u", *tmp_str);
+		u32 *tmp_str = NULL;
+		ata_dev_err(qc->dev, "test: %u", *tmp_str);
 
 #ifdef CONFIG_ATA_VERBOSE_ERROR
 		if (res->command & (ATA_BUSY | ATA_DRDY | ATA_DF | ATA_DRQ |

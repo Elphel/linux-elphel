@@ -1926,7 +1926,7 @@ static unsigned int ahci_fill_sg(struct ata_queued_cmd *qc, void *cmd_tbl)
 	if (msg_str != NULL) {
 		len = snprintf(msg_str, LIBAHCI_DEBUG_BUFSZ, "\tfill S/G list for port %u: %u PRD(s) written", qc->ap->port_no, si);
 		libahci_debug_event(qc->ap, msg_str, len);
-		libahci_debug_dump_sg(qc, "reading data pointed by S/G list; dump: ");
+		//libahci_debug_dump_sg(qc, "reading data pointed by S/G list; dump: ");
 		kfree(msg_str);
 	}
 
@@ -2517,7 +2517,7 @@ static bool ahci_qc_fill_rtf(struct ata_queued_cmd *qc)
 		qc->result_tf.command = (rx_fis + RX_FIS_PIO_SETUP)[15];
 
 		libahci_debug_dump_region(qc->ap, (const u32 *)(rx_fis + RX_FIS_PIO_SETUP), 5, "\tread PIO Setup FIS; dump: ");
-		libahci_debug_dump_sg(qc, "reading data pointed by S/G list; dump: ");
+		//libahci_debug_dump_sg(qc, "reading data pointed by S/G list; dump: ");
 	} else {
 		ata_tf_from_fis(rx_fis + RX_FIS_D2H_REG, &qc->result_tf);
 

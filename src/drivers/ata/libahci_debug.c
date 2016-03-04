@@ -810,6 +810,8 @@ unsigned int libahci_debug_saxigp1_save(struct ata_port *ap, size_t dump_size)
 		bytes_copied += dump_size;
 	} else {
 		page_cntr = 0;
+		//bytes_copied = 0;
+		//dev_info(dev, "memory pool has ended, writing from beginning");
 	}
 
 	return page_cntr;
