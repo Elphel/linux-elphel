@@ -623,7 +623,7 @@ void ata_scsi_error(struct Scsi_Host *host)
 void ata_scsi_cmd_error_handler(struct Scsi_Host *host, struct ata_port *ap,
 				struct list_head *eh_work_q)
 {
-	dev_info(ap->host->dev, "ata_scsi_cmd_error_handler()\n");
+	dev_dbg(ap->host->dev, "ata_scsi_cmd_error_handler()\n");
 	int i;
 	unsigned long flags;
 
@@ -1125,7 +1125,7 @@ int ata_port_abort(struct ata_port *ap)
 static void __ata_port_freeze(struct ata_port *ap)
 {
 	WARN_ON(!ap->ops->error_handler);
-	dev_info(ap->host->dev, "__ata_port_freeze()\n");
+	dev_dbg(ap->host->dev, "__ata_port_freeze()\n");
 
 	if (ap->ops->freeze)
 		ap->ops->freeze(ap);
@@ -1154,7 +1154,7 @@ int ata_port_freeze(struct ata_port *ap)
 	int nr_aborted;
 
 	WARN_ON(!ap->ops->error_handler);
-	dev_info(ap->host->dev, "libata-eh.c: ahci_port_freeze()\n");
+	dev_dbg(ap->host->dev, "libata-eh.c: ahci_port_freeze()\n");
 
 	__ata_port_freeze(ap);
 	nr_aborted = ata_port_abort(ap);
@@ -1248,7 +1248,7 @@ void ata_eh_freeze_port(struct ata_port *ap)
 {
 	unsigned long flags;
 
-	dev_info(ap->host->dev, "ata_eh_freeze_port()\n");
+	dev_dbg(ap->host->dev, "ata_eh_freeze_port()\n");
 	if (!ap->ops->error_handler)
 		return;
 	spin_lock_irqsave(ap->lock, flags);
@@ -1736,7 +1736,7 @@ void ata_eh_analyze_ncq_error(struct ata_link *link)
 	struct ata_taskfile tf;
 	int tag, rc;
 
-	dev_info(link->ap->host->dev, "libata-core.c ata_eh_analyze_ncq_error(), ap->pflags = 0x%08x",ap->pflags);
+	dev_dbg(link->ap->host->dev, "libata-core.c ata_eh_analyze_ncq_error(), ap->pflags = 0x%08x",ap->pflags);
 
 	/* if frozen, we can't do much */
 	if (ap->pflags & ATA_PFLAG_FROZEN)
@@ -2129,7 +2129,7 @@ static void ata_eh_link_autopsy(struct ata_link *link)
 	int tag;
 	u32 serror;
 	int rc;
-	dev_info(link->ap->host->dev, "libata-core.c ata_eh_link_autopsy(), ehc->i.flags = 0x%08x, ehc->i.probe_mask = 0x%08x, ehc->i.action = 0x%08x, ehc->i.err_mask = 0x%08x,",
+	dev_dbg(link->ap->host->dev, "libata-core.c ata_eh_link_autopsy(), ehc->i.flags = 0x%08x, ehc->i.probe_mask = 0x%08x, ehc->i.action = 0x%08x, ehc->i.err_mask = 0x%08x,",
 			ehc->i.flags,ehc->i.probe_mask, ehc->i.action, ehc->i.err_mask);
 
 	DPRINTK("ENTER\n");
@@ -2148,7 +2148,7 @@ static void ata_eh_link_autopsy(struct ata_link *link)
 		ehc->i.action |= ATA_EH_RESET;
 		ehc->i.err_mask |= AC_ERR_OTHER;
 	}
-	dev_info(link->ap->host->dev, "libata-core.c ata_eh_link_autopsy(), rc = 0x%08x, ehc->i.probe_mask = 0x%08x, ehc->i.action = 0x%08x, ehc->i.err_mask = 0x%08x,",
+	dev_dbg(link->ap->host->dev, "libata-core.c ata_eh_link_autopsy(), rc = 0x%08x, ehc->i.probe_mask = 0x%08x, ehc->i.action = 0x%08x, ehc->i.err_mask = 0x%08x,",
 			rc, ehc->i.probe_mask,  ehc->i.action, ehc->i.err_mask);
 
 	/* analyze NCQ failure */
@@ -2160,7 +2160,7 @@ static void ata_eh_link_autopsy(struct ata_link *link)
 
 	all_err_mask |= ehc->i.err_mask;
 
-	dev_info(link->ap->host->dev, "libata-core.c ata_eh_link_autopsy(), ehc->i.err_mask = 0x%08x,  all_err_mask = 0x%08x",
+	dev_dbg(link->ap->host->dev, "libata-core.c ata_eh_link_autopsy(), ehc->i.err_mask = 0x%08x,  all_err_mask = 0x%08x",
 			                  ehc->i.err_mask,all_err_mask);
 
 	for (tag = 0; tag < ATA_MAX_QUEUE; tag++) {
@@ -2199,7 +2199,7 @@ static void ata_eh_link_autopsy(struct ata_link *link)
 		if (qc->flags & ATA_QCFLAG_IO)
 			eflags |= ATA_EFLAG_IS_IO;
 	}
-	dev_info(link->ap->host->dev, "libata-core.c ata_eh_link_autopsy(), all_err_mask = 0x%08x", all_err_mask);
+	dev_dbg(link->ap->host->dev, "libata-core.c ata_eh_link_autopsy(), all_err_mask = 0x%08x", all_err_mask);
 
 	/* enforce default EH actions */
 	if (ap->pflags & ATA_PFLAG_FROZEN ||
@@ -2233,7 +2233,7 @@ static void ata_eh_link_autopsy(struct ata_link *link)
 			eflags |= ATA_EFLAG_DUBIOUS_XFER;
 		ehc->i.action |= ata_eh_speed_down(dev, eflags, all_err_mask);
 	}
-	dev_info(link->ap->host->dev, "libata-core.c ata_eh_link_autopsy(), conclusion what to do: ehc->i.action = 0x%08x", ehc->i.action);
+	dev_dbg(link->ap->host->dev, "libata-core.c ata_eh_link_autopsy(), conclusion what to do: ehc->i.action = 0x%08x", ehc->i.action);
 
 	DPRINTK("EXIT\n");
 }
@@ -2251,7 +2251,7 @@ static void ata_eh_link_autopsy(struct ata_link *link)
 void ata_eh_autopsy(struct ata_port *ap)
 {
 	struct ata_link *link;
-	dev_info(ap->host->dev, "libata-core.c ata_eh_autopsy()");
+	dev_dbg(ap->host->dev, "libata-core.c ata_eh_autopsy()");
 
 	ata_for_each_link(link, ap, EDGE)
 		ata_eh_link_autopsy(link);
@@ -2647,7 +2647,7 @@ int ata_eh_reset(struct ata_link *link, int classify,
 	u32 sstatus;
 	int nr_unknown, rc;
 
-	dev_info(ap->host->dev, "ata_eh_reset(), link->flags = 0x%08x\n",link->flags);
+	dev_dbg(ap->host->dev, "ata_eh_reset(), link->flags = 0x%08x\n",link->flags);
 
 	/*
 	 * Prepare to reset
@@ -3733,7 +3733,7 @@ int ata_eh_recover(struct ata_port *ap, ata_prereset_fn_t prereset,
 	ata_for_each_link(link, ap, EDGE) {
 		struct ata_eh_context *ehc = &link->eh_context;
 
-		dev_info(ap->host->dev, "ata_eh_recover(), ehc->i.action=0x%08x\n",ehc->i.action);
+		dev_dbg(ap->host->dev, "ata_eh_recover(), ehc->i.action=0x%08x\n",ehc->i.action);
 
 		/* re-enable link? */
 		if (ehc->i.action & ATA_EH_ENABLE_LINK) {
@@ -3745,7 +3745,7 @@ int ata_eh_recover(struct ata_port *ap, ata_prereset_fn_t prereset,
 		}
 
 		ata_for_each_dev(dev, link, ALL) {
-			dev_info(ap->host->dev, "ata_eh_recover(), link->flags=0x%08x\n",link->flags);
+			dev_dbg(ap->host->dev, "ata_eh_recover(), link->flags=0x%08x\n",link->flags);
 			if (link->flags & ATA_LFLAG_NO_RETRY)
 				ehc->tries[dev->devno] = 1;
 			else
@@ -4009,7 +4009,7 @@ void ata_do_eh(struct ata_port *ap, ata_prereset_fn_t prereset,
 {
 	struct ata_device *dev;
 	int rc;
-	dev_info(ap->host->dev, "libata-eh.c ata_do_eh()");
+	dev_dbg(ap->host->dev, "libata-eh.c ata_do_eh()");
 
 	ata_eh_autopsy(ap);
 	ata_eh_report(ap);
@@ -4041,7 +4041,7 @@ void ata_std_error_handler(struct ata_port *ap)
 	/* ignore built-in hardreset if SCR access is not available */
 	if (hardreset == sata_std_hardreset && !sata_scr_valid(&ap->link))
 		hardreset = NULL;
-	dev_info(ap->host->dev, "libata-eh.c ata_std_error_handler()");
+	dev_dbg(ap->host->dev, "libata-eh.c ata_std_error_handler()");
 	ata_do_eh(ap, ops->prereset, ops->softreset, hardreset, ops->postreset);
 }
 
@@ -4060,7 +4060,7 @@ static void ata_eh_handle_port_suspend(struct ata_port *ap)
 	unsigned long flags;
 	int rc = 0;
 	struct ata_device *dev;
-	dev_info(ap->host->dev, "ata_eh_handle_port_suspend()\n");
+	dev_dbg(ap->host->dev, "ata_eh_handle_port_suspend()\n");
 
 	/* are we suspending? */
 	spin_lock_irqsave(ap->lock, flags);

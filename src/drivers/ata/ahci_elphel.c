@@ -61,9 +61,10 @@ static int elphel_port_start(struct ata_port *ap)
     int   dbg_i;
 	libahci_debug_init(ap->host);
 
-	dev_info(dev, "starting port %d", ap->port_no);
+	dev_dbg(dev, "starting port %d", ap->port_no);
+#ifdef DEBUG_EVENT_ELPHEL
 	libahci_debug_wait_flag();
-
+#endif
 	pp = devm_kzalloc(dev, sizeof(struct ahci_port_priv), GFP_KERNEL);
 	if (!pp)
 		return -ENOMEM;
@@ -98,10 +99,10 @@ address must be aligned to a 128-byte cache line, indicated by bits 06:00 being 
 */
 	mem_dma = dma_map_single(dev, mem, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE); // maybe DMA_BIDIRECTIONAL, but currently we do not use DMA for received FISes
 
-	dev_info(dev, "ahci_elphel.c: dbg_i= 0x%08x, mem= 0x%08x, mem_dma= 0x%08x", dbg_i, (u32) mem, (u32) mem_dma);
+	dev_dbg(dev, "ahci_elphel.c: dbg_i= 0x%08x, mem= 0x%08x, mem_dma= 0x%08x", dbg_i, (u32) mem, (u32) mem_dma);
 	pp->cmd_tbl = mem + dbg_i;
 	pp->cmd_tbl_dma = mem_dma + dbg_i;
-	dev_info(dev, "ahci_elphel.c: dbg_i= 0x%08x, pp->cmd_tbl= 0x%08x, pp->cmd_tbl_dma= 0x%08x", dbg_i, (u32) pp->cmd_tbl, (u32) pp->cmd_tbl_dma);
+	dev_dbg(dev, "ahci_elphel.c: dbg_i= 0x%08x, pp->cmd_tbl= 0x%08x, pp->cmd_tbl_dma= 0x%08x", dbg_i, (u32) pp->cmd_tbl, (u32) pp->cmd_tbl_dma);
 
 	/*
 	 * Set predefined addresses
@@ -134,10 +135,10 @@ address must be aligned to a 128-byte cache line, indicated by bits 06:00 being 
 	//libahci_debug_saxigp1_save(ap, 0x3000);
 	//libahci_debug_saxigp1_save(ap, 0x3000);
 
-	dev_info(dev, "flags (ATA_FLAG_xxx): %u", ap->flags);
-	dev_info(dev, "pflags (ATA_PFLAG_xxx): %u", ap->pflags);
+	dev_dbg(dev, "flags (ATA_FLAG_xxx): %u", ap->flags);
+	dev_dbg(dev, "pflags (ATA_PFLAG_xxx): %u", ap->pflags);
 
-	dev_info(dev, "ahci_elphel.c: Calling  ahci_port_resume()");
+	dev_dbg(dev, "ahci_elphel.c: Calling  ahci_port_resume()");
 	return ahci_port_resume(ap);
 }
 
@@ -162,7 +163,7 @@ static int elphel_parse_prop(const struct device_node *devn,
 	val = of_get_address(devn, 0, NULL, NULL);
 	if (val != NULL) {
 		dpriv->base_addr = be32_to_cpu(val);
-		dev_info(dev, "base_addr: 0x%08u", dpriv->base_addr);
+		dev_dbg(dev, "base_addr: 0x%08u", dpriv->base_addr);
 	} else {
 		dev_err(dev, "can not get register address");
 	}
@@ -203,15 +204,15 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	hpriv->plat_data = drv_priv;
 
 	reg_val = readl(hpriv->mmio + HOST_CAP);
-	dev_info(dev, "HOST CAP register: 0x%08x", reg_val);
+	dev_dbg(dev, "HOST CAP register: 0x%08x", reg_val);
 	reg_val = readl(hpriv->mmio + HOST_CTL);
-	dev_info(dev, "HOST GHC register: 0x%08x", reg_val);
+	dev_dbg(dev, "HOST GHC register: 0x%08x", reg_val);
 	reg_val = readl(hpriv->mmio + HOST_IRQ_STAT);
-	dev_info(dev, "HOST IS register: 0x%08x", reg_val);
+	dev_dbg(dev, "HOST IS register: 0x%08x", reg_val);
 	reg_val = readl(hpriv->mmio + HOST_PORTS_IMPL);
-	dev_info(dev, "HOST PI register: 0x%08x", reg_val);
+	dev_dbg(dev, "HOST PI register: 0x%08x", reg_val);
 	reg_val = readl(hpriv->mmio + HOST_VERSION);
-	dev_info(dev, "HOST VS register: 0x%08x", reg_val);
+	dev_dbg(dev, "HOST VS register: 0x%08x", reg_val);
 
 	phys_addr_t paddr = virt_to_phys(hpriv->mmio);
 	void *vaddr = phys_to_virt(paddr);
@@ -232,7 +233,7 @@ static int elphel_drv_probe(struct platform_device *pdev)
 		ahci_platform_disable_resources(hpriv);
 		return ret;
 	}
-	dev_info(dev, "ahci platform host initialized");
+	dev_dbg(dev, "ahci platform host initialized");
 
 	return 0;
 }
@@ -257,7 +258,7 @@ static unsigned int elphel_read_id(struct ata_device *dev, struct ata_taskfile *
 	if (err_mask)
 		return err_mask;
 
-	dev_info(d, "elphel_read_id(): issue identify command finished\n");
+	dev_dbg(d, "elphel_read_id(): issue identify command finished\n");
 	/*dev_info(d, "dump IDENTIFY:\n");
 	msg_str = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!msg_str)

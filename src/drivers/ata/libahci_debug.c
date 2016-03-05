@@ -745,11 +745,11 @@ unsigned int libahci_debug_state_dump(struct ata_port *ap)
 		return 0;
 	}
 
-	dev_info(dev, "dump page num: %u", page_cntr);
+	dev_dbg(dev, "dump page num: %u", page_cntr);
 	ptr = page_cntr * DUMP_LEN;
 	if (ptr + DUMP_LEN > SEGMENT_SIZE)
 		ptr = 0;
-	dev_info(dev, "current ptr: %u", ptr);
+	dev_dbg(dev, "current ptr: %u", ptr);
 	for (i = 0; i < GHC_SZ; i++) {
 		tmp = ioread32(host_mmio + 4 * i);
 		buf[ptr++] = tmp;
@@ -811,7 +811,7 @@ unsigned int libahci_debug_saxigp1_save(struct ata_port *ap, size_t dump_size)
 	} else {
 		page_cntr = 0;
 		//bytes_copied = 0;
-		//dev_info(dev, "memory pool has ended, writing from beginning");
+		//dev_dbg(dev, "memory pool has ended, writing from beginning");
 	}
 
 	return page_cntr;
@@ -820,20 +820,20 @@ EXPORT_SYMBOL_GPL(libahci_debug_saxigp1_save);
 
 static void libahci_debug_buff_init(struct device *dev)
 {
-	dev_info(dev, "Nothing to allocate - using elphel_buf allocated at startup");
+	dev_dbg(dev, "Nothing to allocate - using elphel_buf allocated at startup");
 /*
 	mem_buff.vaddr = dmam_alloc_coherent(dev, SEGMENT_SIZE, &mem_buff.paddr, GFP_KERNEL);
 	if (!mem_buff.vaddr)
 		dev_err(dev, "unable to allocate memory");
 	else
-		dev_info(dev, "dump buffer allocated");
+		dev_dbg(dev, "dump buffer allocated");
 */
 /*
  const size_t maxigp1_start = 0x80000000; // start of MAXIGP1 physical address range
  const size_t maxigp1_size = 0x3000; // size of register memory to save
  */
 	ioptr =  ioremap_nocache(maxigp1_start, maxigp1_size);
-	dev_info(dev, "Mapped 0x%08x bytes from physical address 0x%08x to 0x%08x", maxigp1_size, maxigp1_start, (size_t) ioptr);
+	dev_dbg(dev, "Mapped 0x%08x bytes from physical address 0x%08x to 0x%08x", maxigp1_size, maxigp1_start, (size_t) ioptr);
 	page_cntr = 0;
 }
 
@@ -902,7 +902,7 @@ int libahci_debug_init_early(struct device *dev)
 		dev_err(dev, "unable to allocate mem for early buffer");
 		return -ENOMEM;
 	} else {
-		dev_info(dev, "early buffer allocated");
+		dev_dbg(dev, "early buffer allocated");
 	}
 }
 

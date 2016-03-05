@@ -1564,7 +1564,7 @@ unsigned ata_exec_internal_sg(struct ata_device *dev,
 	unsigned long flags;
 	unsigned int err_mask;
 	int rc;
-	dev_info(ap->host->dev, "libata-core.c:ata_exec_internal_sg() ap->pflags = 0x%x, link->eh_info.action=0x%08x\n",ap->pflags,link->eh_info.action);
+	dev_dbg(ap->host->dev, "libata-core.c:ata_exec_internal_sg() ap->pflags = 0x%x, link->eh_info.action=0x%08x\n",ap->pflags,link->eh_info.action);
 
 	spin_lock_irqsave(ap->lock, flags);
 
@@ -1635,7 +1635,7 @@ unsigned ata_exec_internal_sg(struct ata_device *dev,
 
 	spin_unlock_irqrestore(ap->lock, flags);
 
-	dev_info(ap->host->dev, "libata-core.c:ata_exec_internal_sg(), timeout = 0x%x, qc->err_mask= 0x%08x, qc->flags=0x%08x, link->eh_info.action=0x%08x\n",
+	dev_dbg(ap->host->dev, "libata-core.c:ata_exec_internal_sg(), timeout = 0x%x, qc->err_mask= 0x%08x, qc->flags=0x%08x, link->eh_info.action=0x%08x\n",
 			                  timeout, qc->err_mask, qc->flags, link->eh_info.action);
 //link->eh_info.action
 	if (!timeout) {
@@ -1743,7 +1743,7 @@ unsigned ata_exec_internal(struct ata_device *dev,
 {
 	struct scatterlist *psg = NULL, sg;
 	unsigned int n_elem = 0;
-	dev_info(dev->link->ap->host->dev, "libata-core.c ata_exec_internal()");
+	dev_dbg(dev->link->ap->host->dev, "libata-core.c ata_exec_internal()");
 
 	if (dma_dir != DMA_NONE) {
 		WARN_ON(!buf);
@@ -1825,7 +1825,7 @@ static u32 ata_pio_mask_no_iordy(const struct ata_device *adev)
 unsigned int ata_do_dev_read_id(struct ata_device *dev,
 					struct ata_taskfile *tf, u16 *id)
 {
-	dev_info(dev->link->ap->host->dev, "libata-core.c ata_do_dev_read_id()");
+	dev_dbg(dev->link->ap->host->dev, "libata-core.c ata_do_dev_read_id()");
 
 	return ata_exec_internal(dev, tf, NULL, DMA_FROM_DEVICE,
 				     id, sizeof(id[0]) * ATA_ID_WORDS, 0);
@@ -4894,12 +4894,12 @@ void ata_qc_complete(struct ata_queued_cmd *qc)
 	 * taken care of.
 	 */
 
-	dev_info(&qc->dev->tdev, "%s: qc->dma_dir: %d", __func__, qc->dma_dir);
+	dev_dbg(&qc->dev->tdev, "%s: qc->dma_dir: %d", __func__, qc->dma_dir);
 	if (qc->dma_dir == DMA_TO_DEVICE) {
-		dev_info(&qc->dev->tdev, "%s: dma_sync_sg_for_device, qc->dma_dir: %d", __func__, qc->dma_dir);
+		dev_dbg(&qc->dev->tdev, "%s: dma_sync_sg_for_device, qc->dma_dir: %d", __func__, qc->dma_dir);
 		dma_sync_sg_for_device(&qc->dev->tdev, qc->sg, qc->n_elem, qc->dma_dir);
 	} else if (qc->dma_dir == DMA_FROM_DEVICE) {
-		dev_info(&qc->dev->tdev, "%s: dma_sync_sg_for_cpu, qc->dma_dir: %d", __func__, qc->dma_dir);
+		dev_dbg(&qc->dev->tdev, "%s: dma_sync_sg_for_cpu, qc->dma_dir: %d", __func__, qc->dma_dir);
 		dma_sync_sg_for_cpu(&qc->dev->tdev, qc->sg, qc->n_elem, qc->dma_dir);
 	}
 
@@ -5959,12 +5959,12 @@ int ata_host_start(struct ata_host *host)
 	int have_stop = 0;
 	void *start_dr = NULL;
 	int i, rc;
-	dev_info(host->ports[0]->host->dev, "libata-core.c ata_host_start(), 0x%08x\n",host->flags);
+	dev_dbg(host->ports[0]->host->dev, "libata-core.c ata_host_start(), 0x%08x\n",host->flags);
 	if (host->flags & ATA_HOST_STARTED)
 		return 0;
 
 	ata_finalize_port_ops(host->ops);
-	dev_info(host->ports[0]->host->dev, "libata-core.c ata_host_start(): ata_finalize_port_ops() DONE");
+	dev_dbg(host->ports[0]->host->dev, "libata-core.c ata_host_start(): ata_finalize_port_ops() DONE");
 
 	for (i = 0; i < host->n_ports; i++) {
 		struct ata_port *ap = host->ports[i];
@@ -5986,7 +5986,7 @@ int ata_host_start(struct ata_host *host)
 		if (!start_dr)
 			return -ENOMEM;
 	}
-	dev_info(host->ports[0]->host->dev, "libata-core.c ata_host_start(): Checked for 'have stop' = %d",have_stop);
+	dev_dbg(host->ports[0]->host->dev, "libata-core.c ata_host_start(): Checked for 'have stop' = %d",have_stop);
 
 	for (i = 0; i < host->n_ports; i++) {
 		struct ata_port *ap = host->ports[i];
@@ -6002,14 +6002,14 @@ int ata_host_start(struct ata_host *host)
 			}
 		}
 		ata_eh_freeze_port(ap);
-		dev_info(host->ports[0]->host->dev, "ata_host_start(): freezing port %d",i);
+		dev_dbg(host->ports[0]->host->dev, "ata_host_start(): freezing port %d",i);
 
 	}
 
 	if (start_dr)
 		devres_add(host->dev, start_dr);
 	host->flags |= ATA_HOST_STARTED;
-	dev_info(host->ports[0]->host->dev, "ata_host_start() OK, host->flags = 0x%08x",host->flags);
+	dev_dbg(host->ports[0]->host->dev, "ata_host_start() OK, host->flags = 0x%08x",host->flags);
 	return 0;
 
  err_out:
@@ -6019,7 +6019,7 @@ int ata_host_start(struct ata_host *host)
 		if (ap->ops->port_stop)
 			ap->ops->port_stop(ap);
 	}
-	dev_info(host->ports[0]->host->dev, "ata_host_start() err_out, host->flags = 0x%08x (called port_stop)",host->flags);
+	dev_dbg(host->ports[0]->host->dev, "ata_host_start() err_out, host->flags = 0x%08x (called port_stop)",host->flags);
 	devres_free(start_dr);
 	return rc;
 }
