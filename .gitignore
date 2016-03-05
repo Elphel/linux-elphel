@@ -4,3 +4,8 @@ Debug
 Release
 linux
 sysroots
+.project
+.cproject
+.externalToolBuilders
+.settings
+.pydevproject
