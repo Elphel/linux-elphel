@@ -48,6 +48,8 @@
 
 #include "libata.h"
 
+#include "libahci_debug.h"
+
 enum {
 	/* speed down verdicts */
 	ATA_EH_SPDN_NCQ_OFF		= (1 << 0),
@@ -2555,6 +2557,9 @@ static void ata_eh_link_report(struct ata_link *link)
 			res->hob_lbal, res->hob_lbam, res->hob_lbah,
 			res->device, qc->err_mask, ata_err_string(qc->err_mask),
 			qc->err_mask & AC_ERR_NCQ ? " <F>" : "");
+
+		// elphel test: crash driver here to stop its execution and preserve memory state
+		libahci_debug_crash_here();
 
 #ifdef CONFIG_ATA_VERBOSE_ERROR
 		if (res->command & (ATA_BUSY | ATA_DRDY | ATA_DF | ATA_DRQ |

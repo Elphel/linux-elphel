@@ -1564,6 +1564,7 @@ unsigned ata_exec_internal_sg(struct ata_device *dev,
 	unsigned long flags;
 	unsigned int err_mask;
 	int rc;
+
 	dev_dbg(ap->host->dev, "libata-core.c:ata_exec_internal_sg() ap->pflags = 0x%x, link->eh_info.action=0x%08x\n",ap->pflags,link->eh_info.action);
 
 	spin_lock_irqsave(ap->lock, flags);
@@ -4893,15 +4894,6 @@ void ata_qc_complete(struct ata_queued_cmd *qc)
 	 * not synchronize with interrupt handler.  Only PIO task is
 	 * taken care of.
 	 */
-
-	dev_dbg(&qc->dev->tdev, "%s: qc->dma_dir: %d", __func__, qc->dma_dir);
-	if (qc->dma_dir == DMA_TO_DEVICE) {
-		dev_dbg(&qc->dev->tdev, "%s: dma_sync_sg_for_device, qc->dma_dir: %d", __func__, qc->dma_dir);
-		dma_sync_sg_for_device(&qc->dev->tdev, qc->sg, qc->n_elem, qc->dma_dir);
-	} else if (qc->dma_dir == DMA_FROM_DEVICE) {
-		dev_dbg(&qc->dev->tdev, "%s: dma_sync_sg_for_cpu, qc->dma_dir: %d", __func__, qc->dma_dir);
-		dma_sync_sg_for_cpu(&qc->dev->tdev, qc->sg, qc->n_elem, qc->dma_dir);
-	}
 
 	if (ap->ops->error_handler) {
 		struct ata_device *dev = qc->dev;

@@ -2058,7 +2058,7 @@ static void ahci_qc_prep(struct ata_queued_cmd *qc)
 	 */
 
 	// Elphel; Need to wrap with dma_sync_single_for_cpu / dma_sync_single_for_device, move to in ahci_elphel.c
-	dma_sync_single_for_cpu(qc->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
+	dma_sync_single_for_cpu(&qc->dev->tdev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
 	cmd_tbl = pp->cmd_tbl + qc->tag * AHCI_CMD_TBL_SZ;
 
 	ata_tf_to_fis(&qc->tf, qc->dev->link->pmp, 1, cmd_tbl);
@@ -2097,7 +2097,7 @@ static void ahci_qc_prep(struct ata_queued_cmd *qc)
 	//ahci_fill_cmd_slot(pp, tag, opts);
 
 	// Elphel move to ahci_elphel.c. See if the SG dma should also be handed to dma here
-	dma_sync_single_for_device(qc->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
+	dma_sync_single_for_device(&qc->dev->tdev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
 	WARN_ON (qc->tag);
 }
 

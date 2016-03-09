@@ -13,9 +13,9 @@
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
 #include <elphel/elphel393-mem.h>
+#include <linux/jiffies.h>
 #include "libahci_debug.h"
 #include <asm/io.h> // ioremap(), copy_fromio
-#include <linux/jiffies.h>
 /*
  struct elphel_buf_t
 {
@@ -31,6 +31,7 @@ static struct dentry	*debug_root = NULL;
 static struct libahci_debug_list debug_list = {.debug = 0};
 static struct ahci_cmd	cmd;
 static bool load_flag = false;
+static bool error_flag = false;
 const size_t maxigp1_start = 0x80000000; // start of MAXIGP1 physical address range
 const size_t maxigp1_size =  0x3000; // size of register memory to save
 const size_t buffer_offset = 0x40000; // start of dumping area (0xxxx, 1xxxx and 2xxxx are used for dma buffers
@@ -692,6 +693,36 @@ static ssize_t libahci_debug_load(struct file *f, const char __user *buff, size_
 	return buff_sz;
 }
 
+static ssize_t libahci_debug_crash_write(struct file *f, const char __user *buff, size_t buff_sz, loff_t *ppos)
+{
+	if (buff[0] == '1') {
+		error_flag = true;
+	} else {
+		error_flag = false;
+	}
+	return buff_sz;
+}
+
+static ssize_t libahci_debug_crash_read(struct file *f, char __user *buff, size_t buff_sz, loff_t *ppos)
+{
+	char *tmp = error_flag ? "1" : "0";
+
+	copy_to_user(buff, tmp, 2);
+	return 2;
+}
+
+void libahci_debug_crash_here(void)
+{
+	BUG_ON(error_flag == true);
+}
+EXPORT_SYMBOL_GPL(libahci_debug_crash_here);
+
+void libahci_debug_crash_set(bool val)
+{
+	error_flag = (val == 0) ? false : true;
+}
+EXPORT_SYMBOL_GPL(libahci_debug_crash_set);
+
 /*
  * This function waits until the loading flag is set through debugfs file.
  * The state of the flag is checked every 100ms.
@@ -881,6 +912,11 @@ static const struct file_operations libahci_debug_load_ops= {
 		.write			= libahci_debug_load,
 };
 
+static const struct file_operations libahci_debug_error_ops= {
+		.write			= libahci_debug_crash_write,
+		.read			= libahci_debug_crash_read,
+};
+
 static int libahci_debug_init_sg(void)
 {
 	cmd.sg_buff = kzalloc(CMD_DMA_BUFSZ, GFP_KERNEL);
@@ -922,6 +958,8 @@ int libahci_debug_init(struct ata_host *host)
 			debug_root, host, &libahci_debug_host_ops);
 	debugfs_create_file("loading", 0222,
 			debug_root, host, &libahci_debug_load_ops);
+	debugfs_create_file("crash_on_error", 0644,
+			debug_root, host, &libahci_debug_error_ops);
 
 	/* Create subdir for each port and add there several files:
 	 * one for port registers, one for port events log and

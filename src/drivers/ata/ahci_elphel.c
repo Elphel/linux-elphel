@@ -32,6 +32,10 @@
 #define PROP_NAME_CLB_OFFS "clb_offs"
 #define PROP_NAME_FB_OFFS "fb_offs"
 
+bool crash_drv = false;
+module_param(crash_drv, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(sh_drv, "Set or reset crash driver flag");
+
 static struct ata_port_operations ahci_elphel_ops;
 static const struct ata_port_info ahci_elphel_port_info;
 static struct scsi_host_template ahci_platform_sht;
@@ -55,6 +59,7 @@ static int elphel_port_start(struct ata_port *ap)
 	const struct elphel_ahci_priv *dpriv = hpriv->plat_data;
 
 	libahci_debug_init(ap->host);
+	libahci_debug_crash_set(crash_drv);
 
 	dev_dbg(dev, "starting port %d", ap->port_no);
 #ifdef DEBUG_EVENT_ELPHEL
@@ -233,12 +238,6 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 			ahci_sg[n_elem].addr = cpu_to_le32(addr & 0xffffffff);
 			ahci_sg[n_elem].addr_hi = cpu_to_le32((addr >> 16) >> 16);
 			ahci_sg[n_elem].flags_size = cpu_to_le32(sg_len - 1);
-		}
-
-		if (qc->dma_dir == DMA_TO_DEVICE) {
-			dma_sync_sg_for_device(&qc->dev->tdev, qc->sg, qc->n_elem, qc->dma_dir);
-		} else if (qc->dma_dir == DMA_FROM_DEVICE) {
-			dma_sync_sg_for_cpu(&qc->dev->tdev, qc->sg, qc->n_elem, qc->dma_dir);
 		}
 	}
 
