@@ -3731,14 +3731,12 @@ ident_done:
 		if (nand_manuf_ids[maf_idx].id == *maf_id)
 			break;
 	}
-
+	
 	if (chip->options & NAND_BUSWIDTH_AUTO) {
 		WARN_ON(chip->options & NAND_BUSWIDTH_16);
 		chip->options |= busw;
 		nand_set_defaults(chip, busw);
 	} else if (busw != (chip->options & NAND_BUSWIDTH_16)) {
-		if (*maf_id == NAND_MFR_MICRON)
-		nandchip_micron_init(mtd, *dev_id);
 		/*
 		 * Check, if buswidth is correct. Hardware drivers should set
 		 * chip correct!
@@ -3775,6 +3773,8 @@ ident_done:
 	if (mtd->writesize > 512 && chip->cmdfunc == nand_command)
 		chip->cmdfunc = nand_command_lp;
 
+	if (*maf_id == NAND_MFR_MICRON) nandchip_micron_init(mtd, *dev_id);
+	
 	pr_info("device found, Manufacturer ID: 0x%02x, Chip ID: 0x%02x\n",
 		*maf_id, *dev_id);
 
