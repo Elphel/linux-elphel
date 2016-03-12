@@ -24,17 +24,12 @@
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
 #include "ahci.h"
-#include "libahci_debug.h"
 
 #define DRV_NAME "elphel-ahci"
 
 /* Property names from device tree, these are specific for the controller */
 #define PROP_NAME_CLB_OFFS "clb_offs"
 #define PROP_NAME_FB_OFFS "fb_offs"
-
-bool crash_drv = false;
-module_param(crash_drv, bool, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(sh_drv, "Set or reset crash driver flag");
 
 static struct ata_port_operations ahci_elphel_ops;
 static const struct ata_port_info ahci_elphel_port_info;
@@ -58,13 +53,7 @@ static int elphel_port_start(struct ata_port *ap)
 	struct ahci_host_priv *hpriv = ap->host->private_data;
 	const struct elphel_ahci_priv *dpriv = hpriv->plat_data;
 
-	libahci_debug_init(ap->host);
-	libahci_debug_crash_set(crash_drv);
-
 	dev_dbg(dev, "starting port %d", ap->port_no);
-#ifdef DEBUG_EVENT_ELPHEL
-	libahci_debug_wait_flag();
-#endif
 	pp = devm_kzalloc(dev, sizeof(struct ahci_port_priv), GFP_KERNEL);
 	if (!pp)
 		return -ENOMEM;
@@ -94,10 +83,6 @@ static int elphel_port_start(struct ata_port *ap)
 
 	ap->private_data = pp;
 
-	dev_dbg(dev, "flags (ATA_FLAG_xxx): %lu", ap->flags);
-	dev_dbg(dev, "pflags (ATA_PFLAG_xxx): %u", ap->pflags);
-
-	dev_dbg(dev, "ahci_elphel.c: Calling  ahci_port_resume()");
 	return ahci_port_resume(ap);
 }
 
@@ -167,17 +152,6 @@ static int elphel_drv_probe(struct platform_device *pdev)
 
 	hpriv->plat_data = dpriv;
 
-	reg_val = readl(hpriv->mmio + HOST_CAP);
-	dev_dbg(dev, "HOST CAP register: 0x%08x", reg_val);
-	reg_val = readl(hpriv->mmio + HOST_CTL);
-	dev_dbg(dev, "HOST GHC register: 0x%08x", reg_val);
-	reg_val = readl(hpriv->mmio + HOST_IRQ_STAT);
-	dev_dbg(dev, "HOST IS register: 0x%08x", reg_val);
-	reg_val = readl(hpriv->mmio + HOST_PORTS_IMPL);
-	dev_dbg(dev, "HOST PI register: 0x%08x", reg_val);
-	reg_val = readl(hpriv->mmio + HOST_VERSION);
-	dev_dbg(dev, "HOST VS register: 0x%08x", reg_val);
-
 	ret = ahci_platform_init_host(pdev, hpriv, &ahci_elphel_port_info,
 			&ahci_platform_sht);
 	if (ret) {
@@ -193,7 +167,6 @@ static int elphel_drv_remove(struct platform_device *pdev)
 {
 	dev_info(&pdev->dev, "removing Elphel AHCI driver");
 	ata_platform_remove_one(pdev);
-	libahci_debug_exit();
 
 	return 0;
 }
@@ -209,6 +182,9 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 	unsigned int n_elem;
 	struct scatterlist *sg;
 	struct ahci_sg *ahci_sg;
+
+	/* There is only one slot in controller thus we need to change tag*/
+	qc->tag = 0;
 
 	/*
 	 * Fill in command table information.  First, the header,
