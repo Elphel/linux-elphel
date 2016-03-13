@@ -51,15 +51,22 @@
 static char *bootargs;
 static struct mtd_info *mtd;
 
+static char *boardinfo;
+
+static char serial[13];
+//strncpy(serial,buf,sizeof(serial)-1)
+//static char *serial;
+
+static char revision[8];
+//static char *revision;
+
 static int __init elphel393_init_init (void)
 {
 	struct device_node *node;
-	int len=0;
 
 	node = of_find_node_by_name(NULL, "chosen");
 	//just throw an error
-	if (!node)
-	{
+	if (!node){
 		pr_err("Device tree node 'chosen' not found.");
 		return -ENODEV;
 	}
@@ -67,7 +74,6 @@ static int __init elphel393_init_init (void)
 	if (bootargs!=NULL) {
 		pr_debug("bootargs line from device tree is %s",bootargs);
 	}
-
 	return 0;
 }
 
@@ -84,15 +90,15 @@ static ssize_t get_bootargs(struct device *dev, struct device_attribute *attr, c
 }
 static ssize_t get_boardinfo(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf,"%s\n",bootargs);
+	return sprintf(buf,"%s\n",boardinfo);
 }
 static ssize_t get_revision(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf,"%s\n",bootargs);
+	return sprintf(buf,"%s\n",revision);
 }
 static ssize_t get_serial(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf,"%s\n",bootargs);
+	return sprintf(buf,"%s\n",serial);
 }
 
 static DEVICE_ATTR(bootargs  ,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_bootargs ,   NULL);
@@ -137,6 +143,19 @@ static int elphel393_init_probe(struct platform_device *pdev)
 	u8 devnum=-1;
 	u8 unlock= 0;
 
+	size_t retlen;
+	//size of nand flash page
+	char kbuf[2048];
+	int page_limit = 3;
+	size_t count;
+	size_t size;
+	int len;
+	loff_t *ppos;
+	loff_t pos;
+	int ret;
+	char *test;
+	char *ps,*pe;
+
 	pr_debug("Probing");
 	//copy bootargs string
 	bootargs_copy = kstrdup(bootargs,GFP_KERNEL);
@@ -165,14 +184,80 @@ static int elphel393_init_probe(struct platform_device *pdev)
 
 	kfree(bootargs_copy);
 
-	//unlock /dev/mtdN partition
+	// unlock /dev/mtdN partition
+	// if there's no need to unlock, get /dev/mtd0
 	if (unlock&&(devnum>=0)){
 		mtd = get_mtd_device(NULL,devnum);
 		mtd_unlock(mtd,0,mtd->size);
 		pr_info("/dev/mtd%d: unlocked",devnum);
+	}else{
+		mtd = get_mtd_device(NULL,0);
 	}
 
-	//
+	if (!mtd){
+		pr_err("Get mtd device error\n");
+		return mtd;
+	}
+
+	// read boardinfo record
+	// * device number is not important
+	// * no need to unlock
+
+	// page size
+	BUG_ON(mtd->writesize > 2048);
+
+	size = mtd->writesize;
+	// search within page_limit pages area
+	count = page_limit*(mtd->writesize);
+	// starting offset
+	pos = 0;
+	ppos = &pos;
+
+	// memory for boardinfo
+	boardinfo = kmalloc(size,GFP_KERNEL);
+	if (!boardinfo)
+		return -ENOMEM;
+
+	//serial = kmalloc(13,GFP_KERNEL);
+	//if (!serial)
+	//	return -ENOMEM;
+
+	// tmp buffer
+
+	//kbuf = kmalloc(size,GFP_KERNEL);
+	//if (!kbuf)
+	//	return -ENOMEM;
+
+	while(count){
+		pr_info("counting(\255 /255): %d\n",count);
+		len = min_t(size_t,count, size);
+		pr_info("len is: %d\n",len);
+		ret = mtd_read_user_prot_reg(mtd, *ppos, len, &retlen, kbuf);
+		if (!ret){
+			pr_err("flash page read, code %d",ret);
+		}
+		pr_info("superfunction returned: %d",ret);
+		pr_info("And the buf contents are: %s\n",kbuf);
+
+		// do whatever we like with the kbuf
+		// search for "<board>"
+		// expecting to find it somewhere...
+		if(strnstr(kbuf,"<board>",size)){
+			pr_info("Clap along if you feel that happiness is the truth\n");
+			//...right in the beginning or error
+			ps = strnstr(kbuf,"<serial>",size);
+			strncpy(serial,ps+sizeof("<serial>")-1,sizeof(serial)-1);
+			ps = strnstr(kbuf,"<rev>",size);
+			strncpy(revision,ps+sizeof("<rev>")-1,sizeof(revision)-1);
+
+			strncpy(boardinfo,kbuf,retlen);
+			break;
+		}
+
+		*ppos += retlen;
+		count -= retlen;
+	}
+	//kfree(kbuf);
 
     //look in the nand drivers how to do this:
     //read the factory info string from NAND flash otp area - look in the 1st page?
@@ -184,7 +269,7 @@ static int elphel393_init_probe(struct platform_device *pdev)
     //<serial>
 	//mtd_read_user_prot_reg(mtd,(loff_t)0x0,);
 	//struct mtd_info *mtd, loff_t from, size_t len, size_t *retlen, uint8_t *buf
-        
+
 	elphel393_init_sysfs_register(pdev);
 
 	return 0;
