@@ -229,26 +229,22 @@ static int elphel393_init_probe(struct platform_device *pdev)
 	//	return -ENOMEM;
 
 	while(count){
-		pr_info("counting(\255 /255): %d\n",count);
 		len = min_t(size_t,count, size);
-		pr_info("len is: %d\n",len);
 		ret = mtd_read_user_prot_reg(mtd, *ppos, len, &retlen, kbuf);
-		if (!ret){
+		if (ret){
 			pr_err("flash page read, code %d",ret);
 		}
-		pr_info("superfunction returned: %d",ret);
-		pr_info("And the buf contents are: %s\n",kbuf);
-
 		// do whatever we like with the kbuf
 		// search for "<board>"
 		// expecting to find it somewhere...
 		if(strnstr(kbuf,"<board>",size)){
-			pr_info("Clap along if you feel that happiness is the truth\n");
 			//...right in the beginning or error
 			ps = strnstr(kbuf,"<serial>",size);
-			strncpy(serial,ps+sizeof("<serial>")-1,sizeof(serial)-1);
+			pe = strnstr(kbuf,"</serial>",size);
+			strncpy(serial,ps+sizeof("<serial>")-1,pe-ps-(sizeof("<serial>")-1));
 			ps = strnstr(kbuf,"<rev>",size);
-			strncpy(revision,ps+sizeof("<rev>")-1,sizeof(revision)-1);
+			pe = strnstr(kbuf,"</rev>",size);
+			strncpy(revision,ps+sizeof("<rev>")-1,pe-ps-(sizeof("<rev>")-1));
 
 			strncpy(boardinfo,kbuf,retlen);
 			break;
