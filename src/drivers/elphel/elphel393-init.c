@@ -22,7 +22,9 @@
  *!  You should have received a copy of the GNU General Public License
  *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *!****************************************************************************/
-#define pr_fmt(fmt) "elphel393-init: " fmt
+
+#define DRV_NAME "elphel393-init"
+#define pr_fmt(fmt) DRV_NAME": " fmt
 
 #include <asm/page.h>
 
@@ -48,17 +50,14 @@
  * Read and parse bootargs parameter in the device tree
  * This driver is run in the last place - at least after NAND driver is probed
  */
-static char *bootargs;
 static struct mtd_info *mtd;
 
-static char *boardinfo;
-
+//surprise size
+static char *bootargs;
+//known size
+static char boardinfo[2048];
 static char serial[13];
-//strncpy(serial,buf,sizeof(serial)-1)
-//static char *serial;
-
 static char revision[8];
-//static char *revision;
 
 static int __init elphel393_init_init (void)
 {
@@ -101,14 +100,25 @@ static ssize_t get_serial(struct device *dev, struct device_attribute *attr, cha
 	return sprintf(buf,"%s\n",serial);
 }
 
+static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	pr_info("write board info\n");
+	if (!boardinfo){
+		pr_info("Boardinfo is empty, let's proceed\n");
+	}else{
+		pr_info("Boardinfo is there, do nothing\n");
+	}
+    return count;
+}
+
 static DEVICE_ATTR(bootargs  ,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_bootargs ,   NULL);
-static DEVICE_ATTR(board_info,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_boardinfo,   NULL);
+static DEVICE_ATTR(boardinfo ,  SYSFS_PERMISSIONS                 ,    get_boardinfo,   set_boardinfo);
 static DEVICE_ATTR(revision  ,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_revision ,   NULL);
 static DEVICE_ATTR(serial    ,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_serial ,     NULL);
 
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_bootargs.attr,
-        &dev_attr_board_info.attr,
+        &dev_attr_boardinfo.attr,
         &dev_attr_revision.attr,
         &dev_attr_serial.attr,
         NULL
@@ -212,11 +222,6 @@ static int elphel393_init_probe(struct platform_device *pdev)
 	pos = 0;
 	ppos = &pos;
 
-	// memory for boardinfo
-	boardinfo = kmalloc(size,GFP_KERNEL);
-	if (!boardinfo)
-		return -ENOMEM;
-
 	while(count){
 		len = min_t(size_t,count, size);
 		ret = mtd_read_user_prot_reg(mtd, *ppos, len, &retlen, kbuf);
@@ -260,7 +265,7 @@ static struct platform_driver elphel393_initialize = {
 	.probe   = elphel393_init_probe,
 	.remove  = elphel393_init_remove,
 	.driver  = {
-		.name  = "elphel393-init",
+		.name  = DRV_NAME,
 		.owner = THIS_MODULE,
 		.of_match_table = elphel393_init_of_match,
 		.pm = NULL, /* power management */
@@ -271,3 +276,5 @@ module_platform_driver(elphel393_initialize);
 module_init(elphel393_init_init);
 module_exit(elphel393_init_exit);
 MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Elphel, Inc.");
+MODULE_DESCRIPTION("Unlock rootfs flash partition and read/write board info: serial and revision");
