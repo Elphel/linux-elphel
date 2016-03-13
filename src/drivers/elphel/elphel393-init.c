@@ -153,7 +153,6 @@ static int elphel393_init_probe(struct platform_device *pdev)
 	loff_t *ppos;
 	loff_t pos;
 	int ret;
-	char *test;
 	char *ps,*pe;
 
 	pr_debug("Probing");
@@ -218,16 +217,6 @@ static int elphel393_init_probe(struct platform_device *pdev)
 	if (!boardinfo)
 		return -ENOMEM;
 
-	//serial = kmalloc(13,GFP_KERNEL);
-	//if (!serial)
-	//	return -ENOMEM;
-
-	// tmp buffer
-
-	//kbuf = kmalloc(size,GFP_KERNEL);
-	//if (!kbuf)
-	//	return -ENOMEM;
-
 	while(count){
 		len = min_t(size_t,count, size);
 		ret = mtd_read_user_prot_reg(mtd, *ppos, len, &retlen, kbuf);
@@ -245,29 +234,13 @@ static int elphel393_init_probe(struct platform_device *pdev)
 			ps = strnstr(kbuf,"<rev>",size);
 			pe = strnstr(kbuf,"</rev>",size);
 			strncpy(revision,ps+sizeof("<rev>")-1,pe-ps-(sizeof("<rev>")-1));
-
 			strncpy(boardinfo,kbuf,retlen);
 			break;
 		}
-
 		*ppos += retlen;
 		count -= retlen;
 	}
-	//kfree(kbuf);
-
-    //look in the nand drivers how to do this:
-    //read the factory info string from NAND flash otp area - look in the 1st page?
-    //parse the string:
-    //string start 1st occurence of <board>
-    //string end 1st occurence of </board>
-    //parse all of the entries
-    //<revision>
-    //<serial>
-	//mtd_read_user_prot_reg(mtd,(loff_t)0x0,);
-	//struct mtd_info *mtd, loff_t from, size_t len, size_t *retlen, uint8_t *buf
-
 	elphel393_init_sysfs_register(pdev);
-
 	return 0;
 }
 
