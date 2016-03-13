@@ -13,6 +13,11 @@ config ELPHEL393
 config ELPHELDRVONMICROZED
         tristate "Provide only Elphel features which are compatible with Microzed"
         help
-          Say Y here if you debug Elpel camera code on Microzed board.
+          Say Y here if you debug Elphel camera code on Microzed board.
 
+config ELPHEL393_INIT
+		bool
+		default y
+		help
+			If unsure, say Y.
 endmenu  
