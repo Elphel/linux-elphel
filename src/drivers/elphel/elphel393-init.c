@@ -48,8 +48,6 @@
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
 
-#define xemacps_write(base, reg, val) writel_relaxed((val), ((void __iomem *)(base)) + (reg))
-
 /*
  * Read and parse bootargs parameter in the device tree
  * This driver is run in the last place - at least after NAND driver is probed
@@ -63,6 +61,43 @@ static char boardinfo[2048];
 static char serial[13];
 static char revision[8];
 
+/*
+static int __init elphel393_early_initialize(void){
+
+	struct device_node *node;
+	struct property *newproperty;
+	u8 *macaddr;
+
+	pr_info("VERY EARLY CALL TO UPDATE DEVICE TREE");
+
+	node = of_find_node_by_name(NULL, "ps7-ethernet");
+	if (!node){
+		pr_err("Device tree node 'ps7-ethernet' not found.");
+		return -ENODEV;
+	}
+
+	newproperty = kzalloc(sizeof(*newproperty) + 6, GFP_KERNEL);
+	if (!newproperty)
+		return -ENOMEM;
+	newproperty->value = newproperty + 1;
+	newproperty->length = 6;
+	newproperty->name = kstrdup("local-mac-address", GFP_KERNEL);
+	if (!newproperty->name) {
+		kfree(newproperty);
+		return -ENOMEM;
+	}
+	macaddr = newproperty->value;
+	macaddr[0] = 0x02;
+	macaddr[1] = 0x03;
+	macaddr[2] = 0x04;
+	macaddr[3] = 0x05;
+	macaddr[4] = 0x06;
+	macaddr[5] = 0x07;
+
+	of_update_property(node,newproperty);
+	return 0;
+}
+*/
 static int __init elphel393_init_init (void)
 {
 	struct device_node *node;
@@ -195,13 +230,6 @@ static int elphel393_init_probe(struct platform_device *pdev)
 	u8 devnum= 0;
 	u8 unlock= 0;
 
-	/*
-	const u8 *mac_address;
-	u16 hwaddrh;
-	u32 hwaddrl;
-	struct device_node *node;
-	*/
-
 	pr_debug("Probing");
 	//copy bootargs string
 	bootargs_copy = kstrdup(bootargs,GFP_KERNEL);
@@ -250,24 +278,6 @@ static int elphel393_init_probe(struct platform_device *pdev)
 	// page size
 	BUG_ON(mtd->writesize > 2048);
 
-	/*
-	node = of_find_node_by_name(NULL, "ps7_ethernet_0");
-	if (!node){
-		pr_err("Device tree node 'ps7_ethernet_0' not found.");
-		return -ENODEV;
-	}
-	mac_address = of_get_mac_address(node);
-
-	hwaddrl = cpu_to_le32(*((u32 *)mac_address));
-	hwaddrh = cpu_to_le16(*((u16 *)(mac_address + 4)));
-
-	pr_info("MY_MAC_FROM_DT: 0x%08x, 0x%08x, %02x:%02x:%02x:%02x:%02x:%02x\n",
-			hwaddrl, hwaddrh,
-		(hwaddrl & 0xff), ((hwaddrl >> 8) & 0xff),
-		((hwaddrl >> 16) & 0xff), (hwaddrl >> 24),
-		(hwaddrh & 0xff), (hwaddrh >> 8));
-	*/
-
 	get_factory_info();
 	elphel393_init_sysfs_register(pdev);
 	return 0;
@@ -289,14 +299,17 @@ static int get_factory_info(void){
 	int ret;
 	char *ps,*pe;
 
-	const u8 *mac_address;
+//	const u8 *mac_address;
+	struct device_node *node;
+	struct property *newproperty;
+
+	u32 *mac32; //  = (u32*) mac_address;
+	u8 *macaddr;
 
 	// I expected to have null terminated strings
 	// but cannot get it from the declaration. Don't know.
 	memset(regvalh,0x00,5);
 	memset(regvall,0x00,9);
-
-	pr_info("reading back: 0x%08x 0x%08x\n",readl(0xE000B08C),readl(0xE000B088));
 
 	ret = mtd_read_user_prot_reg(mtd, *ppos+4*2048, size, &retlen, kbuf);
 	if (ret){
@@ -319,16 +332,46 @@ static int get_factory_info(void){
 		kstrtou16(regvalh,16,&hwaddrh);
 		kstrtou32(regvall,16,&hwaddrl);
 
-		//xemacps_write(0xE000B000,0x88,hwaddrl);
-		//xemacps_write(0xE000B000,0x8C,hwaddrh);
-		//get mac address from device tree
+		node = of_find_node_by_name(NULL, "ps7-ethernet");
+		if (!node){
+			pr_err("Device tree node 'ps7-ethernet' not found.");
+			return -ENODEV;
+		}
 
-		writel(hwaddrl,0xE000B088);
-		writel(hwaddrh,0xE000B08C);
+		pr_debug("MAC from flash: %02x:%02x:%02x:%02x:%02x:%02x\n",
+			 (hwaddrl & 0xff), ((hwaddrl >> 8) & 0xff),
+			((hwaddrl >> 16) & 0xff), (hwaddrl >> 24),
+			 (hwaddrh & 0xff), (hwaddrh >> 8));
 
-		pr_info("Wrote to hwaddr reg: 0x%08x 0x%08x\n",hwaddrh,hwaddrl);
+		newproperty = kzalloc(sizeof(*newproperty) + 6, GFP_KERNEL);
+		if (!newproperty)
+			return -ENOMEM;
+		newproperty->value = newproperty + 1;
+		newproperty->length = 6;
+		newproperty->name = kstrdup("local-mac-address", GFP_KERNEL);
+		if (!newproperty->name) {
+			kfree(newproperty);
+			return -ENOMEM;
+		}
+		macaddr = newproperty->value;
+		macaddr[0] = (hwaddrh >> 8) & 0xff;
+		macaddr[1] =  hwaddrh & 0xff;
+		macaddr[2] = (hwaddrl >> 24) & 0xff;
+		macaddr[3] = (hwaddrl >> 16) & 0xff;
+		macaddr[4] = (hwaddrl >> 8) & 0xff;
+		macaddr[5] =  hwaddrl & 0xff;
 
-		pr_info("read back: 0x%08x 0x%08x\n",readl(0xE000B08C),readl(0xE000B088));
+		of_update_property(node,newproperty);
+
+		mac32 = (u32 *) of_get_mac_address(node);
+		hwaddrl = cpu_to_le32(mac32[0]);
+		hwaddrh = cpu_to_le16(mac32[1]);
+
+		pr_debug("MAC from device tree: %02x:%02x:%02x:%02x:%02x:%02x\n",
+			(hwaddrl & 0xff), ((hwaddrl >> 8) & 0xff),
+			((hwaddrl >> 16) & 0xff), (hwaddrl >> 24),
+			(hwaddrh & 0xff), (hwaddrh >> 8));
+
 		//write hwaddr to zynq reg
 		//kstrtou16(serial,16,&regvalh);
 		//serial
@@ -365,6 +408,8 @@ static struct platform_driver elphel393_initialize = {
 		.pm = NULL, /* power management */
 	},
 };
+
+//early_initcall(elphel393_early_initialize);
 
 module_platform_driver(elphel393_initialize);
 module_init(elphel393_init_init);
