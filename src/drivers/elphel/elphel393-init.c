@@ -285,7 +285,7 @@ static int elphel393_init_probe(struct platform_device *pdev)
 
 static int get_factory_info(void){
 
-	char regvalh[5];
+	char regvalh[5];//char reg[]="0000";
 	char regvall[9];
 	u16 hwaddrh;
 	u32 hwaddrl;
@@ -294,8 +294,6 @@ static int get_factory_info(void){
 	//size of nand flash page
 	char kbuf[2048];
 	size_t size = mtd->writesize;
-	loff_t pos=0;
-	loff_t *ppos=&pos;
 	int ret;
 	char *ps,*pe;
 
@@ -311,7 +309,7 @@ static int get_factory_info(void){
 	memset(regvalh,0x00,5);
 	memset(regvall,0x00,9);
 
-	ret = mtd_read_user_prot_reg(mtd, *ppos+4*2048, size, &retlen, kbuf);
+	ret = mtd_read_user_prot_reg(mtd, 4*2048, size, &retlen, kbuf);
 	if (ret){
 		pr_err("Flash page read, code %d",ret);
 		return ret;
