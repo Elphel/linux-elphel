@@ -29,11 +29,13 @@
 #include <asm/page.h>
 
 #include <linux/init.h>
+#include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mtd/mtd.h>
 #include <linux/of.h>
 #include <linux/of_fdt.h>
+#include <linux/of_net.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -45,6 +47,8 @@
 #define SYSFS_PERMISSIONS         0644 /* default permissions for sysfs files */
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
+
+#define xemacps_write(base, reg, val) writel_relaxed((val), ((void __iomem *)(base)) + (reg))
 
 /*
  * Read and parse bootargs parameter in the device tree
@@ -100,13 +104,51 @@ static ssize_t get_serial(struct device *dev, struct device_attribute *attr, cha
 	return sprintf(buf,"%s\n",serial);
 }
 
+static int get_factory_info(void);
+
 static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	pr_info("write board info\n");
-	if (!boardinfo){
-		pr_info("Boardinfo is empty, let's proceed\n");
+	int ret;
+	loff_t pos=0;//second page
+	loff_t *ppos=&pos;
+	size_t retlen;
+
+	char wbuf[2048];
+	memset(wbuf,0xff,2048);
+
+	if (!mtd){
+		pr_err("Get MTD device error\n");
+		return mtd;
+	}
+	//too much of a trouble to read from flash again
+	if(!strnstr(boardinfo,"<board>",sizeof(boardinfo))){
+		pr_info("Factory Info record is clean.\n");
+		pr_info("Data to be written: %s",buf);
+		// I got some buf, unknown size- should be limited to 2048? ok
+		if (strlen(buf)>2048) {
+			pr_err("Data > 2KiB. Abort.\n");
+			return -1;
+		}
+		// Not too strict check, just look for opening tags.
+		if(!strnstr(buf,"<board>",2048)||!strnstr(buf,"<serial>",2048)||!strnstr(buf,"<rev>",2048)){
+			pr_err("Bad data format\n");
+			return -2;
+		}
+		//tmp disabled.
+		//ret = mtd_write_user_prot_reg(mtd, *ppos+4*2048, 2048, &retlen, buf);
+
+		//copy to buf
+		strncpy(wbuf,buf,strlen(buf));
+		pr_info("BUFFER: %s\n",wbuf);
+		ret = mtd_write_user_prot_reg(mtd, *ppos+4*2048, 2048, &retlen, wbuf);
+		if (ret){
+			pr_err("Flash page write, code %d",ret);
+			return ret;
+		}
+		pr_info("Data is successfully written and cannot be overwritten anymore, record size: %d B\n",strlen(wbuf));
+		get_factory_info();
 	}else{
-		pr_info("Boardinfo is there, do nothing\n");
+		pr_info("Factory Info record (serial='%s' revision='%s') can not be overwritten\n",serial,revision);
 	}
     return count;
 }
@@ -150,20 +192,15 @@ static int elphel393_init_probe(struct platform_device *pdev)
 	char *value;
 
 	//mtd device number to unlock
-	u8 devnum=-1;
+	u8 devnum= 0;
 	u8 unlock= 0;
 
-	size_t retlen;
-	//size of nand flash page
-	char kbuf[2048];
-	int page_limit = 3;
-	size_t count;
-	size_t size;
-	int len;
-	loff_t *ppos;
-	loff_t pos;
-	int ret;
-	char *ps,*pe;
+	/*
+	const u8 *mac_address;
+	u16 hwaddrh;
+	u32 hwaddrl;
+	struct device_node *node;
+	*/
 
 	pr_debug("Probing");
 	//copy bootargs string
@@ -195,19 +232,17 @@ static int elphel393_init_probe(struct platform_device *pdev)
 
 	// unlock /dev/mtdN partition
 	// if there's no need to unlock, get /dev/mtd0
-	if (unlock&&(devnum>=0)){
+	if (devnum>=0){
 		mtd = get_mtd_device(NULL,devnum);
-		mtd_unlock(mtd,0,mtd->size);
-		pr_info("/dev/mtd%d: unlocked",devnum);
-	}else{
-		mtd = get_mtd_device(NULL,0);
+		if (!mtd){
+			pr_err("Get MTD device error\n");
+			return mtd;
+		}
+		if (unlock){
+			mtd_unlock(mtd,0,mtd->size);
+			pr_info("/dev/mtd%d: unlocked",devnum);
+		}
 	}
-
-	if (!mtd){
-		pr_err("Get mtd device error\n");
-		return mtd;
-	}
-
 	// read boardinfo record
 	// * device number is not important
 	// * no need to unlock
@@ -215,37 +250,96 @@ static int elphel393_init_probe(struct platform_device *pdev)
 	// page size
 	BUG_ON(mtd->writesize > 2048);
 
-	size = mtd->writesize;
-	// search within page_limit pages area
-	count = page_limit*(mtd->writesize);
-	// starting offset
-	pos = 0;
-	ppos = &pos;
-
-	while(count){
-		len = min_t(size_t,count, size);
-		ret = mtd_read_user_prot_reg(mtd, *ppos, len, &retlen, kbuf);
-		if (ret){
-			pr_err("flash page read, code %d",ret);
-		}
-		// do whatever we like with the kbuf
-		// search for "<board>"
-		// expecting to find it somewhere...
-		if(strnstr(kbuf,"<board>",size)){
-			//...right in the beginning or error
-			ps = strnstr(kbuf,"<serial>",size);
-			pe = strnstr(kbuf,"</serial>",size);
-			strncpy(serial,ps+sizeof("<serial>")-1,pe-ps-(sizeof("<serial>")-1));
-			ps = strnstr(kbuf,"<rev>",size);
-			pe = strnstr(kbuf,"</rev>",size);
-			strncpy(revision,ps+sizeof("<rev>")-1,pe-ps-(sizeof("<rev>")-1));
-			strncpy(boardinfo,kbuf,retlen);
-			break;
-		}
-		*ppos += retlen;
-		count -= retlen;
+	/*
+	node = of_find_node_by_name(NULL, "ps7_ethernet_0");
+	if (!node){
+		pr_err("Device tree node 'ps7_ethernet_0' not found.");
+		return -ENODEV;
 	}
+	mac_address = of_get_mac_address(node);
+
+	hwaddrl = cpu_to_le32(*((u32 *)mac_address));
+	hwaddrh = cpu_to_le16(*((u16 *)(mac_address + 4)));
+
+	pr_info("MY_MAC_FROM_DT: 0x%08x, 0x%08x, %02x:%02x:%02x:%02x:%02x:%02x\n",
+			hwaddrl, hwaddrh,
+		(hwaddrl & 0xff), ((hwaddrl >> 8) & 0xff),
+		((hwaddrl >> 16) & 0xff), (hwaddrl >> 24),
+		(hwaddrh & 0xff), (hwaddrh >> 8));
+	*/
+
+	get_factory_info();
 	elphel393_init_sysfs_register(pdev);
+	return 0;
+}
+
+static int get_factory_info(void){
+
+	char regvalh[5];
+	char regvall[9];
+	u16 hwaddrh;
+	u32 hwaddrl;
+
+	size_t retlen;
+	//size of nand flash page
+	char kbuf[2048];
+	size_t size = mtd->writesize;
+	loff_t pos=0;
+	loff_t *ppos=&pos;
+	int ret;
+	char *ps,*pe;
+
+	const u8 *mac_address;
+
+	// I expected to have null terminated strings
+	// but cannot get it from the declaration. Don't know.
+	memset(regvalh,0x00,5);
+	memset(regvall,0x00,9);
+
+	pr_info("reading back: 0x%08x 0x%08x\n",readl(0xE000B08C),readl(0xE000B088));
+
+	ret = mtd_read_user_prot_reg(mtd, *ppos+4*2048, size, &retlen, kbuf);
+	if (ret){
+		pr_err("Flash page read, code %d",ret);
+		return ret;
+	}
+	// do whatever we like with the kbuf
+	// search for "<board>"
+	// expecting to find it somewhere...
+	if(strnstr(kbuf,"<board>",size)){
+		//...right in the beginning or error
+		ps = strnstr(kbuf,"<serial>",size);
+		pe = strnstr(kbuf,"</serial>",size);
+		strncpy(serial,ps+sizeof("<serial>")-1,pe-ps-(sizeof("<serial>")-1));
+
+		strncpy(regvalh,serial,4);
+		strncpy(regvall,serial+4,8);
+
+		//there is kstrtou64 but it doesn't work?
+		kstrtou16(regvalh,16,&hwaddrh);
+		kstrtou32(regvall,16,&hwaddrl);
+
+		//xemacps_write(0xE000B000,0x88,hwaddrl);
+		//xemacps_write(0xE000B000,0x8C,hwaddrh);
+		//get mac address from device tree
+
+		writel(hwaddrl,0xE000B088);
+		writel(hwaddrh,0xE000B08C);
+
+		pr_info("Wrote to hwaddr reg: 0x%08x 0x%08x\n",hwaddrh,hwaddrl);
+
+		pr_info("read back: 0x%08x 0x%08x\n",readl(0xE000B08C),readl(0xE000B088));
+		//write hwaddr to zynq reg
+		//kstrtou16(serial,16,&regvalh);
+		//serial
+
+		ps = strnstr(kbuf,"<rev>",size);
+		pe = strnstr(kbuf,"</rev>",size);
+		strncpy(revision,ps+sizeof("<rev>")-1,pe-ps-(sizeof("<rev>")-1));
+		ps = strnstr(kbuf,"<board>",size);
+		pe = strnstr(kbuf,"</board>",size);
+		strncpy(boardinfo,ps,pe-ps+(sizeof("</board>")-1));
+	}
 	return 0;
 }
 
