@@ -144,8 +144,6 @@ static int get_factory_info(void);
 static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int ret;
-	loff_t pos=0;//second page
-	loff_t *ppos=&pos;
 	size_t retlen;
 
 	char wbuf[2048];
@@ -175,7 +173,7 @@ static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, 
 		//copy to buf
 		strncpy(wbuf,buf,strlen(buf));
 		pr_info("BUFFER: %s\n",wbuf);
-		ret = mtd_write_user_prot_reg(mtd, *ppos+4*2048, 2048, &retlen, wbuf);
+		ret = mtd_write_user_prot_reg(mtd, 4*2048, 2048, &retlen, wbuf);
 		if (ret){
 			pr_err("Flash page write, code %d",ret);
 			return ret;
