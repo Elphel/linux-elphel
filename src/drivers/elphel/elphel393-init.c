@@ -48,6 +48,8 @@
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
 
+#define NAND_FLASH_OTP_PAGE_OFFSET	4*2048
+
 /*
  * Read and parse bootargs parameter in the device tree
  * This driver is run in the last place - at least after NAND driver is probed
@@ -149,9 +151,9 @@ static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, 
 	char wbuf[2048];
 	memset(wbuf,0xff,2048);
 
-	if (!mtd){
-		pr_err("Get MTD device error\n");
-		return mtd;
+	if (IS_ERR(mtd)){
+		pr_err("Get MTD device error, code:%d\n",-(u32)mtd);
+		return -ENODEV;
 	}
 	//too much of a trouble to read from flash again
 	if(!strnstr(boardinfo,"<board>",sizeof(boardinfo))){
@@ -173,7 +175,7 @@ static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, 
 		//copy to buf
 		strncpy(wbuf,buf,strlen(buf));
 		pr_info("BUFFER: %s\n",wbuf);
-		ret = mtd_write_user_prot_reg(mtd, 4*2048, 2048, &retlen, wbuf);
+		ret = mtd_write_user_prot_reg(mtd, NAND_FLASH_OTP_PAGE_OFFSET, 2048, &retlen, wbuf);
 		if (ret){
 			pr_err("Flash page write, code %d",ret);
 			return ret;
@@ -228,7 +230,7 @@ static int elphel393_init_probe(struct platform_device *pdev)
 	u8 devnum= 0;
 	u8 unlock= 0;
 
-	pr_debug("Probing");
+	pr_debug("Probing\n");
 	//copy bootargs string
 	bootargs_copy = kstrdup(bootargs,GFP_KERNEL);
 	//find out which partition to unlock if any
@@ -260,9 +262,9 @@ static int elphel393_init_probe(struct platform_device *pdev)
 	// if there's no need to unlock, get /dev/mtd0
 	if (devnum>=0){
 		mtd = get_mtd_device(NULL,devnum);
-		if (!mtd){
-			pr_err("Get MTD device error\n");
-			return mtd;
+		if (IS_ERR(mtd)){
+			pr_err("Get MTD device error, code:%d\n",-(u32)mtd);
+			return -ENODEV;
 		}
 		if (unlock){
 			mtd_unlock(mtd,0,mtd->size);
@@ -309,7 +311,7 @@ static int get_factory_info(void){
 	//memset(regvalh,0x00,5);
 	//memset(regvall,0x00,9);
 
-	ret = mtd_read_user_prot_reg(mtd, 4*2048, size, &retlen, kbuf);
+	ret = mtd_read_user_prot_reg(mtd, NAND_FLASH_OTP_PAGE_OFFSET, size, &retlen, kbuf);
 	if (ret){
 		pr_err("Flash page read, code %d",ret);
 		return ret;
