@@ -285,8 +285,10 @@ static int elphel393_init_probe(struct platform_device *pdev)
 
 static int get_factory_info(void){
 
-	char regvalh[5];//char reg[]="0000";
-	char regvall[9];
+	//char regvalh[5];
+	//char regvall[9];
+	char regvalh[]="0000";
+	char regvall[]="00000000";
 	u16 hwaddrh;
 	u32 hwaddrl;
 
@@ -306,8 +308,8 @@ static int get_factory_info(void){
 
 	// I expected to have null terminated strings
 	// but cannot get it from the declaration. Don't know.
-	memset(regvalh,0x00,5);
-	memset(regvall,0x00,9);
+	//memset(regvalh,0x00,5);
+	//memset(regvall,0x00,9);
 
 	ret = mtd_read_user_prot_reg(mtd, 4*2048, size, &retlen, kbuf);
 	if (ret){
