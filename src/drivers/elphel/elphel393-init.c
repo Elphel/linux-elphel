@@ -48,7 +48,7 @@
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
 
-#define NAND_FLASH_OTP_PAGE_OFFSET	8*2048
+#define NAND_FLASH_OTP_PAGE_OFFSET	0*2048
 
 /*
  * Read and parse bootargs parameter in the device tree
@@ -169,9 +169,6 @@ static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, 
 			pr_err("Bad data format\n");
 			return -EINVAL;
 		}
-		//tmp disabled.
-		//ret = mtd_write_user_prot_reg(mtd, *ppos+4*2048, 2048, &retlen, buf);
-
 		//copy to buf
 		strncpy(wbuf,buf,strlen(buf));
 		//pr_info("BUFFER: %s\n",wbuf);
