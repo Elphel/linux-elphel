@@ -177,7 +177,7 @@ static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, 
 			pr_err("Flash page write, code %d",ret);
 			return ret;
 		}
-		pr_info("Data is successfully written and cannot be overwritten anymore, record size: %d B\n",strlen(wbuf));
+		pr_info("Data is successfully written and cannot be overwritten anymore\n");
 		get_factory_info();
 	}else{
 		pr_err("Factory Info record (serial='%s' revision='%s') can not be overwritten\n",serial,revision);
