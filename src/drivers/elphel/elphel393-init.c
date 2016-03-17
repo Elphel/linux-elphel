@@ -48,7 +48,7 @@
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
 
-#define NAND_FLASH_OTP_PAGE_OFFSET	7*2048
+#define NAND_FLASH_OTP_PAGE_OFFSET	8*2048
 
 /*
  * Read and parse bootargs parameter in the device tree
@@ -180,7 +180,6 @@ static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, 
 			pr_err("Flash page write, code %d",ret);
 			return ret;
 		}
-		udelay(100);
 		pr_info("Data is successfully written and cannot be overwritten anymore, record size: %d B\n",strlen(wbuf));
 		get_factory_info();
 	}else{
