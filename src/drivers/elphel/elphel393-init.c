@@ -48,7 +48,7 @@
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
 
-#define NAND_FLASH_OTP_PAGE_OFFSET	4*2048
+#define NAND_FLASH_OTP_PAGE_OFFSET	7*2048
 
 /*
  * Read and parse bootargs parameter in the device tree
@@ -149,12 +149,12 @@ static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, 
 	size_t retlen;
 
 	char wbuf[2048];
-	memset(wbuf,0xff,2048);
 
 	if (IS_ERR(mtd)){
 		pr_err("Get MTD device error, code:%d\n",-(u32)mtd);
 		return -ENODEV;
 	}
+	memset(wbuf,0xff,2048);
 	//too much of a trouble to read from flash again
 	if(!strnstr(boardinfo,"<board>",sizeof(boardinfo))){
 		pr_info("Factory Info record is clean.\n");
@@ -162,28 +162,30 @@ static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, 
 		// I got some buf, unknown size- should be limited to 2048? ok
 		if (strlen(buf)>2048) {
 			pr_err("Data > 2KiB. Abort.\n");
-			return -1;
+			return -EFBIG;
 		}
 		// Not too strict check, just look for opening tags.
 		if(!strnstr(buf,"<board>",2048)||!strnstr(buf,"<serial>",2048)||!strnstr(buf,"<rev>",2048)){
 			pr_err("Bad data format\n");
-			return -2;
+			return -EINVAL;
 		}
 		//tmp disabled.
 		//ret = mtd_write_user_prot_reg(mtd, *ppos+4*2048, 2048, &retlen, buf);
 
 		//copy to buf
 		strncpy(wbuf,buf,strlen(buf));
-		pr_info("BUFFER: %s\n",wbuf);
+		//pr_info("BUFFER: %s\n",wbuf);
 		ret = mtd_write_user_prot_reg(mtd, NAND_FLASH_OTP_PAGE_OFFSET, 2048, &retlen, wbuf);
 		if (ret){
 			pr_err("Flash page write, code %d",ret);
 			return ret;
 		}
+		udelay(100);
 		pr_info("Data is successfully written and cannot be overwritten anymore, record size: %d B\n",strlen(wbuf));
 		get_factory_info();
 	}else{
-		pr_info("Factory Info record (serial='%s' revision='%s') can not be overwritten\n",serial,revision);
+		pr_err("Factory Info record (serial='%s' revision='%s') can not be overwritten\n",serial,revision);
+		return -EPERM;
 	}
     return count;
 }
@@ -284,13 +286,10 @@ static int elphel393_init_probe(struct platform_device *pdev)
 }
 
 static int get_factory_info(void){
-
-	//char regvalh[5];
-	//char regvall[9];
 	char regvalh[]="0000";
 	char regvall[]="00000000";
-	u16 hwaddrh;
-	u32 hwaddrl;
+	u16 hwaddrh0, hwaddrh1;
+	u32 hwaddrl0, hwaddrl1;
 
 	size_t retlen;
 	//size of nand flash page
@@ -299,23 +298,36 @@ static int get_factory_info(void){
 	int ret;
 	char *ps,*pe;
 
-//	const u8 *mac_address;
 	struct device_node *node;
 	struct property *newproperty;
 
 	u32 *mac32; //  = (u32*) mac_address;
 	u8 *macaddr;
 
-	// I expected to have null terminated strings
-	// but cannot get it from the declaration. Don't know.
-	//memset(regvalh,0x00,5);
-	//memset(regvall,0x00,9);
+	u8 block_factory_mac = 0;
+
+	node = of_find_node_by_name(NULL, "ps7-ethernet");
+	if (!node){
+		pr_err("Device tree node 'ps7-ethernet' not found.");
+		return -ENODEV;
+	}
+
+	// check if MAC address was overridden in u-boot
+	mac32 = (u32 *) of_get_mac_address(node);
+	hwaddrl0 = cpu_to_le32(mac32[0]);
+	hwaddrh0 = cpu_to_le16(mac32[1]);
+	if ((hwaddrh0!=0x0000)||(hwaddrl0!=0x10640E00)){
+		block_factory_mac = 1;
+	}
 
 	ret = mtd_read_user_prot_reg(mtd, NAND_FLASH_OTP_PAGE_OFFSET, size, &retlen, kbuf);
 	if (ret){
 		pr_err("Flash page read, code %d",ret);
 		return ret;
 	}
+
+	pr_debug("buf: %s\n",kbuf);
+
 	// do whatever we like with the kbuf
 	// search for "<board>"
 	// expecting to find it somewhere...
@@ -329,19 +341,13 @@ static int get_factory_info(void){
 		strncpy(regvall,serial+4,8);
 
 		//there is kstrtou64 but it doesn't work?
-		kstrtou16(regvalh,16,&hwaddrh);
-		kstrtou32(regvall,16,&hwaddrl);
-
-		node = of_find_node_by_name(NULL, "ps7-ethernet");
-		if (!node){
-			pr_err("Device tree node 'ps7-ethernet' not found.");
-			return -ENODEV;
-		}
+		kstrtou16(regvalh,16,&hwaddrh1);
+		kstrtou32(regvall,16,&hwaddrl1);
 
 		pr_debug("MAC from flash: %02x:%02x:%02x:%02x:%02x:%02x\n",
-			 (hwaddrl & 0xff), ((hwaddrl >> 8) & 0xff),
-			((hwaddrl >> 16) & 0xff), (hwaddrl >> 24),
-			 (hwaddrh & 0xff), (hwaddrh >> 8));
+			 (hwaddrl1 & 0xff), ((hwaddrl1 >> 8) & 0xff),
+			((hwaddrl1 >> 16) & 0xff), (hwaddrl1 >> 24),
+			 (hwaddrh1 & 0xff), (hwaddrh1 >> 8));
 
 		newproperty = kzalloc(sizeof(*newproperty) + 6, GFP_KERNEL);
 		if (!newproperty)
@@ -354,23 +360,28 @@ static int get_factory_info(void){
 			return -ENOMEM;
 		}
 		macaddr = newproperty->value;
-		macaddr[0] = (hwaddrh >> 8) & 0xff;
-		macaddr[1] =  hwaddrh & 0xff;
-		macaddr[2] = (hwaddrl >> 24) & 0xff;
-		macaddr[3] = (hwaddrl >> 16) & 0xff;
-		macaddr[4] = (hwaddrl >> 8) & 0xff;
-		macaddr[5] =  hwaddrl & 0xff;
+		macaddr[0] = (hwaddrh1 >> 8) & 0xff;
+		macaddr[1] =  hwaddrh1 & 0xff;
+		macaddr[2] = (hwaddrl1 >> 24) & 0xff;
+		macaddr[3] = (hwaddrl1 >> 16) & 0xff;
+		macaddr[4] = (hwaddrl1 >> 8) & 0xff;
+		macaddr[5] =  hwaddrl1 & 0xff;
 
-		of_update_property(node,newproperty);
+		if (!block_factory_mac)
+			of_update_property(node,newproperty);
+		else
+			pr_info("Factory MAC: %02x:%02x:%02x:%02x:%02x:%02x, u-boot overridden MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+					(hwaddrl1 & 0xff),((hwaddrl1 >> 8) & 0xff),((hwaddrl1 >> 16) & 0xff),(hwaddrl1 >> 24),(hwaddrh1 & 0xff),(hwaddrh1 >> 8),
+					(hwaddrl0 & 0xff),((hwaddrl0 >> 8) & 0xff),((hwaddrl0 >> 16) & 0xff),(hwaddrl0 >> 24),(hwaddrh0 & 0xff),(hwaddrh0 >> 8));
 
 		mac32 = (u32 *) of_get_mac_address(node);
-		hwaddrl = cpu_to_le32(mac32[0]);
-		hwaddrh = cpu_to_le16(mac32[1]);
+		hwaddrl1 = cpu_to_le32(mac32[0]);
+		hwaddrh1 = cpu_to_le16(mac32[1]);
 
-		pr_debug("MAC from device tree: %02x:%02x:%02x:%02x:%02x:%02x\n",
-			(hwaddrl & 0xff), ((hwaddrl >> 8) & 0xff),
-			((hwaddrl >> 16) & 0xff), (hwaddrl >> 24),
-			(hwaddrh & 0xff), (hwaddrh >> 8));
+		pr_debug("new MAC from device tree: %02x:%02x:%02x:%02x:%02x:%02x\n",
+			(hwaddrl1 & 0xff), ((hwaddrl1 >> 8) & 0xff),
+			((hwaddrl1 >> 16) & 0xff), (hwaddrl1 >> 24),
+			(hwaddrh1 & 0xff), (hwaddrh1 >> 8));
 
 		//write hwaddr to zynq reg
 		//kstrtou16(serial,16,&regvalh);
