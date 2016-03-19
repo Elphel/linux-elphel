@@ -18,6 +18,10 @@
  *!  You should have received a copy of the GNU General Public License
  *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *!****************************************************************************/
+
+#define DRV_NAME "elphel393-mem"
+#define pr_fmt(fmt) DRV_NAME": " fmt
+
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/of.h>
@@ -74,7 +78,7 @@ static int __init elphelmem_init(void)
 	node = of_find_node_by_name(NULL, "elphel393-mem");
 	if (!node)
 	{
-		printk("DMA buffer allocation ERROR: No device tree node found\n");
+		pr_err("DMA buffer allocation ERROR: No device tree node found\n");
 		return -ENODEV;
 	}
 
@@ -116,34 +120,33 @@ static int __init elphelmem_init(void)
 	// allocate continuous virtual memory range
 //	_elphel_buf.vaddr = kmalloc((_elphel_buf.size*PAGE_SIZE) ,GFP_KERNEL);
 	_elphel_buf.vaddr = dma_alloc_coherent(NULL,(_elphel_buf.size*PAGE_SIZE),&(_elphel_buf.paddr),GFP_KERNEL);
-    if(_elphel_buf.paddr) {
-    	printk("Allocated %u pages for DMA at address 0x%x\n", (u32)_elphel_buf.size, (u32)_elphel_buf.paddr);
+    if(_elphel_buf.vaddr) {
+    	pr_info("Allocated %u pages for DMA at address 0x%x\n", (u32)_elphel_buf.size, (u32)_elphel_buf.paddr);
     } else {
-    	printk("ERROR allocating coherent DMA memory buffer");
+    	pr_err("ERROR allocating coherent DMA memory buffer\n");
     }
 
     _elphel_buf.h2d_vaddr = kzalloc((_elphel_buf.h2d_size*PAGE_SIZE) ,GFP_KERNEL);
     if (!_elphel_buf.h2d_vaddr){
     	_elphel_buf.h2d_size = 0;
-    	printk("ERROR allocating H2D DMA memory buffer");
+    	pr_err("ERROR allocating H2D DMA memory buffer\n");
     }
 
     _elphel_buf.d2h_vaddr = kzalloc((_elphel_buf.d2h_size*PAGE_SIZE) ,GFP_KERNEL);
     if (!_elphel_buf.d2h_vaddr){
     	_elphel_buf.d2h_size = 0;
-    	printk("ERROR allocating D2H DMA memory buffer");
+    	pr_err("ERROR allocating D2H DMA memory buffer\n");
     }
 
     _elphel_buf.bidir_vaddr = kzalloc((_elphel_buf.bidir_size*PAGE_SIZE) ,GFP_KERNEL);
     if (!_elphel_buf.bidir_vaddr){
     	_elphel_buf.bidir_size = 0;
-    	printk("ERROR allocating Bidirectional DMA memory buffer");
+    	pr_err("ERROR allocating Bidirectional DMA memory buffer\n");
     }
 
-
-    printk("Coherent buffer vaddr:              0x%08X\n",(u32) pElphel_buf -> vaddr);
-    printk("Coherent buffer paddr:              0x%08X\n",(u32) pElphel_buf -> paddr);
-    printk("Coherent buffer length:             0x%08X\n",(u32) pElphel_buf -> size * PAGE_SIZE);
+    pr_info("Coherent buffer vaddr:              0x%08X\n",(u32) pElphel_buf -> vaddr);
+    pr_info("Coherent buffer paddr:              0x%08X\n",(u32) pElphel_buf -> paddr);
+    pr_info("Coherent buffer length:             0x%08X\n",(u32) pElphel_buf -> size * PAGE_SIZE);
 
     return 0;
 }
@@ -155,7 +158,7 @@ dma_map_single(struct device *dev, void *cpu_addr, size_t size,
  */
 static void __exit elphelmem_exit(void)
 {
-    printk("DMA buffer disabled\n");
+	pr_info("DMA buffer disabled\n");
 }
 
 
@@ -240,7 +243,7 @@ static ssize_t sync_for_device_h2d(struct device *dev, struct device_attribute *
 		paddr =  _elphel_buf.h2d_paddr;
 		len = _elphel_buf.h2d_size * PAGE_SIZE;
 	}
-    printk("\naddr=0x%08x, size = 0x%08x\n", paddr, len);
+    pr_info("\naddr=0x%08x, size = 0x%08x\n", paddr, len);
     dma_sync_single_for_device(dev, paddr, len, DMA_TO_DEVICE);
 
     return count;
@@ -255,7 +258,7 @@ static ssize_t sync_for_cpu_d2h(struct device *dev, struct device_attribute *att
 		paddr =  _elphel_buf.d2h_paddr;
 		len = _elphel_buf.d2h_size * PAGE_SIZE;
 	}
-    printk("\naddr=0x%08x, size = 0x%08x\n", paddr, len);
+	pr_info("\naddr=0x%08x, size = 0x%08x\n", paddr, len);
     dma_sync_single_for_cpu(dev, paddr, len, DMA_FROM_DEVICE);
 
     return count;
@@ -271,7 +274,7 @@ static ssize_t sync_for_device_d2h(struct device *dev, struct device_attribute *
 		paddr =  _elphel_buf.d2h_paddr;
 		len = _elphel_buf.d2h_size * PAGE_SIZE;
 	}
-    printk("\naddr=0x%08x, size = 0x%08x\n", paddr, len);
+	pr_info("\naddr=0x%08x, size = 0x%08x\n", paddr, len);
     dma_sync_single_for_device(dev, paddr, len, DMA_FROM_DEVICE);
 
     return count;
@@ -286,7 +289,7 @@ static ssize_t sync_for_cpu_bidir(struct device *dev, struct device_attribute *a
 		paddr =  _elphel_buf.bidir_paddr;
 		len = _elphel_buf.bidir_size * PAGE_SIZE;
 	}
-    printk("\naddr=0x%08x, size = 0x%08x\n", paddr, len);
+	pr_info("\naddr=0x%08x, size = 0x%08x\n", paddr, len);
     dma_sync_single_for_cpu(dev, paddr, len, DMA_BIDIRECTIONAL);
 
     return count;
@@ -302,7 +305,7 @@ static ssize_t sync_for_device_bidir(struct device *dev, struct device_attribute
 		paddr =  _elphel_buf.bidir_paddr;
 		len = _elphel_buf.bidir_size * PAGE_SIZE;
 	}
-    printk("\naddr=0x%08x, size = 0x%08x\n", paddr, len);
+	pr_info("\naddr=0x%08x, size = 0x%08x\n", paddr, len);
     dma_sync_single_for_device(dev, paddr, len, DMA_BIDIRECTIONAL);
 
     return count;
@@ -392,7 +395,7 @@ static int elphel393_mem_probe(struct platform_device *pdev)
 		// mapped as DMA_BIDIRECTIONAL, each time will be synchronized when passing control from soft to hard and back
 		pElphel_buf->h2d_paddr = dma_map_single(&pdev->dev, _elphel_buf.h2d_vaddr, (_elphel_buf.h2d_size*PAGE_SIZE), DMA_TO_DEVICE);
 		if (!pElphel_buf->h2d_paddr){
-			printk("ERROR in dma_map_single() for bidirectional buffer");
+			pr_err("ERROR in dma_map_single() for bidirectional buffer\n");
 			return 0;
 		}
 //	    printk("H2D DMA buffer location:\t\t0x%08X\n", pElphel_buf->h2d_paddr);
@@ -402,7 +405,7 @@ static int elphel393_mem_probe(struct platform_device *pdev)
 		// mapped as DMA_BIDIRECTIONAL, each time will be synchronized when passing control from soft to hard and back
 		pElphel_buf->d2h_paddr = dma_map_single(&pdev->dev, _elphel_buf.d2h_vaddr, (_elphel_buf.d2h_size*PAGE_SIZE), DMA_FROM_DEVICE);
 		if (!pElphel_buf->d2h_paddr){
-			printk("ERROR in dma_map_single() for bidirectional buffer");
+			pr_err("ERROR in dma_map_single() for bidirectional buffer\n");
 			return 0;
 		}
 //	    printk("D2H DMA buffer location:\t\t0x%08X\n", pElphel_buf->d2h_paddr);
@@ -413,7 +416,7 @@ static int elphel393_mem_probe(struct platform_device *pdev)
 		// mapped as DMA_BIDIRECTIONAL, each time will be synchronized when passing control from soft to hard and back
 		pElphel_buf->bidir_paddr = dma_map_single(&pdev->dev, _elphel_buf.bidir_vaddr, (_elphel_buf.bidir_size*PAGE_SIZE), DMA_BIDIRECTIONAL);
 		if (!pElphel_buf->bidir_paddr){
-			printk("ERROR in dma_map_single() for bidirectional buffer");
+			pr_err("ERROR in dma_map_single() for bidirectional buffer\n");
 			return 0;
 		}
 //	    printk("Bidirectional DMA buffer location:\t0x%08X\n", pElphel_buf->bidir_paddr);
@@ -438,7 +441,7 @@ static int elphel393_mem_probe(struct platform_device *pdev)
 
 static int elphel393_mem_remove(struct platform_device *pdev)
 {
-	dev_info(&pdev->dev,"Removing elphel393-mem");
+	pr_info(&pdev->dev,"Removing elphel393-mem");
 	return 0;
 }
 
@@ -452,7 +455,7 @@ static struct platform_driver elphel393_mem = {
 	.probe   = elphel393_mem_probe,
 	.remove  = elphel393_mem_remove,
 	.driver  = {
-		.name  = "elphel393-mem",
+		.name  = DRV_NAME,
 		.owner = THIS_MODULE,
 		.of_match_table = elphel393_mem_of_match,
 		.pm = NULL, /* power management */
@@ -463,5 +466,5 @@ module_platform_driver(elphel393_mem);
 module_init(elphelmem_init);
 module_exit(elphelmem_exit);
 MODULE_LICENSE("GPL");
-
-
+MODULE_AUTHOR("Elphel, Inc.");
+MODULE_DESCRIPTION("Reserve a large chunk of contiguous memory at boot");
