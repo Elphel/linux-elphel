@@ -389,7 +389,7 @@ static int elphel393_mem_sysfs_register(struct platform_device *pdev)
 static int elphel393_mem_probe(struct platform_device *pdev)
 {
 	elphel393_mem_sysfs_register(pdev);
-	dev_info(&pdev->dev,"Probing elphel393-mem\n");
+	pr_info("Probing elphel393-mem\n");
 
 	if (_elphel_buf.h2d_vaddr){
 		// mapped as DMA_BIDIRECTIONAL, each time will be synchronized when passing control from soft to hard and back
@@ -441,7 +441,7 @@ static int elphel393_mem_probe(struct platform_device *pdev)
 
 static int elphel393_mem_remove(struct platform_device *pdev)
 {
-	pr_info(&pdev->dev,"Removing elphel393-mem");
+	pr_info("Removing elphel393-mem");
 	return 0;
 }
 
