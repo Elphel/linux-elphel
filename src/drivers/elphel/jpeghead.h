@@ -19,7 +19,7 @@ ssize_t huffman_write  (struct file * file, const char * buf, size_t count, loff
 
 
 extern unsigned long  * ccam_dma_buf_ptr;
-void init_ccam_dma_buf_ptr(void);
+//void init_ccam_dma_buf_ptr(void);
 #define JPEG_HEADER_MAXSIZE    0x300
 struct jpeghead_pd {
     int                minor;/// should be the first, same as in circbuf_pd

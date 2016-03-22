@@ -191,14 +191,14 @@ static unsigned long coring_tables[];
 
 
 
-
 /**
- * @brief force (re-)initilaization of quantization tables cache and FPGA qunatization table (in FPGA) when next used.
+ * @brief force (re-)initialization of quantization tables cache and FPGA quantization table (in FPGA) when next used.
  */
 void reset_qtables(void) {
  qtable_cache_initialized=0;
  qtable_fpga_initialized=0;
 }
+EXPORT_SYMBOL_GPL(reset_qtables);
 
 
 /**

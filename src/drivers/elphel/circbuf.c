@@ -150,6 +150,8 @@
 #include <linux/init.h>
 #include <linux/time.h>
 #include <linux/wait.h>
+#include <linux/dma-mapping.h>
+#include <linux/errno.h>
 
 //#include <asm/system.h>
 //#include <asm/arch/memmap.h>
@@ -206,14 +208,23 @@
 
 /* really huge static DMA buffer (1288+8)*1032/3=445824 long-s */
 // DMA_SIZE - in 32-bit words, not bytes
-static unsigned long ccam_dma_buf[CCAM_DMA_SIZE + (PAGE_SIZE>>2)] __attribute__ ((aligned (PAGE_SIZE)));
+//static unsigned long ccam_dma_buf[CCAM_DMA_SIZE + (PAGE_SIZE>>2)] __attribute__ ((aligned (PAGE_SIZE)));
+static unsigned long *ccam_dma_buf = NULL;
 //!Without "static" system hangs after "Uncompressing Linux...
 unsigned long  * ccam_dma_buf_ptr = NULL;
 unsigned long * ccam_dma =         NULL; //! still used in autoexposure or something - why is in needed there?
 
-void init_ccam_dma_buf_ptr(void) {
-    ccam_dma_buf_ptr = ccam_dma_buf;
-    ccam_dma =         ccam_dma_buf; //&ccam_dma_buf[0]; Use in autoexposure
+int init_ccam_dma_buf_ptr(void) {
+	dma_addr_t *dma_handle;
+    //ccam_dma_buf_ptr = ccam_dma_buf;
+    //ccam_dma =         ccam_dma_buf; //&ccam_dma_buf[0]; Use in autoexposure
+
+    ccam_dma_buf_ptr = dma_alloc_coherent(NULL, (CCAM_DMA_SIZE + (PAGE_SIZE >> 2)), dma_handle, GFP_KERNEL);
+    if (!ccam_dma_buf_ptr) {
+    	return -ENOMEM;
+    } else {
+    	printk(KERN_DEBUG "%s: dma memory allocated at 0x%08x", __func__, dma_handle);
+    }
 }
 extern struct interframe_params_t frame_params; // cc353.c
 /*!======================================================================================
@@ -679,6 +690,12 @@ static int __init circbuf_all_init(void) {
      return res;
    }
 
+   res = init_ccam_dma_buf_ptr();
+   if (res < 0) {
+	   printk(KERN_ERR "%s: ERROR allocating coherent DMA buffer\n", __func__);
+	   return -ENOMEM;
+   }
+
    MDF19(printk("init_waitqueue_head()\n"));
    init_waitqueue_head(&circbuf_wait_queue);
    MDF19(printk("jpeg_htable_init()\n"));
@@ -689,7 +706,7 @@ static int __init circbuf_all_init(void) {
 
 
 module_init(circbuf_all_init);
-MODULE_LICENSE("GPLv3.0");
+MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(CIRCBUF_DRIVER_NAME);
 

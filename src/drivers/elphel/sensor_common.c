@@ -271,6 +271,9 @@ void camSeqSetJPEG_rp(int p) {
                                        get_globalParam(G_CIRCBUFSIZE):0)+ get_globalParam(G_CIRCBUFRP))
                                        - get_globalParam(G_CIRCBUFWP));
                                }
+EXPORT_SYMBOL_GPL(camSeqGetJPEG_wp);
+EXPORT_SYMBOL_GPL(camSeqGetJPEG_rp);
+EXPORT_SYMBOL_GPL(camSeqSetJPEG_rp);
 
 /*!
    End of compressor-related code - TODO: move to a separate file?
@@ -671,6 +674,7 @@ void reset_compressor(void) {
   fpga_counter_prev=0;
   local_irq_restore(flags);
 }
+EXPORT_SYMBOL_GPL(reset_compressor);
 
 /**
  * @brief Camera interrupts on/off  (currently both in the FPGA and in the CPU)
@@ -693,6 +697,7 @@ void camera_interrupts (int on) {
   REG_WR(intr_vect, regi_irq, rw_mask, intr_mask); 
 #endif /* TEST_DISABLE_CODE */
 }
+EXPORT_SYMBOL_GPL(camera_interrupts);
 
 
 int image_acq_open(struct inode *inode, struct file *filp) ;
@@ -715,7 +720,7 @@ static int __init image_acq_init(void) {
    int res;
    sensorproc= &s_sensorproc;
    MDD1(printk("sensorproc=0x%x\n",(int) sensorproc));
-   init_ccam_dma_buf_ptr();  /// should it be done here? Why not in circbuf.c?
+   //init_ccam_dma_buf_ptr();  /// should it be done here? Why not in circbuf.c?
 ///   init_histograms(); - other initializations?
    res = register_chrdev(ELPHEL_MAJOR, elphel_cam_name, &image_acq_fops);
    if(res < 0) {
@@ -770,6 +775,6 @@ int image_acq_mmap (struct file *file, struct vm_area_struct *vma) {
 
 
 module_init(image_acq_init);
-MODULE_LICENSE("GPLv3.0");
+MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(X3X3_IMAGEACQ_DRIVER_NAME);

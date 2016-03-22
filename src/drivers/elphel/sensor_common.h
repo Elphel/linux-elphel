@@ -2,7 +2,7 @@
 #define _SENSOR_COMMON_H
 
 //extern struct sensor_t sensor; // current sensor (will be copied to by sensor driver), made external for the cc353.c to read/write i2c
-extern struct sensorproc_t * sensorproc;
+struct sensorproc_t * sensorproc;
 /// IRQ-safe "nice" FPGA table write and histogram read functions - they split the data in chunks of fixed size,
 /// disable IRQ, transfer a chunk, then reenable interrupt before proceedg to the next chunk
 #define FPGA_TABLE_CHUNK 64 // up to 64 words to send to the table/from histogram on a single IRQ-off transfer

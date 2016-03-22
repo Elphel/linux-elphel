@@ -302,6 +302,7 @@ unsigned long           *multiSensIndex= NULL; /// index for per-sensor alternat
 unsigned long           *multiSensRvrsIndex=NULL; /// reverse index (to parent) for the multiSensIndex
 wait_queue_head_t framepars_wait_queue; /// used to wait for the frame to be acquired
 
+extern struct sensorproc_t * sensorproc;
 
 /**
  * @brief file private data
@@ -433,6 +434,7 @@ int initMultiPars(void) {
 inline unsigned long get_imageParamsThis    (int n) {
    return framepars[thisFrameNumber & PARS_FRAMES_MASK].pars[n] ;
 }
+EXPORT_SYMBOL_GPL(get_imageParamsThis);
 
 /**
  * @brief reads parameters from the previous frame (matching hardware index) - used to determine if historam was needed
@@ -462,6 +464,7 @@ inline void set_imageParamsThis    (int n,unsigned long d) {
 inline unsigned long get_globalParam  (int n) {
    return GLOBALPARS(n) ;
 }
+EXPORT_SYMBOL_GPL(get_globalParam);
 /**
  * @brief sets global (not related to particular frames) parameters
  * @param n number of a parameter to set  (numbers start from FRAMEPAR_GLOBALS)
@@ -471,6 +474,7 @@ inline unsigned long get_globalParam  (int n) {
 inline void          set_globalParam   (int n, unsigned long d) {
   GLOBALPARS(n)=d;
 }
+EXPORT_SYMBOL_GPL(set_globalParam);
 
 /**
  * @brief set same parameters in all frames
@@ -1340,6 +1344,6 @@ static int __init framepars_init(void) {
 
 
 module_init(framepars_init);
-MODULE_LICENSE("GPLv3.0");
+MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(X3X3_FRAMEPARS_DRIVER_NAME);

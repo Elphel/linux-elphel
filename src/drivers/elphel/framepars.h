@@ -4,7 +4,7 @@
 //extern struct framepars_t (*framepars)[PARS_FRAMES];
 extern struct framepars_t      *framepars;
 extern struct framepars_past_t *pastpars;
-extern unsigned long           *globalPars;
+unsigned long           *globalPars;
 extern unsigned long           *multiSensIndex;
 extern unsigned long           *multiSensRvrsIndex;
 

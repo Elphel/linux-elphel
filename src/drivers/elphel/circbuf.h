@@ -25,10 +25,12 @@ ssize_t      circbuf_read  (struct file * file, char * buf, size_t count, loff_t
 int          circbuf_mmap  (struct file *file, struct vm_area_struct *vma);
 unsigned int circbuf_poll  (struct file *file,    poll_table *wait);
 
-void init_ccam_dma_buf_ptr(void);
+int init_ccam_dma_buf_ptr(void);
 /*!======================================================================================
  *! Wait queue for the processes waiting for a new frame to appear in the circular buffer
  *!======================================================================================*/
 extern wait_queue_head_t circbuf_wait_queue;
+
+unsigned long  *ccam_dma_buf_ptr;
 
 #endif /* _CIRCBUF_H */
