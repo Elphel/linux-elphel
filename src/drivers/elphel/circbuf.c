@@ -683,6 +683,7 @@ unsigned int circbuf_poll (struct file *file, poll_table *wait) {
 
 static int __init circbuf_all_init(void) {
    int res;
+   printk(KERN_DEBUG "Loading %s", __func__);
    MDF19(printk("\n"));
    res = register_chrdev(CIRCBUF_MAJOR, "circbuf_operations", &circbuf_fops);
    if(res < 0) {

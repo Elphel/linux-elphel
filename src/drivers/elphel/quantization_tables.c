@@ -198,7 +198,6 @@ void reset_qtables(void) {
  qtable_cache_initialized=0;
  qtable_fpga_initialized=0;
 }
-EXPORT_SYMBOL_GPL(reset_qtables);
 
 
 /**
@@ -955,3 +954,5 @@ void set_coring_fpga(int coring_number, int fpga_number) {
 #endif /* TEST_DISABLE_CODE */
   MDF15(int i; for (i=0;i<32;i++) {if ((i & 7)==0) printk("\n");printk(" %08x",(int) coring_tables[coring_number*CORING_SIZE +i]);} printk("\n"));
 }
+
+MODULE_LICENSE("GPL");

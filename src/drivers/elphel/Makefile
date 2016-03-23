@@ -12,7 +12,9 @@ obj-$(CONFIG_ELPHEL393_INIT)      += elphel393-init.o
 #obj-$(CONFIG_ELPHEL393)           += quantization_tables.o
 #obj-$(CONFIG_ELPHEL393)           += circbuf.o jpeghead.o
 
+framepars-objs := sensor_common.o
+sensor_common-objs := quantization_tables.o
+circbuf-objs := jpeghead.o
 obj-$(CONFIG_ELPHEL393_EXTERNAL)  += framepars.o
 obj-$(CONFIG_ELPHEL393_EXTERNAL)  += sensor_common.o
-obj-$(CONFIG_ELPHEL393_EXTERNAL)  += quantization_tables.o
-obj-$(CONFIG_ELPHEL393_EXTERNAL)  += circbuf.o jpeghead.o
+obj-$(CONFIG_ELPHEL393_EXTERNAL)  += circbuf.o

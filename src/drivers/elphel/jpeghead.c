@@ -766,3 +766,5 @@ int jpeg_prep_htable (struct huffman_encoded_t * htable, struct huffman_fpga_cod
   return 0;
 }
 
+
+MODULE_LICENSE("GPL");
