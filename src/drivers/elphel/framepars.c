@@ -291,7 +291,7 @@
 static struct framepars_all_t sFrameParsAll __attribute__ ((aligned (PAGE_SIZE)));   ///< Sensor Parameters, currently 8 pages all and 2048 pages some, static struct
 unsigned long frameParsInitialized; /// set to 0 at startup, 1 after initialization that is triggered by setParsAtomic()
 #define  thisFrameNumber GLOBALPARS(G_THIS_FRAME) // Current frame number (may lag from the hardware)
-#define  THISFRAMENUMBER GLOBALPARS(G_THIS_FRAME) // Current frame number (may lag from the hardware)
+//#define  THISFRAMENUMBER GLOBALPARS(G_THIS_FRAME) // Current frame number (may lag from the hardware)
 
 struct framepars_all_t  *frameparsall=NULL; /// - will be mmap-ed
 struct framepars_t      *framepars=   NULL; ///< getting rid of static to be able to use extern
@@ -301,8 +301,6 @@ unsigned long           *globalPars=  NULL; /// parameters that are not frame-re
 unsigned long           *multiSensIndex= NULL; /// index for per-sensor alternatives
 unsigned long           *multiSensRvrsIndex=NULL; /// reverse index (to parent) for the multiSensIndex
 wait_queue_head_t framepars_wait_queue; /// used to wait for the frame to be acquired
-
-extern struct sensorproc_t * sensorproc;
 
 /**
  * @brief file private data
@@ -434,7 +432,7 @@ int initMultiPars(void) {
 inline unsigned long get_imageParamsThis    (int n) {
    return framepars[thisFrameNumber & PARS_FRAMES_MASK].pars[n] ;
 }
-EXPORT_SYMBOL_GPL(get_imageParamsThis);
+//EXPORT_SYMBOL_GPL(get_imageParamsThis);
 
 /**
  * @brief reads parameters from the previous frame (matching hardware index) - used to determine if historam was needed
@@ -464,7 +462,7 @@ inline void set_imageParamsThis    (int n,unsigned long d) {
 inline unsigned long get_globalParam  (int n) {
    return GLOBALPARS(n) ;
 }
-EXPORT_SYMBOL_GPL(get_globalParam);
+//EXPORT_SYMBOL_GPL(get_globalParam);
 /**
  * @brief sets global (not related to particular frames) parameters
  * @param n number of a parameter to set  (numbers start from FRAMEPAR_GLOBALS)
@@ -474,7 +472,7 @@ EXPORT_SYMBOL_GPL(get_globalParam);
 inline void          set_globalParam   (int n, unsigned long d) {
   GLOBALPARS(n)=d;
 }
-EXPORT_SYMBOL_GPL(set_globalParam);
+//EXPORT_SYMBOL_GPL(set_globalParam);
 
 /**
  * @brief set same parameters in all frames

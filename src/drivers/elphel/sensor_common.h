@@ -2,7 +2,7 @@
 #define _SENSOR_COMMON_H
 
 //extern struct sensor_t sensor; // current sensor (will be copied to by sensor driver), made external for the cc353.c to read/write i2c
-struct sensorproc_t * sensorproc;
+extern struct sensorproc_t * sensorproc;
 /// IRQ-safe "nice" FPGA table write and histogram read functions - they split the data in chunks of fixed size,
 /// disable IRQ, transfer a chunk, then reenable interrupt before proceedg to the next chunk
 #define FPGA_TABLE_CHUNK 64 // up to 64 words to send to the table/from histogram on a single IRQ-off transfer
@@ -16,11 +16,14 @@ int  camSeqGetJPEG_wp(void);
 int  camSeqGetJPEG_rp(void);
 void camSeqSetJPEG_rp(int p);
 ///CIRCBUF macros
-extern unsigned long  * ccam_dma_buf_ptr;
+//extern unsigned long  * ccam_dma_buf_ptr;
+
+/* move these lines to x313_macro.h
 #define X313_LENGTH_MASK      0xff000000
 #define X313_PADDED_FRAME(x)((((x)+67+CCAM_MMAP_META ) >>2) & 0xfffffff8)
 #define X313_BUFFSUB(x,y) (((x)>=(y))? ((x)-(y)) : ((x)+ (CCAM_DMA_SIZE-(y))))
 #define X313_BUFFADD(x,y) ((((x) + (y))<=CCAM_DMA_SIZE)? ((x) + (y)) : ((x) - (CCAM_DMA_SIZE-(y))))
+*/
 
 //int init_FPGA(void); /// can be initialized only after FPGA is configured, not at module init (NOTE was static??)
 ///can be verified with if (!X313_IS_SDRAM_ON)

@@ -271,9 +271,9 @@ void camSeqSetJPEG_rp(int p) {
                                        get_globalParam(G_CIRCBUFSIZE):0)+ get_globalParam(G_CIRCBUFRP))
                                        - get_globalParam(G_CIRCBUFWP));
                                }
-EXPORT_SYMBOL_GPL(camSeqGetJPEG_wp);
-EXPORT_SYMBOL_GPL(camSeqGetJPEG_rp);
-EXPORT_SYMBOL_GPL(camSeqSetJPEG_rp);
+//EXPORT_SYMBOL_GPL(camSeqGetJPEG_wp);
+//EXPORT_SYMBOL_GPL(camSeqGetJPEG_rp);
+//EXPORT_SYMBOL_GPL(camSeqSetJPEG_rp);
 
 /*!
    End of compressor-related code - TODO: move to a separate file?
@@ -283,6 +283,7 @@ EXPORT_SYMBOL_GPL(camSeqSetJPEG_rp);
 #define X3X3_IMAGEACQ_DRIVER_NAME "Elphel (R) Model 353 Image Acquisition device driver"
 static struct sensorproc_t s_sensorproc; // sensor parameters and functions to call
 struct sensorproc_t * sensorproc = NULL;
+//EXPORT_SYMBOL_GPL(sensorproc);
 //wait_queue_head_t image_acq_wait_queue;  /// queue for the sensor frame interrupts
 
 
@@ -674,7 +675,7 @@ void reset_compressor(void) {
   fpga_counter_prev=0;
   local_irq_restore(flags);
 }
-EXPORT_SYMBOL_GPL(reset_compressor);
+//EXPORT_SYMBOL_GPL(reset_compressor);
 
 /**
  * @brief Camera interrupts on/off  (currently both in the FPGA and in the CPU)
@@ -697,7 +698,7 @@ void camera_interrupts (int on) {
   REG_WR(intr_vect, regi_irq, rw_mask, intr_mask); 
 #endif /* TEST_DISABLE_CODE */
 }
-EXPORT_SYMBOL_GPL(camera_interrupts);
+//EXPORT_SYMBOL_GPL(camera_interrupts);
 
 
 int image_acq_open(struct inode *inode, struct file *filp) ;

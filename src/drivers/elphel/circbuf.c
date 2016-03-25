@@ -151,7 +151,9 @@
 #include <linux/time.h>
 #include <linux/wait.h>
 #include <linux/dma-mapping.h>
-#include <linux/errno.h>
+#include <linux/platform_device.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 
 //#include <asm/system.h>
 //#include <asm/arch/memmap.h>
@@ -180,6 +182,9 @@
 #include "jpeghead.h"
 #include "circbuf.h"
 #include "exif.h"
+#include "x313_macro.h"
+#include <elphel/elphel393-mem.h>
+
 #if ELPHEL_DEBUG
   #define MDF(x) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);x ;}
   #define   D19(x) { if (GLOBALPARS(G_DEBUG) & (1 <<19)) {x; } ; }
@@ -206,27 +211,42 @@
 //#define MD11(x) printk("%s:%d:",__FILE__,__LINE__);x
 #define MD11(x)
 
+static const struct of_device_id elphel393_circbuf_of_match[];
 /* really huge static DMA buffer (1288+8)*1032/3=445824 long-s */
 // DMA_SIZE - in 32-bit words, not bytes
 //static unsigned long ccam_dma_buf[CCAM_DMA_SIZE + (PAGE_SIZE>>2)] __attribute__ ((aligned (PAGE_SIZE)));
 static unsigned long *ccam_dma_buf = NULL;
 //!Without "static" system hangs after "Uncompressing Linux...
 unsigned long  * ccam_dma_buf_ptr = NULL;
-unsigned long * ccam_dma =         NULL; //! still used in autoexposure or something - why is in needed there?
+//EXPORT_SYMBOL_GPL(ccam_dma_buf_ptr);
+//unsigned long * ccam_dma =         NULL; //! still used in autoexposure or something - why is in needed there?
 
-int init_ccam_dma_buf_ptr(void) {
-	dma_addr_t *dma_handle;
+int init_ccam_dma_buf_ptr(struct platform_device *pdev) {
+	dma_addr_t dma_handle;
+	const size_t dma_size = (CCAM_DMA_SIZE + (PAGE_SIZE >> 2)) * sizeof(int);
+	struct device *dev = &pdev->dev;
     //ccam_dma_buf_ptr = ccam_dma_buf;
     //ccam_dma =         ccam_dma_buf; //&ccam_dma_buf[0]; Use in autoexposure
 
-    ccam_dma_buf_ptr = dma_alloc_coherent(NULL, (CCAM_DMA_SIZE + (PAGE_SIZE >> 2)), dma_handle, GFP_KERNEL);
-    if (!ccam_dma_buf_ptr) {
-    	return -ENOMEM;
-    } else {
-    	printk(KERN_DEBUG "%s: dma memory allocated at 0x%08x", __func__, dma_handle);
-    }
+    // use Elphel_buf if it was allocated
+	if (pElphel_buf != NULL) {
+		ccam_dma_buf_ptr = pElphel_buf->vaddr;
+		dma_handle = pElphel_buf->paddr;
+		dev_info(dev, "using %d bytes of DMA memory from pElphel_buf at address 0x%08p", pElphel_buf->size * PAGE_SIZE, dma_handle);
+	} else {
+		ccam_dma_buf_ptr = dmam_alloc_coherent(dev, dma_size, &dma_handle, GFP_KERNEL);
+		if (!ccam_dma_buf_ptr) {
+			dev_err(dev, "unable to allocate DMA buffer\n");
+			return -ENOMEM;
+		} else {
+			dev_info(dev, "%d bytes of DMA memory allocated at address 0x%08p", dma_size , dma_handle);
+		}
+	}
+	ccam_dma_buf = ccam_dma_buf_ptr;
+
+    return 0;
 }
-extern struct interframe_params_t frame_params; // cc353.c
+//extern struct interframe_params_t frame_params; // cc353.c
 /*!======================================================================================
  *! Wait queue for the processes waiting for a new frame to appear in the circular buffer
  *!======================================================================================*/
@@ -304,10 +324,18 @@ int circbuf_all_release(struct inode *inode, struct file *filp) {
 loff_t circbuf_all_lseek(struct file * file, loff_t offset, int orig) {
      struct circbuf_pd * privData;
      privData = (struct circbuf_pd *) file->private_data;
+     struct interframe_params_t *fp = NULL;
+     int rp;
+
  MD10(printk("circbuf_all_lseek, minor=0x%x\n",privData-> minor));
      switch (privData->minor) {
        case CMOSCAM_MINOR_CIRCBUF :    return  circbuf_lseek  (file, offset, orig);
-       case CMOSCAM_MINOR_JPEAGHEAD :  return  jpeghead_lseek (file, offset, orig);
+       case CMOSCAM_MINOR_JPEAGHEAD :
+    	   if (orig == SEEK_END && offset > 0) {
+			   rp= (offset >>2) & (~7); // convert to index to long, align to 32-bytes
+			   fp = (struct interframe_params_t *) &ccam_dma_buf_ptr[X313_BUFFSUB(rp, 8)]; //! 32 bytes before the frame pointer, may roll-over to the end of ccam_dma_buf_ptr
+    	   }
+    	   return  jpeghead_lseek (file, offset, orig, fp);
        case CMOSCAM_MINOR_HUFFMAN :    return  huffman_lseek  (file, offset, orig);
        default:                        return -EINVAL;
      }
@@ -680,10 +708,18 @@ unsigned int circbuf_poll (struct file *file, poll_table *wait) {
     return 0; // nothing ready
 }
 
-
-static int __init circbuf_all_init(void) {
+static int circbuf_all_init(struct platform_device *pdev)
+{
    int res;
-   printk(KERN_DEBUG "Loading %s", __func__);
+   struct device *dev = &pdev->dev;
+   const struct of_device_id *match;
+
+   /* sanity check */
+   match = of_match_device(elphel393_circbuf_of_match, dev);
+   if (!match)
+	   return -EINVAL;
+
+   dev_info(dev, "loading circbuf driver\n");
    MDF19(printk("\n"));
    res = register_chrdev(CIRCBUF_MAJOR, "circbuf_operations", &circbuf_fops);
    if(res < 0) {
@@ -691,23 +727,58 @@ static int __init circbuf_all_init(void) {
      return res;
    }
 
-   res = init_ccam_dma_buf_ptr();
+   res = init_ccam_dma_buf_ptr(pdev);
    if (res < 0) {
-	   printk(KERN_ERR "%s: ERROR allocating coherent DMA buffer\n", __func__);
+	   dev_err(dev, "ERROR allocating coherent DMA buffer\n");
 	   return -ENOMEM;
    }
+
+   // init other modules: framepars, sensor_common
+   /*res = framepars_init();
+   if (res < 0) {
+	   dev_err(dev, "unable to init framepars\n");
+	   return res;
+   }
+   res = image_acq_init();
+   if (res < 0) {
+	   dev_err(dev, "unable to init sensor_comon\n");
+	   return res;
+   }*/
 
    MDF19(printk("init_waitqueue_head()\n"));
    init_waitqueue_head(&circbuf_wait_queue);
    MDF19(printk("jpeg_htable_init()\n"));
    jpeg_htable_init ();         /// set default Huffman table, encode it for the FPGA
    printk(CIRCBUF_DRIVER_NAME"- %d\n",CIRCBUF_MAJOR);
+
    return 0;
 }
 
+static int circbuf_remove(struct platform_device *pdev)
+{
+	unregister_chrdev(CIRCBUF_MAJOR, "circbuf_operations");
 
-module_init(circbuf_all_init);
+	return 0;
+}
+
+static const struct of_device_id elphel393_circbuf_of_match[] = {
+		{ .compatible = "elphel,elphel393-circbuf-1.00" },
+		{ /* end of list */ }
+};
+MODULE_DEVICE_TABLE(of, elphel393_circbuf_of_match);
+
+static struct platform_driver elphel393_circbuf = {
+		.probe          = circbuf_all_init,
+		.remove         = circbuf_remove,
+		.driver = {
+				.name = CIRCBUF_DRIVER_NAME,
+				.owner = THIS_MODULE,
+				.of_match_table = elphel393_circbuf_of_match,
+		},
+};
+
+module_platform_driver(elphel393_circbuf);
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(CIRCBUF_DRIVER_NAME);
-

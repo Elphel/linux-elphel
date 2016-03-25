@@ -96,8 +96,9 @@
 //#include "x3x3.h"
 //#include "cc3x3.h"
 //#include "cxdma.h"
-#include "circbuf.h"
-#include "sensor_common.h"
+//#include "circbuf.h"
+//#include "sensor_common.h"
+#include "x313_macro.h"
 #include "exif.h"
 
 #if ELPHEL_DEBUG
@@ -118,7 +119,6 @@
 
 #define JPEG_HEADER_MAX_SIZE    0x300
 static int huffman_fpga_programmed=0;
-extern unsigned long *ccam_dma_buf_ptr;
 
 /// All huffman tabels data to be read/written from the application
 static struct huff_tables_t {
@@ -151,10 +151,8 @@ static struct huff_tables_t {
  */
 int qtables_create(struct interframe_params_t * params, unsigned char * buf) {
   MDF18(printk("params->quality2=0x%x",params->quality2));
-#ifdef TEST_DISABLE_CODE
   int rslt=get_qtable(params->quality2, &buf[0], &buf[64]); /// will copy both quantization tables
   if (rslt <0) return rslt; /// bad quality table
-#endif
   return 128;
 }
 /**
@@ -238,10 +236,8 @@ int jpegheader_create(struct interframe_params_t * params, unsigned char * buf) 
 
   memcpy((void *) &buf[0],                 (void *) jfif1, sizeof (jfif1)); /// including DQT0 header
   memcpy((void *) &buf[header_cqtable_hd], (void *) jfif2, sizeof (jfif2)); /// DQT1 header
-#ifdef TEST_DISABLE_CODE
   rslt=get_qtable(params->quality2, &buf[header_yqtable], &buf[header_cqtable]); /// will copy both quantization tables
   if (rslt <0) return rslt; /// bad quality table
-#endif
   bp=header_sof;
   buf[bp++]=0xff; buf[bp++]=0xc0;
   buf[bp++]=0;  /// high byte length - always 0
@@ -388,11 +384,12 @@ EXPORT_SYMBOL_GPL(jpeghead_open);
  *!================================================================*/
 
 
-loff_t  jpeghead_lseek(struct file * file, loff_t offset, int orig){
+loff_t  jpeghead_lseek(struct file * file, loff_t offset, int orig,
+		struct interframe_params_t *fp){
 
   int rp;
   struct jpeghead_pd * privData;
-  struct interframe_params_t * fp;
+  //struct interframe_params_t * fp;
   privData = (struct jpeghead_pd *) file->private_data;
   MDF17(printk("orig=%d, offst=0x%x\n",orig,(int) offset));
 
@@ -409,8 +406,11 @@ loff_t  jpeghead_lseek(struct file * file, loff_t offset, int orig){
         file->f_pos = privData->size + offset;
      } else { //! New functionality
        file->f_pos=0; // anyway reset it to 0
+       /*
+        * move below two lines to circbuf_all_lseek to remove ccam_dma_buf_ptr and simplify dependencies
        rp= (offset >>2) & (~7); // convert to index to long, align to 32-bytes
        fp = (struct interframe_params_t *) &ccam_dma_buf_ptr[X313_BUFFSUB(rp, 8)]; //! 32 bytes before the frame pointer, may roll-over to the end of ccam_dma_buf_ptr
+       */
        if ((fp->signffff != 0xffff) || //! signature is overwritten
           ((fp->timestamp_sec) & X313_LENGTH_MASK)) return -EINVAL; //! acquisition of this frame is not done yet - length word high byte is non-zero
 

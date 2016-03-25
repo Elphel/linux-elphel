@@ -446,7 +446,7 @@ static struct of_device_id elphel393_mem_of_match[] = {
 	{ .compatible = "elphel,elphel393-mem-1.00", },
 	{ /* end of table */}
 };
-MODULE_DEVICE_TABLE(of, elphel393_pwr_of_match);
+MODULE_DEVICE_TABLE(of, elphel393_mem_of_match);
 
 static struct platform_driver elphel393_mem = {
 	.probe   = elphel393_mem_probe,

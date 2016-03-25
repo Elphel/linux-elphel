@@ -198,7 +198,7 @@ void reset_qtables(void) {
  qtable_cache_initialized=0;
  qtable_fpga_initialized=0;
 }
-
+//EXPORT_SYMBOL_GPL(reset_qtables);
 
 /**
  * @brief initialization of quantization tables (direct - JPEG header ones) cache
@@ -319,6 +319,7 @@ int get_qtable (int quality2, unsigned char *y_tab, unsigned char *c_tab) {
   MDF15(if (c_tab) {printk("c_tab\n"); for (i=0;i<64;i++){if ((i & 7)==0) printk("\n");printk(" %02x",(int) c_tab[i]);} printk("\n");});
   return rslt;
 }
+//EXPORT_SYMBOL_GPL(get_qtable);
 
 /**
  * @brief initialization of quantization tables (reverse, for the FPGA) cache

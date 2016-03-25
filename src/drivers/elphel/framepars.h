@@ -4,7 +4,7 @@
 //extern struct framepars_t (*framepars)[PARS_FRAMES];
 extern struct framepars_t      *framepars;
 extern struct framepars_past_t *pastpars;
-unsigned long           *globalPars;
+extern unsigned long           *globalPars;
 extern unsigned long           *multiSensIndex;
 extern unsigned long           *multiSensRvrsIndex;
 
@@ -60,4 +60,5 @@ inline void processParsSeq (struct sensorproc_t * sensorproc, int frame8, int ma
 
 void processPars (struct sensorproc_t * sensorproc, int frame8, int maxahead);
 ///*** TODO: Add option (flag?) to write "single" (like single compress, single sensor) so it will not make all the next frames "single"
+
 #endif
