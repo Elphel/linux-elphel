@@ -9,8 +9,8 @@
 //#define ELPHEL_DEBUG 0 //global debug on/off in multiple files
 //#define ELPHEL_DEBUG_STARTUP 000a4c00 ; 
 //#define ELPHEL_DEBUG_STARTUP 0 ; // removed - add write to fpga init script
-//#define ELPHEL_DEBUG 0 //global debug on/off in multiple files
-#define ELPHEL_DEBUG 1 //global debug on/off in multiple files
+#define ELPHEL_DEBUG 0 //global debug on/off in multiple files
+//#define ELPHEL_DEBUG 1 //global debug on/off in multiple files
 #define ELPHEL_DEBUG_DELAY 100000 //delay after some printk-s
 #define ELP_KERR(x) printk("%s:%d:%s: ERROR ",__FILE__,__LINE__,__FUNCTION__);x
 #define ELP_FERR(x) fprintf(stderr,"%s:%d:%s: ERROR ",__FILE__,__LINE__,__FUNCTION__);x

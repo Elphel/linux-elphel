@@ -1,170 +1,28 @@
-/*!********************************************************************************
-*! FILE NAME  : sensor_common.c
-*! DESCRIPTION: Sensor discovery, initialization, programming - common
-*! for all sensors
-*! Now most is moved to other files, here will be
-*! - system initialization
-*! - compressor write (and global read) pointers
-*! - populating 32-byte interframe data
-*! - something for Exif?
-*! - where are histograms? ->histograms.c
-*! - interrupt loop
-*! - tasklets
-*! - device driver that includes waiting for the next frame regardless of compression
-*! - anything else?
-*!
-*! 
-*! Copyright (C) 2008 Elphel, Inc.
-*! -----------------------------------------------------------------------------**
-*!
-*!  This program is free software: you can redistribute it and/or modify
-*!  it under the terms of the GNU General Public License as published by
-*!  the Free Software Foundation, either version 3 of the License, or
-*!  (at your option) any later version.
-*!
-*!  This program is distributed in the hope that it will be useful,
-*!  but WITHOUT ANY WARRANTY; without even the implied warranty of
-*!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*!  GNU General Public License for more details.
-*!
-*!  You should have received a copy of the GNU General Public License
-*!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*! -----------------------------------------------------------------------------**
-*!  $Log: sensor_common.c,v $
-*!  Revision 1.11  2012/04/08 04:09:23  elphel
-*!  added temperatures to MakerNote
-*!
-*!  Revision 1.10  2010/08/10 21:14:31  elphel
-*!  8.0.8.39 - added EEPROM support for multiplexor and sensor boards, so autocampars.php uses application-specific defaults. Exif Orientation tag support, camera Model reflects application and optional mode (i.e. camera number in Eyesis)
-*!
-*!  Revision 1.9  2010/08/03 23:37:34  elphel
-*!  rev 8.0.8.37, portrait mode support
-*!
-*!  Revision 1.8  2010/08/01 19:29:24  elphel
-*!  files updated to support coring function for noise filtering
-*!
-*!  Revision 1.7  2010/07/20 20:13:34  elphel
-*!  8.0.8.33 - added MakerNote info for composite images made with multisensor cameras (with 10359 board)
-*!
-*!  Revision 1.6  2010/05/16 02:03:47  elphel
-*!  8.0.8.4 - driver working with individual/broadcast sensor registers
-*!
-*!  Revision 1.5  2010/05/13 03:39:31  elphel
-*!  8.0.8.12 -  drivers modified for multi-sensor operation
-*!
-*!  Revision 1.4  2010/03/04 06:41:40  elphel
-*!  8.0.7.3 - more data to makerNote
-*!
-*!  Revision 1.3  2009/12/28 06:24:17  elphel
-*!  8.0.6.6 - added MakerNote to Exif, it icludes channels gains and gammas/black levels
-*!
-*!  Revision 1.2  2008/11/30 21:56:39  elphel
-*!  Added enforcing limit on the overall gains in the color channels, storage of exposure and gains in the histograms cache (to be used with autoexposure/white balance)
-*!
-*!  Revision 1.1.1.1  2008/11/27 20:04:00  elphel
-*!
-*!
-*!  Revision 1.33  2008/11/20 07:04:47  elphel
-*!  made silent when debug is 0
-*!
-*!  Revision 1.32  2008/11/14 07:06:54  elphel
-*!  fixed wrong timing for servicing histogram requests
-*!
-*!  Revision 1.31  2008/11/13 05:40:45  elphel
-*!  8.0.alpha16 - modified histogram storage, profiling
-*!
-*!  Revision 1.30  2008/11/10 19:47:46  elphel
-*!  added TODO abut reducing CPU load by decimating histogram calculations (not each frame)
-*!
-*!  Revision 1.29  2008/10/29 04:18:28  elphel
-*!  v.8.0.alpha10 made a separate structure for global parameters (not related to particular frames in a frame queue)
-*!
-*!  Revision 1.28  2008/10/26 05:54:45  elphel
-*!  changed value of frame counters for histograms to compensate for 1 frame latency of histograms
-*!
-*!  Revision 1.27  2008/10/25 19:55:00  elphel
-*!  made the histograms calculations relate to previous, not this frame.
-*!
-*!  Revision 1.26  2008/10/23 08:09:02  elphel
-*!  support for histogram wait queues
-*!
-*!  Revision 1.25  2008/10/19 06:56:05  elphel
-*!  elphel_wait_frame() now works only for compressed frames, new elphel_skip_frames() and elphel_wait_frame_abs() wait sequencer frames (all sensor frames, even those that are not compressed)
-*!
-*!  Revision 1.24  2008/10/15 22:28:56  elphel
-*!  snapshot 8.0.alpha2
-*!
-*!  Revision 1.23  2008/10/13 16:55:53  elphel
-*!  removed (some) obsolete P_* parameters, renamed CIRCLSEEK to LSEEK_CIRC constants (same as other similar)
-*!
-*!  Revision 1.22  2008/10/12 16:46:22  elphel
-*!  snapshot
-*!
-*!  Revision 1.21  2008/10/11 18:46:07  elphel
-*!  snapshot
-*!
-*!  Revision 1.20  2008/10/10 17:06:59  elphel
-*!  just a snapshot
-*!
-*!  Revision 1.19  2008/10/08 21:26:25  elphel
-*!  snapsot 7.2.0.pre4 - first images (actually - second)
-*!
-*!  Revision 1.18  2008/10/05 05:13:33  elphel
-*!  snapshot003
-*!
-*!  Revision 1.17  2008/10/04 16:10:12  elphel
-*!  snapshot
-*!
-*!  Revision 1.16  2008/09/28 00:31:57  elphel
-*!  snapshot
-*!
-*!  Revision 1.15  2008/09/25 00:58:12  elphel
-*!  snapshot
-*!
-*!  Revision 1.14  2008/09/22 22:55:49  elphel
-*!  snapshot
-*!
-*!  Revision 1.13  2008/09/20 00:29:50  elphel
-*!  moved driver major/minor numbers to a single file - include/asm-cris/elphel/driver_numbers.h
-*!
-*!  Revision 1.12  2008/09/19 04:37:26  elphel
-*!  snapshot
-*!
-*!  Revision 1.11  2008/09/16 00:49:32  elphel
-*!  snapshot
-*!
-*!  Revision 1.10  2008/09/12 00:24:00  elphel
-*!  removed cc353.c, cc353.h
-*!
-*!  Revision 1.9  2008/09/07 19:48:09  elphel
-*!  snapshot
-*!
-*!  Revision 1.8  2008/09/05 23:20:26  elphel
-*!  just a snapshot
-*!
-*!  Revision 1.7  2008/09/02 21:01:07  elphel
-*!  just next...
-*!
-*!  Revision 1.6  2008/07/29 01:15:07  elphel
-*!  another snapshot
-*!
-*!  Revision 1.5  2008/07/27 23:25:07  elphel
-*!  next snapshot
-*!
-*!  Revision 1.4  2008/07/27 04:27:49  elphel
-*!  next snapshot
-*!
-*!  Revision 1.3  2008/06/24 00:43:44  elphel
-*!  just a snapshot
-*!
-*!  Revision 1.2  2008/06/20 03:54:21  elphel
-*!  another snapshot
-*!
-*!  Revision 1.1  2008/06/16 06:51:21  elphel
-*!  work in progress, intermediate commit
-*!
-*!
-*/
+/** @file sensor_common.h
+ * @brief This module handles sensor discovery, initialization and programming tasks
+ * common for all sensors. Task that are implemented:
+ * - system initialization (?)
+ * - compressor write (and global read) pointers
+ * - populating 32-byte interframe data
+ * - interrupts handling
+ * - tasklets
+ * - device driver that includes waiting for the next frame regardless of compression
+ *
+ * Copyright (C) 2016 Elphel, Inc.
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 //copied from cxi2c.c - TODO:remove unneeded
 
@@ -180,6 +38,9 @@
 #include <linux/interrupt.h>
 #include <linux/time.h>
 #include <linux/vmalloc.h>
+#include <linux/platform_device.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 
 //#include <asm/system.h>
 #include <asm/byteorder.h> // endians
@@ -195,6 +56,8 @@
 #include <elphel/c313a.h>
 //#include <asm/elphel/fpgaconfa.h>
 #include <elphel/exifa.h>
+//#include <elphel/x393_types.h>
+#include "x393.h"
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
 //#include "fpga_sdram.h" // use a single fpga_initSDRAM(void)
 
@@ -210,6 +73,7 @@
 //#include "histograms.h"
 //#include "gamma_tables.h"
 #include "quantization_tables.h"
+#include "x393_macro.h"
 
 #if ELPHEL_DEBUG
  #define ELPHEL_DEBUG_THIS 0
@@ -233,10 +97,38 @@
   #define MD13(x)
 #endif
 
+/**@struct jpeg_ptr_t
+ * @brief \e jpeg_ptr_t structure contains read and write pointers along with
+ * IRQ number for a single channel
+ * @var jpeg_ptr_t::jpeg_wr
+ * JPEG write pointer
+ * @var jpeg_ptr_t::jpeg_rp
+ * JPEG read pointer
+ * @var jpeg_ptr_t::fpga_cntr_prev
+ * This field contains previous value of the FPGA transfer counter which is used
+ * to find out if it has changed
+ * @var jpeg_ptr_t::irq_num_comp
+ * IRQ number associated with compressor
+ * @var jpeg_ptr_t::irq_num_sens
+ * IRQ number associated with sensor
+ */
+struct jpeg_ptr_t {
+	volatile int jpeg_wp;
+	volatile int jpeg_rp;
+	int          fpga_cntr_prev;
+	unsigned int irq_num_comp;
+	unsigned int irq_num_sens;
+};
 
+/**@struct image_acq_pd_t
+ * @brief \e image_acq_pd contains private data for the image acquisition driver
+ */
+struct image_acq_pd_t {
+    int minor;
+    struct jpeg_ptr_t jpeg_ptr[IMAGE_CHN_NUM];
+};
 
-#define X3X3_ELPHEL_DRIVER_NAME "Elphel (R) Model 353 Camera Driver"
-static const char elphel_cam_name[] = "elphelcam353";
+static struct image_acq_pd_t image_acq_priv;
 
 static volatile int JPEG_wp;
 static volatile int JPEG_rp;
@@ -250,17 +142,6 @@ static int fpga_counter_prev=0; /// Previous value of the FPGA transfer counter 
     int Photo_MakerNote;
   } meta_offsets;
 
-
-
-
-
-///Defines/macros moved from the cc353.h
-// #define EN_INTERRUPT(x)  port_csp0_addr[X313_WA_IRQ_ENA]= (1<< x )
-// #define DIS_INTERRUPT(x) {port_csp0_addr[X313_WA_IRQ_DIS]= (1<< x ); port_csp0_addr[X313_WA_IRQ_RST]= (1<< x );}
-// #define DIS_INTERRUPTS   {port_csp0_addr[X313_WA_IRQ_DIS]= 0xffff; port_csp0_addr[X313_WA_IRQ_RST]= 0xffff;}
-
-
-
 int  camSeqGetJPEG_wp(void) {return JPEG_wp;}
 int  camSeqGetJPEG_rp(void) {return JPEG_rp;}
 void camSeqSetJPEG_rp(int p) {
@@ -271,42 +152,39 @@ void camSeqSetJPEG_rp(int p) {
                                        get_globalParam(G_CIRCBUFSIZE):0)+ get_globalParam(G_CIRCBUFRP))
                                        - get_globalParam(G_CIRCBUFWP));
                                }
-//EXPORT_SYMBOL_GPL(camSeqGetJPEG_wp);
-//EXPORT_SYMBOL_GPL(camSeqGetJPEG_rp);
-//EXPORT_SYMBOL_GPL(camSeqSetJPEG_rp);
 
 /*!
    End of compressor-related code - TODO: move to a separate file?
 */
 
+/**
+ * @brief driver name to display in log messages
+ */
+#define IMAGEACQ_DRIVER_NAME "Elphel (R) Model 393 Image Acquisition device driver"
 
-#define X3X3_IMAGEACQ_DRIVER_NAME "Elphel (R) Model 353 Image Acquisition device driver"
+static const struct of_device_id elphel393_sensor_of_match[];
 static struct sensorproc_t s_sensorproc; // sensor parameters and functions to call
 struct sensorproc_t * sensorproc = NULL;
 //EXPORT_SYMBOL_GPL(sensorproc);
 //wait_queue_head_t image_acq_wait_queue;  /// queue for the sensor frame interrupts
 
 
-struct image_acq_pd {
-    int                minor;
-//    struct wait_queue *image_acq_wait_queue;
-// something else to be added here?
-};
-
 void tasklet_fpga_function(unsigned long arg);
 
 /**
- * @brief Copy sensorproc structure, needed for multisensor board to be able to replace some of the functions
- * @param copy - pointer to a copy structure
- * @return pointer to a copy structure
+ * @brief Copy #sensorproc structure, needed for multisensor board to be able
+ * to replace some of the functions
+ * @param[in]   copy   pointer to a copy structure
+ * @return      pointer to a \b copy structure
  */
-
-struct sensorproc_t * copy_sensorproc (struct sensorproc_t * copy) {
-  memcpy(copy, sensorproc, sizeof(struct sensorproc_t)); /// copy sensor functions
-  return copy;
+struct sensorproc_t * copy_sensorproc (struct sensorproc_t * copy)
+{
+	/** copy sensor functions */
+	memcpy(copy, sensorproc, sizeof(struct sensorproc_t));
+	return copy;
 }
 
-#ifdef TEST_DISABLE_CODE
+//#ifdef TEST_DISABLE_CODE
 
 /// When should it be called?
 //int init_sensor(void);
@@ -351,8 +229,6 @@ int init_FPGA(void) { //will check FPGA version, init SDRAM (if needed) and sens
 ///#define CCAM_VSYNC_OFF port_csp0_addr[X313_WA_DCR1]=X353_DCR1(BLOCKVSYNC,1)
 ///
 int init_acq_sensor(void);
-
-static int __init image_acq_init(void);
 
 DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); /// 0 - no arguments for now
 
@@ -534,6 +410,33 @@ static irqreturn_t elphel_FPGA_interrupt(int irq, void *dev_id) {
 }
 
 /**
+ * @brief Handle interrupts from sensor channels. This handler is installed without SA_INTERRUPT
+ * flag meaning that interrupts are enabled during processing. Such behavior is recommended in LDD3.
+ * @param[in]   irq   interrupt number
+ * @param[in]   dev_id pointer to driver's private data structure #jpeg_ptr_t corresponding to
+ * the channel which raise interrupt
+ * @return \e IRQ_HANDLED if interrupt was processed and \e IRQ_NONE otherwise
+ */
+static irqreturn_t frame_sync_irq_handler(int irq, void *dev_id)
+{
+	update_frame_pars();
+	return IRQ_HANDLED;
+}
+
+/**
+ * @brief Handle interrupts from JPEG compressor channels. This handler is installed without SA_INTERRUPT
+ * flag meaning that interrupts are enabled during processing. Such behavior is recommended in LDD3.
+ * @param[in]   irq   interrupt number
+ * @param[in]   dev_id pointer to driver's private data structure #jpeg_ptr_t corresponding to
+ * the channel which raise interrupt
+ * @return \e IRQ_HANDLED if interrupt was processed and \e IRQ_NONE otherwise
+ */
+static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
+{
+	return IRQ_HANDLED;
+}
+
+/**
  * @brief Tasklet - software interrupt
  * lower priority tasks
  * try to implement some balancing - if job is not finished - reduce FPS for it (alternate jobs)?
@@ -655,7 +558,7 @@ GLOBALPARS(0x1044)=thisFrameNumber;
 #endif
 }
 
-#endif /* TEST_DISABLE_CODE */
+//#endif /* TEST_DISABLE_CODE */
 
 /**
  * @brief resets compressor and buffer pointers
@@ -697,85 +600,118 @@ void camera_interrupts (int on) {
   intr_mask.ext = on ? 1 : 0;
   REG_WR(intr_vect, regi_irq, rw_mask, intr_mask); 
 #endif /* TEST_DISABLE_CODE */
+
+  x393_arbite_pri_t val;
+
+  val = get_x393_mcntrl_arbiter_priority(0);
+  if (val.d32 == 1)
+	  printk("1");
+  else
+	  printk("2");
 }
 //EXPORT_SYMBOL_GPL(camera_interrupts);
 
+/**
+ * @brief sensor_common driver probing function
+ * @param[in]   pdev   pointer to \b platform_device structure
+ * @return      0 on success or negative error code otherwise
+ */
+static int image_acq_init(struct platform_device *pdev)
+{
+	int i;
+	int res;
+	unsigned int irq;
+	struct device *dev = &pdev->dev;
+	const struct of_device_id *match;
+	const char **frame_sync_irq_names = { "frame_sync_irq_0", "frame_sync_irq_1",
+			"frame_sync_irq_2", "frame_sync_irq_3" };
+	const char **compressor_irq_names = { "compr_irq_0", "compr_irq_1",
+			"compr_irq_2", "compr_irq_3"
+	};
 
-int image_acq_open(struct inode *inode, struct file *filp) ;
-int image_acq_release(struct inode *inode, struct file *filp) ;
-loff_t image_acq_fops_lseek (struct file * file, loff_t offset, int orig) ;
-ssize_t image_acq_fops_write(struct file * file, const char * buf, size_t count, loff_t *off) ;
-int image_acq_mmap (struct file *file, struct vm_area_struct *vma) ;
+	/* sanity check */
+	match = of_match_device(elphel393_sensor_of_match, dev);
+	if (!match)
+		return -EINVAL;
 
-static struct file_operations image_acq_fops = {
-   owner:    THIS_MODULE,
-   llseek:   image_acq_fops_lseek,
-//   read:     image_acq_fops_read,
-   write:    image_acq_fops_write,
-//   ioctl:    image_acq_ioctl,
-   open:     image_acq_open,
-   mmap:     image_acq_mmap,
-   release:  image_acq_release
-};
-static int __init image_acq_init(void) {
-   int res;
-   sensorproc= &s_sensorproc;
-   MDD1(printk("sensorproc=0x%x\n",(int) sensorproc));
-   //init_ccam_dma_buf_ptr();  /// should it be done here? Why not in circbuf.c?
-///   init_histograms(); - other initializations?
-   res = register_chrdev(ELPHEL_MAJOR, elphel_cam_name, &image_acq_fops);
-   if(res < 0) {
-     printk(KERN_ERR "image_acq_init: couldn't get a major number %d.\n",ELPHEL_MAJOR);
-     return res;
-   }
+	sensorproc= &s_sensorproc;
+	MDD1(printk("sensorproc=0x%x\n",(int) sensorproc));
+
+	for (i = 0; i < IMAGE_CHN_NUM; i++) {
+		irq = platform_get_irq_byname(pdev, frame_sync_irq_names[i]);
+		if (request_irq(irq,
+				frame_sync_irq_handler,
+				0, // no flags
+				frame_sync_irq_names[i],
+				&image_acq_priv.jpeg_ptr[i])) {
+			printk(KERN_ERR "Can not allocate Elphel FPGA interrupts");
+			return -EBUSY;
+		}
+		image_acq_priv.jpeg_ptr[i].irq_num_sens = irq;
+	}
+	for (i = 0; i < IMAGE_CHN_NUM; i++) {
+		irq = platform_get_irq_byname(pdev, compressor_irq_names[i]);
+		if (request_irq(irq,
+				compressor_irq_handler,
+				0, // no flags
+				compressor_irq_names[i],
+				&image_acq_priv.jpeg_ptr[i])) {
+			printk(KERN_ERR "Can not allocate Elphel FPGA interrupts");
+			return -EBUSY;
+		}
+		image_acq_priv.jpeg_ptr[i].irq_num_comp = irq;
+	}
 
 #ifdef TEST_DISABLE_CODE
 
-   if(request_irq(EXT_INTR_VECT,
-                  elphel_FPGA_interrupt,
-                  SA_INTERRUPT, // SA_SHIRQ | SA_INTERRUPT if it is a shared one.
-                  "Elphel FPGA interrupts",
-                  NULL)) {
-               printk(KERN_ERR "Can't allocate Elphel FPGA interrupts");
-               return -EBUSY;
-    }
+	if(request_irq(EXT_INTR_VECT,
+			elphel_FPGA_interrupt,
+			SA_INTERRUPT, // SA_SHIRQ | SA_INTERRUPT if it is a shared one.
+			"Elphel FPGA interrupts",
+			NULL)) {
+		printk(KERN_ERR "Can't allocate Elphel FPGA interrupts");
+		return -EBUSY;
+	}
 
 #endif
 
-    printk("Elphel FPGA interrupts initialized\n");
-//    init_waitqueue_head(&image_acq_wait_queue);
-//    DMA_buf_start=x313_dma_init();
-  MDD1(printk("reset_compressor()\n"));
-    reset_compressor(); /// reset compressor and buffer pointers
-  MDD1(printk("x313_dma_init()\n"));
-    //x313_dma_init();    /// initialize ETRAX FS DMA
-  MDD1(printk("init_pgm_proc ()\n"));
-    //init_pgm_proc ();   /// setup pointers to functions (not sensor-specific)
-  MDD1(printk("reset_qtables()\n"));
-    reset_qtables(); /// force initialization at next access
-    printk(X3X3_ELPHEL_DRIVER_NAME" - %d\n",ELPHEL_MAJOR);
-    return 0;
+	printk("Elphel FPGA interrupts initialized\n");
+	//    init_waitqueue_head(&image_acq_wait_queue);
+	//    DMA_buf_start=x313_dma_init();
+	MDD1(printk("reset_compressor()\n"));
+	reset_compressor(); /// reset compressor and buffer pointers
+	MDD1(printk("x313_dma_init()\n"));
+	//x313_dma_init();    /// initialize ETRAX FS DMA
+	MDD1(printk("init_pgm_proc ()\n"));
+	//init_pgm_proc ();   /// setup pointers to functions (not sensor-specific)
+	MDD1(printk("reset_qtables()\n"));
+	reset_qtables(); /// force initialization at next access
+
+	return 0;
 }
 
-
-int image_acq_open(struct inode *inode, struct file *filp) {
-  return 0;
-}
-int image_acq_release(struct inode *inode, struct file *filp) {
-  return 0;
-}
-loff_t image_acq_fops_lseek (struct file * file, loff_t offset, int orig) {
-  return 0;
-}
-ssize_t image_acq_fops_write(struct file * file, const char * buf, size_t count, loff_t *off) {
-  return 0;
-}
-int image_acq_mmap (struct file *file, struct vm_area_struct *vma) {
-  return 0;
+static int image_acq_stop(struct platform_device *pdev)
+{
+	return 0;
 }
 
+static const struct of_device_id elphel393_sensor_of_match[] = {
+		{ .compatible = "elphel,elphel393-sensor-1.00" },
+		{ /* end of list */ }
+};
+MODULE_DEVICE_TABLE(of, elphel393_sensor_of_match);
 
-module_init(image_acq_init);
+static struct platform_driver elphel393_sensor_common = {
+		.probe          = image_acq_init,
+		.remove         = image_acq_stop,
+		.driver = {
+				.name = IMAGEACQ_DRIVER_NAME,
+				.of_match_table = elphel393_sensor_of_match,
+		}
+};
+
+module_platform_driver(elphel393_sensor_common);
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-MODULE_DESCRIPTION(X3X3_IMAGEACQ_DRIVER_NAME);
+MODULE_DESCRIPTION(IMAGEACQ_DRIVER_NAME);

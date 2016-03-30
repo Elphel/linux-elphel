@@ -1,143 +1,25 @@
-/*!***************************************************************************
-*! FILE NAME  : circbuf.c
-*! DESCRIPTION: drivers to manipulate large circular buffer that holds compressed
-*! images/video. Buffer frame data is filled in by the FPGA, frame pointers and
-*! essential frames metadata filled during servicing of the interruptsl
-*! This code is based on the code from cxdma.c
-*! TODO: Add buffer reset, JPEG header generation here
-*!
-*! Copyright (C) 2002-2007 Elphel, Inc
-*! -----------------------------------------------------------------------------**
-*!
-*!  This program is free software: you can redistribute it and/or modify
-*!  it under the terms of the GNU General Public License as published by
-*!  the Free Software Foundation, either version 3 of the License, or
-*!  (at your option) any later version.
-*!
-*!  This program is distributed in the hope that it will be useful,
-*!  but WITHOUT ANY WARRANTY; without even the implied warranty of
-*!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*!  GNU General Public License for more details.
-*!
-*!  You should have received a copy of the GNU General Public License
-*!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*! -----------------------------------------------------------------------------**
-*!  $Log: circbuf.c,v $
-*!  Revision 1.3  2010/08/08 21:14:04  elphel
-*!  8.0.8.38
-*!
-*!  Revision 1.2  2008/11/28 08:17:09  elphel
-*!  keeping Doxygen a little happier
-*!
-*!  Revision 1.1.1.1  2008/11/27 20:04:00  elphel
-*!
-*!
-*!  Revision 1.20  2008/11/20 07:06:24  elphel
-*!  started more poll options
-*!
-*!  Revision 1.19  2008/11/03 20:51:49  elphel
-*!  minor bug fix
-*!
-*!  Revision 1.18  2008/10/29 04:18:28  elphel
-*!  v.8.0.alpha10 made a separate structure for global parameters (not related to particular frames in a frame queue)
-*!
-*!  Revision 1.17  2008/10/25 19:59:48  elphel
-*!  added lseek() calls to enable/disable daemons at events (compressed frame available, any frame available, histogram-Y and histograms-C available)
-*!
-*!  Revision 1.16  2008/10/23 08:01:30  elphel
-*!  comments
-*!
-*!  Revision 1.15  2008/10/19 06:50:03  elphel
-*!  removed couple # if 0
-*!
-*!  Revision 1.14  2008/10/13 16:55:53  elphel
-*!  removed (some) obsolete P_* parameters, renamed CIRCLSEEK to LSEEK_CIRC constants (same as other similar)
-*!
-*!  Revision 1.13  2008/10/12 16:46:22  elphel
-*!  snapshot
-*!
-*!  Revision 1.12  2008/10/06 08:31:08  elphel
-*!  snapshot, first images
-*!
-*!  Revision 1.11  2008/09/22 22:55:47  elphel
-*!  snapshot
-*!
-*!  Revision 1.10  2008/09/20 00:29:49  elphel
-*!  moved driver major/minor numbers to a single file - include/asm-cris/elphel/driver_numbers.h
-*!
-*!  Revision 1.9  2008/09/12 20:40:11  elphel
-*!  snapshot
-*!
-*!  Revision 1.8  2008/09/12 00:23:58  elphel
-*!  removed cc353.c, cc353.h
-*!
-*!  Revision 1.7  2008/09/11 01:05:29  elphel
-*!  snapshot
-*!
-*!  Revision 1.6  2008/09/07 19:48:08  elphel
-*!  snapshot
-*!
-*!  Revision 1.5  2008/09/05 23:20:26  elphel
-*!  just a snapshot
-*!
-*!  Revision 1.4  2008/05/26 23:32:59  elphel
-*!  Added driver to handle multi-frame parameters
-*!
-*!  Revision 1.3  2008/05/24 05:31:02  elphel
-*!  removed seek to current hardware write pointer after opening file, so now ftp-ing circbuf file works correctly
-*!
-*!  Revision 1.2  2008/05/16 06:06:27  elphel
-*!  adjusting drivers to the fpga code (03533020)
-*!
-*!  Revision 1.10  2008/04/11 23:16:51  elphel
-*!  removed unneeded local_irq_disable() after local_irq_save_flags()
-*!
-*!  Revision 1.8  2007/12/03 08:28:46  elphel
-*!  Multiple changes, mostly cleanup
-*!
-*!  Revision 1.7  2007/11/16 08:56:19  elphel
-*!  Added support for 2 additional commands to check circbuf usage
-*!
-*!  Revision 1.6  2007/11/05 06:08:25  elphel
-*!  fixed "first/second" bug introduced while fixing the previous one
-*!
-*!  Revision 1.5  2007/11/05 01:40:51  elphel
-*!  fixed wrong count of frames available, "second" frame
-*!
-*!  Revision 1.4  2007/11/04 05:46:06  elphel
-*!  removed debug, rearranged code to avoid a warning
-*!
-*!  Revision 1.3  2007/11/01 18:59:37  elphel
-*!  debugging mmap/caching problems
-*!
-*!  Revision 1.2  2007/10/27 00:55:32  elphel
-*!  untested revision - need to go
-*!
-*!  Revision 1.1.1.1  2007/10/02 23:54:58  elphel
-*!  This is a fresh tree based on elphel353-2.10
-*!
-*!  Revision 1.6  2007/10/02 23:54:58  elphel
-*!  LSEEK_CIRC_LAST will now return just write pointer, not an error if there are no frames yet available. Moving to previous will still generate error.
-*!
-*!  Revision 1.5  2007/10/02 22:29:38  elphel
-*!  made that only 0,SEEK_END can move beyond circbuf, fro SEEK_CUR and SEET_SET it will roll over to 0
-*!
-*!  Revision 1.4  2007/10/02 19:35:15  elphel
-*!  minor circbuf interface changes, bug fixes
-*!
-*!  Revision 1.3  2007/09/30 07:07:08  elphel
-*!  minor bug fix, disabled debug output
-*!
-*!  Revision 1.2  2007/09/30 03:19:56  elphel
-*!  Cleanup, fixed broken acquisition of individual JPEG images into circbuf (in mode 7)
-*!
-*!  Revision 1.1  2007/09/29 18:33:29  elphel
-*!  Split cxdma.c - /dev/circbuf is now in a separate circbuf.c file. New device driver does not support ioctl, so some curernt applications are updated to use other drivers to control the camera
-*!
-*/
-
-/****************** INCLUDE FILES SECTION ***********************************/
-
+/** @file circbuf.c
+ *
+ * @brief drivers to manipulate large circular buffer that holds compressed
+ * images/video. Buffer frame data is filled in by the FPGA, frame pointers and
+ * essential frames metadata filled during servicing of the interrupts.
+ *
+ * Copyright (C) 2016 Elphel, Inc
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * -----------------------------------------------------------------------------**
+ */
 
 #include <linux/module.h>
 #include <linux/mm.h>
@@ -175,6 +57,7 @@
 #include <asm/uaccess.h>
 #include <elphel/driver_numbers.h>
 #include <elphel/c313a.h>
+#include <elphel/elphel393-mem.h>
 
 #include "framepars.h" // just for ELPHEL_DEBUG bit mask
 
@@ -182,8 +65,8 @@
 #include "jpeghead.h"
 #include "circbuf.h"
 #include "exif.h"
-#include "x313_macro.h"
-#include <elphel/elphel393-mem.h>
+#include "x393_macro.h"
+#include "x393.h"
 
 #if ELPHEL_DEBUG
   #define MDF(x) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);x ;}
@@ -622,28 +505,78 @@ MD12(int dbg_i);
    return  file->f_pos ;
 }
 
+/**
+ * @brief This function handles write operations for circbuf file
+ * @param[in]   file  pointer to <em>struct file</em>
+ * @param[in]   buf   pointer to buffer containing data
+ * @param[in]   count number of bytes in buffer
+ * @param[in]   off   offset
+ * @return      number of bytes read form \e buf
+ */
 ssize_t circbuf_write(struct file * file, const char * buf, size_t count, loff_t *off) {
-   unsigned long p;
-   char *char_pb = (char *)ccam_dma_buf;
-   D(printk("circbuf_write\n"));
-/// ************* NOTE: Never use file->f_pos in write() and read() !!!
-   p = *off;
-   if(p >= (CCAM_DMA_SIZE << 2))
-     p = (CCAM_DMA_SIZE << 2);
-   if((p + count) > (CCAM_DMA_SIZE << 2)) { // truncate count
-     count = (CCAM_DMA_SIZE << 2) - p;
-   }
-   if(count) {
-     if(copy_from_user(&char_pb[p], buf, count))
-        return -EFAULT;
-     *off += count;
-   }
-   return count;
+	void __iomem *mmio;
+	x393_afimux_status_t val;
+	int port;
+
+	unsigned long p;
+	char *char_pb = (char *)ccam_dma_buf;
+	struct circbuf_pd *priv = file->private_data;
+
+	// convert char to number
+	port = buf[0] - 0x30;
+	/*mmio = ioremap(0x40002060, 16);
+	if (!mmio) {
+		printk(KERN_DEBUG "ERROR: can not ioremap region");
+		return count;
+	}*/
+	if (init_mmio_ptr() < 0) {
+		printk(KERN_DEBUG "ERROR: can not remap IO region\n");
+	}
+	if (port >= 0 && port < 4) {
+		val = x393_afimux0_status(port);
+		//val.d32 = readl((void*) (0x40002060 + 0x4 * port));
+		//val.d32 = ioread32(mmio + 0x4 * port);
+	} else {
+		printk(KERN_DEBUG "Unrecognized port number\n");
+	}
+
+	printk(KERN_DEBUG "AFI MUX0 port: %d, AFI MUX0 offset: 0x%x, AFI MUX0 sequence number: %d\n", port, val.offset256 * 32, val.seq_num);
+	printk(KERN_DEBUG "AFI MUX0 raw value: 0x%x\n", val.d32);
+	printk(KERN_DEBUG "AFI MUX0 offset265: 0x%x, seq_num: 0x%x\n", val.offset256, val.seq_num);
+	iounmap(mmio);
+	mmio = NULL;
+	return count;
+
+	D(printk("circbuf_write\n"));
+	/// ************* NOTE: Never use file->f_pos in write() and read() !!!
+	p = *off;
+	if(p >= (CCAM_DMA_SIZE << 2))
+		p = (CCAM_DMA_SIZE << 2);
+	if((p + count) > (CCAM_DMA_SIZE << 2)) { // truncate count
+		count = (CCAM_DMA_SIZE << 2) - p;
+	}
+	if(count) {
+		if(copy_from_user(&char_pb[p], buf, count))
+			return -EFAULT;
+		*off += count;
+	}
+	return count;
 }
 
+/**
+ * @brief This function handles read operations for circbuf file
+ * @param[in]   file  pointer to <em>struct file</em>
+ * @param[in]   buf   pointer to buffer where data will be written to
+ * @param[in]   count number of bytes written to \e buf
+ * @param[in]   off   offset
+ * @return      number of bytes written to \e buf
+ */
 ssize_t circbuf_read(struct file * file, char * buf, size_t count, loff_t *off) {
   unsigned long p;
   char * char_pb = (char *) ccam_dma_buf;
+  struct circbuf_pd *priv = file->private_data;
+
+  printk(KERN_DEBUG "%s\n", __func__);
   p = *off;
   D(printk("circbuf_read pos=%d,count=%d, off=%d\r\n",p,count,off ));
   if (p >= (CCAM_DMA_SIZE<<2))  p = (CCAM_DMA_SIZE<<2);
@@ -708,6 +641,11 @@ unsigned int circbuf_poll (struct file *file, poll_table *wait) {
     return 0; // nothing ready
 }
 
+/**
+ * @brief cirbuf driver probing function
+ * @param[in]   pdev   pointer to \b platform_device structure
+ * @return      0 on success or negative error code otherwise
+ */
 static int circbuf_all_init(struct platform_device *pdev)
 {
    int res;
@@ -719,7 +657,6 @@ static int circbuf_all_init(struct platform_device *pdev)
    if (!match)
 	   return -EINVAL;
 
-   dev_info(dev, "loading circbuf driver\n");
    MDF19(printk("\n"));
    res = register_chrdev(CIRCBUF_MAJOR, "circbuf_operations", &circbuf_fops);
    if(res < 0) {
@@ -733,23 +670,11 @@ static int circbuf_all_init(struct platform_device *pdev)
 	   return -ENOMEM;
    }
 
-   // init other modules: framepars, sensor_common
-   /*res = framepars_init();
-   if (res < 0) {
-	   dev_err(dev, "unable to init framepars\n");
-	   return res;
-   }
-   res = image_acq_init();
-   if (res < 0) {
-	   dev_err(dev, "unable to init sensor_comon\n");
-	   return res;
-   }*/
-
    MDF19(printk("init_waitqueue_head()\n"));
    init_waitqueue_head(&circbuf_wait_queue);
    MDF19(printk("jpeg_htable_init()\n"));
    jpeg_htable_init ();         /// set default Huffman table, encode it for the FPGA
-   printk(CIRCBUF_DRIVER_NAME"- %d\n",CIRCBUF_MAJOR);
+   dev_info(dev, "registered MAJOR: %d\n", CIRCBUF_MAJOR);
 
    return 0;
 }
@@ -772,7 +697,6 @@ static struct platform_driver elphel393_circbuf = {
 		.remove         = circbuf_remove,
 		.driver = {
 				.name = CIRCBUF_DRIVER_NAME,
-				.owner = THIS_MODULE,
 				.of_match_table = elphel393_circbuf_of_match,
 		},
 };

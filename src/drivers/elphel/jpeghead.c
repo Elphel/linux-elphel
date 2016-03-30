@@ -1,61 +1,23 @@
-/*!***************************************************************************
-*! FILE NAME  : jpeghead.c
-*! DESCRIPTION: handleng JPEG file headers
-*!
-*! Copyright (C) 2008 Elphel, Inc
-*! -----------------------------------------------------------------------------**
-*!
-*!  This program is free software: you can redistribute it and/or modify
-*!  it under the terms of the GNU General Public License as published by
-*!  the Free Software Foundation, either version 3 of the License, or
-*!  (at your option) any later version.
-*!
-*!  This program is distributed in the hope that it will be useful,
-*!  but WITHOUT ANY WARRANTY; without even the implied warranty of
-*!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*!  GNU General Public License for more details.
-*!
-*!  You should have received a copy of the GNU General Public License
-*!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*! -----------------------------------------------------------------------------**
-*!  $Log: jpeghead.c,v $
-*!  Revision 1.1.1.1  2008/11/27 20:04:01  elphel
-*!
-*!
-*!  Revision 1.10  2008/11/03 18:43:18  elphel
-*!  8.0.alpha12 with working apps/astreamer
-*!
-*!  Revision 1.9  2008/10/29 04:18:28  elphel
-*!  v.8.0.alpha10 made a separate structure for global parameters (not related to particular frames in a frame queue)
-*!
-*!  Revision 1.8  2008/10/12 16:46:22  elphel
-*!  snapshot
-*!
-*!  Revision 1.7  2008/10/06 08:31:08  elphel
-*!  snapshot, first images
-*!
-*!  Revision 1.6  2008/09/22 22:55:48  elphel
-*!  snapshot
-*!
-*!  Revision 1.5  2008/09/19 04:37:25  elphel
-*!  snapshot
-*!
-*!  Revision 1.4  2008/09/12 20:40:12  elphel
-*!  snapshot
-*!
-*!  Revision 1.3  2008/09/12 00:23:59  elphel
-*!  removed cc353.c, cc353.h
-*!
-*!  Revision 1.2  2008/09/11 01:05:32  elphel
-*!  snapshot
-*!
-*!  Revision 1.1  2008/09/07 19:48:09  elphel
-*!  snapshot
-*!
+/** @file jpeghead.c
+ *
+ * @brief This file contains methods for JPEG tables and headers generation and
+ * JPEG files composition from data compressed by FPGA.
+ *
+ * Copyright (C) 2016 Elphel, Inc
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-
-/****************** INCLUDE FILES SECTION ***********************************/
-
 
 #include <linux/module.h>
 #include <linux/mm.h>
@@ -98,8 +60,8 @@
 //#include "cxdma.h"
 //#include "circbuf.h"
 //#include "sensor_common.h"
-#include "x313_macro.h"
 #include "exif.h"
+#include "x393_macro.h"
 
 #if ELPHEL_DEBUG
  #define   MDF(x) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__ );x ;}

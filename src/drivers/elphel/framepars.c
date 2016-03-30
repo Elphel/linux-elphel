@@ -1,3 +1,4 @@
+/** @file framepars.c */
 /*!********************************************************************************
 *! FILE NAME  : framepars.c
 *! DESCRIPTION: Handling of frame parameters, making use of FPGA i2c
@@ -207,6 +208,9 @@
 #include <linux/init.h>
 //#include <linux/autoconf.h>
 #include <linux/vmalloc.h>
+#include <linux/platform_device.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 
 //#include <asm/system.h>
 #include <asm/byteorder.h> // endians
@@ -230,7 +234,7 @@
 /// needed for lseek commands
 //#include "cxdma.h" // x313_dma_init
 //#include "cci2c.h" // to use void i2c_reset_wait(void), reset shadow static 'i2c_hardware_on'
-
+#include "x393_macro.h"
 
 /**
  * \def MDF1(x) optional debug output 
@@ -283,11 +287,11 @@
 //#define ELP_KERR(x) printk("%s:%d:%s: ERROR ",__FILE__,__LINE__,__FUNCTION__); x
 
 /**
- * \def X3X3_FRAMEPARS_DRIVER_NAME driver name to display
+ * \def FRAMEPARS_DRIVER_NAME driver name to display
  */
+#define  FRAMEPARS_DRIVER_NAME "Elphel (R) Model 393 Frame Parameters device driver"
 
-#define  X3X3_FRAMEPARS_DRIVER_NAME "Elphel (R) Model 353 Frame Parameters device driver"
-
+static const struct of_device_id elphel393_framepars_of_match[];
 static struct framepars_all_t sFrameParsAll __attribute__ ((aligned (PAGE_SIZE)));   ///< Sensor Parameters, currently 8 pages all and 2048 pages some, static struct
 unsigned long frameParsInitialized; /// set to 0 at startup, 1 after initialization that is triggered by setParsAtomic()
 #define  thisFrameNumber GLOBALPARS(G_THIS_FRAME) // Current frame number (may lag from the hardware)
@@ -332,7 +336,6 @@ int        framepars_release(struct inode *inode, struct file *filp);
 loff_t     framepars_lseek  (struct file * file, loff_t offset, int orig);
 ssize_t    framepars_write  (struct file * file, const char * buf, size_t count, loff_t *off);
 int        framepars_mmap   (struct file *file, struct vm_area_struct *vma);
-static int __init framepars_init(void);
 
 /**
  * @brief Reset hardware sequencers (i2c, command) and initialize framepars structure
@@ -1321,27 +1324,61 @@ int framepars_mmap (struct file *file, struct vm_area_struct *vma) {
 }
 
 /**
- * @brief framepars driver init
- * @return 0
+ * @brief framepars driver probing function
+ * @param[in]   pdev   pointer to \b platform_device structure
+ * @return      0 on success or negative error code otherwise
  */
-static int __init framepars_init(void) {
+static int framepars_init(struct platform_device *pdev)
+{
    int res;
+   struct device *dev = &pdev->dev;
+   const struct of_device_id *match;
+
+   /* sanity check */
+   match = of_match_device(elphel393_framepars_of_match, dev);
+   if (!match)
+	   return -EINVAL;
+
    init_framepars_ptr();
    initGlobalPars(); /// sets default debug if enabled - not anymore. Add here?
    initMultiPars(); /// just clear - needs to be called again when sensor is recognized
    frameParsInitialized=0;
+
    res = register_chrdev(FRAMEPARS_MAJOR, "framepars_operations", &framepars_fops);
    if(res < 0) {
      printk(KERN_ERR "\nframepars_init: couldn't get a major number %d.\n",FRAMEPARS_MAJOR);
      return res;
    }
    init_waitqueue_head(&framepars_wait_queue);
-   printk(X3X3_FRAMEPARS_DRIVER_NAME" - %d \n",FRAMEPARS_MAJOR);
+   dev_info(dev, "registered MAJOR: %d\n", FRAMEPARS_MAJOR);
+
    return 0;
 }
 
+static int framepars_remove(struct platform_device *pdev)
+{
+	unregister_chrdev(FRAMEPARS_MAJOR, "framepars_operations");
 
-module_init(framepars_init);
+	return 0;
+}
+
+static const struct of_device_id elphel393_framepars_of_match[] = {
+		{ .compatible = "elphel,elphel393-framepars-1.00" },
+		{ /* end of list */ }
+};
+MODULE_DEVICE_TABLE(of, elphel393_framepars_of_match);
+
+static struct platform_driver elphel393_framepars = {
+		.probe          = framepars_init,
+		.remove         = framepars_remove,
+		.driver = {
+				.name = FRAMEPARS_DRIVER_NAME,
+				.of_match_table = elphel393_framepars_of_match,
+		},
+};
+
+module_platform_driver(elphel393_framepars);
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(X3X3_FRAMEPARS_DRIVER_NAME);
