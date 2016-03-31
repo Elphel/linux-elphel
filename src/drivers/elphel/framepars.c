@@ -577,6 +577,10 @@ void updateFramePars(int frame8, struct interframe_params_t * interframe_pars) {
   } 
 }
 
+void update_frame_pars(void)
+{
+	printk(KERN_DEBUG "%s stub\n", __func__);
+}
 
 /**
  * @brief process parameters that are overdue or due in ASAP mode (not through the sequencer)

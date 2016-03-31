@@ -25,6 +25,7 @@ unsigned long get_globalParam     (int n);
 
 void          set_globalParam   (int n, unsigned long d);
 void          set_imageParamsR_all(int n, unsigned long d);
+void update_frame_pars(void);
 void updateFramePars(int frame8, struct interframe_params_t * frame_pars); /// called from ISR - advance thisFrameNumber to match hardware frame8, copy parameters as needed.
                                    /// frame8 usually is just next after thisFrameNumber
                                    /// frame_pars - pointer to structure (between frames in the frame buffer) to save a pointer to past parameters

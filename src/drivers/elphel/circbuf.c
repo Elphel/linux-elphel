@@ -139,17 +139,6 @@ wait_queue_head_t circbuf_wait_queue;
  *! CMOSCAM_MINOR_CIRCBUF, CMOSCAM_MINOR_JPEAGHEAD - just a new major
  *!========================================================================================================*/
 #define CIRCBUF_DRIVER_NAME "Elphel (R) Model 353 video buffer device driver"
-static struct file_operations circbuf_fops = {
-   owner:    THIS_MODULE,
-   llseek:   circbuf_all_lseek,
-   read:     circbuf_all_read,
-   write:    circbuf_all_write,
-   //ioctl:    circbuf_all_ioctl,
-   open:     circbuf_all_open,
-   mmap:     circbuf_all_mmap,
-   poll:     circbuf_all_poll,
-   release:  circbuf_all_release
-};
 
 // Read/write to circular buffer.  Needed to find out what Axis DMA is doing
 // also - jpeg header
@@ -514,38 +503,20 @@ MD12(int dbg_i);
  * @return      number of bytes read form \e buf
  */
 ssize_t circbuf_write(struct file * file, const char * buf, size_t count, loff_t *off) {
-	void __iomem *mmio;
-	x393_afimux_status_t val;
-	int port;
-
 	unsigned long p;
 	char *char_pb = (char *)ccam_dma_buf;
 	struct circbuf_pd *priv = file->private_data;
 
-	// convert char to number
-	port = buf[0] - 0x30;
-	/*mmio = ioremap(0x40002060, 16);
-	if (!mmio) {
-		printk(KERN_DEBUG "ERROR: can not ioremap region");
-		return count;
-	}*/
-	if (init_mmio_ptr() < 0) {
-		printk(KERN_DEBUG "ERROR: can not remap IO region\n");
+	/* debug code follows*/
+	switch (buf[0] - 0x30) {
+	case 0:
+		camera_interrupts(0);
+		break;
+	case 1:
+		camera_interrupts(1);
+		break;
 	}
-	if (port >= 0 && port < 4) {
-		val = x393_afimux0_status(port);
-		//val.d32 = readl((void*) (0x40002060 + 0x4 * port));
-		//val.d32 = ioread32(mmio + 0x4 * port);
-	} else {
-		printk(KERN_DEBUG "Unrecognized port number\n");
-	}
-
-	printk(KERN_DEBUG "AFI MUX0 port: %d, AFI MUX0 offset: 0x%x, AFI MUX0 sequence number: %d\n", port, val.offset256 * 32, val.seq_num);
-	printk(KERN_DEBUG "AFI MUX0 raw value: 0x%x\n", val.d32);
-	printk(KERN_DEBUG "AFI MUX0 offset265: 0x%x, seq_num: 0x%x\n", val.offset256, val.seq_num);
-	iounmap(mmio);
-	mmio = NULL;
-	return count;
+	/* debug code end */
 
 	D(printk("circbuf_write\n"));
 	/// ************* NOTE: Never use file->f_pos in write() and read() !!!
@@ -641,6 +612,18 @@ unsigned int circbuf_poll (struct file *file, poll_table *wait) {
     return 0; // nothing ready
 }
 
+static struct file_operations circbuf_fops = {
+		.owner          = THIS_MODULE,
+		.llseek         = circbuf_all_lseek,
+		.read           = circbuf_all_read,
+		.write          = circbuf_all_write,
+		//ioctl:    circbuf_all_ioctl,
+		.open           = circbuf_all_open,
+		.mmap           = circbuf_all_mmap,
+		.poll           = circbuf_all_poll,
+		.release        = circbuf_all_release
+};
+
 /**
  * @brief cirbuf driver probing function
  * @param[in]   pdev   pointer to \b platform_device structure
@@ -660,8 +643,8 @@ static int circbuf_all_init(struct platform_device *pdev)
    MDF19(printk("\n"));
    res = register_chrdev(CIRCBUF_MAJOR, "circbuf_operations", &circbuf_fops);
    if(res < 0) {
-     printk(KERN_ERR "\ncircbuf_all_init: couldn't get a major number %d.\n",CIRCBUF_MAJOR);
-     return res;
+	   dev_err(dev, "couldn't get a major number %d.\n", CIRCBUF_MAJOR);
+	   return res;
    }
 
    res = init_ccam_dma_buf_ptr(pdev);
@@ -675,6 +658,12 @@ static int circbuf_all_init(struct platform_device *pdev)
    MDF19(printk("jpeg_htable_init()\n"));
    jpeg_htable_init ();         /// set default Huffman table, encode it for the FPGA
    dev_info(dev, "registered MAJOR: %d\n", CIRCBUF_MAJOR);
+
+   res = image_acq_init(pdev);
+   if (res < 0) {
+	   dev_err(dev, "unable to initialize sensor_common module\n");
+	   return res;
+   }
 
    return 0;
 }

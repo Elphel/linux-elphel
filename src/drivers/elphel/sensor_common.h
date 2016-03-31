@@ -45,4 +45,6 @@ struct sensorproc_t * copy_sensorproc (struct sensorproc_t * copy);
 	#define PROFILE_NEXT(x) {}
 #endif
 
+int image_acq_init(struct platform_device *pdev);
+
 #endif
