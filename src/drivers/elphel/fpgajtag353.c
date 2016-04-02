@@ -70,7 +70,7 @@ To test that I'll use 256K static buffer, copy all the bitstream there,
 disable interrupts and do the programming.
 No debug with printk ... 
 */
-
+#undef DEBUG
 /****************** INCLUDE FILES SECTION ***********************************/
 
 #include <linux/module.h>
@@ -84,6 +84,7 @@ No debug with printk ...
 //#include <linux/poll.h>
 #include <linux/init.h>
 #include <linux/delay.h>
+#include <linux/platform_device.h>
 
 //#include <linux/interrupt.h>
 //#include <linux/spinlock.h>
@@ -349,7 +350,8 @@ static int fpga_jtag_open(struct inode *inode, struct file *filp) {
    int p = MINOR(inode->i_rdev);
    int chn= JTAG_channel(p);
    //reg_intr_vect_rw_mask intr_mask;
-   D(printk("fpga_jtag_open: minor=%x, channel=%x, buf=%p\r\n",p,chn,bitstream_data ));
+   //D(printk("fpga_jtag_open: minor=%x, channel=%x, buf=%p\r\n",p,chn,bitstream_data ));
+   dev_dbg(NULL, "fpga_jtag_open: minor=%x, channel=%x, buf=%p\r\n",p ,chn, bitstream_data);
    switch ( p ) {
      case FPGA_JTAG_RESET_MINOR : // same as RAW
        for (i=1; i<JTAG_NCHANNELS; i++) JTAG_channels[i].mode=JTAG_MODE_CLOSED;
@@ -414,14 +416,17 @@ static int fpga_jtag_open(struct inode *inode, struct file *filp) {
        break;
      default: return -EINVAL;
    }
-   D(printk("fpga_jtag_open: chn=%x, JTAG_channels[chn].sizew=%x, JTAG_channels[chn].sizer=%x\r\n", chn,JTAG_channels[chn].sizew, JTAG_channels[chn].sizer) );
-   D(printk("fpga_jtag_open: chn=%x, JTAG_channels[chn].bitsw=%x, JTAG_channels[chn].bitsr=%x\r\n", chn,JTAG_channels[chn].bitsw, JTAG_channels[chn].bitsr) );
+   //D(printk("fpga_jtag_open: chn=%x, JTAG_channels[chn].sizew=%x, JTAG_channels[chn].sizer=%x\r\n", chn,JTAG_channels[chn].sizew, JTAG_channels[chn].sizer) );
+   //D(printk("fpga_jtag_open: chn=%x, JTAG_channels[chn].bitsw=%x, JTAG_channels[chn].bitsr=%x\r\n", chn,JTAG_channels[chn].bitsw, JTAG_channels[chn].bitsr) );
+   dev_dbg(NULL, "fpga_jtag_open: chn=%x, JTAG_channels[chn].sizew=%x, JTAG_channels[chn].sizer=%x\r\n", chn, JTAG_channels[chn].sizew, JTAG_channels[chn].sizer);
+   dev_dbg(NULL, "fpga_jtag_open: chn=%x, JTAG_channels[chn].bitsw=%x, JTAG_channels[chn].bitsr=%x\r\n", chn, JTAG_channels[chn].bitsw, JTAG_channels[chn].bitsr);
    JTAG_channels[chn].wdirty=0;
 //   inode->i_size=fjtag_bytesize(p);
    inode->i_size=JTAG_channels[chn].sizer;
    minors[p]=p;
    filp->private_data = &minors[p];
-   D(printk("fpga_jtag_open: inode->i_size=%x, chn=%x\r\n", (int) inode->i_size, chn) );
+   //D(printk("fpga_jtag_open: inode->i_size=%x, chn=%x\r\n", (int) inode->i_size, chn) );
+   dev_dbg(NULL, "fpga_jtag_open: inode->i_size=%x, chn=%x\r\n", (int) inode->i_size, chn);
    return 0;
 }
 
@@ -432,7 +437,8 @@ static int fpga_jtag_release(struct inode *inode, struct file *filp) {
    int p = MINOR(inode->i_rdev);
    int chn= JTAG_channel(p);
 //   reg_intr_vect_rw_mask intr_mask;
-  D(printk("fpga_jtag_release: p=%x,chn=%x,  wp=0x%x, rp=0x%x\r\n",p,chn, JTAG_channels[chn].wp, JTAG_channels[chn].rp));
+  //D(printk("fpga_jtag_release: p=%x,chn=%x,  wp=0x%x, rp=0x%x\r\n",p,chn, JTAG_channels[chn].wp, JTAG_channels[chn].rp));
+  dev_dbg(NULL, "fpga_jtag_release: p=%x,chn=%x,  wp=0x%x, rp=0x%x\r\n", p, chn, JTAG_channels[chn].wp, JTAG_channels[chn].rp);
    switch ( p ) {
      case FPGA_JTAG_RESET_MINOR : // same as RAW - do nothing, raw code should do it on it's own
        break;
@@ -461,7 +467,8 @@ static int fpga_jtag_release(struct inode *inode, struct file *filp) {
    }
    minors[p]=0;
    JTAG_channels[chn].mode=JTAG_MODE_CLOSED;
-   D(printk("fpga_jtag_release:  done\r\n"));
+   //D(printk("fpga_jtag_release:  done\r\n"));
+   dev_dbg(NULL, "fpga_jtag_release:  done\r\n");
    return (res<0)?res:0;
 }
 
@@ -473,7 +480,8 @@ static ssize_t fpga_jtag_write(struct file * file, const char * buf, size_t coun
    int p = ((int *)file->private_data)[0];
    int chn= JTAG_channel(p);
    size_t size = JTAG_channels[chn].sizew;
-  D(printk("fpga_jtag_write: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, wp=%lx,size=0x%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].wp, (int) size));
+  //D(printk("fpga_jtag_write: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, wp=%lx,size=0x%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].wp, (int) size));
+  dev_dbg(NULL, "fpga_jtag_write: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, wp=%lx,size=0x%x\r\n", p, chn, (long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].wp, (int) size);
 
    switch (p) {
      case FPGA_JTAG_RESET_MINOR : // same as RAW - do nothing, raw code should do it on it's own
@@ -518,7 +526,8 @@ static ssize_t fpga_jtag_write(struct file * file, const char * buf, size_t coun
        break;
      default:               return -EINVAL;
    }
- D(printk("fpga_jtag_write end: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, wp=%lx,size=0x%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].wp, (int) size));
+ //D(printk("fpga_jtag_write end: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, wp=%lx,size=0x%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].wp, (int) size));
+ dev_dbg(NULL, "fpga_jtag_write end: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, wp=%lx,size=0x%x\r\n", p, chn, (long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].wp, (int) size);
    return count;
 }
 
@@ -530,7 +539,8 @@ ssize_t fpga_jtag_read(struct file * file, char * buf, size_t count, loff_t *off
    size_t size = JTAG_channels[chn].sizer;
    int size_av;  // available data
  //  D(printk("fpga_jtag_read from 0x%x, count=0x%x, size=0x%x\n", (int) *off, (int) count, (int) size));
- D(printk("fpga_jtag_read: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size));
+ //D(printk("fpga_jtag_read: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size));
+ dev_dbg(NULL, "fpga_jtag_read: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x\r\n", p, chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size);
    switch (p) {
      case FPGA_JTAG_RESET_MINOR : // same as RAW - do nothing, raw code should do it on it's own
        size_av=(raw_fifo_r_wp >= raw_fifo_r_rp)?(raw_fifo_r_wp - raw_fifo_r_rp):(size+raw_fifo_r_wp - raw_fifo_r_rp);
@@ -553,7 +563,8 @@ ssize_t fpga_jtag_read(struct file * file, char * buf, size_t count, loff_t *off
        }
        if (*off > size) return -EFAULT;
        if ((*off + count) > size) count= (size - *off);
-D(printk("fpga_jtag_read_01: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size)); // D(printk("count= 0x%x, pos= 0x%x\n", (int) count, (int)*off));
+//D(printk("fpga_jtag_read_01: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size)); // D(printk("count= 0x%x, pos= 0x%x\n", (int) count, (int)*off));
+dev_dbg(NULL, "fpga_jtag_read_01: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x\r\n", p, chn, (long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size);
 
        if (copy_to_user(buf,&(JTAG_channels[chn].dbuf[*off]),count)) return -EFAULT;
        *off+=count;
@@ -572,7 +583,8 @@ D(printk("fpga_jtag_read_01: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, r
        }
        if (*off > size) return -EFAULT;
        if ((*off + count) > size) count= (size - *off);
-D(printk("fpga_jtag_read_01: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size)); // D(printk("count= 0x%x, pos= 0x%x\n", (int) count, (int)*off));
+//D(printk("fpga_jtag_read_01: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size)); // D(printk("count= 0x%x, pos= 0x%x\n", (int) count, (int)*off));
+dev_dbg(NULL, "fpga_jtag_read_01: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x\r\n", p, chn, (long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size);
 //       if (*off < JTAG_channels[chn].rp) {
 //         JTAG_EXTEST (chn, JTAG_channels[chn].dbuf, JTAG_channels[chn].bitsw); // writing last byte causes EXTEST to fill in boundary scan register
 //         JTAG_channels[chn].wdirty=0;
@@ -587,7 +599,8 @@ D(printk("fpga_jtag_read_01: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, r
        break;
      default:               return -EINVAL;
    }
-D(printk("fpga_jtag_read_end: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x, mode=%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size, JTAG_channels[chn].mode)); // D(printk("count= 0x%x, pos= 0x%x\n", (int) count, (int)*off));
+//D(printk("fpga_jtag_read_end: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x, mode=%x\r\n",p,chn,(long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size, JTAG_channels[chn].mode)); // D(printk("count= 0x%x, pos= 0x%x\n", (int) count, (int)*off));
+dev_dbg(NULL, "fpga_jtag_read_end: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, rp=%lx,size=0x%x, mode=%x\r\n", p, chn, (long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].rp, (int) size, JTAG_channels[chn].mode);
   return count;
 }
 
@@ -687,6 +700,7 @@ inline u32 prep_sensio_status(int sens_num)
 	stat_ctrl.seq_num = stat.seq_num + 1;
 	stat_ctrl.mode = 1;
 	set_x393_sensio_status_cntrl(stat_ctrl, sens_num);
+	dev_dbg(NULL, "set seq_num = %d, chn = %d", stat_ctrl.seq_num, sens_num);
 
 	return stat_ctrl.seq_num;
 }
@@ -697,10 +711,12 @@ inline int wait_sensio_status(int chn, u32 seq_num)
 	int ret = 0;
 	x393_status_sens_io_t stat;
 
+	dev_dbg(NULL, "waiting for seq_num = %d, chn = %d", seq_num, chn);
 	for (i = 0; i < 10; i++) {
 		stat = x393_sensio_status(sens_num);
 		if (stat.seq_num == seq_num) {
 			ret = -1;
+			dev_dbg(NULL, "seq_num = %d received after %d wait cycles", seq_num, i);
 			break;
 		}
 	}
@@ -865,7 +881,7 @@ int jtag_send (int chn, int tms, int len, int d) {
 
 			/* read TDO before TCK pulse */
 			stat = x393_sensio_status(sens_num);
-			r = (r << 1) + stat.xfpgatdo & 1;
+			r = (r << 1) + (stat.xfpgatdo & 1);
 
 			/* TCK = 0 - just a delay; is it really needed? */
 			data.tck = 0;
@@ -1017,7 +1033,7 @@ int jtag_write_bits (int chn,
 
 					/* read TDO before TCK pulse */
 					stat = x393_sensio_status(sens_num);
-					r = (r << 1) + stat.xfpgatdo & 1;
+					r = (r << 1) + (stat.xfpgatdo & 1);
 
 					data.tck = 0; data.tck_set = 1;
 		seq_num = prep_sensio_status(sens_num);
@@ -1360,6 +1376,7 @@ static int __init fpga_jtag_init(void) {
    for (i=0;i<=FPGA_JTAG_MAXMINOR;i++) minors[i]=0;
    initPortC();
 
+   dev_dbg(NULL, "elphel test %s: MAJOR %d", FPGA_JTAG_DRIVER_NAME, FPGA_JTAG_MAJOR);
    res = init_mmio_ptr();
    if (res < 0)
 	   return -ENOMEM;
@@ -1367,7 +1384,12 @@ static int __init fpga_jtag_init(void) {
 	return 0;
 }
 
-
+static void __exit fpga_jtag_exit(void)
+{
+	unregister_chrdev(FPGA_JTAG_MAJOR, FPGA_JTAG_DRIVER_NAME);
+	dev_dbg(NULL, "unregistering driver");
+}
+module_exit(fpga_jtag_exit);
 
 /* this makes sure that fpga_init is called during boot */
 
