@@ -168,5 +168,6 @@ obj-$(CONFIG_ANDROID)		+= android/
 
 obj-$(CONFIG_ELPHEL393)		+= elphel/
 obj-$(CONFIG_ELPHELDRVONMICROZED)	+= elphel/
+obj-$(CONFIG_ELPHEL393_EXTERNAL)       += elphel/
 
 obj-y				+= net/
