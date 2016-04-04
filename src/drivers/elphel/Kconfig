@@ -20,4 +20,11 @@ config ELPHEL393_INIT
 		default y
 		help
 			If unsure, say Y.
+			
+config ELPHEL393_EXTERNAL
+        tristate "Compile some Elphel drivers as external modules"
+        default m
+        help
+            If unsure, say Y.
+			
 endmenu  

@@ -23,9 +23,16 @@
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
+#include <linux/sysfs.h>
 #include "ahci.h"
 
 #define DRV_NAME "elphel-ahci"
+/*
+ * FPGA bitstream control address and bit mask. These are used to check whether
+ * bitstream is loaded or not.
+ */
+#define BITSTREAM_CTRL_ADDR	0xf800700c
+#define BITSTREAM_CTRL_BIT	0x4
 
 /* Property names from device tree, these are specific for the controller */
 #define PROP_NAME_CLB_OFFS "clb_offs"
@@ -35,12 +42,57 @@ static struct ata_port_operations ahci_elphel_ops;
 static const struct ata_port_info ahci_elphel_port_info;
 static struct scsi_host_template ahci_platform_sht;
 static const struct of_device_id ahci_elphel_of_match[];
+static const struct attribute_group dev_attr_root_group;
+
+static bool load_driver = false;
 
 struct elphel_ahci_priv {
 	u32 clb_offs;
 	u32 fb_offs;
 	u32 base_addr;
 };
+
+static ssize_t set_load_flag(struct device *dev, struct device_attribute *attr,
+		const char *buff, size_t buff_sz)
+{
+	load_driver = true;
+
+	return buff_sz;
+}
+
+static int bitstream_loaded(u32 *ptr)
+{
+	u32 val = ioread32(ptr);
+
+	if (val & BITSTREAM_CTRL_BIT)
+		return 1;
+	else
+		return 0;
+}
+
+static void elphel_defer_load(struct device *dev)
+{
+	bool check_flag = true;
+	u32 *ctrl_ptr = ioremap_nocache(BITSTREAM_CTRL_ADDR, 4);
+
+	dev_info(dev, "AHCI driver loading is deferred. Load bitstream and write 1 into "
+			"/sys/devices/soc0/amba@0/80000000.elphel-ahci/load_module to continue\n");
+	while (check_flag) {
+		if (load_driver) {
+			if (bitstream_loaded(ctrl_ptr)) {
+				check_flag = false;
+			} else {
+				dev_err(dev, "FPGA bitstream is not loaded or bitstream "
+						"does not contain AHCI controller\n");
+				load_driver = false;
+			}
+		} else {
+			msleep(1000);
+		}
+	}
+	load_driver = false;
+	iounmap(ctrl_ptr);
+}
 
 // What about port_stop and freeing/unmapping ?
 // Or at least check if it is re-started and memory is already allocated/mapped
@@ -132,6 +184,13 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	const struct of_device_id *match;
 	unsigned int reg_val;
 
+	if (&dev->kobj) {
+		ret = sysfs_create_group(&dev->kobj, &dev_attr_root_group);
+		if (ret < 0)
+			return ret;
+	}
+	elphel_defer_load(dev);
+
 	dev_info(&pdev->dev, "probing Elphel AHCI driver");
 
 	dpriv = devm_kzalloc(dev, sizeof(struct elphel_ahci_priv), GFP_KERNEL);
@@ -166,6 +225,7 @@ static int elphel_drv_probe(struct platform_device *pdev)
 static int elphel_drv_remove(struct platform_device *pdev)
 {
 	dev_info(&pdev->dev, "removing Elphel AHCI driver");
+	sysfs_remove_group(&pdev->dev.kobj, &dev_attr_root_group);
 	ata_platform_remove_one(pdev);
 
 	return 0;
@@ -230,6 +290,16 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 	dma_sync_single_for_device(&qc->dev->tdev, pp->cmd_tbl_dma,
 			AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
 }
+
+static DEVICE_ATTR(load_module, S_IWUSR | S_IWGRP, NULL, set_load_flag);
+static struct attribute *root_dev_attrs[] = {
+		&dev_attr_load_module.attr,
+		NULL
+};
+static const struct attribute_group dev_attr_root_group = {
+		.attrs			= root_dev_attrs,
+		.name			= NULL,
+};
 
 static struct ata_port_operations ahci_elphel_ops = {
 		.inherits		= &ahci_ops,
