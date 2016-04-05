@@ -16,7 +16,7 @@ int  camSeqGetJPEG_wp(void);
 int  camSeqGetJPEG_rp(void);
 void camSeqSetJPEG_rp(int p);
 ///CIRCBUF macros
-//extern unsigned long  * ccam_dma_buf_ptr;
+extern unsigned long  * ccam_dma_buf_ptr;
 
 /* move these lines to x313_macro.h
 #define X313_LENGTH_MASK      0xff000000
@@ -46,5 +46,10 @@ struct sensorproc_t * copy_sensorproc (struct sensorproc_t * copy);
 #endif
 
 int image_acq_init(struct platform_device *pdev);
+
+// indicate that this channel need attention; set in interrupt handler, reset in bottom half
+#define SENS_FLAG_IRQ   0x01
+// got 0x20 more than start of the new image
+#define OFFSET_X40      0x40
 
 #endif

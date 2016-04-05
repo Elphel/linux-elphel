@@ -25,7 +25,6 @@
  */
 
 //copied from cxi2c.c - TODO:remove unneeded
-
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -123,10 +122,11 @@
 struct jpeg_ptr_t {
 	volatile int jpeg_wp;
 	volatile int jpeg_rp;
-	int          fpga_cntr_prev;
+	volatile int fpga_cntr_prev;
 	unsigned int irq_num_comp;
 	unsigned int irq_num_sens;
 	unsigned int chn_num;
+	volatile unsigned int flags;
 };
 
 /**@struct image_acq_pd_t
@@ -245,20 +245,22 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 {
 	int xferred;                                           /// number of 32-byte chunks transferred since compressor was reset
 	x393_afimux_status_t stat = x393_afimux0_status(jptr->chn_num);
-	int circbuf_size = get_globalParam(G_CIRCBUFSIZE) >> 2;
+	//int circbuf_size = get_globalParam(G_CIRCBUFSIZE) >> 2;
+	int circbuf_size = get_globalParam(G_CIRCBUFSIZE);
 
 	xferred = stat.offset256 - jptr->fpga_cntr_prev;
 	if (xferred == 0)
 		return 0;                    /// no advance (compressor was off?)
 
+	jptr->flags |= SENS_FLAG_IRQ;
 	jptr->fpga_cntr_prev = stat.offset256;
-	if (xferred < 0)
+	/*if (xferred < 0)
 		// 26 bit hardware counter rolled over
-		xferred += (1 << OFFSET256_CNTR_RES);
+		xferred += (1 << OFFSET256_CNTR_RES);*/
 	jptr->jpeg_wp += xferred * CHUNK_SIZE;
 	//JPEG_wp+= (xferred << 3); //! counts in 32-byte ( 8 of 32bit words) chunks
-	if (jptr->jpeg_wp > circbuf_size)
-		jptr->jpeg_wp -= circbuf_size;
+	/*if (jptr->jpeg_wp > circbuf_size)
+		jptr->jpeg_wp -= circbuf_size;*/
 
 	return 1;
 }
@@ -267,18 +269,24 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
  * @brief Calculate/update CIRCBUF parameters available after compressor interrupt
  */
 inline void update_irq_circbuf(struct jpeg_ptr_t *jptr) {
-     set_globalParam (G_CIRCBUFWP, JPEG_wp<<2);
+	/*set_globalParam (G_CIRCBUFWP, JPEG_wp<<2);
      set_globalParam (G_FREECIRCBUF, (((get_globalParam (G_CIRCBUFRP) <= get_globalParam (G_CIRCBUFWP))? get_globalParam (G_CIRCBUFSIZE):0)+ 
-                                     get_globalParam (G_CIRCBUFRP)) -    get_globalParam (G_CIRCBUFWP));
+                                     get_globalParam (G_CIRCBUFRP)) -    get_globalParam (G_CIRCBUFWP));*/
+	/* the concept of global parameters will be changed, use one channel only for testing */
+	set_globalParam(G_CIRCBUFWP, jptr->jpeg_wp);
+	set_globalParam (G_FREECIRCBUF, (((get_globalParam (G_CIRCBUFRP) <= get_globalParam (G_CIRCBUFWP))? get_globalParam (G_CIRCBUFSIZE):0)+
+			get_globalParam (G_CIRCBUFRP)) -    get_globalParam (G_CIRCBUFWP));
 }
 
 /**
  * @brief Calculate/update focus parameters available after compressor interrupt
  * NOTE: currently global (latest), not per-frame
  */
-inline void updateIRQFocus(void) {
+inline void updateIRQFocus(struct jpeg_ptr_t *jptr)
+{
     //set_globalParam     (G_GFOCUS_VALUE, X313_HIGHFREQ);
     //set_imageParamsThis (P_FOCUS_VALUE, X313_HIGHFREQ);
+	u32 high_freq = x393_cmprs_highfreq(jptr->chn_num);
 }
 
 
@@ -287,7 +295,7 @@ inline void updateIRQFocus(void) {
  * @brief Locate area between frames in the circular buffer
  * @return pointer to interframe parameters structure
  */
-inline struct interframe_params_t* updateIRQ_interframe(void) {
+inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr) {
    int circbuf_size=get_globalParam (G_CIRCBUFSIZE)>>2;
    int alen = JPEG_wp-9; if (alen<0) alen+=circbuf_size;
    int jpeg_len=ccam_dma_buf_ptr[alen] & 0xffffff;
@@ -448,9 +456,9 @@ static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
 	x393_cmprs_interrupts_t irq_ctrl;
 
 	if (updateIRQJPEG_wp(priv)) {
-		/*update_irq_circbuf(priv);
-		updateIRQFocus();
-		interframe = updateIRQ_interframe();
+		update_irq_circbuf(priv);
+		updateIRQFocus(priv);
+		/*interframe = updateIRQ_interframe();
 		updateIRQ_Exif(interframe);
 		wake_up_interruptible(&circbuf_wait_queue);*/
 	}
@@ -496,7 +504,35 @@ void tasklet_fpga_function(unsigned long arg) {
   unsigned long * hash32p=&(framepars[(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]);
   unsigned long * framep= &(framepars[(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
 
-  dump_priv_data(0);
+  int i, j;
+  int last_image_chunk;
+  int len32;
+  int circbuf_size = get_globalParam(G_CIRCBUFSIZE);
+  unsigned long *buf_ptr;
+  printk(KERN_DEBUG "%s: get_globalParam(G_CIRCBUFSIZE) = %d", __func__, circbuf_size);
+
+  //dump_priv_data(0);
+  for (i = 0; i< IMAGE_CHN_NUM; i++) {
+	  printk(KERN_DEBUG "%s: checking channel %d \n", __func__, i);
+	  if (image_acq_priv.jpeg_ptr[i].flags & SENS_FLAG_IRQ) {
+		  dump_priv_data(i);
+		  last_image_chunk = image_acq_priv.jpeg_ptr[i].jpeg_wp - OFFSET_X40;
+		  if (last_image_chunk < 0)
+			  last_image_chunk += circbuf_size;
+		  len32 = ccam_dma_buf_ptr[(last_image_chunk + (0x20 - CCAM_MMAP_META_LENGTH) + 0x100000) >> 2];
+		  buf_ptr = &ccam_dma_buf_ptr[(last_image_chunk + 0x100000) >> 2];
+		  for (j = 0; j < (OFFSET_X40 >> 2); j++) {
+			  printk(KERN_DEBUG "0x%x: 0x%x\n", last_image_chunk + j, buf_ptr[j]);
+		  }
+		  printk(KERN_DEBUG "circbuffer start address: 0x%x", ccam_dma_buf_ptr);
+		  printk(KERN_DEBUG "last_image_chunk: 0x%x\n", last_image_chunk);
+		  dev_dbg(NULL, "0x40 bytes of mem dump from last image chunk:\n");
+		  print_hex_dump_bytes("", DUMP_PREFIX_NONE, (void *)buf_ptr, OFFSET_X40);
+		  printk(KERN_DEBUG "%s: reading image length, channel %d; len32 0x%x\n",__func__, i, len32);
+		  image_acq_priv.jpeg_ptr[i].flags &= (~SENS_FLAG_IRQ) & 0xffffffff;
+	  }
+  }
+
 
 #ifdef TEST_DISABLE_CODE
 /// Time is out?

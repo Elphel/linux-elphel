@@ -127,6 +127,9 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev) {
 	}
 	ccam_dma_buf = ccam_dma_buf_ptr;
 
+	// set circbuf size in bytes
+	set_globalParam(G_CIRCBUFSIZE, pElphel_buf->size * PAGE_SIZE);
+
     return 0;
 }
 //extern struct interframe_params_t frame_params; // cc353.c
