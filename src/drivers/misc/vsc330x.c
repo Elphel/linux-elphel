@@ -301,7 +301,7 @@ static int make_group (struct device *dev, const char * name, int port_mask, mod
 {
 	int retval=-1;
 	int port,index=0,num_regs;
-	struct attribute **pattrs; /* array of pointers to attibutes */
+	struct attribute **pattrs; /* array of pointers to attributes */
 	struct device_attribute *dev_attrs;
 	struct attribute_group *attr_group;
 	for (port=0,num_regs=1;port<MAX_PORTS;port++) if (port_mask & (1<<port)) num_regs++; /* 1 extra - used for all ports */
