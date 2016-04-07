@@ -223,8 +223,8 @@ static struct file_operations fpga_jtag_fops = {
 //static int sens_num = 0;
 
 // internal functions
-loff_t fjtag_bitsize (int minor);
-loff_t fjtag_bytesize (int minor);
+//loff_t fjtag_bitsize (int minor);
+//loff_t fjtag_bytesize (int minor);
 int JTAG_channel(int minor);
 void initPortC(void);
 void set_pgm_mode (int chn, int en);
@@ -484,7 +484,7 @@ static int fpga_jtag_release(struct inode *inode, struct file *filp) {
      case FPGA_AJTAG_BOUNDARY_MINOR :
 // "dirty"? Send to JTAG
        if (JTAG_channels[chn].wp >0) {
-		   D(printk("fpga_jtag_release(), JTAG_channels[%d].wp = 0x%x",chn,JTAG_channels[chn].wp));
+//		   D(printk("fpga_jtag_release(), JTAG_channels[%d].wp = 0x%x",chn,JTAG_channels[chn].wp));
     	   JTAG_EXTEST (chn, JTAG_channels[chn].dbuf, JTAG_channels[chn].bitsw); // size in bits
        }
        JTAG_resetChannel (chn);
@@ -544,7 +544,7 @@ static ssize_t fpga_jtag_write(struct file * file, const char * buf, size_t coun
        if (*off > size) return -EFAULT;
        if ((*off + count) > size) count= (size - *off);
        if (*off < JTAG_channels[chn].wp) {
- 	     D(printk("fpga_jtag_write(), JTAG_channels[%d].wp = 0x%x",chn, JTAG_channels[chn].wp));
+// 	     D(printk("fpga_jtag_write(), JTAG_channels[%d].wp = 0x%x",chn, JTAG_channels[chn].wp));
          JTAG_EXTEST (chn, JTAG_channels[chn].dbuf, JTAG_channels[chn].bitsw); // writing "before" causes EXTEST to fill in boundary scan register
          JTAG_channels[chn].wdirty=0;
        }
@@ -560,7 +560,7 @@ static ssize_t fpga_jtag_write(struct file * file, const char * buf, size_t coun
      default:               return -EINVAL;
    }
  dev_dbg(NULL, "fpga_jtag_write end: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, wp=%lx,size=0x%x\r\n", p, chn, (long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].wp, (int) size);
- D(printk("fpga_jtag_write end: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, wp=%lx,size=0x%x\r\n", p, chn, (long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].wp, (int) size));
+ //D(printk("fpga_jtag_write end: p=%x,chn=%x, buf address=%lx count=%lx *offs=%lx, wp=%lx,size=0x%x\r\n", p, chn, (long) buf, (long) count, (long) *off, (long)JTAG_channels[chn].wp, (int) size));
    return count;
 }
 
@@ -756,11 +756,34 @@ inline x393_status_sens_io_t wait_sensio_status(int chn, u32 seq_num) // reducin
 	return stat;
 }
 
+inline u32 read_tdo(int sens_num)
+{
+	x393_status_sens_io_t stat;
+	x393_status_ctrl_t stat_ctrl;
+    int i;
+	stat_ctrl.d32 = 0;
+	stat = x393_sensio_status(sens_num);
+	stat_ctrl.seq_num = stat.seq_num + 1;
+	stat_ctrl.mode = 1;
+	set_x393_sensio_status_cntrl(stat_ctrl, sens_num);
+	for (i = 0; i < 10; i++) {
+		stat = x393_sensio_status(sens_num & 3); // sens_num);
+		if (likely(stat.seq_num == stat_ctrl.seq_num)) {
+			return stat.xfpgatdo;
+		}
+	}
+	dev_err(NULL,"read_tdo(%d): failed to  get expected seq_num in 10 cycles, expected = 0x%x, got 0x%x\n",sens_num,stat_ctrl.seq_num, stat.seq_num);
+	return stat.xfpgatdo;
+}
+
+
+
+
 // set FPGA in programming/JTAG mode (only for sensor board)
 // NOP for the main board FPGA configuration
 void set_pgm_mode (int chn, int en) {
 	u32 seq_num;
-	x393_sensio_jpag_t data;
+	x393_sensio_jtag_t data;
 	dev_dbg(NULL, "set_pgm_mode (%d,%d)\n",chn,en);
 
 	switch (chn >> 2) {
@@ -768,16 +791,15 @@ void set_pgm_mode (int chn, int en) {
 		//port_csp0_addr[X313_WA_SENSFPGA] = (en ? (3 << SFPGA_PGMEN_BIT): (SFPGA_RD_SENSPGMPIN | (2 << SFPGA_PGMEN_BIT))) | (2  << SFPGA_TCK_BIT); // turn off TCK (if not turned off already)
 
 		/* ? SFPGA_RD_SENSPGMPIN */
+		data.d32 = 0;
 		data.pgmen = (en) ? 1 : 0;
 		data.pgmen_set = 1;
 		data.tck = 0;
 		data.tck_set = 1;
 		/* check status register */
-//		seq_num = prep_sensio_status(sens_num);
 		x393_sensio_jtag(data, chn & 3); // sens_num);
 		/* wait for status register update */
-//		wait_sensio_status(sens_num, seq_num);
-//		x393_sensio_jtag(data, sens_num);
+		wait_sensio_status(chn & 3, prep_sensio_status(chn & 3)) ; // Not needed here
 		break;
 	}
 	udelay (2);
@@ -785,7 +807,7 @@ void set_pgm_mode (int chn, int en) {
 
 void set_pgm (int chn, int pgmon) {
 	u32 seq_num;
-	x393_sensio_jpag_t data;
+	x393_sensio_jtag_t data;
 	dev_dbg(NULL, "set_pgm (%d,%d)\n",chn,pgmon);
 
 	switch (chn >> 2) {
@@ -800,9 +822,7 @@ void set_pgm (int chn, int pgmon) {
 		//port_csp0_addr[X313_WA_SENSFPGA] = (2 | (pgmon & 1)) << SFPGA_PROG_BIT;
 		data.prog= pgmon & 1;
 		data.prog_set = 1;
-//		seq_num = prep_sensio_status(sens_num);
 		x393_sensio_jtag(data, chn >> 2); // sens_num);
-//		wait_sensio_status(sens_num, seq_num);
 		break;
 	case JTAG_AUX_FPGA:
 		break;
@@ -812,9 +832,8 @@ void set_pgm (int chn, int pgmon) {
 
 
 int read_done (int chn) {
-	u32 seq_num;
 	x393_status_sens_io_t stat;
-	x393_sensio_jpag_t data;
+	x393_sensio_jtag_t data;
 
 	switch (chn >> 2) {
 #ifdef TEST_DISABLE_CODE
@@ -825,9 +844,8 @@ int read_done (int chn) {
 		//port_csp0_addr[X313_WA_SENSFPGA] = SFPGA_RD_DONE;
 		//udelay (1);
 		//return (port_csp0_addr[X313__RA__SENSFPGA] >> SFPGA_RD_BIT) & 1 ;
-		seq_num = prep_sensio_status(chn & 3) ; // sens_num);
-//		stat = x393_sensio_status(chn & 3) ; // sens_num);
-		stat = wait_sensio_status(chn & 3, seq_num) ; // sens_num);
+
+		stat = wait_sensio_status(chn & 3, prep_sensio_status(chn & 3)) ;
 		return stat.xfpgadone;
 	case JTAG_AUX_FPGA:
 		return 0;
@@ -838,7 +856,7 @@ int read_done (int chn) {
 //  send 1..8 bits through JTAG 
 int jtag_send (int chn, int tms, int len, int d) {
 	int sens_num = chn & 3;
-	x393_sensio_jpag_t data;
+	x393_sensio_jtag_t data;
 	x393_status_sens_io_t stat;
 	u32 seq_num;
 	int i; //,m;
@@ -882,11 +900,12 @@ int jtag_send (int chn, int tms, int len, int d) {
 		}
 		port_csp0_addr[X313_WA_SENSFPGA] = (2  << SFPGA_TCK_BIT); // TCK=0
 #endif /* TEST_DISABLE_CODE */
+		data.d32 =     0;
 		data.tck_set = 1;
 		data.tms_set = 1;
 		data.tdi_set = 1;
 
-		printk("jtag_send(0x%x, 0x%x, 0x%x, 0x%x)\n", chn, tms,len,d);
+		dev_dbg(NULL, "jtag_send(0x%x, 0x%x, 0x%x, 0x%x)\n", chn, tms,len,d);
 		for ( ; i > 0; i--) {
 			/* TCK = 0 - just a delay; is it really needed? */
 			data.tck = 0;
@@ -897,31 +916,20 @@ int jtag_send (int chn, int tms, int len, int d) {
 
 			x393_sensio_jtag(data, sens_num);
 			/* repeat writel - just a delay; is it really needed? */
-			x393_sensio_jtag(data, sens_num);
-			x393_sensio_jtag(data, sens_num);
-			x393_sensio_jtag(data, sens_num);
+//			x393_sensio_jtag(data, sens_num);
 
 			/* read TDO before TCK pulse */
-			seq_num = prep_sensio_status(sens_num);
-			stat = wait_sensio_status(sens_num, seq_num); // get TDO (only where we need to wait status for here)
-
-			// DEBUG: repeating read
-			seq_num = prep_sensio_status(sens_num);
-			stat = wait_sensio_status(sens_num, seq_num); // get TDO (only where we need to wait status for here)
-
-			printk(" %08x", stat.d32);
-
-			r = (r << 1) + (stat.xfpgatdo & 1);
+			r = (r << 1) +  read_tdo(sens_num); // may to need to read twice to increase delay?
 
 			data.tck = 1;
 			x393_sensio_jtag(data, sens_num);  // keep other signals, set TCK == 1
-			x393_sensio_jtag(data, sens_num);  // repeat if delay will be needed to increase length of the TCK signal
+//			x393_sensio_jtag(data, sens_num);  // repeat if delay will be needed to increase length of the TCK signal
 
 			data.tck = 0;
-			x393_sensio_jtag(data, sens_num);
-			x393_sensio_jtag(data, sens_num);
+//			x393_sensio_jtag(data, sens_num);
 		}
-		printk(" ---> %02x\n", r);
+		x393_sensio_jtag(data, sens_num);
+		dev_dbg(NULL, " ---> %02x\n", r);
 
 		break;
 	case JTAG_AUX_FPGA:
@@ -948,9 +956,9 @@ int jtag_write_bits (int chn,
 	int i,j;
 	int r=0;
 	int d,d0;
-	u32 seq_num;
+//	u32 seq_num;
 	x393_status_sens_io_t stat;
-	x393_sensio_jpag_t data;
+	x393_sensio_jtag_t data;
 
 	dev_dbg(NULL, "jtag_write_bits(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\r\n", (int) chn, (int) buf, len, check, last);
 
@@ -1030,51 +1038,36 @@ int jtag_write_bits (int chn,
 		port_csp0_addr[X313_WA_SENSFPGA] = (2  << SFPGA_TCK_BIT); // TCK=0
 #endif /* TEST_DISABLE_CODE */
 // Can be done once
+		data.d32 =     0;
 		data.tck_set = 1;
 		data.tms_set = 1;
 		data.tdi_set = 1;
 
 		for (i = 0; len > 0; i++) {
 			d0 = (d = buf[i]);
-			printk("jtag_write_bits(), i=0x%x ", i);
-
+			dev_dbg(NULL,"jtag_write_bits(), i=0x%x ", i);
 			for (j = 0; j < 8; j++) {
-				/* TCK = 0 - just a delay; is it really needed? */
-				data.tck = 0;
 				if (len > 0) {
-					if (len == 1 && last) data.tms = 1;
-					else                  data.tms = 0;
-
+					data.tms = (len == 1 && last)? 1:0 ;
 					data.tdi = ((d <<= 1) >> 8) & 1;
 					data.tck = 0;
 					x393_sensio_jtag(data, sens_num);
-					x393_sensio_jtag(data, sens_num); // repeat writel() if needed for delay
-					x393_sensio_jtag(data, sens_num); // repeat writel() if needed for delay
-					x393_sensio_jtag(data, sens_num); // repeat writel() if needed for delay
-
-					seq_num = prep_sensio_status(sens_num);
-					stat = wait_sensio_status(sens_num, seq_num);
-
-					seq_num = prep_sensio_status(sens_num);
-					stat = wait_sensio_status(sens_num, seq_num);
-					printk(" %d: %08x", j, stat.d32);
-
-					r = (r << 1) + (stat.xfpgatdo & 1);
-
+//					x393_sensio_jtag(data, sens_num); // repeat writel() if needed for delay
+					r = (r << 1) +  read_tdo(sens_num);
 					data.tck = 1;
 					x393_sensio_jtag(data, sens_num);
-					x393_sensio_jtag(data, sens_num); // remove if no delay is needed
+//					x393_sensio_jtag(data, sens_num); // remove if no delay is needed
 
 					data.tck = 0;
 					x393_sensio_jtag(data, sens_num);
-					x393_sensio_jtag(data, sens_num);
+//					x393_sensio_jtag(data, sens_num);
 				} else {
 					r <<= 1;
 				}
 				len--;
 			}
 			buf[i] = r;
-			printk(" ===> %02x\n", r);
+			dev_dbg(NULL," ===> %02x\n", r);
 			if (check && ((r ^ (prev[1]>>24)) & 0xff)) {
 				return -((r & 0xff) | ((i+1) << 8)); //readback mismatch
 			}
@@ -1241,6 +1234,7 @@ int JTAG_resetChannel (int chn)  {
      jtag_send(chn, 1, 5, 0   ); // set Test-Logic-Reset state
 // disable programmimg mode (nop for the 10353 FPGA)
      set_pgm_mode(chn, 0); // only for sensor FPGA
+     return 0;
 } // int JTAG_resetChannel (int chn)
 
 int JTAG_readID (int chn, unsigned char * buf)  {
@@ -1319,7 +1313,7 @@ int i; // only in debug
 #ifdef JTAG_DISABLE_IRQ
   unsigned long flags;
 #endif
-D(printk("JTAG_CAPTURE(): buf=%p\n",buf));
+dev_dbg(NULL,"JTAG_CAPTURE(): buf=%p\n",buf);
 //*************************** NOW DISABLE INTERRUPS FOR THE WHOLE JTAG SEQUENCE ***********************
 #ifdef JTAG_DISABLE_IRQ
      local_irq_save(flags);
@@ -1374,8 +1368,8 @@ int i; // only in debug
      local_irq_save(flags);
      //local_irq_disable();
 #endif
-D(printk("EXTEST: buf=%p, len=0x%x\n",buf,len));
-D(printk ("\n"); for (i=0; i<((len+7)>>3) ;i++) {printk("%3x ",(int) buf[i]); if ((i & 0xf) == 0xf) printk ("\n");}printk ("\n"); );
+//D(printk("EXTEST: buf=%p, len=0x%x\n",buf,len));
+//D(printk ("\n"); for (i=0; i<((len+7)>>3) ;i++) {printk("%3x ",(int) buf[i]); if ((i & 0xf) == 0xf) printk ("\n");}printk ("\n"); );
 
 //     jtag_send(chn, 1, 5, 0   ); //step 1 - set Test-Logic-Reset state
 //     jtag_send(chn, 0, 1, 0   ); //step 2 - set Run-Test-Idle state
@@ -1395,7 +1389,7 @@ D(printk ("\n"); for (i=0; i<((len+7)>>3) ;i++) {printk("%3x ",(int) buf[i]); if
 #ifdef JTAG_DISABLE_IRQ
      local_irq_restore(flags);
 #endif
-     D(printk ("\n"); for (i=0; i<((len+7)>>3) ;i++) {printk("%3x ",(int) buf[i]); if ((i & 0xf) == 0xf) printk ("\n");}printk ("\n"); ); 
+//     D(printk ("\n"); for (i=0; i<((len+7)>>3) ;i++) {printk("%3x ",(int) buf[i]); if ((i & 0xf) == 0xf) printk ("\n");}printk ("\n"); );
 
     return 0;
 } //int JTAG_EXTEST (int chn, unsigned char * buf, int len)
@@ -1430,6 +1424,6 @@ module_exit(fpga_jtag_exit);
 
 module_init(fpga_jtag_init);
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
+MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>");
 MODULE_DESCRIPTION(FPGA_JTAG_DRIVER_NAME);
 
