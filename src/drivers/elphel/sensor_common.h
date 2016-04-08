@@ -12,9 +12,13 @@ extern struct sensorproc_t * sensorproc;
   #include "mt9x001.h"
 #endif
 //#include "multisensor.h"
-int  camSeqGetJPEG_wp(void);
-int  camSeqGetJPEG_rp(void);
-void camSeqSetJPEG_rp(int p);
+//int  camSeqGetJPEG_wp(void);
+//int  camSeqGetJPEG_rp(void);
+//void camSeqSetJPEG_rp(int p);
+int camseq_get_jpeg_wp(unsigned int chn);
+int camseq_get_jpeg_rp(unsigned int chn);
+void camseq_set_jpeg_rp(unsigned int chn, int ptr);
+
 ///CIRCBUF macros
 extern unsigned long  * ccam_dma_buf_ptr;
 
@@ -27,7 +31,7 @@ extern unsigned long  * ccam_dma_buf_ptr;
 
 //int init_FPGA(void); /// can be initialized only after FPGA is configured, not at module init (NOTE was static??)
 ///can be verified with if (!X313_IS_SDRAM_ON)
-void reset_compressor(void);
+void reset_compressor(unsigned int chn);
 void camera_interrupts (int on);
 struct sensorproc_t * copy_sensorproc (struct sensorproc_t * copy);
 

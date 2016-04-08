@@ -75,28 +75,6 @@
 #include "x393_macro.h"
 #include "x393.h"
 
-#if ELPHEL_DEBUG
- #define ELPHEL_DEBUG_THIS 0
-#else
- #define ELPHEL_DEBUG_THIS 0
-#endif
-#if ELPHEL_DEBUG_THIS
-  #define MDF2(x) printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__); x
-  #define MDD1(x) printk("%s:%d:",__FILE__,__LINE__); x ; udelay (ELPHEL_DEBUG_DELAY)
-  #define MD1(x) printk("%s:%d:",__FILE__,__LINE__);x
-  //#define MD1(x)
-  #define MD12(x) printk("%s:%d:",__FILE__,__LINE__);x
-  //#define MD12(x)
-  #define MD13(x) printk("%s:%d:",__FILE__,__LINE__);x
-  //#define MD13(x)
-#else
-  #define MDF2(x)
-  #define MD1(x)
-  #define MDD1(x)
-  #define MD12(x)
-  #define MD13(x)
-#endif
-
 /**
  * @brief driver name to display in log messages
  */
@@ -106,9 +84,9 @@
  * @brief \e jpeg_ptr_t structure contains read and write pointers along with
  * IRQ number for a single channel
  * @var jpeg_ptr_t::jpeg_wr
- * JPEG write pointer
+ * JPEG write pointer in 32 bit words
  * @var jpeg_ptr_t::jpeg_rp
- * JPEG read pointer
+ * JPEG read pointer in 32 bit words
  * @var jpeg_ptr_t::fpga_cntr_prev
  * This field contains previous value of the FPGA transfer counter which is used
  * to find out if it has changed
@@ -151,6 +129,7 @@ static int fpga_counter_prev=0; /// Previous value of the FPGA transfer counter 
     int Photo_MakerNote;
   } meta_offsets;
 
+#ifdef TEST_DISABLE_CODE
 int  camSeqGetJPEG_wp(void) {return JPEG_wp;}
 int  camSeqGetJPEG_rp(void) {return JPEG_rp;}
 void camSeqSetJPEG_rp(int p) {
@@ -161,6 +140,24 @@ void camSeqSetJPEG_rp(int p) {
                                        get_globalParam(G_CIRCBUFSIZE):0)+ get_globalParam(G_CIRCBUFRP))
                                        - get_globalParam(G_CIRCBUFWP));
                                }
+#endif /* TEST_DISABLE_CODE */
+
+int camseq_get_jpeg_wp(unsigned int chn)
+{
+	return (chn < IMAGE_CHN_NUM) ? image_acq_priv.jpeg_ptr[chn].jpeg_wp : 0;
+}
+
+int camseq_get_jpeg_rp(unsigned int chn)
+{
+	return (chn < IMAGE_CHN_NUM) ? image_acq_priv.jpeg_ptr[chn].jpeg_rp : 0;
+}
+
+void camseq_set_jpeg_rp(unsigned int chn, int ptr)
+{
+	if (chn < IMAGE_CHN_NUM) {
+		image_acq_priv.jpeg_ptr[chn].jpeg_rp = ptr;
+	}
+}
 
 /*!
    End of compressor-related code - TODO: move to a separate file?
@@ -171,12 +168,13 @@ static void dump_priv_data(int chn)
 	int i;
 
 	if (chn < IMAGE_CHN_NUM) {
-		printk(KERN_DEBUG "jpeg_wp: 0x%x\n", image_acq_priv.jpeg_ptr[chn].jpeg_wp);
-		printk(KERN_DEBUG "jpeg_rp: 0x%x\n", image_acq_priv.jpeg_ptr[chn].jpeg_rp);
+		printk(KERN_DEBUG "jpeg_wp (in bytes): 0x%x\n", image_acq_priv.jpeg_ptr[chn].jpeg_wp << 2);
+		printk(KERN_DEBUG "jpeg_rp (in bytes): 0x%x\n", image_acq_priv.jpeg_ptr[chn].jpeg_rp << 2);
 		printk(KERN_DEBUG "fpga_cntr_prev: 0x%x\n", image_acq_priv.jpeg_ptr[chn].fpga_cntr_prev);
 		printk(KERN_DEBUG "irq_num_comp: 0x%x\n", image_acq_priv.jpeg_ptr[chn].irq_num_comp);
 		printk(KERN_DEBUG "irq_num_sens: 0x%x\n", image_acq_priv.jpeg_ptr[chn].irq_num_sens);
 		printk(KERN_DEBUG "chn_num: 0x%x\n", image_acq_priv.jpeg_ptr[chn].chn_num);
+		printk(KERN_DEBUG "flags: 0x%x\n", image_acq_priv.jpeg_ptr[chn].flags);
 	} else {
 		for (i = 0; i < IMAGE_CHN_NUM; i++) {
 			printk(KERN_DEBUG "jpeg_wp: 0x%x\n", image_acq_priv.jpeg_ptr[i].jpeg_wp);
@@ -185,6 +183,7 @@ static void dump_priv_data(int chn)
 			printk(KERN_DEBUG "irq_num_comp: 0x%x\n", image_acq_priv.jpeg_ptr[i].irq_num_comp);
 			printk(KERN_DEBUG "irq_num_sens: 0x%x\n", image_acq_priv.jpeg_ptr[i].irq_num_sens);
 			printk(KERN_DEBUG "chn_num: 0x%x\n", image_acq_priv.jpeg_ptr[i].chn_num);
+			printk(KERN_DEBUG "flags: 0x%x\n", image_acq_priv.jpeg_ptr[i].flags);
 		}
 	}
 }
@@ -254,13 +253,8 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 
 	jptr->flags |= SENS_FLAG_IRQ;
 	jptr->fpga_cntr_prev = stat.offset256;
-	/*if (xferred < 0)
-		// 26 bit hardware counter rolled over
-		xferred += (1 << OFFSET256_CNTR_RES);*/
-	jptr->jpeg_wp += xferred * CHUNK_SIZE;
-	//JPEG_wp+= (xferred << 3); //! counts in 32-byte ( 8 of 32bit words) chunks
-	/*if (jptr->jpeg_wp > circbuf_size)
-		jptr->jpeg_wp -= circbuf_size;*/
+	// increment in 32 bit words
+	jptr->jpeg_wp += (xferred << 3);
 
 	return 1;
 }
@@ -286,7 +280,7 @@ inline void updateIRQFocus(struct jpeg_ptr_t *jptr)
 {
     //set_globalParam     (G_GFOCUS_VALUE, X313_HIGHFREQ);
     //set_imageParamsThis (P_FOCUS_VALUE, X313_HIGHFREQ);
-	u32 high_freq = x393_cmprs_highfreq(jptr->chn_num);
+	u32 high_freq = x393_cmprs_hifreq(jptr->chn_num);
 }
 
 
@@ -511,28 +505,6 @@ void tasklet_fpga_function(unsigned long arg) {
   unsigned long *buf_ptr;
   printk(KERN_DEBUG "%s: get_globalParam(G_CIRCBUFSIZE) = %d", __func__, circbuf_size);
 
-  //dump_priv_data(0);
-  for (i = 0; i< IMAGE_CHN_NUM; i++) {
-	  printk(KERN_DEBUG "%s: checking channel %d \n", __func__, i);
-	  if (image_acq_priv.jpeg_ptr[i].flags & SENS_FLAG_IRQ) {
-		  dump_priv_data(i);
-		  last_image_chunk = image_acq_priv.jpeg_ptr[i].jpeg_wp - OFFSET_X40;
-		  if (last_image_chunk < 0)
-			  last_image_chunk += circbuf_size;
-		  len32 = ccam_dma_buf_ptr[(last_image_chunk + (0x20 - CCAM_MMAP_META_LENGTH) + 0x100000) >> 2];
-		  buf_ptr = &ccam_dma_buf_ptr[(last_image_chunk + 0x100000) >> 2];
-		  for (j = 0; j < (OFFSET_X40 >> 2); j++) {
-			  printk(KERN_DEBUG "0x%x: 0x%x\n", last_image_chunk + j, buf_ptr[j]);
-		  }
-		  printk(KERN_DEBUG "circbuffer start address: 0x%x", ccam_dma_buf_ptr);
-		  printk(KERN_DEBUG "last_image_chunk: 0x%x\n", last_image_chunk);
-		  dev_dbg(NULL, "0x40 bytes of mem dump from last image chunk:\n");
-		  print_hex_dump_bytes("", DUMP_PREFIX_NONE, (void *)buf_ptr, OFFSET_X40);
-		  printk(KERN_DEBUG "%s: reading image length, channel %d; len32 0x%x\n",__func__, i, len32);
-		  image_acq_priv.jpeg_ptr[i].flags &= (~SENS_FLAG_IRQ) & 0xffffffff;
-	  }
-  }
-
 
 #ifdef TEST_DISABLE_CODE
 /// Time is out?
@@ -637,22 +609,25 @@ GLOBALPARS(0x1044)=thisFrameNumber;
 /**
  * @brief resets compressor and buffer pointers
  */
-void reset_compressor(void) {
-  unsigned long flags;
-  local_irq_save(flags);
+void reset_compressor(unsigned int chn)
+{
+	int i;
+	unsigned long flags;
+
+	local_irq_save(flags);
 #ifdef TEST_DISABLE_CODE
-  port_csp0_addr[X313_WA_COMP_CMD]= COMPCMD_RESET; /// bypasses command sequencer
-  if (framepars) set_imageParamsR_all( P_COMPRESSOR_RUN, COMPRESSOR_RUN_STOP );
-  else printk ("framepars is not initialized\n");
-/// TODO: There still is a possibility, that there are compressor commands in the hardware que. Should we stop the hardware sequencer here (and restart it later)?
+	port_csp0_addr[X313_WA_COMP_CMD]= COMPCMD_RESET; /// bypasses command sequencer
+	if (framepars) set_imageParamsR_all( P_COMPRESSOR_RUN, COMPRESSOR_RUN_STOP );
+	else printk ("framepars is not initialized\n");
+	/// TODO: There still is a possibility, that there are compressor commands in the hardware que. Should we stop the hardware sequencer here (and restart it later)?
 #endif /* TEST_DISABLE_CODE */
-  JPEG_wp=0;
-  JPEG_rp=0;
-  //updateIRQCircbuf(); /// initialize  G_CIRCBUFWP, G_FREECIRCBUF
-  fpga_counter_prev=0;
-  local_irq_restore(flags);
+	image_acq_priv.jpeg_ptr[chn].jpeg_wp = 0;
+	image_acq_priv.jpeg_ptr[chn].jpeg_rp = 0;
+	image_acq_priv.jpeg_ptr[chn].fpga_cntr_prev = 0;
+	image_acq_priv.jpeg_ptr[chn].flags = 0;
+	//update_irq_circbuf(jptr);
+	local_irq_restore(flags);
 }
-//EXPORT_SYMBOL_GPL(reset_compressor);
 
 /**
  * @brief Camera interrupts on/off  (currently both in the FPGA and in the CPU)
@@ -662,7 +637,8 @@ void camera_interrupts (int on) {
 	int i;
 	x393_cmprs_interrupts_t irq_ctrl;
 
-	MDF2(printk ("camera_interrupts(%d)\n",on));
+	//MDF2(printk ("camera_interrupts(%d)\n",on));
+	dev_dbg(NULL, "set camera interrupts status: %d\n", on);
 #ifdef TEST_DISABLE_CODE
 	if (on) {
 		EN_INTERRUPT(SMART);
@@ -683,7 +659,6 @@ void camera_interrupts (int on) {
 		x393_cmprs_interrupts(irq_ctrl, i);
 	}
 }
-//EXPORT_SYMBOL_GPL(camera_interrupts);
 
 /**
  * @brief sensor_common driver probing function
@@ -709,7 +684,8 @@ int image_acq_init(struct platform_device *pdev)
 		return -EINVAL;*/
 
 	sensorproc= &s_sensorproc;
-	MDD1(printk("sensorproc=0x%x\n",(int) sensorproc));
+	//MDD1(printk("sensorproc=0x%x\n",(int) sensorproc));
+	dev_dbg(dev, "sensorproc address: 0x%x\n", (int)sensorproc);
 
 	for (i = 0; i < IMAGE_CHN_NUM; i++) {
 		irq = platform_get_irq_byname(pdev, frame_sync_irq_names[i]);
@@ -755,16 +731,18 @@ int image_acq_init(struct platform_device *pdev)
 
 #endif
 
-	printk("Elphel FPGA interrupts initialized\n");
-	//    init_waitqueue_head(&image_acq_wait_queue);
-	//    DMA_buf_start=x313_dma_init();
-	MDD1(printk("reset_compressor()\n"));
-	reset_compressor(); /// reset compressor and buffer pointers
-	MDD1(printk("x313_dma_init()\n"));
+	dev_dbg(dev, "Elphel FPGA interrupts initialized\n");
+	dev_dbg(dev, "reset all compressors\n");
+	for (i = 0; i < IMAGE_CHN_NUM; i++) {
+		reset_compressor(i);
+	}
+	//reset_compressor(); /// reset compressor and buffer pointers
+	//MDD1(printk("x313_dma_init()\n"));
 	//x313_dma_init();    /// initialize ETRAX FS DMA
-	MDD1(printk("init_pgm_proc ()\n"));
+	//MDD1(printk("init_pgm_proc ()\n"));
 	//init_pgm_proc ();   /// setup pointers to functions (not sensor-specific)
-	MDD1(printk("reset_qtables()\n"));
+	//MDD1(printk("reset_qtables()\n"));
+	dev_dbg(dev, "reset quantization tables\n");
 	reset_qtables(); /// force initialization at next access
 
 	return 0;

@@ -13,10 +13,18 @@
 
 #define CHUNK_SIZE           32
 
+/** @brief The size of #interframe_params_t structure in double words */
+#define INTERFRAME_PARAMS_SZ 8
+
+#define MARKER_FF            0xff
+
 #define IRQ_NOP              0
 #define IRQ_CLEAR            1
 #define IRQ_DISABLE          2
 #define IRQ_ENABLE           3
+
+#define BYTE2DW(x)           ((x) >> 2)
+#define DW2BYTE(x)           ((x) << 2)
 
 /* These macro were removed from sensor_common.h*/
 #define X313_LENGTH_MASK      0xff000000

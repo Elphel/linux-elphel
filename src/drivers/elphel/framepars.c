@@ -1209,7 +1209,7 @@ loff_t framepars_lseek (struct file * file, loff_t offset, int orig) {
                 break;
               case LSEEK_COMPRESSOR_RESET: /// reset compressor and buffer pointers 
                 MDF2(printk("LSEEK_COMPRESSOR_RESET\n"));
-                reset_compressor();
+                //reset_compressor();
                 break;
               case LSEEK_INTERRUPT_OFF:    /// disable camera interrupts
                 MDF2(printk ("LSEEK_INTERRUPT_OFF\n"));

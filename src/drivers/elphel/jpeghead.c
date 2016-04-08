@@ -329,7 +329,6 @@ int jpeghead_open(struct inode *inode, struct file *filp) { // set filesize
    inode->i_size=JPEG_HEADER_MAXSIZE; /// not the actual size
   return 0;
 }
-EXPORT_SYMBOL_GPL(jpeghead_open);
 
 /*!=================================================================
  *! Overloading lseek with additional functionality (to avoid ioctls)
@@ -404,7 +403,6 @@ loff_t  jpeghead_lseek(struct file * file, loff_t offset, int orig,
   }
   return ( file->f_pos );
 }
-EXPORT_SYMBOL_GPL(jpeghead_lseek);
 
 ssize_t jpeghead_read(struct file * file, char * buf, size_t count, loff_t *off) {
   unsigned long p;
@@ -423,7 +421,6 @@ ssize_t jpeghead_read(struct file * file, char * buf, size_t count, loff_t *off)
     }
     return count;
 }
-EXPORT_SYMBOL_GPL(jpeghead_read);
 
 
 /**huffman_* file operations
@@ -444,7 +441,6 @@ int huffman_open(struct inode *inode, struct file *filp) { // set filesize
 
   return 0;
 }
-EXPORT_SYMBOL_GPL(huffman_open);
 
 /*!=================================================================
  *! Overloading lseek with additional functionality
@@ -505,7 +501,6 @@ loff_t  huffman_lseek(struct file * file, loff_t offset, int orig){
   if (file->f_pos > sizeof(huff_tables)) file->f_pos = sizeof(huff_tables);
   return ( file->f_pos );
 }
-EXPORT_SYMBOL_GPL(huffman_lseek);
 
 
 ssize_t huffman_read(struct file * file, char * buf, size_t count, loff_t *off) {
@@ -521,7 +516,6 @@ ssize_t huffman_read(struct file * file, char * buf, size_t count, loff_t *off) 
   }
   return count;
 }
-EXPORT_SYMBOL_GPL(huffman_read);
 
 
 ssize_t huffman_write(struct file * file, const char * buf, size_t count, loff_t *off) {
@@ -537,7 +531,6 @@ ssize_t huffman_write(struct file * file, const char * buf, size_t count, loff_t
 
   return count;
 }
-EXPORT_SYMBOL_GPL(huffman_write);
 
 /**
  * @brief Initialize Huffman tables with default data
@@ -608,7 +601,6 @@ void jpeg_htable_init (void) {
    MDF17(printk("jpeg_htable_fpga_encode ()\n"));
   jpeg_htable_fpga_encode ();
 }
-EXPORT_SYMBOL_GPL(jpeg_htable_init);
 
 /**
  * @brief encode all 4 Huffman tables into FPGA format

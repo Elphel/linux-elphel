@@ -21,6 +21,9 @@
  * -----------------------------------------------------------------------------**
  */
 
+#define DEBUG 1
+#include <linux/device.h>
+
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
@@ -68,31 +71,18 @@
 #include "x393_macro.h"
 #include "x393.h"
 
-#if ELPHEL_DEBUG
-  #define MDF(x) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);x ;}
-  #define   D19(x) { if (GLOBALPARS(G_DEBUG) & (1 <<19)) {x; } ; }
-  #define MDF19(x) { if (GLOBALPARS(G_DEBUG) & (1 <<19)) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__ );x ;} }
-  #define   D20(x) { if (GLOBALPARS(G_DEBUG) & (1 <<20)) {x; } ; }
-  #define MDF20(x) { if (GLOBALPARS(G_DEBUG) & (1 <<20)) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__ );x ;} }
-#else
-  #define MDF(x)
-  #define   D19(x)
-  #define MDF19(x)
-  #define   D20(x)
-  #define MDF20(x)
-
-#endif
-
-#define MD12(x)
-#define D(x)
-
-//#define MD7(x) printk("%s:%d:",__FILE__,__LINE__);x
-#define MD7(x)
-
 //#define MD10(x) printk("%s:%d:",__FILE__,__LINE__);x
 #define MD10(x)
 //#define MD11(x) printk("%s:%d:",__FILE__,__LINE__);x
 #define MD11(x)
+
+// private data
+struct circbuf_priv_t {
+	int                 minor;
+	unsigned long       *buf_ptr;
+	dma_addr_t          phys_addr;
+};
+static struct circbuf_priv_t circbuf_priv[IMAGE_CHN_NUM];
 
 static const struct of_device_id elphel393_circbuf_of_match[];
 /* really huge static DMA buffer (1288+8)*1032/3=445824 long-s */
@@ -104,14 +94,16 @@ unsigned long  * ccam_dma_buf_ptr = NULL;
 //EXPORT_SYMBOL_GPL(ccam_dma_buf_ptr);
 //unsigned long * ccam_dma =         NULL; //! still used in autoexposure or something - why is in needed there?
 
-int init_ccam_dma_buf_ptr(struct platform_device *pdev) {
+int init_ccam_dma_buf_ptr(struct platform_device *pdev)
+{
+	int i;
 	dma_addr_t dma_handle;
 	const size_t dma_size = (CCAM_DMA_SIZE + (PAGE_SIZE >> 2)) * sizeof(int);
 	struct device *dev = &pdev->dev;
-    //ccam_dma_buf_ptr = ccam_dma_buf;
-    //ccam_dma =         ccam_dma_buf; //&ccam_dma_buf[0]; Use in autoexposure
+	//ccam_dma_buf_ptr = ccam_dma_buf;
+	//ccam_dma =         ccam_dma_buf; //&ccam_dma_buf[0]; Use in autoexposure
 
-    // use Elphel_buf if it was allocated
+	// use Elphel_buf if it was allocated
 	if (pElphel_buf != NULL) {
 		ccam_dma_buf_ptr = pElphel_buf->vaddr;
 		dma_handle = pElphel_buf->paddr;
@@ -130,8 +122,20 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev) {
 	// set circbuf size in bytes
 	set_globalParam(G_CIRCBUFSIZE, pElphel_buf->size * PAGE_SIZE);
 
-    return 0;
+	for (i = 0; i < IMAGE_CHN_NUM; i++) {
+		circbuf_priv[i].buf_ptr = ccam_dma_buf_ptr + BYTE2DW(CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE);
+		circbuf_priv[i].phys_addr = dma_handle + CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE;
+	}
+
+	return 0;
 }
+
+static inline unsigned int minor_to_chn(int minor)
+{
+	//return minor - CIRCBUF_MINOR_CHN_OFFSET;
+	return 0;
+}
+
 //extern struct interframe_params_t frame_params; // cc353.c
 /*!======================================================================================
  *! Wait queue for the processes waiting for a new frame to appear in the circular buffer
@@ -155,26 +159,32 @@ struct circbuf_pd {
     struct wait_queue *circbuf_wait_queue; ///NOTE: not used at all?
 // something else to be added here?
 };
+
+
 // CMOSCAM_MINOR_HUFFMAN // huffman tables R/W
-int circbuf_all_open(struct inode *inode, struct file *filp) {
-   int res;
- MD10(printk("circbuf_all_open, minor=0x%x\n",MINOR(inode->i_rdev)));
-  switch (MINOR(inode->i_rdev)) {
-    case  CMOSCAM_MINOR_CIRCBUF :
-        res=circbuf_open(inode,filp);
-        break;
-    case  CMOSCAM_MINOR_JPEAGHEAD :
-        res=jpeghead_open(inode,filp);
-        break;
-    case  CMOSCAM_MINOR_HUFFMAN :
-        res=huffman_open(inode,filp);
-        break;
-    default:
-//       kfree(filp->private_data); // already allocated
-       return -EINVAL;
-  }
-  return res;
+int circbuf_all_open(struct inode *inode, struct file *filp)
+{
+	int res;
+	int minor = MINOR(inode->i_rdev);
+	dev_dbg(NULL, "circbuf_all_open, minor = 0x%x\n", minor);
+
+	switch (MINOR(inode->i_rdev)) {
+	case  CMOSCAM_MINOR_CIRCBUF :
+		res=circbuf_open(inode,filp);
+		break;
+	case  CMOSCAM_MINOR_JPEAGHEAD :
+		res=jpeghead_open(inode,filp);
+		break;
+	case  CMOSCAM_MINOR_HUFFMAN :
+		res=huffman_open(inode,filp);
+		break;
+	default:
+		//       kfree(filp->private_data); // already allocated
+		return -EINVAL;
+	}
+	return res;
 }
+
 int circbuf_all_release(struct inode *inode, struct file *filp) {
   int res=0;
   int p = MINOR(inode->i_rdev);
@@ -196,24 +206,30 @@ int circbuf_all_release(struct inode *inode, struct file *filp) {
   return res;
 }
 
-loff_t circbuf_all_lseek(struct file * file, loff_t offset, int orig) {
-     struct circbuf_pd * privData;
-     privData = (struct circbuf_pd *) file->private_data;
-     struct interframe_params_t *fp = NULL;
-     int rp;
+loff_t circbuf_all_lseek(struct file * file, loff_t offset, int orig)
+{
+	struct circbuf_pd * privData;
+	privData = (struct circbuf_pd *) file->private_data;
+	struct interframe_params_t *fp = NULL;
+	int rp;
+	int minor = privData->minor;
 
- MD10(printk("circbuf_all_lseek, minor=0x%x\n",privData-> minor));
-     switch (privData->minor) {
-       case CMOSCAM_MINOR_CIRCBUF :    return  circbuf_lseek  (file, offset, orig);
-       case CMOSCAM_MINOR_JPEAGHEAD :
-    	   if (orig == SEEK_END && offset > 0) {
-			   rp= (offset >>2) & (~7); // convert to index to long, align to 32-bytes
-			   fp = (struct interframe_params_t *) &ccam_dma_buf_ptr[X313_BUFFSUB(rp, 8)]; //! 32 bytes before the frame pointer, may roll-over to the end of ccam_dma_buf_ptr
-    	   }
-    	   return  jpeghead_lseek (file, offset, orig, fp);
-       case CMOSCAM_MINOR_HUFFMAN :    return  huffman_lseek  (file, offset, orig);
-       default:                        return -EINVAL;
-     }
+	dev_dbg(NULL, "circbuf_all_lseek, minor = 0x%x\n", minor);
+	switch (minor) {
+	case CMOSCAM_MINOR_CIRCBUF :
+		return  circbuf_lseek(file, offset, orig);
+	case CMOSCAM_MINOR_JPEAGHEAD :
+		if (orig == SEEK_END && offset > 0) {
+			rp = BYTE2DW(offset) & (~7); // convert to index to long, align to 32-bytes
+			//fp = (struct interframe_params_t *) &ccam_dma_buf_ptr[X313_BUFFSUB(rp, 8)]; //! 32 bytes before the frame pointer, may roll-over to the end of ccam_dma_buf_ptr
+			fp = (struct interframe_params_t *) &circbuf_priv[minor_to_chn(minor)].buf_ptr[X313_BUFFSUB(rp, 8)];
+		}
+		return  jpeghead_lseek(file, offset, orig, fp);
+	case CMOSCAM_MINOR_HUFFMAN :
+		return  huffman_lseek(file, offset, orig);
+	default:
+		return -EINVAL;
+	}
 }
 
 ssize_t circbuf_all_read(struct file * file, char * buf, size_t count, loff_t *off) {
@@ -331,36 +347,94 @@ int circbuf_open(struct inode *inode, struct file *filp) { // set filesize
 //! returns -1 if there is no frame at this index
 //! returns -2 if the rp is not 32-bytes aligned
 //!sets *fpp to the frame header, including signature and length
-int circbufValidPointer(int rp, struct interframe_params_t ** fpp) {
-  if (rp & 0x1f) {  //!rp is not 32-bytes aligned
-       MD10(printk("circbufValidPointer: misaligned pointer\n"));
-       return -2;
-  }
-  int wp=camSeqGetJPEG_wp();
-  int p= rp >> 2; // index inccam_dma_buf
-  struct interframe_params_t * fp;
-  fp = (struct interframe_params_t *) &ccam_dma_buf[X313_BUFFSUB(p, 8)]; //! 32 bytes before the frame pointer, may roll-over to the end of ccam_dma_buf
 
- MD10(printk("rp=0x%x (0x%x), offset=0x%x\n",rp,p,(int)&ccam_dma_buf[p]-(int)fp); dumpFrameParams(fp, "in circbufValidPointer:"));
+unsigned long get_image_length(int offset, unsigned int chn, int *last_chunk_offset)
+{
+	unsigned long len32;
+	int last_image_chunk = DW2BYTE(offset) - OFFSET_X40;
 
-  *fpp=fp;
- MD11(printk("p=0x%x , wp==0x%x\n",p,wp));
- if (p == wp) {
-     return 0; // frame not yet acquired, fp - not valid
-  }
-  if (fp->signffff != 0xffff) { //! signature is overwritten
-     MD10(printk("circbufValidPointer: signanure overwritten\n"));
-     return -1;
-  }
-  if ((fp->timestamp_sec) & X313_LENGTH_MASK) {
-     MDF(printk ("Should not get here - fp->timestamp_sec=0x%x\n",(int) fp->timestamp_sec));
-     return 0; //! should not get here - should be caught by (p==wp)
-  }
-  return 1;
-   
+	if (last_image_chunk < 0)
+		last_image_chunk += CCAM_DMA_SIZE;
+	len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH))];
+	if (last_chunk_offset != NULL)
+		*last_chunk_offset = last_image_chunk;
+
+	return len32;
+}
+
+int circbufValidPointer(int rp, struct interframe_params_t ** fpp, unsigned int chn)
+{
+	int last_image_chunk;
+	unsigned int sec;
+	unsigned int usec;
+	int wp = camseq_get_jpeg_wp(chn);
+	unsigned int len32 = get_image_length(wp, chn, &last_image_chunk);
+	struct interframe_params_t *fp;
+	int p = BYTE2DW(rp);
+
+	if (rp & 0x1f) {  //!rp is not 32-bytes aligned
+		//MD10(printk("circbufValidPointer: misaligned pointer\n"));
+		dev_dbg(NULL, "misaligned pointer rp = 0x%x for channel %d\n", rp, chn);
+		return -2;
+	}
+	fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[X313_BUFFSUB(p, INTERFRAME_PARAMS_SZ)];
+	*fpp = fp;
+
+	/*int wp = camseq_get_jpeg_wp(chn);
+	int p = rp >> 2; // index inccam_dma_buf
+	struct interframe_params_t * fp;
+	fp = (struct interframe_params_t *) &ccam_dma_buf[X313_BUFFSUB(p, 8)]; //! 32 bytes before the frame pointer, may roll-over to the end of ccam_dma_buf
+
+	//MD10(printk("rp=0x%x (0x%x), offset=0x%x\n",rp,p,(int)&ccam_dma_buf[p]-(int)fp); dumpFrameParams(fp, "in circbufValidPointer:"));
+	dev_dbg(NULL, "rp=0x%x (0x%x), offset=0x%x\n", rp, p, (int)&ccam_dma_buf[p]-(int)fp);
+
+	*fpp=fp;
+	//MD11(printk("p=0x%x , wp==0x%x\n",p,wp));
+	dev_dbg(NULL, "p=0x%x , wp==0x%x\n", p, wp);
+	if (p == wp) {
+		return 0; // frame not yet acquired, fp - not valid
+	}
+	if (fp->signffff != MARKER_FF) { //! signature is overwritten
+		//MD10(printk("circbufValidPointer: signanure overwritten\n"));
+		dev_dbg(NULL, "signature 0xFF overwritten\n");
+		return -1;
+	}
+	if ((fp->timestamp_sec) & X313_LENGTH_MASK) {
+		//MDF(printk ("Should not get here - fp->timestamp_sec=0x%x\n",(int) fp->timestamp_sec));
+		dev_dbg(NULL, "Should not get here - fp->timestamp_sec=0x%x\n", (int) fp->timestamp_sec);
+		return 0; //! should not get here - should be caught by (p==wp)
+	}*/
+
+	if (BYTE2DW(rp) == wp)
+		// frame not yet acquired (?)
+		return 0;
+
+	dev_dbg(NULL, "checking end of frame marker len32 = 0x%x at offset = 0x%x\n", len32, DW2BYTE(wp));
+	if ((len32 >> 24) != MARKER_FF) {
+		wp -= CHUNK_SIZE;
+		len32 = get_image_length(wp, chn, &last_image_chunk);
+		if ((len32 >> 24) != MARKER_FF) {
+			dev_dbg(NULL, "failed to get marker 0xFF at CORRECTED offset\n");
+			return -1;
+		}
+	}
+
+	// check timestamp
+	sec = circbuf_priv[chn].buf_ptr[BYTE2DW(last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_SEC))];
+	usec = circbuf_priv[chn].buf_ptr[BYTE2DW(last_image_chunk +(CHUNK_SIZE - CCAM_MMAP_META_USEC))];
+	dev_dbg(NULL, "reading time stamp: sec = 0x%x, usec = 0x%x\n", sec, usec);
+
+	return 1;
 }
 
 loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
+	unsigned int len32;
+	int inserted_bytes;
+	int last_image_chunk;
+	int img_start, next_img;
+	const int ADJUSTMENT = 4; // this constant comes from python code x393_cmprs_afi.py
+	unsigned int minor = MINOR(file->f_inode->i_rdev);
+	unsigned int chn = minor_to_chn(minor);
  //  orig 0: position from begning
  //  orig 1: relative from current
  //  orig 2: position from last  address
@@ -371,7 +445,6 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
    int rp, bp, prev_p, preprev_p; //, p;
    int nf;   //! number of frames;
    int nz=1; //! number of crossing of start of the circular buffer (counter to prevent looping forever)
-MD12(int dbg_i);
 //   int pf; // previous frame
  MD11(printk("circbuf_lseek, offset=0x%x, orig=0x%x\n",(int) offset, (int) orig));
    switch(orig) {
@@ -380,7 +453,7 @@ MD12(int dbg_i);
      break;
    case SEEK_CUR:
      if (offset) file->f_pos += offset;
-     else if (circbufValidPointer(file->f_pos, &fp) <0 ) return -EINVAL; //!no frames at the specified location or pointer is not 32-byte aligned
+     else if (circbufValidPointer(file->f_pos, &fp, chn) <0 ) return -EINVAL; //!no frames at the specified location or pointer is not 32-byte aligned
      break;
    case SEEK_END:
      if (offset <= 0) {
@@ -389,7 +462,8 @@ MD12(int dbg_i);
 //!verify the frame pointer
         switch (offset) {
           case LSEEK_CIRC_TORP:
-              file->f_pos=camSeqGetJPEG_rp()<<2; //! set file pointer to global read pointer, and proceed
+              //file->f_pos=camSeqGetJPEG_rp()<<2; //! set file pointer to global read pointer, and proceed
+        	  file->f_pos = camseq_get_jpeg_rp(chn) << 2;
           case LSEEK_CIRC_PREV:
           case LSEEK_CIRC_NEXT:
           case LSEEK_CIRC_SETP:
@@ -397,43 +471,68 @@ MD12(int dbg_i);
           case LSEEK_CIRC_READY:
           case LSEEK_CIRC_FREE:
           case LSEEK_CIRC_USED:
-             if (((fvld=circbufValidPointer(file->f_pos, &fp))) <0 )
+             if (((fvld=circbufValidPointer(file->f_pos, &fp, chn))) <0 )
                 return -EINVAL; //!no frames at the specified location
         }
         switch (offset) {
           case LSEEK_CIRC_FREE:
-             bp=(file->f_pos - (camSeqGetJPEG_wp()<<2));
+             //bp=(file->f_pos - (camSeqGetJPEG_wp()<<2));
+        	  bp = file->f_pos - (camseq_get_jpeg_wp(chn) << 2);
 //             return (bp>0)?bp:(bp+l); //!will return full buffer size if current pointer is a write pointer (waiting for the next frame)
              return (file->f_pos=(bp>0)?bp:(bp+l)); //!Has a side effect of moving a file pointer!
           case LSEEK_CIRC_USED:
-             bp=((camSeqGetJPEG_wp()<<2) - file->f_pos);
+             //bp=((camSeqGetJPEG_wp()<<2) - file->f_pos);
+        	  bp = (camseq_get_jpeg_wp(chn) << 2) - file->f_pos;
 //             return (bp>=0)?bp:(bp+l); //!will return 0 if current pointer is a write pointer (waiting for the next frame)
              return (file->f_pos=(bp>0)?bp:(bp+l)); //!Has a side effect of moving a file pointer!
           case LSEEK_CIRC_TORP:
              break;
           case LSEEK_CIRC_TOWP:
-             file->f_pos=camSeqGetJPEG_wp()<<2; // no checking if it is valid
+             //file->f_pos=camSeqGetJPEG_wp()<<2; // no checking if it is valid
+        	  file->f_pos = camseq_get_jpeg_wp(chn) << 2;
              break;
           case LSEEK_CIRC_LAST:
-             file->f_pos=camSeqGetJPEG_wp()<<2;
-             fvld=circbufValidPointer(file->f_pos, &fp); //!set fp
+        	  next_img = camseq_get_jpeg_wp(chn) << 2;
+        	  fvld=circbufValidPointer(next_img, &fp, chn);
+        	  if (fvld < 0)
+        		  return -EOVERFLOW;
+
+        	  dev_dbg(NULL, "LSEEK_CIRC_LAST: next_img = 0x%x, fvld = %d\n", next_img, fvld);
+        	  dev_dbg(NULL, "0x40 bytes of mem dump\n");
+        	  print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, &circbuf_priv[chn].buf_ptr[BYTE2DW(next_img - OFFSET_X40)], OFFSET_X40);
+
+        	  len32 = get_image_length(next_img, chn, &last_image_chunk);
+        	  if ((len32 >> 24) & 0xff != MARKER_FF) {
+        		  // we should not be here as the position was checked in circbufValidPointer
+        		  dev_dbg(NULL, "read pointer: 0x%x, len32: 0x%x\n", DW2BYTE(rp), len32);
+        		  return -EOVERFLOW;
+        	  }
+        	  len32 &= 0xffffff;
+        	  inserted_bytes = ((CHUNK_SIZE - (((len32 % CHUNK_SIZE) + CCAM_MMAP_META) % CHUNK_SIZE) - ADJUSTMENT) % CHUNK_SIZE ) + ADJUSTMENT;
+        	  img_start = last_image_chunk + CHUNK_SIZE - inserted_bytes - CCAM_MMAP_META - len32;
+        	  dev_dbg(NULL, "calculated start address = 0x%x, length = 0x%x\n", img_start, len32);
+        	  file->f_pos = img_start;
+        	  break;
           case LSEEK_CIRC_PREV:
-             rp= file->f_pos >> 2;
-             fl=ccam_dma_buf[X313_BUFFSUB(rp, 9)] ^ X313_LENGTH_MASK;
- MD11(printk("LSEEK_CIRC_PREV: rp=0x%x, fvld=%d, fl=0x%x\n", rp, fvld,fl));
-             if (fl & X313_LENGTH_MASK) {
-                if (offset==LSEEK_CIRC_LAST) break; // just don't move pointer, leave it at write pointer and return no error
-                return -EOVERFLOW; //! no frames before current
-             }
-             bp = (X313_BUFFSUB(rp, X313_PADDED_FRAME(fl))<<2); // in bytes
- MD11(printk("LSEEK_CIRC_PREV: bp=0x%x (0x%x), circbufValidPointer=%d\n", bp, bp>>2,circbufValidPointer(rp>>2, &fp)));
-             if (circbufValidPointer(bp, &fp) < 0 ) { //! no valid frames before current
-                if (offset==LSEEK_CIRC_LAST) break; // just don't move pointer, leave it at write pointer and return no error
-                return -EOVERFLOW; //! no frames before current
-             }
- //! move frame pointer only if there is a valid frame there
-             file->f_pos=bp;
-             break;
+        	  rp= file->f_pos >> 2;
+        	  fl=ccam_dma_buf[X313_BUFFSUB(rp, 9)] ^ X313_LENGTH_MASK;
+        	  //fl = circbuf_priv[minor_to_chn(minor)].buf_ptr[X313_BUFFSUB(rp, 9)] ^ X313_LENGTH_MASK;
+        	  //MD11(printk("LSEEK_CIRC_PREV: rp=0x%x, fvld=%d, fl=0x%x\n", rp, fvld,fl));
+        	  dev_dbg(NULL, "LSEEK_CIRC_PREV: rp=0x%x, fvld=%d, fl=0x%x\n", BYTE2DW(rp), fvld, fl);
+        	  if (fl & X313_LENGTH_MASK) {
+        		  if (offset==LSEEK_CIRC_LAST) break; // just don't move pointer, leave it at write pointer and return no error
+        		  return -EOVERFLOW; //! no frames before current
+        	  }
+        	  bp = (X313_BUFFSUB(rp, X313_PADDED_FRAME(fl))<<2); // in bytes
+        	  //MD11(printk("LSEEK_CIRC_PREV: bp=0x%x (0x%x), circbufValidPointer=%d\n", bp, bp>>2,circbufValidPointer(rp>>2, &fp, chn)));
+        	  if (circbufValidPointer(bp, &fp, chn) < 0 ) { //! no valid frames before current
+        		  if (offset==LSEEK_CIRC_LAST) break; // just don't move pointer, leave it at write pointer and return no error
+        		  return -EOVERFLOW; //! no frames before current
+        	  }
+
+        	  //! move frame pointer only if there is a valid frame there
+        	  file->f_pos = bp;
+        	  break;
           case LSEEK_CIRC_NEXT:
  MD11(printk("LSEEK_CIRC_NEXT: rp=0x%x, fvld=%d, fp->timestamp_sec=0x%x\n", file->f_pos >> 2, fvld, fp->timestamp_sec));
              if (fvld <=0) 
@@ -443,13 +542,14 @@ MD12(int dbg_i);
           case LSEEK_CIRC_FIRST:
           case LSEEK_CIRC_SCND:
 //! Starting from the write pointer do be able to count all the frames in the buffer
-             rp=camSeqGetJPEG_wp();
+             //rp=camSeqGetJPEG_wp();
+        	  rp = camseq_get_jpeg_wp(chn);
              prev_p=rp;
              preprev_p=prev_p; // for second
              nf=0;
              nz=1;
              file->f_pos=rp<<2;
-             while ((((fvld=circbufValidPointer(rp<<2, &fp))) >= 0) & (nz>=0)) {
+             while ((((fvld=circbufValidPointer(rp<<2, &fp, chn))) >= 0) & (nz>=0)) {
                nf++;
 //               file->f_pos=rp<<2;
                preprev_p=prev_p; //! second known good (at least first one)
@@ -466,7 +566,8 @@ MD12(int dbg_i);
              file->f_pos=((offset==LSEEK_CIRC_SCND)?preprev_p:prev_p) << 2;
              break;
           case LSEEK_CIRC_SETP:
-             camSeqSetJPEG_rp(file->f_pos>>2);
+             //camSeqSetJPEG_rp(file->f_pos>>2);
+        	  camseq_set_jpeg_rp(file->f_pos >> 2, chn);
              break;
           case LSEEK_CIRC_VALID:
              break;
@@ -474,8 +575,9 @@ MD12(int dbg_i);
              if (fvld <=0) return -EINVAL; //! no frame is available better code?
              break;
           case LSEEK_CIRC_WAIT:
-              while (((fvld=circbufValidPointer(file->f_pos, &fp)))==0) { //! only while not ready, ready or BAD - return
-                wait_event_interruptible(circbuf_wait_queue,(camSeqGetJPEG_wp()<<2)!=file->f_pos);
+              while (((fvld=circbufValidPointer(file->f_pos, &fp, chn)))==0) { //! only while not ready, ready or BAD - return
+                //wait_event_interruptible(circbuf_wait_queue,(camSeqGetJPEG_wp()<<2)!=file->f_pos);
+                wait_event_interruptible(circbuf_wait_queue, (camseq_get_jpeg_wp(chn) << 2) != file->f_pos);
               }
               if (fvld < 0) return -ESPIPE;      //!invalid seek - have better code?
               return file->f_pos ; //! data already available, return file pointer
@@ -521,7 +623,7 @@ ssize_t circbuf_write(struct file * file, const char * buf, size_t count, loff_t
 	}
 	/* debug code end */
 
-	D(printk("circbuf_write\n"));
+	//D(printk("circbuf_write\n"));
 	/// ************* NOTE: Never use file->f_pos in write() and read() !!!
 	p = *off;
 	if(p >= (CCAM_DMA_SIZE << 2))
@@ -550,9 +652,8 @@ ssize_t circbuf_read(struct file * file, char * buf, size_t count, loff_t *off) 
   char * char_pb = (char *) ccam_dma_buf;
   struct circbuf_pd *priv = file->private_data;
 
-  printk(KERN_DEBUG "%s\n", __func__);
   p = *off;
-  D(printk("circbuf_read pos=%d,count=%d, off=%d\r\n",p,count,off ));
+  dev_dbg(NULL, "read from circbuf pos = %d, count = %d, off = %d\n", p, count, off);
   if (p >= (CCAM_DMA_SIZE<<2))  p = (CCAM_DMA_SIZE<<2);
   if( (p + count) > (CCAM_DMA_SIZE<<2)) { // truncate count
     count = (CCAM_DMA_SIZE<<2) - p;
@@ -565,28 +666,29 @@ ssize_t circbuf_read(struct file * file, char * buf, size_t count, loff_t *off) 
   return count;
 }
 
-int   circbuf_mmap   (struct file *file, struct vm_area_struct *vma) {
+int circbuf_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	int ret;
+	int chn = minor_to_chn(MINOR(file->f_inode->i_rdev));
 
-     int rslt;
+	dev_dbg(NULL, "vm_start = 0x%lx\n", vma->vm_start);
+	dev_dbg(NULL, "vm_end = 0x%lx\n", vma->vm_end);
+	dev_dbg(NULL, "vm_pgoff = 0x%lx\n", vma->vm_pgoff);
+	dev_dbg(NULL, "vm_file = 0x%lx\n", (unsigned long)vma->vm_file);
+	dev_dbg(NULL, "ccam_dma_buf = 0x%lx\n", (unsigned long)circbuf_priv[chn].phys_addr);
 
-     MD7(printk("vm_start=%lx\r\n",vma->vm_start));
-     MD7(printk("vm_end=%lx\r\n",vma->vm_end));
-     MD7(printk("vm_pgoff=%lx\r\n",vma->vm_pgoff));
-     MD7(printk("vm_file=%lx\r\n",(unsigned long) (vma->vm_file)));
-     MD7(printk("ccam_dma_buf=%lx\r\n",(unsigned long) (virt_to_phys (&ccam_dma_buf[0]))));
-   /* Remap-pfn-range will mark the range VM_IO and VM_RESERVED */
-     rslt=remap_pfn_range(vma,
-             vma->vm_start,
-//             ((unsigned long)(&ccam_dma_buf[0])) >> PAGE_SHIFT, // Should be page-aligned
-             ((unsigned long) virt_to_phys(&ccam_dma_buf[0])) >> PAGE_SHIFT, // Should be page-aligned
-             vma->vm_end-vma->vm_start,
-             vma->vm_page_prot);
+	/* Remap-pfn-range will mark the range VM_IO and VM_RESERVED */
+	ret = remap_pfn_range(vma,
+			vma->vm_start,
+			//((unsigned long) virt_to_phys(&ccam_dma_buf[0])) >> PAGE_SHIFT, // Should be page-aligned
+			circbuf_priv[chn].phys_addr >> PAGE_SHIFT,
+			vma->vm_end - vma->vm_start,
+			vma->vm_page_prot);
 
-     MD7(printk("remap_pfn_range returned=%x\r\n",rslt));
-     if (rslt) return -EAGAIN;
-//   vma->vm_ops = &simple_remap_vm_ops;
-//   simple_vma_open(vma);
-     return 0;
+	dev_dbg(NULL, "remap_pfn_range returned 0x%x\n", ret);
+	if (ret) return -EAGAIN;
+
+	return 0;
 }
 /*!===========================================================================
  *! If the current read pointer is invalid, circbuf_poll returns POLLHUP
@@ -594,25 +696,33 @@ int   circbuf_mmap   (struct file *file, struct vm_area_struct *vma) {
  *! if it is valid, wait is setup and the blocking condition occurs 
  *! ifthe current file pointer is equal to the FPGA write pointer
  *!===========================================================================*/
-unsigned int circbuf_poll (struct file *file, poll_table *wait) {
-     struct interframe_params_t * fp;
-     struct circbuf_pd * privData;
-     privData = (struct circbuf_pd *) file->private_data;
-     int rslt; //!result of testing read poinetr
- MD10(printk("circbuf_poll\n"));
-     rslt= circbufValidPointer(file->f_pos, &fp);
-     if        (rslt < 0) { //! not a valid read pointer, probable buffer overrun 
- MD10(printk("circbuf_poll:invalid pointer\n"));
-       return  POLLHUP ;
-     } else if (rslt > 0) {
-       return POLLIN | POLLRDNORM; //! there was frame already available
-     } else { //! pointer valid, no frame yet
-       poll_wait(file, &circbuf_wait_queue, wait);
-//! Frame might become available during call to poll_wait so nobody will wake us up.
-//! Let's see if there is stillno frame
-	    if ((camSeqGetJPEG_wp()<<2)!=file->f_pos) return POLLIN | POLLRDNORM; //! we are lucky - got it
-    }
-    return 0; // nothing ready
+unsigned int circbuf_poll (struct file *file, poll_table *wait)
+{
+	int w_ptr;
+	unsigned int minor = MINOR(file->f_inode->i_rdev);
+	unsigned int chn = minor_to_chn(minor);
+
+	struct interframe_params_t * fp;
+	struct circbuf_pd * privData;
+	privData = (struct circbuf_pd *) file->private_data;
+	int rslt; //!result of testing read poinetr
+	MD10(printk("circbuf_poll\n"));
+	rslt= circbufValidPointer(file->f_pos, &fp, chn);
+	if        (rslt < 0) { //! not a valid read pointer, probable buffer overrun
+		MD10(printk("circbuf_poll:invalid pointer\n"));
+		return  POLLHUP ;
+	} else if (rslt > 0) {
+		return POLLIN | POLLRDNORM; //! there was frame already available
+	} else { //! pointer valid, no frame yet
+		poll_wait(file, &circbuf_wait_queue, wait);
+		//! Frame might become available during call to poll_wait so nobody will wake us up.
+		//! Let's see if there is stillno frame
+		//if ((camSeqGetJPEG_wp()<<2)!=file->f_pos) return POLLIN | POLLRDNORM; //! we are lucky - got it
+		w_ptr = camseq_get_jpeg_wp(chn) << 2;
+		if (w_ptr != file->f_pos)
+			return POLLIN | POLLRDNORM; //! we are lucky - got it
+	}
+	return 0; // nothing ready
 }
 
 static struct file_operations circbuf_fops = {
@@ -643,7 +753,7 @@ static int circbuf_all_init(struct platform_device *pdev)
    if (!match)
 	   return -EINVAL;
 
-   MDF19(printk("\n"));
+   dev_dbg(dev, "registering character device with name 'circbuf_operations'");
    res = register_chrdev(CIRCBUF_MAJOR, "circbuf_operations", &circbuf_fops);
    if(res < 0) {
 	   dev_err(dev, "couldn't get a major number %d.\n", CIRCBUF_MAJOR);
@@ -656,12 +766,12 @@ static int circbuf_all_init(struct platform_device *pdev)
 	   return -ENOMEM;
    }
 
-   MDF19(printk("init_waitqueue_head()\n"));
+   dev_dbg(dev, "initialize circbuf wait queue\n");
    init_waitqueue_head(&circbuf_wait_queue);
-   MDF19(printk("jpeg_htable_init()\n"));
+   dev_dbg(dev, "initialize Huffman tables with default data\n");
    jpeg_htable_init ();         /// set default Huffman table, encode it for the FPGA
-   dev_info(dev, "registered MAJOR: %d\n", CIRCBUF_MAJOR);
 
+   dev_info(dev, "registered MAJOR: %d\n", CIRCBUF_MAJOR);
    res = image_acq_init(pdev);
    if (res < 0) {
 	   dev_err(dev, "unable to initialize sensor_common module\n");
