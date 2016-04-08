@@ -289,8 +289,8 @@ static ssize_t get_i2c_page_alloc(struct device *dev, struct device_attribute *a
 {
 	int chn = get_channel_from_name(attr) ;
 	int page;
-	if (sysfs_page[chn]>=0)
-		return -EBUSY;
+//	if (sysfs_page[chn]>=0)
+//		return -EBUSY;
 	page= i2c_page_alloc(chn);
 	if (page <0)
 		return -ENOMEM;
@@ -303,17 +303,30 @@ static ssize_t free_i2c_page(struct device *dev, struct device_attribute *attr, 
 	int page;
     sscanf(buf, "%i", &page);
     page &= 0xff;
-	if (sysfs_page[chn] >= 0)
-		i2c_page_free(chn, page);
-	    sysfs_page[chn] = -1; // free
+//	if (sysfs_page[chn] >= 0)
+//		i2c_page_free(chn, page);
+//	sysfs_page[chn] = -1; // free
+    i2c_page_free(chn, page);
 	return count;
 }
 
+/* Set/get page number for reading */
+static ssize_t set_i2c_page_inuse(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int chn = get_channel_from_name(attr) ;
+	int page;
+    sscanf(buf, "%i", &page);
+    sysfs_page[chn] = page & 0xff;
+	return count;
+}
 static ssize_t get_i2c_page_inuse(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int chn = get_channel_from_name(attr) ;
 	return sprintf(buf,"%d\n",sysfs_page[chn]);
 }
+
+
+
 // Get i2c table data as raw data (hex)
 static ssize_t get_i2c_tbl_raw(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -322,49 +335,170 @@ static ssize_t get_i2c_tbl_raw(struct device *dev, struct device_attribute *attr
 	if (page < 0)
 		return -ENXIO;   /* No such device or address */
 
-	return sprintf(buf,"%0x08x\n",i2c_pages_shadow[(chn << 8) + (page &0xff)]);
+	return sprintf(buf,"0x%08x\n",i2c_pages_shadow[(chn << 8) + (page &0xff)]);
 }
 
 static ssize_t set_i2c_tbl_raw(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int chn = get_channel_from_name(attr) ;
-	int page, data;
-    sscanf(buf, "%i %i", &page, &data);
-    page &= 0xff;
+	int ni, page, data;
+    ni = sscanf(buf, "%i %i", &page, &data);
+    if (ni < 2)
+    	dev_err(dev, "Requires 2 parameters: page, data\n");
+        return -EINVAL;
+
     set_sensor_i2c_raw(chn,
-    		           page,   // index in lookup table
+    		           page & 0xff,   // index in lookup table
     				   (u32) data); // Bit delay - number of mclk periods in 1/4 of the SCL period
 	return count;
 }
 
-// Sysfs top
+// Get/parse i2c table (hex)
+static ssize_t get_i2c_tbl_human(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	x393_i2c_ctltbl_t tb_data;
+	int chn = get_channel_from_name(attr) ;
+	int page = sysfs_page[chn]; // currently selected page for sysfs reads
+	if (page < 0)
+		return -ENXIO;   /* No such device or address */
+	tb_data.d32 = i2c_pages_shadow[(chn << 8) + (page &0xff)];
+	if (tb_data.rnw){
+		return sprintf(buf,"Read entry: chn=%d page=%d(0x%x) two_byte_addr=%d number bytes to read=%d bit_duration=%d\n",
+				                chn,   page,page,            tb_data.nabrd,tb_data.nabrd,tb_data.nbrd,  tb_data.dly);
+	} else {
+		return sprintf(buf,"Write entry: chn=%d page=%d(0x%x) sa=0x%02x rah=0x%02x nbw=%d bit_duration=%d\n",
+				                chn,   page,page,tb_data.sa,tb_data.rah,tb_data.nbwr,  tb_data.dly);
+	}
+}
 
-static DEVICE_ATTR(alloc0  ,       SYSFS_PERMISSIONS & SYSFS_READONLY,    get_i2c_page_alloc ,   NULL);
-static DEVICE_ATTR(alloc1  ,       SYSFS_PERMISSIONS & SYSFS_READONLY,    get_i2c_page_alloc ,   NULL);
-static DEVICE_ATTR(alloc2  ,       SYSFS_PERMISSIONS & SYSFS_READONLY,    get_i2c_page_alloc ,   NULL);
-static DEVICE_ATTR(alloc3  ,       SYSFS_PERMISSIONS & SYSFS_READONLY,    get_i2c_page_alloc ,   NULL);
-static DEVICE_ATTR(page_in_use0 ,  SYSFS_PERMISSIONS                 ,    get_i2c_page_inuse,   free_i2c_page);
-static DEVICE_ATTR(page_in_use1 ,  SYSFS_PERMISSIONS                 ,    get_i2c_page_inuse,   free_i2c_page);
-static DEVICE_ATTR(page_in_use2 ,  SYSFS_PERMISSIONS                 ,    get_i2c_page_inuse,   free_i2c_page);
-static DEVICE_ATTR(page_in_use3 ,  SYSFS_PERMISSIONS                 ,    get_i2c_page_inuse,   free_i2c_page);
-static DEVICE_ATTR(tbl_raw0 ,      SYSFS_PERMISSIONS                 ,    get_i2c_tbl_raw,      set_i2c_tbl_raw);
-static DEVICE_ATTR(tbl_raw1 ,      SYSFS_PERMISSIONS                 ,    get_i2c_tbl_raw,      set_i2c_tbl_raw);
-static DEVICE_ATTR(tbl_raw2 ,      SYSFS_PERMISSIONS                 ,    get_i2c_tbl_raw,      set_i2c_tbl_raw);
-static DEVICE_ATTR(tbl_raw3 ,      SYSFS_PERMISSIONS                 ,    get_i2c_tbl_raw,      set_i2c_tbl_raw);
+static ssize_t set_i2c_tbl_wr_human(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int chn = get_channel_from_name(attr) ;
+	int ni, page, rah,sa7,nbwr,dly;
+    ni = sscanf(buf, "%i %i %i %i %i", &page, &sa7, &rah, &nbwr, &dly);
+    if (ni < 2)
+    	dev_err(dev, "Requires 5 parameters: page, slave address (7 bit), high reg address byte, bytes to write (1..10), 1/4 scl period in mclk\n");
+        return -EINVAL;
+    set_sensor_i2c_wr(chn,
+					  page & 0xff, // index in lookup table
+					  sa7 &  0x7f,  // slave address (7 bit)
+					  rah &  0xff,  // High byte of the i2c register address
+					  nbwr & 0xf, // Number of bytes to write (1..10)
+					  dly &  0xff); // Bit delay - number of mclk periods in 1/4 of the SCL period
+	return count;
+}
+
+static ssize_t set_i2c_tbl_rd_human(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int chn = get_channel_from_name(attr) ;
+	int ni, page, two_byte_addr, num_bytes,bit_delay;
+    ni = sscanf(buf, "%i %i %i %i %i", &page, &two_byte_addr, &num_bytes, &bit_delay);
+    if (ni < 2)
+    	dev_err(dev, "Requires 4 parameters: page, two byte addr (0 - 8bit,1 - 16 bit reg. addr), number of bytes to read, bytes to write (1..10), 1/4 scl period in mclk\n");
+        return -EINVAL;
+    set_sensor_i2c_rd( chn,
+					   page & 0xff,          // index in lookup table
+					   two_byte_addr & 1,    // Number of address bytes (0 - one byte, 1 - two bytes)
+					   num_bytes & 7,        // Number of bytes to read (1..8, 0 means 8)
+					   bit_delay & 0xff);    // Bit delay - number of mclk periods in 1/4 of the SCL period
+	return count;
+}
+
+
+static ssize_t set_i2c_read(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int chn = get_channel_from_name(attr) ;
+	int ni, page, sa7, addr;
+    ni = sscanf(buf, "%i %i %i", &page, &sa7, addr);
+    if (ni <3)
+    	dev_err(dev, "Requires 3 parameters: page, sa7, reg_addr\n");
+        return -EINVAL;
+    page &= 0xff;
+    read_sensor_i2c (chn,
+    		         page & 0xff,    // page (8 bits)
+    				 sa7 & 0x7f,     // 7-bit i2c slave address
+                     addr & 0xffff); // 8/16 bit address	return count;
+}
+
+// Get i2c read data from fifo
+static ssize_t get_i2c_read(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int chn = get_channel_from_name(attr) ;
+	int page = sysfs_page[chn]; // currently selected page for sysfs reads
+	if (page < 0)
+		return -ENXIO;   /* No such device or address */
+	return sprintf(buf,"%d\n",read_sensor_i2c_fifo(chn)); // <0 - not ready, 0..255 - data
+}
+
+// Get i2c read data from fifo
+static ssize_t get_i2c_help(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf,"Numeric suffix in file names selects sensor port\n"
+			           "alloc*:   read - allocate and return page, write <page> (any data) - free page\n"
+			           "rd_page*: read/write page number used in read operations (-1 if none)\n"
+			           "tbl_raw*: read - raw hex table value (for current rd_page), write <page> <data32> set page\n"
+			           "tbl_wr*:  read - decoded table entry for current rd_page, write <page> <sa7> <high_addr_byte> <bytes_to_write> <dly>\n"
+			           "tbl_rd*:  read - decoded table entry for current rd_page, write <page> <2-byte addr> <bytes_to_read> <dly>\n"
+			           "tbl_rd* and tbl_wr* return same result when read. Delay is 8 bit, 250 - 200KHz SCL\n");
+
+}
+
+
+// Sysfs top
+/* alloc*: read - allocate and return page, write (any data) - free page */
+static DEVICE_ATTR(alloc0  ,       SYSFS_PERMISSIONS                 ,    get_i2c_page_alloc ,   free_i2c_page);
+static DEVICE_ATTR(alloc1  ,       SYSFS_PERMISSIONS                 ,    get_i2c_page_alloc ,   free_i2c_page);
+static DEVICE_ATTR(alloc2  ,       SYSFS_PERMISSIONS                 ,    get_i2c_page_alloc ,   free_i2c_page);
+static DEVICE_ATTR(alloc3  ,       SYSFS_PERMISSIONS                 ,    get_i2c_page_alloc ,   free_i2c_page);
+/* rd_page*: read/write page number used in read operations */
+static DEVICE_ATTR(rd_page0 ,      SYSFS_PERMISSIONS                 ,    get_i2c_page_inuse,    set_i2c_page_inuse);
+static DEVICE_ATTR(rd_page1 ,      SYSFS_PERMISSIONS                 ,    get_i2c_page_inuse,    set_i2c_page_inuse);
+static DEVICE_ATTR(rd_page2 ,      SYSFS_PERMISSIONS                 ,    get_i2c_page_inuse,    set_i2c_page_inuse);
+static DEVICE_ATTR(rd_page3 ,      SYSFS_PERMISSIONS                 ,    get_i2c_page_inuse,    set_i2c_page_inuse);
+static DEVICE_ATTR(tbl_raw0 ,      SYSFS_PERMISSIONS                 ,    get_i2c_tbl_raw,       set_i2c_tbl_raw);
+static DEVICE_ATTR(tbl_raw1 ,      SYSFS_PERMISSIONS                 ,    get_i2c_tbl_raw,       set_i2c_tbl_raw);
+static DEVICE_ATTR(tbl_raw2 ,      SYSFS_PERMISSIONS                 ,    get_i2c_tbl_raw,       set_i2c_tbl_raw);
+static DEVICE_ATTR(tbl_raw3 ,      SYSFS_PERMISSIONS                 ,    get_i2c_tbl_raw,       set_i2c_tbl_raw);
+static DEVICE_ATTR(tbl_wr0 ,       SYSFS_PERMISSIONS                 ,    get_i2c_tbl_human,     set_i2c_tbl_wr_human);
+static DEVICE_ATTR(tbl_wr1 ,       SYSFS_PERMISSIONS                 ,    get_i2c_tbl_human,     set_i2c_tbl_wr_human);
+static DEVICE_ATTR(tbl_wr2 ,       SYSFS_PERMISSIONS                 ,    get_i2c_tbl_human,     set_i2c_tbl_wr_human);
+static DEVICE_ATTR(tbl_wr3 ,       SYSFS_PERMISSIONS                 ,    get_i2c_tbl_human,     set_i2c_tbl_wr_human);
+static DEVICE_ATTR(tbl_rd0 ,       SYSFS_PERMISSIONS                 ,    get_i2c_tbl_human,     set_i2c_tbl_rd_human);
+static DEVICE_ATTR(tbl_rd1 ,       SYSFS_PERMISSIONS                 ,    get_i2c_tbl_human,     set_i2c_tbl_rd_human);
+static DEVICE_ATTR(tbl_rd2 ,       SYSFS_PERMISSIONS                 ,    get_i2c_tbl_human,     set_i2c_tbl_rd_human);
+static DEVICE_ATTR(tbl_rd3 ,       SYSFS_PERMISSIONS                 ,    get_i2c_tbl_human,     set_i2c_tbl_rd_human);
+static DEVICE_ATTR(i2c_rd0 ,       SYSFS_PERMISSIONS                 ,    get_i2c_read,          set_i2c_read);
+static DEVICE_ATTR(i2c_rd1 ,       SYSFS_PERMISSIONS                 ,    get_i2c_read,          set_i2c_read);
+static DEVICE_ATTR(i2c_rd2 ,       SYSFS_PERMISSIONS                 ,    get_i2c_read,          set_i2c_read);
+static DEVICE_ATTR(i2c_rd3 ,       SYSFS_PERMISSIONS                 ,    get_i2c_read,          set_i2c_read);
+static DEVICE_ATTR(help,           SYSFS_PERMISSIONS & SYSFS_READONLY,    get_i2c_help,          NULL);
 
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_alloc0.attr,
         &dev_attr_alloc1.attr,
         &dev_attr_alloc2.attr,
         &dev_attr_alloc3.attr,
-        &dev_attr_page_in_use0.attr,
-        &dev_attr_page_in_use1.attr,
-        &dev_attr_page_in_use2.attr,
-        &dev_attr_page_in_use3.attr,
+        &dev_attr_rd_page0.attr,
+        &dev_attr_rd_page1.attr,
+        &dev_attr_rd_page2.attr,
+        &dev_attr_rd_page3.attr,
         &dev_attr_tbl_raw0.attr,
         &dev_attr_tbl_raw1.attr,
         &dev_attr_tbl_raw2.attr,
         &dev_attr_tbl_raw3.attr,
+        &dev_attr_tbl_wr0.attr,
+        &dev_attr_tbl_wr1.attr,
+        &dev_attr_tbl_wr2.attr,
+        &dev_attr_tbl_wr3.attr,
+        &dev_attr_tbl_rd0.attr,
+        &dev_attr_tbl_rd1.attr,
+        &dev_attr_tbl_rd2.attr,
+        &dev_attr_tbl_rd3.attr,
+		&dev_attr_i2c_rd0.attr,
+        &dev_attr_i2c_rd1.attr,
+        &dev_attr_i2c_rd2.attr,
+        &dev_attr_i2c_rd3.attr,
+        &dev_attr_help.attr,
         NULL
 };
 
@@ -412,13 +546,14 @@ static int elphel393_sensor_i2c_probe(struct platform_device *pdev)
 	struct i2c_client *ltc3589_client;
 	struct elphel393_pwr_data_t *clientdata = NULL;
 	*/
-	dev_info(&pdev->dev,"Probing elphel393-sensor-i2c\n");
+	pr_info("Probing elphel393-sensor-i2c\n");
+	elphel393_sens_i2c_sysfs_register(pdev);
 	i2c_page_alloc_init();
 #if 0
 	clientdata = devm_kzalloc(&pdev->dev, sizeof(*clientdata), GFP_KERNEL);
 #endif
 	elphel393_sensor_i2c_init_of(pdev);
-	elphel393_sens_i2c_sysfs_register(pdev);
+	pr_info("done probing elphel393-sensor-i2c\n");
 	return 0;
 }
 
@@ -435,7 +570,7 @@ static struct of_device_id elphel393_sensor_i2c_of_match[] = {
 
 MODULE_DEVICE_TABLE(of, elphel393_sensor_i2c_of_match);
 
-static struct platform_driver elphel393_pwr = {
+static struct platform_driver elphel393_sensor_i2c = {
 	.probe   = elphel393_sensor_i2c_probe,
 	.remove  = elphel393_sensor_i2c_remove,
 	.driver  = {
@@ -446,7 +581,7 @@ static struct platform_driver elphel393_pwr = {
 	},
 };
 
-module_platform_driver(elphel393_pwr);
+module_platform_driver(elphel393_sensor_i2c);
 
 MODULE_AUTHOR("Andrey Filippov  <andrey@elphel.com>");
 MODULE_DESCRIPTION("Elphel 10393 sensor ports i2c");
