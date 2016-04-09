@@ -1156,7 +1156,8 @@ static int pl35x_nand_probe(struct platform_device *pdev)
 	/* second phase scan */
 	if (nand_scan_tail(mtd)) {
 		dev_err(&pdev->dev, "nand_scan_tail for NAND failed\n");
-		return -ENXIO;
+		// elphel393: don't want to fail exit on the very first boot when flash is locked and the bad block table is not written yet
+		//return -ENXIO;
 	}
 
 	//elphel393 modification for Micron NAND chips
