@@ -219,7 +219,7 @@ loff_t circbuf_all_lseek(struct file * file, loff_t offset, int orig)
 		if (orig == SEEK_END && offset > 0) {
 			rp = BYTE2DW(offset) & (~7); // convert to index to long, align to 32-bytes
 			//fp = (struct interframe_params_t *) &ccam_dma_buf_ptr[X313_BUFFSUB(rp, 8)]; //! 32 bytes before the frame pointer, may roll-over to the end of ccam_dma_buf_ptr
-			fp = (struct interframe_params_t *) &circbuf_priv[minor_to_chn(minor)].buf_ptr[X313_BUFFSUB(rp, 8)];
+			fp = (struct interframe_params_t *) &circbuf_priv[minor_to_chn(minor)].buf_ptr[X393_BUFFSUB(rp, 8)];
 		}
 		return  jpeghead_lseek(file, offset, orig, fp);
 	case CMOSCAM_MINOR_HUFFMAN :
@@ -360,7 +360,7 @@ unsigned long get_image_length(int offset, unsigned int chn, int *last_chunk_off
 		last_image_chunk += CCAM_DMA_SIZE;
 	len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH))];
 	if (last_chunk_offset != NULL)
-		last_chunk_offset = last_image_chunk;
+		*last_chunk_offset = last_image_chunk;
 
 	return len32;
 }
@@ -380,7 +380,7 @@ int circbufValidPointer(int rp, struct interframe_params_t ** fpp, unsigned int 
 		dev_dbg(g_dev_ptr, "misaligned pointer rp = 0x%x for channel %d\n", rp, chn);
 		return -2;
 	}
-	fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[X313_BUFFSUB(p, INTERFRAME_PARAMS_SZ)];
+	fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[X393_BUFFSUB(p, INTERFRAME_PARAMS_SZ)];
 	*fpp = fp;
 
 	dump_interframe_params(fp);
@@ -543,7 +543,7 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
              // calculate the full length of current frame and advance file pointer by this value
         	  inserted_bytes = ((CHUNK_SIZE - (((len32 % CHUNK_SIZE) + CCAM_MMAP_META) % CHUNK_SIZE) - ADJUSTMENT) % CHUNK_SIZE ) + ADJUSTMENT;
         	  padded_frame = fp->len32 + inserted_bytes + CHUNK_SIZE + CCAM_MMAP_META;
-             file->f_pos = X313_BUFFADD(file->f_pos >> 2, padded_frame) << 2 ;// do it even if the next frame does not yet exist
+             file->f_pos = X393_BUFFADD(file->f_pos >> 2, padded_frame) << 2 ;// do it even if the next frame does not yet exist
              dev_dbg(g_dev_ptr, "LSEEK_CIRC_NEXT: moving file->f_pos to 0x%x\n", file->f_pos);
              break;
           case LSEEK_CIRC_FIRST:

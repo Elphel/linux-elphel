@@ -308,9 +308,9 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 
 	struct interframe_params_t *interframe;
 	int circbuf_size = BYTE2DW(get_globalParam(G_CIRCBUFSIZE));
-	int len_offset = X313_BUFFSUB(jptr->jpeg_wp, 8);
+	int len_offset = X393_BUFFSUB(jptr->jpeg_wp, 8);
 	int len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset] & FRAME_LENGTH_MASK;
-	int frame_params_offset = X313_BUFFSUB(jptr->jpeg_wp, INTERFRAME_PARAMS_SZ);
+	int frame_params_offset = X393_BUFFSUB(jptr->jpeg_wp, INTERFRAME_PARAMS_SZ);
 
 	interframe = (struct interframe_params_t *) &circbuf_priv_ptr[jptr->chn_num].buf_ptr[frame_params_offset];
 	interframe->frame_length = len32;
