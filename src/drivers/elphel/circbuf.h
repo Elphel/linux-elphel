@@ -34,4 +34,12 @@ extern wait_queue_head_t circbuf_wait_queue;
 extern unsigned long  *ccam_dma_buf_ptr;
 //unsigned long *circbuf_get_ccam_ptr(void);
 
+// private data
+struct circbuf_priv_t {
+	int                 minor;
+	unsigned long       *buf_ptr;
+	dma_addr_t          phys_addr;
+};
+extern struct circbuf_priv_t *circbuf_priv_ptr;
+
 #endif /* _CIRCBUF_H */

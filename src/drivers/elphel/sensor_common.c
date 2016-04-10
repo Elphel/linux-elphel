@@ -290,21 +290,31 @@ inline void updateIRQFocus(struct jpeg_ptr_t *jptr)
  * @return pointer to interframe parameters structure
  */
 inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr) {
-   int circbuf_size=get_globalParam (G_CIRCBUFSIZE)>>2;
-   int alen = JPEG_wp-9; if (alen<0) alen+=circbuf_size;
-   int jpeg_len=ccam_dma_buf_ptr[alen] & 0xffffff;
-   set_globalParam(G_FRAME_SIZE,jpeg_len);
-   int aframe_params=(alen & 0xfffffff8)-
-                     (((jpeg_len + CCAM_MMAP_META + 3) & 0xffffffe0)>>2) /// multiple of 32-byte chunks to subtract
-                     -8; /// size of the storage area to be filled before the frame
-   if(aframe_params < 0) aframe_params += circbuf_size;
-   struct interframe_params_t* interframe= (struct interframe_params_t*) &ccam_dma_buf_ptr[aframe_params];
-/// should we use memcpy as before here?
-   interframe->frame_length=jpeg_len;
-   interframe->signffff=0xffff;
-#if ELPHEL_DEBUG_THIS
-    set_globalParam          (0x306,get_globalParam (0x306)+1);
-#endif
+//   int circbuf_size=get_globalParam (G_CIRCBUFSIZE)>>2;
+//   int alen = JPEG_wp-9; if (alen<0) alen+=circbuf_size;
+//   int jpeg_len=ccam_dma_buf_ptr[alen] & 0xffffff;
+//   set_globalParam(G_FRAME_SIZE,jpeg_len);
+//   int aframe_params=(alen & 0xfffffff8)-
+//                     (((jpeg_len + CCAM_MMAP_META + 3) & 0xffffffe0)>>2) /// multiple of 32-byte chunks to subtract
+//                     -8; /// size of the storage area to be filled before the frame
+//   if(aframe_params < 0) aframe_params += circbuf_size;
+//   struct interframe_params_t* interframe= (struct interframe_params_t*) &ccam_dma_buf_ptr[aframe_params];
+///// should we use memcpy as before here?
+//   interframe->frame_length=jpeg_len;
+//   interframe->signffff=0xffff;
+//#if ELPHEL_DEBUG_THIS
+//    set_globalParam          (0x306,get_globalParam (0x306)+1);
+//#endif
+
+	struct interframe_params_t *interframe;
+	int circbuf_size = BYTE2DW(get_globalParam(G_CIRCBUFSIZE));
+	int len_offset = X313_BUFFSUB(jptr->jpeg_wp, 8);
+	int len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset] & FRAME_LENGTH_MASK;
+	int frame_params_offset = X313_BUFFSUB(jptr->jpeg_wp, INTERFRAME_PARAMS_SZ);
+
+	interframe = (struct interframe_params_t *) &circbuf_priv_ptr[jptr->chn_num].buf_ptr[frame_params_offset];
+	interframe->frame_length = len32;
+	set_globalParam(G_FRAME_SIZE, len32);
 
    return interframe;
 }

@@ -16,7 +16,9 @@
 /** @brief The size of #interframe_params_t structure in double words */
 #define INTERFRAME_PARAMS_SZ 8
 
-#define MARKER_FF            0xff
+#define MARKER_FF            0xff000000
+
+#define FRAME_LENGTH_MASK    0xffffff
 
 #define IRQ_NOP              0
 #define IRQ_CLEAR            1
