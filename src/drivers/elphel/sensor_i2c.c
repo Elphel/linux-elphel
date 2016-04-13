@@ -62,8 +62,33 @@
 #define DRV_NAME "elphel_sensor_i2c"
 
 //------------------
+#if 0
+#include <linux/fs.h>
 
 
+/**
+ * alloc_chrdev_region() - register a range of char device numbers
+ * @dev: output parameter for first assigned number
+ * @baseminor: first of the requested range of minor numbers
+ * @count: the number of minor numbers required
+ * @name: the name of the associated device or driver
+ *
+ * Allocates a range of char device numbers.  The major number will be
+ * chosen dynamically, and returned (along with the first minor number)
+ * in @dev.  Returns zero or a negative error code.
+ */
+int alloc_chrdev_region(dev_t *dev, unsigned baseminor, unsigned count,
+			const char *name)
+{
+	struct char_device_struct *cd;
+	cd = __register_chrdev_region(0, baseminor, count, name);
+	if (IS_ERR(cd))
+		return PTR_ERR(cd);
+	*dev = MKDEV(cd->major, cd->baseminor);
+	return 0;
+}
+
+#endif
 // Number of channels is hard-wired to 4
 static u32 free_i2c_groups[4];
 static u32 free_i2c_pages [32];

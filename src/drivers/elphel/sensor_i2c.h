@@ -18,6 +18,18 @@
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
 
+// I2C device description to be used with i2c sequencer
+/*
+typedef struct x393_i2c_device_tag{
+	      char *                       name;
+	      u8                           slave7; // slave address (7-bit)
+	      u8                           address_bytes;
+	      u8                           data_bytes;
+	      int                          scl_khz; // maximal SCL frequency in KHz (currently limited by 200KHz slowest)
+	      struct x393_i2c_device_tag * next;
+} x393_i2c_device_t;
+*/
+
 /* Reserve i2c page (1 of 256 for a sensor port)*/
 int i2c_page_alloc(int chn);
 
