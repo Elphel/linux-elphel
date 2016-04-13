@@ -1641,37 +1641,17 @@ struct sensorproc_t {
 ///*32-35*/ unsigned long  timestamp_usec; //! number of microseconds to add
 //};
 
-/* Some fields were rearranged to make old code happy, this should to be fixed
+/* Some fields were removed, may be we will need them later
  * Last three double words contain time stamp and (length+0xff) marker in new camera
  */
 struct interframe_params_t {
-/// This data will survive as long as the frame itself in the circular buffer. Some other fields (like exposure) are stored in Exif 
-/// dont move - should partially match P_* area
-	union {
-   union{unsigned long hash32_r; struct{unsigned short scale_r; union {unsigned short hash16_r; struct{unsigned char gamma_r; unsigned char black_r; };};};}; ///00-03
-   union{unsigned long hash32_g; struct{unsigned short scale_g; union {unsigned short hash16_g; struct{unsigned char gamma_g; unsigned char black_g; };};};}; ///04-07
-	};
-   union{unsigned long hash32_gb;struct{unsigned short scale_gb;union {unsigned short hash16_gb;struct{unsigned char gamma_gb;unsigned char black_gb;};};};}; ///08-11
-   union{unsigned long hash32_b; struct{unsigned short scale_b; union {unsigned short hash16_b; struct{unsigned char gamma_b; unsigned char black_b; };};};}; ///12-15
-   unsigned short quality2;       /// Quality is represented by 2-byte value. Each byte uses Y table if the value is Q<128,// 16-17
-                                  /// and C table with (Q-128) if it is Q>=128.
-                                  /// If the High byte is zero, it is treated as Q^0x80  (Q|=(Q^0x80)<<8) for compatibility
-                                  /// with a standard single-byte Q value
-/// updated in 8.0.8.37 - bit 7 in quality2 means "portrait mode"
-   unsigned char  color;          /// color mode //18
-   unsigned char  byrshift;       /// bayer shift in compressor //19
-   unsigned short width;          /// frame width, pixels   20-21 - NOTE: should be 20-21
-   unsigned short height;         /// frame height, pixels  22-23
-
-/*24   *//// unsigned char  bindec_hor;     //! ((bh-1) << 4) | (dh-1) & 0xf (binning/decimation horizontal, 1..16 for each)
-/*25   *//// unsigned char  bindec_vert;    //! ((bv-1) << 4) | (dv-1) & 0xf (binning/decimation vertical  , 1..16 for each)
-/*24-25*/ unsigned long meta_index;     //! index of the linked meta page
-
-   union {
-/*28-31*/ unsigned long  timestamp_sec ; //! number of seconds since 1970 till the start of the frame exposure
-/*28-31*/ unsigned long frame_length;    //! JPEG frame length in circular buffer, bytes
-   };
-/*32-35*/ unsigned long  timestamp_usec; //! number of microseconds to add
+	unsigned long quality2;
+	unsigned long color;
+	unsigned long byrshift;
+	unsigned long width;
+	unsigned long height;
+	unsigned long  timestamp_sec;        //! number of seconds since 1970 till the start of the frame exposure
+	unsigned long  timestamp_usec;       //! number of microseconds to add
 	union {
 		unsigned long len32;             //! should be 0xffxxyyzz - it will be a signature that JPEG data was not overwritten,
 	                                     //! xxyyzz here is the length in 32 double words;
@@ -1679,7 +1659,7 @@ struct interframe_params_t {
 			unsigned char pad0;          // pad double word with 3 bytes and use only most significant byte as 0xff marker
 			unsigned char pad1;
 			unsigned char pad2;
-			unsigned char signffff;
+			unsigned char signff;
 		};
 	};
 };

@@ -38,7 +38,7 @@ struct huffman_pd {
 int  jpeg_htable_is_programmed(void);
 void jpeg_htable_init (void);
 int  jpeg_htable_fpga_encode (void);
-void jpeg_htable_fpga_pgm (void);
+void jpeg_htable_fpga_pgm (unsigned int chn);
 int  jpeg_prep_htable (struct huffman_encoded_t * htable, struct huffman_fpga_code_t * hcodes);
 
 #endif /* _JPEGHEAD */

@@ -283,7 +283,15 @@ inline void updateIRQFocus(struct jpeg_ptr_t *jptr)
 	u32 high_freq = x393_cmprs_hifreq(jptr->chn_num);
 }
 
-
+static void set_default_interframe(struct interframe_params_t *params)
+{
+	params->height = 1936;
+	params->width = 2592;
+	params->byrshift = 0;
+	params->color = 0;
+	params->quality2 = 127;
+	dev_dbg(NULL, "%s: DEBUG, setting default interframe parameters\n", __func__);
+}
 
 /**
  * @brief Locate area between frames in the circular buffer
@@ -310,10 +318,13 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 	int circbuf_size = BYTE2DW(get_globalParam(G_CIRCBUFSIZE));
 	int len_offset = X393_BUFFSUB(jptr->jpeg_wp, 8);
 	int len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset] & FRAME_LENGTH_MASK;
-	int frame_params_offset = X393_BUFFSUB(jptr->jpeg_wp, INTERFRAME_PARAMS_SZ);
+	int frame_params_offset = X393_BUFFSUB(jptr->jpeg_wp, OFFSET_X40);
 
 	interframe = (struct interframe_params_t *) &circbuf_priv_ptr[jptr->chn_num].buf_ptr[frame_params_offset];
-	interframe->frame_length = len32;
+	//interframe->frame_length = len32;
+
+	set_default_interframe(interframe);
+
 	set_globalParam(G_FRAME_SIZE, len32);
 
    return interframe;
@@ -462,9 +473,9 @@ static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
 	if (updateIRQJPEG_wp(priv)) {
 		update_irq_circbuf(priv);
 		updateIRQFocus(priv);
-		/*interframe = updateIRQ_interframe();
-		updateIRQ_Exif(interframe);
-		wake_up_interruptible(&circbuf_wait_queue);*/
+		interframe = updateIRQ_interframe(priv);
+		//updateIRQ_Exif(interframe);
+		wake_up_interruptible(&circbuf_wait_queue);
 	}
 	//wake_up_interruptible(&framepars_wait_queue);
 
@@ -513,7 +524,7 @@ void tasklet_fpga_function(unsigned long arg) {
   int len32;
   int circbuf_size = get_globalParam(G_CIRCBUFSIZE);
   unsigned long *buf_ptr;
-  printk(KERN_DEBUG "%s: get_globalParam(G_CIRCBUFSIZE) = %d", __func__, circbuf_size);
+  printk(KERN_DEBUG "%s: get_globalParam(G_CIRCBUFSIZE) = %d\n", __func__, circbuf_size);
 
 
 #ifdef TEST_DISABLE_CODE

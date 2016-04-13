@@ -21,20 +21,21 @@
 
 #include <linux/module.h>
 #include <linux/mm.h>
-#include <linux/sched.h>
+//#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
-#include <linux/string.h>
+//#include <linux/string.h>
 #include <linux/init.h>
 //#include <linux/autoconf.h>
-#include <linux/time.h>
+//#include <linux/time.h>
+#include <linux/device.h>
 
 //#include <asm/system.h>
 //#include <asm/arch/memmap.h>
 //#include <asm/svinto.h> obsolete
-#include <asm/io.h>
+//#include <asm/io.h>
 
 /*#include <asm/arch/dma.h>
 #include <asm/arch/hwregs/dma_defs.h>
@@ -43,11 +44,11 @@
 #include <asm/arch/hwregs/bif_dma_defs.h>
 */
 
-#include <asm/irq.h>
-#include <asm/atomic.h>
+//#include <asm/irq.h>
+//#include <asm/atomic.h>
 
 
-#include <asm/delay.h>
+//#include <asm/delay.h>
 #include <asm/uaccess.h>
 #include <elphel/c313a.h>
 //#include "fpga_io.h"//fpga_table_write_nice
@@ -62,25 +63,11 @@
 //#include "sensor_common.h"
 #include "exif.h"
 #include "x393_macro.h"
-
-#if ELPHEL_DEBUG
- #define   MDF(x) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__ );x ;}
- #define   D17(x) { if (GLOBALPARS(G_DEBUG) & (1 <<17)) {x; } ; }
- #define MDF17(x) { if (GLOBALPARS(G_DEBUG) & (1 <<17)) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__ );x ;} }
- #define   D18(x) { if (GLOBALPARS(G_DEBUG) & (1 <<18)) {x; } ; }
- #define MDF18(x) { if (GLOBALPARS(G_DEBUG) & (1 <<18)) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__ );x ;} }
-  #define ELPHEL_DEBUG_THIS 1
-#else
-  #define   MDF(x)
-  #define   D17(x)
-  #define MDF17(x)
-  #define   D18(x)
-  #define MDF18(x)
-  #define ELPHEL_DEBUG_THIS 0
-#endif
+#include "x393.h"
 
 #define JPEG_HEADER_MAX_SIZE    0x300
 static int huffman_fpga_programmed=0;
+static struct device *g_dev_ptr = NULL;
 
 /// All huffman tabels data to be read/written from the application
 static struct huff_tables_t {
@@ -112,7 +99,7 @@ static struct huff_tables_t {
  * @return header length if successful, <0 - error
  */
 int qtables_create(struct interframe_params_t * params, unsigned char * buf) {
-  MDF18(printk("params->quality2=0x%x",params->quality2));
+  dev_dbg(g_dev_ptr, "params->quality2 = 0x%x\n", params->quality2);
   int rslt=get_qtable(params->quality2, &buf[0], &buf[64]); /// will copy both quantization tables
   if (rslt <0) return rslt; /// bad quality table
   return 128;
@@ -193,8 +180,10 @@ int jpegheader_create(struct interframe_params_t * params, unsigned char * buf) 
                                     0x06, 0x11,
                                     0x07, 0x11};
   if (buf==NULL) return -1; /// buffer is not provided
-  MDF17(printk("\n"));
-  MDF18(unsigned char * p= (char *) params; for (len=0;len<32;len++) {if ((len & 0x0f)==0) printk("\n%03x: ",len); printk(" %02x", (int) p[len]);} printk("\n"););
+
+  unsigned char *p = (char *)params;
+  dev_dbg(g_dev_ptr, "list of parameters:\n");
+  print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, p, 32);
 
   memcpy((void *) &buf[0],                 (void *) jfif1, sizeof (jfif1)); /// including DQT0 header
   memcpy((void *) &buf[header_cqtable_hd], (void *) jfif2, sizeof (jfif2)); /// DQT1 header
@@ -305,12 +294,18 @@ int jpegheader_create(struct interframe_params_t * params, unsigned char * buf) 
   buf[bp++]=0x00; /// Spectral selection start
   buf[bp++]=0x3f; /// Spectral selection end
   buf[bp++]=0x00; /// Successive approximation (2 values 0..13)
-  MDF17(printk("JPEG header length=%d\n",bp));
-  MDF18(for (len=0;len<bp;len++) {if ((len & 0x0f)==0) printk("\n%03x: ",len); printk(" %02x",buf[len]);} printk("\n"););
+
+  dev_dbg(g_dev_ptr, "JPEG header length = %d\n", bp);
+  dev_dbg(g_dev_ptr, "list of parameters:\n");
+  print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, p, 32);
+
   return bp; /// JPEG header length
 }
 
-
+static int minor_to_chn(unsigned int minor)
+{
+	return 0;
+}
 
 /*!=================================================================
  *! JPEG header file support
@@ -352,7 +347,7 @@ loff_t  jpeghead_lseek(struct file * file, loff_t offset, int orig,
   struct jpeghead_pd * privData;
   //struct interframe_params_t * fp;
   privData = (struct jpeghead_pd *) file->private_data;
-  MDF17(printk("orig=%d, offst=0x%x\n",orig,(int) offset));
+  dev_dbg(g_dev_ptr, "orig = %d, offset = 0x%x\n", orig, (int)offset);
 
   switch (orig)
   {
@@ -372,7 +367,8 @@ loff_t  jpeghead_lseek(struct file * file, loff_t offset, int orig,
        rp= (offset >>2) & (~7); // convert to index to long, align to 32-bytes
        fp = (struct interframe_params_t *) &ccam_dma_buf_ptr[X313_BUFFSUB(rp, 8)]; //! 32 bytes before the frame pointer, may roll-over to the end of ccam_dma_buf_ptr
        */
-       if ((fp->signffff != 0xffff) || //! signature is overwritten
+       //if ((fp->signffff != 0xffff) || //! signature is overwritten
+       if ((fp->signff != 0xff) || //! signature is overwritten
           ((fp->timestamp_sec) & X313_LENGTH_MASK)) return -EINVAL; //! acquisition of this frame is not done yet - length word high byte is non-zero
 
 
@@ -408,7 +404,7 @@ ssize_t jpeghead_read(struct file * file, char * buf, size_t count, loff_t *off)
   unsigned long p;
   struct jpeghead_pd * privData;
   privData = (struct jpeghead_pd *) file->private_data;
-  MDF17(printk("\n"));
+  dev_dbg(g_dev_ptr, "reading from jpeghead\n");
   p = *off;
   if(p >= privData->size)
     p = privData->size;
@@ -460,6 +456,7 @@ loff_t  huffman_lseek(struct file * file, loff_t offset, int orig){
  //  orig 0: position from begning
  //  orig 1: relative from current position
  //  orig 2: position from last  address
+	unsigned int minor = MINOR(file->f_inode->i_rdev);
 
   switch (orig)
   {
@@ -483,7 +480,7 @@ loff_t  huffman_lseek(struct file * file, loff_t offset, int orig){
          case LSEEK_HUFFMAN_FPGACALC:
                 if (jpeg_htable_fpga_encode () <0) return -EINVAL;
                 break;
-         case LSEEK_HUFFMAN_FPGAPGM: jpeg_htable_fpga_pgm (); break;
+         case LSEEK_HUFFMAN_FPGAPGM: jpeg_htable_fpga_pgm(minor_to_chn(minor)); break;
          default: return -EINVAL;
 
        }
@@ -506,7 +503,7 @@ loff_t  huffman_lseek(struct file * file, loff_t offset, int orig){
 ssize_t huffman_read(struct file * file, char * buf, size_t count, loff_t *off) {
   unsigned long p;
   unsigned char * uc_huff_tables= (unsigned char *) &huff_tables; 
-  MDF17(printk("\n"));
+  dev_dbg(g_dev_ptr, "reading from huffman\n");
   p = *off;
   if(p >= sizeof(huff_tables))  p = sizeof(huff_tables);
   if((p + count) > sizeof(huff_tables)) count = sizeof(huff_tables) - p; /// truncate count 
@@ -521,7 +518,7 @@ ssize_t huffman_read(struct file * file, char * buf, size_t count, loff_t *off) 
 ssize_t huffman_write(struct file * file, const char * buf, size_t count, loff_t *off) {
   unsigned long p;
   unsigned char * uc_huff_tables= (unsigned char *) &huff_tables; 
-  MDF17(printk("\n"));
+  dev_dbg(g_dev_ptr, "writing to huffman\n");
   p = *off;
   if (p >= sizeof(huff_tables))  p = sizeof(huff_tables);
   if( (p + count) > sizeof(huff_tables)) count = sizeof(huff_tables) - p; /// truncate count 
@@ -592,13 +589,13 @@ void jpeg_htable_init (void) {
                        0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9,
                        0xea, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8,
                        0xf9, 0xfa};
-   MDF17(printk(" started\n"));
+   dev_dbg(g_dev_ptr, "initialize Huffman table with default data\n");
   memset ((void*) &huff_tables,0, sizeof(huff_tables));
   memcpy ((void*) huff_tables.header_huffman_tables[0].bits,dc0, sizeof(dc0));
   memcpy ((void*) huff_tables.header_huffman_tables[1].bits,ac0, sizeof(ac0));
   memcpy ((void*) huff_tables.header_huffman_tables[2].bits,dc1, sizeof(dc1));
   memcpy ((void*) huff_tables.header_huffman_tables[3].bits,ac1, sizeof(ac1));
-   MDF17(printk("jpeg_htable_fpga_encode ()\n"));
+
   jpeg_htable_fpga_encode ();
 }
 
@@ -618,11 +615,11 @@ int jpeg_htable_fpga_encode (void) {
   struct huffman_fpga_code_t codes[256];
   unsigned long * icodes = (unsigned long *) codes;
   huffman_fpga_programmed=0; /// mark FPGA table as needed to be programmed
-   MDF17(printk(" started\n"));
+   dev_dbg(g_dev_ptr, "encode all Huffman tables into FPGA format\n");
 /// Fill in the table headers:
   memcpy ((void*) huff_tables.dht_all, (void*) dht_headers, sizeof(dht_headers)); /// all 4 headers (with zero length)
   for (ntab=0; ntab<4; ntab++) {
-     MDF17(printk("ntab=%d\n", ntab));
+     dev_dbg(g_dev_ptr, "ntab = %d\n", ntab);
     memset (codes,0,sizeof(codes));
     if ((rslt=jpeg_prep_htable (&(huff_tables.header_huffman_tables[ntab]), codes)) < 0 ) return rslt;
     if (ntab & 1) {
@@ -645,7 +642,8 @@ int jpeg_htable_fpga_encode (void) {
     huff_tables.dht_all[(5*ntab)+3]=length& 0xff; /// low  byte
   }
 
-  MDF17(printk("\nFPGA Huffman table\n");for (i=0;i<512;i++){printk (" %06x",(int)huff_tables.fpga_huffman_table[i]); if ((i & 0x0f)==0x0f) printk("\n");});
+  dev_dbg(g_dev_ptr, "FPGA Huffman table:\n");
+  print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, &huff_tables.fpga_huffman_table[0], sizeof(huff_tables.fpga_huffman_table));
   return 0;
 }
 
@@ -660,65 +658,75 @@ int  jpeg_htable_is_programmed(void) {
 
 /**
  * @brief program FPGA Huffman table (fram static array)
+ * @param[in]   chn   compressor channle number
+ * return none
  */
-void jpeg_htable_fpga_pgm (void) {
-#ifdef TEST_DISABLE_CODE
-  fpga_table_write_nice (CX313_FPGA_TABLES_HUFF, 512, huff_tables.fpga_huffman_table);
-#endif
-  huffman_fpga_programmed=1;
+void jpeg_htable_fpga_pgm(unsigned int chn)
+{
+	int i;
+	x393_cmprs_table_addr_t table_addr;
+
+	table_addr.addr32 = 0;
+	table_addr.type = 3;
+	x393_cmprs_tables_address(table_addr, chn);
+	for (i = 0; i < sizeof(huff_tables.fpga_huffman_table); i++) {
+		x393_cmprs_tables_data((u32)huff_tables.fpga_huffman_table[i], chn);
+	}
+	huffman_fpga_programmed=1;
 }
 
-/// Code below is based on jdhuff.c (from libjpeg)
 /**
- * @brief Calculate huffman table (1 of 4) from the JPEG header to code lengh/value (for FPGA)
+ * @brief Calculate huffman table (1 of 4) from the JPEG header to code length/value (for FPGA)
+ *
+ * The code of this function is based on jdhuff.c (from libjpeg)
  * @param htable encoded Huffman table - 16 length bytes followed by up to 256 symbols
  * @param hcodes combined (length<<16) | code table for each symbol
  * @return OK- 0, -1 - too many symbols, -2 bad table
  */
 ///Does it depend on no missing symbols?
-int jpeg_prep_htable (struct huffman_encoded_t * htable, struct huffman_fpga_code_t * hcodes) {
-  int p, i, l, si, numsymbols;
-  unsigned int code;
-   MDF17(printk(" started\n"));
-  /// Figure C.1: make table of Huffman code length for each symbol
-  p = 0;
-  for (l = 1; l <= 16; l++) {
-    i = htable->bits[l-1];
-    if (i < 0 || p + i > 256) {
-        MDF17(printk("protect against table overrun\n"));
-       return -1 ; /// protect against table overrun 
-    }
-    while (i--) hcodes[htable->huffval[p++]].length=l;
-  }
-  numsymbols = p;
-  /// Figure C.2: generate the codes themselves
-  /// We also validate that the counts represent a legal Huffman code tree.
-  code = 0;
-  si = hcodes[htable->huffval[0]].length;
-  p = 0;
-///htable->huffval[N] - N-th symbol value
-  while (p < numsymbols) {
-    if ((hcodes[htable->huffval[p]].length < si) || (si>16)) {
-       ELP_KERR(printk("Bad table/bug\n"));
-      return -3; ///Bad table
-    }
-    while (hcodes[htable->huffval[p]].length == si) {
-      hcodes[htable->huffval[p++]].value = code;
-      code++;
-    }
+int jpeg_prep_htable (struct huffman_encoded_t * htable, struct huffman_fpga_code_t * hcodes)
+{
+	int p, i, l, si, numsymbols;
+	unsigned int code;
+	dev_dbg(g_dev_ptr, "calculate Huffman table from JPEG header\n");
+	/// Figure C.1: make table of Huffman code length for each symbol
+	p = 0;
+	for (l = 1; l <= 16; l++) {
+		i = htable->bits[l-1];
+		if (i < 0 || p + i > 256) {
+			dev_dbg(g_dev_ptr, "protect against table overrun\n");
+			return -1 ; /// protect against table overrun
+		}
+		while (i--) hcodes[htable->huffval[p++]].length=l;
+	}
+	numsymbols = p;
+	/// Figure C.2: generate the codes themselves
+	/// We also validate that the counts represent a legal Huffman code tree.
+	code = 0;
+	si = hcodes[htable->huffval[0]].length;
+	p = 0;
+	///htable->huffval[N] - N-th symbol value
+	while (p < numsymbols) {
+		if ((hcodes[htable->huffval[p]].length < si) || (si>16)) {
+			dev_err(g_dev_ptr, "bad table/bug\n");
+			return -3; ///Bad table
+		}
+		while (hcodes[htable->huffval[p]].length == si) {
+			hcodes[htable->huffval[p++]].value = code;
+			code++;
+		}
 
-    /** code is now 1 more than the last code used for codelength si; but
-     * it must still fit in si bits, since no code is allowed to be all ones.
-     */
-    if ( code >= (1 << si)) {
-       ELP_KERR(printk("Bad code\n"));
-      return -2; ///Bad code
-    }
-    code <<= 1;
-    si++;
-  }
-  return 0;
+		/** code is now 1 more than the last code used for codelength si; but
+		 * it must still fit in si bits, since no code is allowed to be all ones.
+		 */
+		if ( code >= (1 << si)) {
+			dev_err(g_dev_ptr, "bad code\n");
+			return -2; ///Bad code
+		}
+		code <<= 1;
+		si++;
+	}
+	return 0;
 }
-
 
 MODULE_LICENSE("GPL");
