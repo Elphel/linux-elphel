@@ -58,6 +58,11 @@
 #define FPGA_SJTAG_BOUNDARY_MINOR   6  // read/write boundary pins of the sensor board FPGA
 #define FPGA_AJTAG_BOUNDARY_MINOR   7  // read/write boundary pins of the aux board FPGA
 
+#define FPGA_SJTAG_CHANNELS         4 // Number of sensor ports for JTAG
+#define FPGA_SJTAG_MINOR_OFFSET     8 // Minors range start for the sensor port JTAG
+#define FPGA_SJTAG_BOUNDARY_OFFSET 12 // Minors range start for the sensor port boundary
+
+
 
 #define X3X3_EXIF_EXIF    0 // read encoded Exif data (SEEK_END,
 #define X3X3_EXIF_META    1 // write metadata, concurently opened files. All writes atomic
