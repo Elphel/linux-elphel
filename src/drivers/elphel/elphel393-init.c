@@ -27,8 +27,10 @@
 #define pr_fmt(fmt) DRV_NAME": " fmt
 
 #include <asm/page.h>
+#include <asm/io.h>
 
 #include <linux/init.h>
+#include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -63,6 +65,13 @@ static char boardinfo[2048];
 static char serial[13];
 static char revision[8];
 
+static int setup_mio_pin_and_reset_usb(void);
+
+static int __init elphel393_early_initialize(void){
+	pr_info("set up the mio pin 49 and reset USB\n");
+	setup_mio_pin_and_reset_usb();
+	return 0;
+}
 /*
 static int __init elphel393_early_initialize(void){
 
@@ -393,6 +402,23 @@ static int get_factory_info(void){
 	return 0;
 }
 
+static int setup_mio_pin_and_reset_usb(void){
+	u32 reg_value;
+	const u32 newvalue = 0x1<<17;
+	reg_value = readl(0xe000a244);
+	writel(reg_value|newvalue,0xe000a244);
+	udelay(10);
+	reg_value = readl(0xe000a248);
+	writel(reg_value|newvalue,0xe000a248);
+	udelay(10);
+	reg_value = readl(0xe000a044);
+	writel(reg_value&(~newvalue),0xe000a044);
+	udelay(10);
+	writel(reg_value|newvalue,0xe000a044);
+	reg_value = readl(0xe000a064);
+	return 0;
+}
+
 static int elphel393_init_remove(struct platform_device *pdev)
 {
 	pr_info("Remove");
@@ -416,7 +442,7 @@ static struct platform_driver elphel393_initialize = {
 	},
 };
 
-//early_initcall(elphel393_early_initialize);
+early_initcall(elphel393_early_initialize);
 
 module_platform_driver(elphel393_initialize);
 module_init(elphel393_init_init);
