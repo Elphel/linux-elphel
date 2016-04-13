@@ -195,16 +195,24 @@ static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, 
     return count;
 }
 
-static DEVICE_ATTR(bootargs  ,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_bootargs ,   NULL);
-static DEVICE_ATTR(boardinfo ,  SYSFS_PERMISSIONS                 ,    get_boardinfo,   set_boardinfo);
-static DEVICE_ATTR(revision  ,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_revision ,   NULL);
-static DEVICE_ATTR(serial    ,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_serial ,     NULL);
+static ssize_t perform_usbreset(struct device *dev, struct device_attribute *attr, const char *buf, size_t count){
+	pr_info("EMIO pin 49: USB reset\n");
+	setup_mio_pin_and_reset_usb();
+	return count;
+}
+
+static DEVICE_ATTR(bootargs  ,  SYSFS_PERMISSIONS & SYSFS_READONLY,  get_bootargs ,   NULL);
+static DEVICE_ATTR(boardinfo ,  SYSFS_PERMISSIONS                 ,  get_boardinfo,   set_boardinfo);
+static DEVICE_ATTR(revision  ,  SYSFS_PERMISSIONS & SYSFS_READONLY,  get_revision ,   NULL);
+static DEVICE_ATTR(serial    ,  SYSFS_PERMISSIONS & SYSFS_READONLY,    get_serial ,   NULL);
+static DEVICE_ATTR(usbreset  ,  SYSFS_PERMISSIONS                 ,           NULL,   perform_usbreset);
 
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_bootargs.attr,
         &dev_attr_boardinfo.attr,
         &dev_attr_revision.attr,
         &dev_attr_serial.attr,
+		&dev_attr_usbreset.attr,
         NULL
 };
 
