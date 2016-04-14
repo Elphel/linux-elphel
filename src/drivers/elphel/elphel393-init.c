@@ -412,18 +412,31 @@ static int get_factory_info(void){
 
 static int setup_mio_pin_and_reset_usb(void){
 	u32 reg_value;
+	void __iomem* emio_ptr = ioremap(0xe000a000, 0x00000300);
+	if (!emio_ptr) {
+		pr_err("Failed to get a pointer to the EMIO registers");
+		return -1;
+	}
+
 	const u32 newvalue = 0x1<<17;
-	reg_value = readl(0xe000a244);
-	writel(reg_value|newvalue,0xe000a244);
+	reg_value = readl(emio_ptr+0x244);
+	pr_debug("read DIR reg: 0x%08x\n",reg_value);
+	writel(reg_value|newvalue,emio_ptr+0x244);
 	udelay(10);
-	reg_value = readl(0xe000a248);
-	writel(reg_value|newvalue,0xe000a248);
+	reg_value = readl(emio_ptr+0x248);
+	pr_debug("read EN reg: 0x%08x\n",reg_value);
+	writel(reg_value|newvalue,emio_ptr+0x248);
 	udelay(10);
-	reg_value = readl(0xe000a044);
-	writel(reg_value&(~newvalue),0xe000a044);
+	reg_value = readl(emio_ptr+0x44);
+	pr_debug("read OUT reg: 0x%08x\n",reg_value);
+	writel(reg_value&(~newvalue),emio_ptr+0x44);
 	udelay(10);
-	writel(reg_value|newvalue,0xe000a044);
-	reg_value = readl(0xe000a064);
+	writel(reg_value|newvalue,emio_ptr+0x44);
+	reg_value = readl(emio_ptr+0x64);
+	pr_debug("read IN reg (correct value: 0x00020000): 0x%08x\n",reg_value);
+
+	iounmap(emio_ptr);
+
 	return 0;
 }
 
