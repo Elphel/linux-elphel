@@ -60,7 +60,7 @@ static struct mtd_info *mtd;
 
 //surprise size
 static char *bootargs;
-//known size
+//known size, all should be zero filled
 static char boardinfo[2048];
 static char serial[13];
 static char revision[8];
@@ -68,7 +68,7 @@ static char revision[8];
 static int setup_mio_pin_and_reset_usb(void);
 
 static int __init elphel393_early_initialize(void){
-	pr_info("set up the mio pin 49 and reset USB\n");
+	pr_info("Set up the mio pin 49 and reset USB\n");
 	setup_mio_pin_and_reset_usb();
 	return 0;
 }
@@ -163,27 +163,28 @@ static ssize_t set_boardinfo(struct device *dev, struct device_attribute *attr, 
 		pr_err("Get MTD device error, code:%d\n",-(u32)mtd);
 		return -ENODEV;
 	}
+	//need all 0xff bytes
 	memset(wbuf,0xff,2048);
 	//too much of a trouble to read from flash again
 	if(!strnstr(boardinfo,"<board>",sizeof(boardinfo))){
 		pr_info("Factory Info record is clean.\n");
-		pr_info("Data to be written: %s",buf);
+		pr_info("Data to be written: %s\n",buf);
 		// I got some buf, unknown size- should be limited to 2048? ok
-		if (strlen(buf)>2048) {
+		if (strlen(buf)>2047) {
 			pr_err("Data > 2KiB. Abort.\n");
 			return -EFBIG;
 		}
-		// Not too strict check, just look for opening tags.
-		if(!strnstr(buf,"<board>",2048)||!strnstr(buf,"<serial>",2048)||!strnstr(buf,"<rev>",2048)){
+		// Not strict check, just look for opening tags.
+		if(!strstr(buf,"<board>")||!strstr(buf,"<serial>")||!strstr(buf,"<rev>")){
 			pr_err("Bad data format\n");
 			return -EINVAL;
 		}
-		//copy to buf
-		strncpy(wbuf,buf,strlen(buf));
+		//copy to wbuf, buf is null terminated and is <=2047
+		strcpy(wbuf,buf);
 		//pr_info("BUFFER: %s\n",wbuf);
 		ret = mtd_write_user_prot_reg(mtd, NAND_FLASH_OTP_PAGE_OFFSET, 2048, &retlen, wbuf);
 		if (ret){
-			pr_err("Flash page write, code %d",ret);
+			pr_err("Flash page write, code %d\n",ret);
 			return ret;
 		}
 		pr_info("Data is successfully written and cannot be overwritten anymore\n");
@@ -308,6 +309,7 @@ static int get_factory_info(void){
 	//size of nand flash page
 	char kbuf[2048];
 	size_t size = mtd->writesize;
+	size_t min_size;
 	int ret;
 	char *ps,*pe;
 
@@ -348,7 +350,8 @@ static int get_factory_info(void){
 		//...right in the beginning or error
 		ps = strnstr(kbuf,"<serial>",size);
 		pe = strnstr(kbuf,"</serial>",size);
-		strncpy(serial,ps+sizeof("<serial>")-1,pe-ps-(sizeof("<serial>")-1));
+		min_size = min(pe-ps-(sizeof("<serial>")-1),sizeof(serial)-1);
+		strncpy(serial,ps+sizeof("<serial>")-1,min_size);
 
 		strncpy(regvalh,serial,4);
 		strncpy(regvall,serial+4,8);
@@ -402,10 +405,12 @@ static int get_factory_info(void){
 
 		ps = strnstr(kbuf,"<rev>",size);
 		pe = strnstr(kbuf,"</rev>",size);
-		strncpy(revision,ps+sizeof("<rev>")-1,pe-ps-(sizeof("<rev>")-1));
+		min_size = min(pe-ps-(sizeof("<rev>")-1),sizeof(revision)-1);
+		strncpy(revision,ps+sizeof("<rev>")-1,min_size);
 		ps = strnstr(kbuf,"<board>",size);
 		pe = strnstr(kbuf,"</board>",size);
-		strncpy(boardinfo,ps,pe-ps+(sizeof("</board>")-1));
+		min_size = min(pe-ps+(sizeof("</board>")-1),sizeof(boardinfo)-1);
+		strncpy(boardinfo,ps,min_size);
 	}
 	return 0;
 }
