@@ -368,7 +368,7 @@ loff_t  jpeghead_lseek(struct file * file, loff_t offset, int orig,
        fp = (struct interframe_params_t *) &ccam_dma_buf_ptr[X313_BUFFSUB(rp, 8)]; //! 32 bytes before the frame pointer, may roll-over to the end of ccam_dma_buf_ptr
        */
        //if ((fp->signffff != 0xffff) || //! signature is overwritten
-       if ((fp->signff != 0xff) || //! signature is overwritten
+       if ((fp->signffff != MARKER_FFFF) || //! signature is overwritten
           ((fp->timestamp_sec) & X313_LENGTH_MASK)) return -EINVAL; //! acquisition of this frame is not done yet - length word high byte is non-zero
 
 

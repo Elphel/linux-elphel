@@ -1645,23 +1645,18 @@ struct sensorproc_t {
  * Last three double words contain time stamp and (length+0xff) marker in new camera
  */
 struct interframe_params_t {
-	unsigned long quality2;
-	unsigned long color;
-	unsigned long byrshift;
-	unsigned long width;
-	unsigned long height;
+	unsigned long  pad0;
+	unsigned long  pad1;
+	unsigned short quality2;
+	unsigned char  color;
+	unsigned char  byrshift;
+	unsigned short width;
+	unsigned short height;
+	unsigned short meta_index;
+	unsigned short signffff;
 	unsigned long  timestamp_sec;        //! number of seconds since 1970 till the start of the frame exposure
 	unsigned long  timestamp_usec;       //! number of microseconds to add
-	union {
-		unsigned long len32;             //! should be 0xffxxyyzz - it will be a signature that JPEG data was not overwritten,
-	                                     //! xxyyzz here is the length in 32 double words;
-		struct {
-			unsigned char pad0;          // pad double word with 3 bytes and use only most significant byte as 0xff marker
-			unsigned char pad1;
-			unsigned char pad2;
-			unsigned char signff;
-		};
-	};
+	unsigned long  frame_length;         // frame length in bytes
 };
 
 struct i2c_timing_t {

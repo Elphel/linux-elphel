@@ -342,9 +342,9 @@ int circbuf_open(struct inode *inode, struct file *filp) { // set filesize
 //! returns -2 if the rp is not 32-bytes aligned
 //!sets *fpp to the frame header, including signature and length
 
-void dump_interframe_params(struct interframe_params_t *params)
+void dump_interframe_params(struct interframe_params_t *params, int offset)
 {
-	dev_dbg(g_dev_ptr, "Dump of interframe parameters:\n");
+	dev_dbg(g_dev_ptr, "Dump of interframe parameters at offset 0x%x:\n", offset);
 	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, params, sizeof(struct interframe_params_t));
 }
 
@@ -376,40 +376,22 @@ int circbufValidPointer(int rp, struct interframe_params_t ** fpp, unsigned int 
 	struct interframe_params_t *fp;
 
 	if (rp & 0x1f) {  //!rp is not 32-bytes aligned
-		//MD10(printk("circbufValidPointer: misaligned pointer\n"));
 		dev_dbg(g_dev_ptr, "misaligned pointer rp = 0x%x for channel %d\n", rp, chn);
 		return -2;
 	}
-	fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[BYTE2DW(X393_BUFFSUB(rp, OFFSET_X40))];
+	fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[BYTE2DW(X393_BUFFSUB(rp, sizeof(struct interframe_params_t)))];
 	*fpp = fp;
 
-	dump_interframe_params(fp);
+	dump_interframe_params(fp, X393_BUFFSUB(rp, sizeof(struct interframe_params_t)));
 
 	if (BYTE2DW(rp) == wp)
-		// frame not yet acquired (?)
+		// read pointer and write pointer coincide, frame not yet acquired
 		return 0;
 
-	dev_dbg(g_dev_ptr, "checking end of frame marker len32 = 0x%x at offset = 0x%x\n", fp->len32 & FRAME_LENGTH_MASK, rp);
-	/*if ((len32 & MARKER_FF) != MARKER_FF) {
-		wp -= CHUNK_SIZE;
-		len32 = get_image_length(DW2BYTE(wp), chn, &last_image_chunk);
-		if ((len32 & MARKER_FF) != MARKER_FF) {
-			dev_dbg(g_dev_ptr, "failed to get marker 0xFF at CORRECTED offset\n");
-			return -1;
-		}
-	}*/
-	if ((fp->len32 & MARKER_FF) != MARKER_FF) {
-		len32 = get_image_length(rp - CHUNK_SIZE, chn, &last_image_chunk);
-		if ((len32 & MARKER_FF) != MARKER_FF) {
-			dev_dbg(g_dev_ptr, "failed to get marker 0xFF at CORRECTED offset 0x%x\n", rp - CHUNK_SIZE);
-			return -1;
-		}
+	if (fp->signffff != MARKER_FFFF) {
+		dev_dbg(g_dev_ptr, "interframe signature is overwritten\n");
+		return -1;
 	}
-
-	// check timestamp
-	//sec = circbuf_priv[chn].buf_ptr[BYTE2DW(last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_SEC))];
-	//usec = circbuf_priv[chn].buf_ptr[BYTE2DW(last_image_chunk +(CHUNK_SIZE - CCAM_MMAP_META_USEC))];
-	dev_dbg(g_dev_ptr, "reading time stamp: sec = 0x%x, usec = 0x%x\n", fp->timestamp_sec, fp->timestamp_usec);
 
 	return 1;
 }
@@ -419,7 +401,6 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
 	int inserted_bytes;
 	int last_image_chunk;
 	int img_start, next_img, padded_frame;
-	const int ADJUSTMENT = 4; // this constant comes from python code x393_cmprs_afi.py
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
 	unsigned int chn = minor_to_chn(minor);
  //  orig 0: position from begning
@@ -477,7 +458,7 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
              break;
           case LSEEK_CIRC_LAST:
         	  next_img = camseq_get_jpeg_wp(chn) << 2;
-        	  fvld = circbufValidPointer(next_img, &fp, chn);
+        	  //fvld = circbufValidPointer(next_img, &fp, chn);
 
         	  dev_dbg(g_dev_ptr, "LSEEK_CIRC_LAST: next_img = 0x%x, fvld = %d\n", next_img, fvld);
         	  dev_dbg(g_dev_ptr, "mem dump of last 0x40 bytes in buffer number %d\n", chn);
@@ -489,10 +470,12 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
         		  dev_dbg(g_dev_ptr, "failed to get marker 0xFF at 0x%x, len32: 0x%x\n", next_img, len32);
         		  return -EOVERFLOW;
         	  }
-        	  len32 &= 0xffffff;
-        	  inserted_bytes = ((CHUNK_SIZE - (((len32 % CHUNK_SIZE) + CCAM_MMAP_META) % CHUNK_SIZE) - ADJUSTMENT) % CHUNK_SIZE ) + ADJUSTMENT;
-        	  img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - inserted_bytes - CCAM_MMAP_META, len32);
+        	  len32 &= FRAME_LENGTH_MASK;
+        	  //inserted_bytes = ((CHUNK_SIZE - (((len32 % CHUNK_SIZE) + CCAM_MMAP_META) % CHUNK_SIZE) - ADJUSTMENT) % CHUNK_SIZE ) + ADJUSTMENT;
+        	  img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
         	  dev_dbg(g_dev_ptr, "calculated start address = 0x%x, length = 0x%x\n", img_start, len32);
+        	  if (circbufValidPointer(img_start, &fp, chn) < 0)
+        		  return -EOVERFLOW;
         	  file->f_pos = img_start;
         	  dev_dbg(g_dev_ptr, "LSEEK_CIRC_LAST: moving file->f_pos to 0x%llx\n", file->f_pos);
         	  break;
@@ -522,13 +505,11 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
         	  file->f_pos = img_start;
         	  break;
           case LSEEK_CIRC_NEXT:
- 	 	 	 dev_dbg(g_dev_ptr, "LSEEK_CIRC_NEXT: file->f_pos = 0x%x, fvld = %d, fp->len32 = 0x%x\n", file->f_pos >> 2, fvld, fp->len32);
+ 	 	 	 dev_dbg(g_dev_ptr, "LSEEK_CIRC_NEXT: file->f_pos = 0x%x, fvld = %d, fp->len32 = 0x%x\n", file->f_pos, fvld, fp->frame_length);
              if (fvld <= 0)
                 return -EOVERFLOW; //! no frames after current
              // calculate the full length of current frame and advance file pointer by this value
-             len32 = fp->len32 & FRAME_LENGTH_MASK;
-        	  inserted_bytes = ((CHUNK_SIZE - (((len32 % CHUNK_SIZE) + CCAM_MMAP_META) % CHUNK_SIZE) - ADJUSTMENT) % CHUNK_SIZE ) + ADJUSTMENT;
-        	  padded_frame = len32 + inserted_bytes + CHUNK_SIZE + CCAM_MMAP_META;
+        	  padded_frame = fp->frame_length + INSERTED_BYTES(fp->frame_length) + CHUNK_SIZE + CCAM_MMAP_META;
              file->f_pos = X393_BUFFADD(file->f_pos, padded_frame); // do it even if the next frame does not yet exist
              dev_dbg(g_dev_ptr, "LSEEK_CIRC_NEXT: moving file->f_pos to 0x%x\n", file->f_pos);
              break;

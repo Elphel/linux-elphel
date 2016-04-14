@@ -283,14 +283,13 @@ inline void updateIRQFocus(struct jpeg_ptr_t *jptr)
 	u32 high_freq = x393_cmprs_hifreq(jptr->chn_num);
 }
 
-static void set_default_interframe(struct interframe_params_t *params)
+inline static void set_default_interframe(struct interframe_params_t *params)
 {
 	params->height = 1936;
 	params->width = 2592;
-	params->byrshift = 0;
+	params->byrshift = 3;
 	params->color = 0;
-	params->quality2 = 127;
-	dev_dbg(NULL, "%s: DEBUG, setting default interframe parameters\n", __func__);
+	params->quality2 = 100;
 }
 
 /**
@@ -315,17 +314,19 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 //#endif
 
 	struct interframe_params_t *interframe;
-	int circbuf_size = BYTE2DW(get_globalParam(G_CIRCBUFSIZE));
-	int len_offset = X393_BUFFSUB(jptr->jpeg_wp, 8);
-	int len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset] & FRAME_LENGTH_MASK;
-	int frame_params_offset = X393_BUFFSUB(jptr->jpeg_wp, OFFSET_X40);
+	int len_offset = X393_BUFFSUB(jptr->jpeg_wp, INTERFRAME_PARAMS_SZ + 1);
+	int jpeg_len = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset] & FRAME_LENGTH_MASK;
+	int jpeg_start = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE - INSERTED_BYTES(jpeg_len) - CCAM_MMAP_META, jpeg_len);
+	// frame_params_offset points to interframe_params_t area before current frame (this parameters belong to the frame below in memory, not the previous)
+	int frame_params_offset = BYTE2DW(X393_BUFFSUB(jpeg_start, CHUNK_SIZE));
 
 	interframe = (struct interframe_params_t *) &circbuf_priv_ptr[jptr->chn_num].buf_ptr[frame_params_offset];
-	//interframe->frame_length = len32;
+	interframe->frame_length = jpeg_len;
+	interframe->signffff = 0xffff;
 
 	set_default_interframe(interframe);
 
-	set_globalParam(G_FRAME_SIZE, len32);
+	set_globalParam(G_FRAME_SIZE, jpeg_len);
 
    return interframe;
 }

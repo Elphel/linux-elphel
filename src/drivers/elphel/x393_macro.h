@@ -18,6 +18,8 @@
 
 #define MARKER_FF            0xff000000
 
+#define MARKER_FFFF          0xffff
+
 #define FRAME_LENGTH_MASK    0xffffff
 
 #define IRQ_NOP              0
@@ -27,6 +29,10 @@
 
 #define BYTE2DW(x)           ((x) >> 2)
 #define DW2BYTE(x)           ((x) << 2)
+
+// 4 bytes offset, this one comes from python code x393_cmprs_afi.py
+#define ADJUSTMENT           4
+#define INSERTED_BYTES(x)    (((CHUNK_SIZE - ((((x) % CHUNK_SIZE) + CCAM_MMAP_META) % CHUNK_SIZE) - ADJUSTMENT) % CHUNK_SIZE ) + ADJUSTMENT)
 
 /* These macro were removed from sensor_common.h*/
 #define X313_LENGTH_MASK      0xff000000
