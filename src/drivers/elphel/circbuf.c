@@ -406,7 +406,7 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
  //  orig 0: position from begning
  //  orig 1: relative from current
  //  orig 2: position from last  address
-   int l = (CCAM_DMA_SIZE << 2);
+   int l = CCAM_DMA_SIZE;
    int fl=0;// frame length
    struct interframe_params_t * fp;
    int fvld=-1;
