@@ -27,12 +27,23 @@
 #define IMAGERAW_MINOR_FPN	2
 #define IMAGERAW_MINOR_UNLOCK	3
 
-#define CIRCBUF_MINOR_CHN_OFFSET 30
-#define CIRCBUF_MINOR_CHN_0      30
-#define CIRCBUF_MINOR_CHN_1      31
-#define CIRCBUF_MINOR_CHN_2      32
-#define CIRCBUF_MINOR_CHN_3      33
+#define CIRCBUF_MINOR             0x20
+#define CIRCBUF_MINOR_CHN_0       0x20
+#define CIRCBUF_MINOR_CHN_1       0x21
+#define CIRCBUF_MINOR_CHN_2       0x22
+#define CIRCBUF_MINOR_CHN_3       0x23
 
+#define JPEGHEAD_MINOR            0x30
+#define JPEGHEAD_MINOR_CHN_0      0x30
+#define JPEGHEAD_MINOR_CHN_1      0x31
+#define JPEGHEAD_MINOR_CHN_2      0x32
+#define JPEGHEAD_MINOR_CHN_3      0x33
+
+#define HUFFMAN_MINOR             0x40
+#define HUFFMAN_MINOR_CHN_0       0x40
+#define HUFFMAN_MINOR_CHN_1       0x41
+#define HUFFMAN_MINOR_CHN_2       0x42
+#define HUFFMAN_MINOR_CHN_3       0x43
 
 #define CMOSCAM_MINOR_RWTABLES    9
 #define CMOSCAM_MINOR_CIRCBUF    11
