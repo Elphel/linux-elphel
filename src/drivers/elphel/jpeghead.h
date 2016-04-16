@@ -10,7 +10,7 @@ struct huffman_fpga_code_t {
   unsigned short length;      /// code length
 };
 int     qtables_create  (struct interframe_params_t * params, unsigned char * buf);
-int     jpegheader_create(struct interframe_params_t * params, unsigned char * buf);
+int     jpegheader_create(struct interframe_params_t * params, unsigned char * buf, unsigned int chn);
 int     jpeghead_open   (struct inode *inode, struct file *filp); // set filesize
 loff_t  jpeghead_lseek  (struct file * file, loff_t offset, int orig, struct interframe_params_t *fp);
 ssize_t jpeghead_read   (struct file * file, char * buf, size_t count, loff_t *off);
@@ -35,10 +35,12 @@ struct huffman_pd {
     int                minor;/// should be the first, same as in circbuf_pd
 };
 
-int  jpeg_htable_is_programmed(void);
-void jpeg_htable_init (void);
-int  jpeg_htable_fpga_encode (void);
-void jpeg_htable_fpga_pgm (unsigned int chn);
-int  jpeg_prep_htable (struct huffman_encoded_t * htable, struct huffman_fpga_code_t * hcodes);
+int  jpeg_htable_is_programmed(unsigned int chn);
+void jpeg_htable_init(unsigned int chn);
+int  jpeg_htable_fpga_encode(unsigned int chn);
+void jpeg_htable_fpga_pgm(unsigned int chn);
+int  jpeg_prep_htable(struct huffman_encoded_t * htable, struct huffman_fpga_code_t * hcodes);
+
+int jpeghead_init(struct platform_device *pdev);
 
 #endif /* _JPEGHEAD */

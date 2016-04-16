@@ -117,29 +117,6 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 	return 0;
 }
 
-/**
- * @brief Converts file minor number to image compressor channel.
- *
- * This function assumes that the least significant nibble of minor contains image compressor channel number and
- * next nibble contains device type. Channel numbers and device type are defined in #driver_numbers.h
- * @param[in]   minor     file minor number
- * @param[out]  dev_type  pointer to a variable which will hold device type or NULL if this value is not needed
- * @return      compressor channel number in the range [0..#IMAGE_CHN_NUM)
- */
-static inline unsigned int minor_to_chn(unsigned int minor, unsigned int *dev_type)
-{
-	if (dev_type != NULL) {
-		if ((minor & 0xf0) == CIRCBUF_MINOR || (minor & 0xf0) == HUFFMAN_MINOR || (minor & 0xf0) == JPEGHEAD_MINOR)
-			*dev_type = minor & 0xf0;
-		else
-			*dev_type = 0;
-	}
-	if ((minor & 0x0f) < IMAGE_CHN_NUM)
-		return minor & 0x0f;
-	else
-		return 0;
-}
-
 int circbuf_all_open(struct inode *inode, struct file *filp)
 {
 	int res;
@@ -747,6 +724,7 @@ static int circbuf_all_init(struct platform_device *pdev)
 	   dev_err(dev, "couldn't get a major number %d.\n", CIRCBUF_MAJOR);
 	   return res;
    }
+   dev_info(dev, "registered MAJOR: %d\n", CIRCBUF_MAJOR);
 
    res = init_ccam_dma_buf_ptr(pdev);
    if (res < 0) {
@@ -757,9 +735,12 @@ static int circbuf_all_init(struct platform_device *pdev)
    dev_dbg(dev, "initialize circbuf wait queue\n");
    init_waitqueue_head(&circbuf_wait_queue);
    dev_dbg(dev, "initialize Huffman tables with default data\n");
-   jpeg_htable_init ();         /// set default Huffman table, encode it for the FPGA
 
-   dev_info(dev, "registered MAJOR: %d\n", CIRCBUF_MAJOR);
+   res = jpeghead_init(pdev);
+   if (res < 0) {
+	   dev_err(dev, "unable to initialize jpeghead module\n");
+	   return res;
+   }
    res = image_acq_init(pdev);
    if (res < 0) {
 	   dev_err(dev, "unable to initialize sensor_common module\n");

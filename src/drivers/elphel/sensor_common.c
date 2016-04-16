@@ -25,33 +25,33 @@
  */
 
 //copied from cxi2c.c - TODO:remove unneeded
-#include <linux/module.h>
+//#include <linux/module.h>
 #include <linux/sched.h>
-#include <linux/slab.h>
-#include <linux/errno.h>
+//#include <linux/slab.h>
+//#include <linux/errno.h>
 #include <linux/kernel.h>
-#include <linux/fs.h>
-#include <linux/string.h>
+//#include <linux/fs.h>
+//#include <linux/string.h>
 #include <linux/init.h>
 //#include <linux/autoconf.h>
 #include <linux/interrupt.h>
 #include <linux/time.h>
-#include <linux/vmalloc.h>
+//#include <linux/vmalloc.h>
 #include <linux/platform_device.h>
-#include <linux/of.h>
-#include <linux/of_device.h>
+//#include <linux/of.h>
+//#include <linux/of_device.h>
 
 
 //#include <asm/system.h>
-#include <asm/byteorder.h> // endians
-#include <asm/io.h>
+//#include <asm/byteorder.h> // endians
+//#include <asm/io.h>
 
 //#include <asm/arch/hwregs/intr_vect_defs.h> /// ETRAX interrupt registers
 
-#include <asm/irq.h>
+//#include <asm/irq.h>
 
-#include <asm/delay.h>
-#include <asm/uaccess.h>
+//#include <asm/delay.h>
+//#include <asm/uaccess.h>
 #include <elphel/driver_numbers.h>
 #include <elphel/c313a.h>
 //#include <asm/elphel/fpgaconfa.h>
@@ -775,11 +775,12 @@ int image_acq_stop(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id elphel393_sensor_of_match[] = {
-		{ .compatible = "elphel,elphel393-sensor-1.00" },
-		{ /* end of list */ }
-};
-MODULE_DEVICE_TABLE(of, elphel393_sensor_of_match);
+//static const struct of_device_id elphel393_sensor_of_match[] = {
+//		{ .compatible = "elphel,elphel393-sensor-1.00" },
+//		{ /* end of list */ }
+//};
+//MODULE_DEVICE_TABLE(of, elphel393_sensor_of_match);
+
 
 /*static struct platform_driver elphel393_sensor_common = {
 		.probe          = image_acq_init,
@@ -792,6 +793,6 @@ MODULE_DEVICE_TABLE(of, elphel393_sensor_of_match);
 
 //module_platform_driver(elphel393_sensor_common);
 
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-MODULE_DESCRIPTION(IMAGEACQ_DRIVER_NAME);
+//MODULE_LICENSE("GPL");
+//MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
+//MODULE_DESCRIPTION(IMAGEACQ_DRIVER_NAME);
