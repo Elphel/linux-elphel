@@ -104,12 +104,13 @@ static struct jpeghead_priv_t {
  * @brief Copy two quantization tables for the current frame (for the RTP streamer)
  * @param[in]   params   pointer to an array of parameters stored for the frame
  * @param[out]  buf      buffer to put the header to
+ * @param[in]   chn      compressor channel number
  * @return      header length if successful, < 0 - error
  */
-int qtables_create(struct interframe_params_t *params, unsigned char *buf)
+int qtables_create(struct interframe_params_t *params, unsigned char *buf, unsigned int chn)
 {
 	dev_dbg(g_dev_ptr, "params->quality2 = 0x%x\n", params->quality2);
-	int rslt = get_qtable(params->quality2, &buf[0], &buf[64]); /// will copy both quantization tables
+	int rslt = get_qtable(params->quality2, &buf[0], &buf[64], chn); /// will copy both quantization tables
 	if (rslt < 0) return rslt; /// bad quality table
 	return 128;
 }
@@ -192,16 +193,16 @@ int jpegheader_create(struct interframe_params_t *params, unsigned char *buf, un
 			0x07, 0x11};
 
 	struct huff_tables_t *huff_tables = &jpeghead_priv[chn].huff_tables;
+	unsigned char *p = (unsigned char *)params;
 
 	if (buf==NULL) return -1; /// buffer is not provided
 
-	unsigned char *p = (char *)params;
 	dev_dbg(g_dev_ptr, "list of parameters:\n");
 	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, p, 32);
 
 	memcpy((void *) &buf[0],                 (void *) jfif1, sizeof (jfif1)); /// including DQT0 header
 	memcpy((void *) &buf[header_cqtable_hd], (void *) jfif2, sizeof (jfif2)); /// DQT1 header
-	rslt=get_qtable(params->quality2, &buf[header_yqtable], &buf[header_cqtable]); /// will copy both quantization tables
+	rslt=get_qtable(params->quality2, &buf[header_yqtable], &buf[header_cqtable], chn); /// will copy both quantization tables
 	if (rslt <0) return rslt; /// bad quality table
 	bp=header_sof;
 	buf[bp++]=0xff; buf[bp++]=0xc0;
@@ -364,7 +365,7 @@ loff_t jpeghead_lseek(struct file *file, loff_t offset, int orig,
 			if ((fp->signffff != MARKER_FFFF) || // signature is overwritten
 					((fp->timestamp_sec) & X313_LENGTH_MASK)) return -EINVAL; //! acquisition of this frame is not done yet - length word high byte is non-zero
 			if ((offset & 0x1f) == 0x2)
-				jpeghead_priv[chn].jpeg_h_sz = qtables_create(fp, jpeghead_priv[chn].header);  /// just qunatization tables (128 bytes) - for the streamer
+				jpeghead_priv[chn].jpeg_h_sz = qtables_create(fp, jpeghead_priv[chn].header, chn);  /// just qunatization tables (128 bytes) - for the streamer
 			else
 				jpeghead_priv[chn].jpeg_h_sz = jpegheader_create(fp, jpeghead_priv[chn].header, chn); /// full JPEG header
 			if (jpeghead_priv[chn].jpeg_h_sz < 0) {
@@ -669,20 +670,23 @@ int jpeg_htable_is_programmed(unsigned int chn)
 /**
  * @brief program FPGA Huffman table (fram static array)
  * @param[in]   chn   compressor channel number
- * return none
+ * @return none
  */
 void jpeg_htable_fpga_pgm(unsigned int chn)
 {
 	int i;
+	unsigned long flags;
 	x393_cmprs_table_addr_t table_addr;
 	struct huff_tables_t *huff_tables = &jpeghead_priv[chn].huff_tables;
 
 	table_addr.addr32 = 0;
 	table_addr.type = 3;
+	local_irq_save(flags);
 	x393_cmprs_tables_address(table_addr, chn);
 	for (i = 0; i < sizeof(huff_tables->fpga_huffman_table); i++) {
 		x393_cmprs_tables_data((u32)huff_tables->fpga_huffman_table[i], chn);
 	}
+	local_irq_restore(flags);
 	jpeghead_priv[chn].fpga_programmed = 1;
 }
 
@@ -747,6 +751,16 @@ int jpeghead_init(struct platform_device *pdev)
 	for (i = 0; i < IMAGE_CHN_NUM; i++) {
 		jpeghead_priv[i].fpga_programmed = 0;
 		jpeg_htable_init(i);
+	}
+
+	qt_init(pdev);
+	dev_dbg(g_dev_ptr, "reset quantization tables\n");
+	// force initialization at next access
+	if (get_cache_policy() == COMMON_CACHE) {
+		reset_qtables(0);
+	} else if (get_cache_policy() == PER_CHN_CACHE) {
+		for (i = 0; i < IMAGE_CHN_NUM; i++)
+			reset_qtables(i);
 	}
 
 	return 0;

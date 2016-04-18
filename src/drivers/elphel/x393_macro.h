@@ -41,6 +41,10 @@
 #define X393_BUFFSUB(x, y) (((x) >= (y)) ? ((x)-(y)) : ((x) + (CCAM_DMA_SIZE -(y))))
 #define X393_BUFFADD(x, y) ((((x) + (y)) <= CCAM_DMA_SIZE) ? ((x) + (y)) : ((x) - (CCAM_DMA_SIZE -(y))))
 
+#define TABLE_TYPE_QUANT     0
+#define TABLE_TYPE_CORING    1
+#define TABLE_TYPE_FOCUS     2
+#define TABLE_TYPE_HUFFMAN   3
 /**
  * @brief Converts file minor number to image compressor channel.
  *

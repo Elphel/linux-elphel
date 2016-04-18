@@ -95,14 +95,14 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 	if (pElphel_buf != NULL) {
 		ccam_dma_buf_ptr = pElphel_buf->vaddr;
 		dma_handle = pElphel_buf->paddr;
-		dev_info(dev, "using %d bytes of DMA memory from pElphel_buf at address 0x%08p", pElphel_buf->size * PAGE_SIZE, dma_handle);
+		dev_info(dev, "using %lu bytes of DMA memory from pElphel_buf at address 0x%08x", pElphel_buf->size * PAGE_SIZE, dma_handle);
 	} else {
 		ccam_dma_buf_ptr = dmam_alloc_coherent(dev, dma_size, &dma_handle, GFP_KERNEL);
 		if (!ccam_dma_buf_ptr) {
 			dev_err(dev, "unable to allocate DMA buffer\n");
 			return -ENOMEM;
 		} else {
-			dev_info(dev, "%d bytes of DMA memory allocated at address 0x%08p", dma_size , dma_handle);
+			dev_info(dev, "%d bytes of DMA memory allocated at address 0x%08x", dma_size , dma_handle);
 		}
 	}
 
@@ -263,7 +263,7 @@ unsigned int circbuf_all_poll (struct file *file, poll_table *wait)
 int circbuf_open(struct inode *inode, struct file *filp)
 {
 	inode->i_size = CCAM_DMA_SIZE;
-	dev_dbg(g_dev_ptr, "inode->i_size = 0x%x\n");
+	dev_dbg(g_dev_ptr, "inode->i_size = 0x%x\n", inode->i_size);
 
 	return 0;
 }
@@ -286,7 +286,7 @@ unsigned long get_image_length(int byte_offset, unsigned int chn, int *last_chun
 		last_image_chunk += CCAM_DMA_SIZE;
 	len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH))];
 
-	dev_dbg(g_dev_ptr, "got len32 = 0x%x at 0x%x\n", len32, last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH));
+	dev_dbg(g_dev_ptr, "got len32 = 0x%lx at 0x%x\n", len32, last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH));
 
 	if (last_chunk_offset != NULL)
 		*last_chunk_offset = last_image_chunk;
@@ -481,13 +481,13 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 				file->f_pos = img_start;
 				break;
 			case LSEEK_CIRC_NEXT:
-				dev_dbg(g_dev_ptr, "LSEEK_CIRC_NEXT: file->f_pos = 0x%x, fvld = %d, fp->len32 = 0x%x\n", file->f_pos, fvld, fp->frame_length);
+				dev_dbg(g_dev_ptr, "LSEEK_CIRC_NEXT: file->f_pos = 0x%lx, fvld = %d, fp->len32 = 0x%lx\n", file->f_pos, fvld, fp->frame_length);
 				if (fvld <= 0)
 					return -EOVERFLOW; //! no frames after current
 				// calculate the full length of current frame and advance file pointer by this value
 				padded_frame = fp->frame_length + INSERTED_BYTES(fp->frame_length) + CHUNK_SIZE + CCAM_MMAP_META;
 				file->f_pos = X393_BUFFADD(file->f_pos, padded_frame); // do it even if the next frame does not yet exist
-				dev_dbg(g_dev_ptr, "LSEEK_CIRC_NEXT: moving file->f_pos to 0x%x\n", file->f_pos);
+				dev_dbg(g_dev_ptr, "LSEEK_CIRC_NEXT: moving file->f_pos to 0x%llx\n", file->f_pos);
 				break;
 			case LSEEK_CIRC_FIRST:
 			case LSEEK_CIRC_SCND:
@@ -503,7 +503,7 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 					nf++;
 					preprev_p = prev_p; // second known good (at least first one)
 					prev_p=rp;          // now - current, known good
-					len32 = get_image_length(DW2BYTE(rp), chn, last_image_chunk);
+					len32 = get_image_length(DW2BYTE(rp), chn, &last_image_chunk);
 					dev_dbg(g_dev_ptr, "LSEEK_CIRC_FIRST or LSEEK_CIRC_SCND: number of frames = %d, rp = 0x%x, fvld = %d, len32 = 0x%x", nf, rp, fvld, len32);
 					if ((len32 & MARKER_FF) != MARKER_FF ) break;  //! no frames before rp (==prev_p)
 					//! move rp to the previous frame
@@ -519,7 +519,7 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 				break;
 			}
 			case LSEEK_CIRC_SETP:
-				dev_dbg(g_dev_ptr, "LSEK_CIRC_SETP: Setting jpeg_rp for channel %d to file->f_pos = 0x%x\n", chn, file->f_pos);
+				dev_dbg(g_dev_ptr, "LSEK_CIRC_SETP: Setting jpeg_rp for channel %d to file->f_pos = 0x%llx\n", chn, file->f_pos);
 				camseq_set_jpeg_rp(chn, file->f_pos >> 2);
 				break;
 			case LSEEK_CIRC_VALID:
@@ -569,7 +569,7 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 	unsigned long p;
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
 	unsigned int chn = minor_to_chn(minor, NULL);
-	dev_dbg(g_dev_ptr, "minor = 0x%x, count = 0x%x, off = 0x%x", minor, count, off);
+	dev_dbg(g_dev_ptr, "minor = 0x%x, count = 0x%x, off = 0x%llx", minor, count, off);
 
 	/* debug code follows*/
 	switch (buf[0] - 0x30) {
@@ -609,7 +609,7 @@ ssize_t circbuf_read(struct file *file, char *buf, size_t count, loff_t *off)
 	unsigned long p;
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
 	unsigned int chn = minor_to_chn(minor, NULL);
-	dev_dbg(g_dev_ptr, "minor = 0x%x, count = 0x%x, off = 0x%x", minor, count, off);
+	dev_dbg(g_dev_ptr, "minor = 0x%x, count = 0x%x, off = 0x%llx", minor, count, off);
 
 	p = *off;
 	if (p >= CCAM_DMA_SIZE)
@@ -674,7 +674,7 @@ unsigned int circbuf_poll (struct file *file, poll_table *wait)
 	rslt = circbuf_valid_ptr(file->f_pos, &fp, chn);
 	if (rslt < 0) {
 		// not a valid read pointer, probable buffer overrun
-		dev_dbg(g_dev_ptr, "invalid pointer file->f_pos = 0x%x\n", file->f_pos);
+		dev_dbg(g_dev_ptr, "invalid pointer file->f_pos = 0x%llx\n", file->f_pos);
 		return  POLLHUP ;
 	} else if (rslt > 0) {
 		return POLLIN | POLLRDNORM; //! there was frame already available

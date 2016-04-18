@@ -9,7 +9,7 @@ struct huffman_fpga_code_t {
   unsigned short value;       /// code value
   unsigned short length;      /// code length
 };
-int     qtables_create  (struct interframe_params_t * params, unsigned char * buf);
+int     qtables_create  (struct interframe_params_t * params, unsigned char * buf, unsigned int chn);
 int     jpegheader_create(struct interframe_params_t * params, unsigned char * buf, unsigned int chn);
 int     jpeghead_open   (struct inode *inode, struct file *filp); // set filesize
 loff_t  jpeghead_lseek  (struct file * file, loff_t offset, int orig, struct interframe_params_t *fp);
