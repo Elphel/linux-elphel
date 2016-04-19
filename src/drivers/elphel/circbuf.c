@@ -263,7 +263,7 @@ unsigned int circbuf_all_poll (struct file *file, poll_table *wait)
 int circbuf_open(struct inode *inode, struct file *filp)
 {
 	inode->i_size = CCAM_DMA_SIZE;
-	dev_dbg(g_dev_ptr, "inode->i_size = 0x%x\n", inode->i_size);
+	dev_dbg(g_dev_ptr, "inode->i_size = 0x%lx\n", inode->i_size);
 
 	return 0;
 }
@@ -456,22 +456,21 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 				dev_dbg(g_dev_ptr, "LSEEK_CIRC_LAST: moving file->f_pos to 0x%llx\n", file->f_pos);
 				break;
 			case LSEEK_CIRC_PREV:
-				next_img = camseq_get_jpeg_wp(chn) << 2;
-				fvld = circbuf_valid_ptr(next_img, &fp, chn);
+				rp = file->f_pos;
+				fvld = circbuf_valid_ptr(rp, &fp, chn);
 
-				dev_dbg(g_dev_ptr, "LSEEK_CIRC_PREV: next_img = 0x%x, fvld = %d\n", next_img, fvld);
+				dev_dbg(g_dev_ptr, "LSEEK_CIRC_PREV: rp = 0x%x, fvld = %d\n", rp, fvld);
 				dev_dbg(g_dev_ptr, "mem dump of last 0x40 bytes in buffer number %d\n", chn);
-				print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, &circbuf_priv[chn].buf_ptr[BYTE2DW(next_img - OFFSET_X40)], OFFSET_X40);
+				print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, &circbuf_priv[chn].buf_ptr[BYTE2DW(rp - OFFSET_X40)], OFFSET_X40);
 
-				len32 = get_image_length(next_img, chn, &last_image_chunk);
+				len32 = get_image_length(rp, chn, &last_image_chunk);
 				if ((len32 & MARKER_FF) != MARKER_FF) {
 					// we should not be here as the position was checked in circbufValidPointer
-					dev_dbg(g_dev_ptr, "failed to get marker 0xFF at 0x%x, len32: 0x%x\n", next_img, len32);
+					dev_dbg(g_dev_ptr, "failed to get marker 0xFF at 0x%x, len32: 0x%x\n", rp, len32);
 					return -EOVERFLOW;
 				}
-				len32 &= 0xffffff;
-				inserted_bytes = ((CHUNK_SIZE - (((len32 % CHUNK_SIZE) + CCAM_MMAP_META) % CHUNK_SIZE) - ADJUSTMENT) % CHUNK_SIZE ) + ADJUSTMENT;
-				img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - inserted_bytes - CCAM_MMAP_META, len32);
+				len32 &= FRAME_LENGTH_MASK;
+				img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
 				dev_dbg(g_dev_ptr, "LSEEK_CIRC_PREV: calculated start address = 0x%x, length = 0x%x\n", img_start, len32);
 
 				// move file pointer only if previous frame valid
@@ -507,12 +506,11 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 					dev_dbg(g_dev_ptr, "LSEEK_CIRC_FIRST or LSEEK_CIRC_SCND: number of frames = %d, rp = 0x%x, fvld = %d, len32 = 0x%x", nf, rp, fvld, len32);
 					if ((len32 & MARKER_FF) != MARKER_FF ) break;  //! no frames before rp (==prev_p)
 					//! move rp to the previous frame
-					len32 &= 0xffffff;
-					inserted_bytes = ((CHUNK_SIZE - (((len32 % CHUNK_SIZE) + CCAM_MMAP_META) % CHUNK_SIZE) - ADJUSTMENT) % CHUNK_SIZE ) + ADJUSTMENT;
-					img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - inserted_bytes - CCAM_MMAP_META, len32);
+					len32 &= FRAME_LENGTH_MASK;
+					img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
 					dev_dbg(g_dev_ptr, "LSEEK_CIRC_FIRST or LSEEK_CIRC_SCND: calculated start address = 0x%x, length = 0x%x\n", img_start, len32);
 					rp = BYTE2DW(img_start);
-					if (rp > prev_p) nz-- ; // rolled through zero - make sure we'll not stuck in this loop forever
+					if (rp > prev_p) nz--; // rolled through zero - make sure we'll not stuck in this loop forever
 				}
 				dev_dbg(g_dev_ptr, "LSEEK_CIRC_FIRST or LSEEK_CIRC_SCND: finish stepping back through frames, number of frames = %d, rp = 0x%x, fvld = %d, len32 = 0x%x", nf, rp, fvld, len32);
 				file->f_pos = ((offset == LSEEK_CIRC_SCND) ? preprev_p : prev_p) << 2;
@@ -528,7 +526,7 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 				break;
 			case LSEEK_CIRC_READY:
 				dev_dbg(g_dev_ptr, "LSEEK_CIRC_READY: checking fvld, fvld = %d\n", fvld);
-				if (fvld <=0) return -EINVAL; // no frame is available better code?
+				if (fvld <= 0) return -EINVAL; // no frame is available better code?
 				break;
 			case LSEEK_CIRC_WAIT:
 				dev_dbg(g_dev_ptr, "LSEEK_CIRC_WAIT\n");
@@ -569,7 +567,7 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 	unsigned long p;
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
 	unsigned int chn = minor_to_chn(minor, NULL);
-	dev_dbg(g_dev_ptr, "minor = 0x%x, count = 0x%x, off = 0x%llx", minor, count, off);
+	dev_dbg(g_dev_ptr, "minor = 0x%x, count = 0x%x, off = 0x%lx", minor, count, off);
 
 	/* debug code follows*/
 	switch (buf[0] - 0x30) {
