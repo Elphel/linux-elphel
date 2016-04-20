@@ -1,6 +1,6 @@
 /*******************************************************************************
  * File: x393_types.h
- * Date: 2016-04-06  
+ * Date: 2016-04-19  
  * Author: auto-generated file, see x393_export_c.py
  * Description: typedef definitions for the x393 hardware registers
  *******************************************************************************/
@@ -294,7 +294,7 @@ typedef union {
           u32             hact_alive: 1; // [   13] (0) HACT signal from the sensor (or internal) is toggling (N/A for HiSPI
           u32         hact_ext_alive: 1; // [   14] (0) HACT signal from the sensor is toggling (N/A for HiSPI)
           u32             vact_alive: 1; // [   15] (0) VACT signal from the sensor is toggling (N/A for HiSPI)
-          u32                       : 8;
+          u32          xfpgatdo_byte: 8; // [23:16] (0) Multiplexer FPGA TDO output
           u32              senspgmin: 1; // [   24] (0) senspgm pin state
           u32               xfpgatdo: 1; // [   25] (0) Multiplexer FPGA TDO output
           u32                seq_num: 6; // [31:26] (0) Sequence number
@@ -382,7 +382,7 @@ typedef union {
 
 typedef union {
     struct {
-          u32        tbl_addr: 8; // [ 7: 0] (0) Address/length in 64-bit words (<<3 to get byte address)
+          u32        tbl_addr: 8; // [ 7: 0] (0) I2C table index
           u32                :20;
           u32        tbl_mode: 2; // [29:28] (3) Should be 3 to select table address write mode
           u32                : 2;
@@ -400,7 +400,7 @@ typedef union {
           u32         /*rah*/: 8; // [ 7: 0] (0) High byte of the i2c register address
           u32         /*rnw*/: 1; // [    8] (0) Read/not write i2c register, should be 1 here
           u32                : 7;
-          u32            nbrd: 3; // [18:16] (0) Number of bytes to read (1..18, 0 means '8')
+          u32            nbrd: 3; // [18:16] (0) Number of bytes to read (1..8, 0 means '8')
           u32           nabrd: 1; // [   19] (0) Number of address bytes for read (0 - one byte, 1 - two bytes)
           u32         /*dly*/: 8; // [27:20] (0) Bit delay - number of mclk periods in 1/4 of the SCL period
           u32    /*tbl_mode*/: 2; // [29:28] (2) Should be 2 to select table data write mode

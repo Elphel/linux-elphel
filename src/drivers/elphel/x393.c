@@ -1,6 +1,6 @@
 /*******************************************************************************
  * File: x393.c
- * Date: 2016-04-06  
+ * Date: 2016-04-19  
  * Author: auto-generated file, see x393_export_c.py
  * Description: Functions definitions to access x393 hardware registers
  *******************************************************************************/
@@ -201,8 +201,8 @@ x393_sensio_tim3_t           get_x393_sensio_tim3                (int sens_num) 
 //     in the table. Slave address is always in byte 2 (bits 23:16), byte1 (high register address) is skipped if
 //     read address in the table is programmed to be a single-byte one
 
-void                         x393_sensi2c_abs                    (u32 d, int sens_num, int offset){writel(d, mmio_ptr + (0x1040 + 0x40 * sens_num + 0x1 * offset));} // Write sensor i2c sequencer
-void                         x393_sensi2c_rel                    (u32 d, int sens_num, int offset){writel(d, mmio_ptr + (0x1080 + 0x40 * sens_num + 0x1 * offset));} // Write sensor i2c sequencer
+void                         x393_sensi2c_abs                    (u32 d, int sens_num, int offset){writel(d, mmio_ptr + (0x1040 + 0x100 * sens_num + 0x4 * offset));} // Write sensor i2c sequencer
+void                         x393_sensi2c_rel                    (u32 d, int sens_num, int offset){writel(d, mmio_ptr + (0x1080 + 0x100 * sens_num + 0x4 * offset));} // Write sensor i2c sequencer
 
 // Lens vignetting correction (for each sub-frame separately)
 
@@ -394,8 +394,8 @@ u32                          get_x393_camsync_trig_delay         (int sens_chn) 
 //      [13:12] - 3 - run seq, 2 - stop seq , 1,0 - no change to run state
 //        [1:0] - 0: NOP, 1: clear IRQ, 2 - Clear IE, 3: set IE
 void                         x393_cmdframeseq_ctrl               (x393_cmdframeseq_mode_t d, int sens_chn){writel(d.d32, mmio_ptr + (0x1e7c + 0x80 * sens_chn));} // CMDFRAMESEQ control register
-void                         x393_cmdframeseq_abs                (u32 d, int sens_chn, int offset){writel(d, mmio_ptr + (0x1e00 + 0x20 * sens_chn + 0x1 * offset));} // CMDFRAMESEQ absolute frame address/command
-void                         x393_cmdframeseq_rel                (u32 d, int sens_chn, int offset){writel(d, mmio_ptr + (0x1e40 + 0x20 * sens_chn + 0x1 * offset));} // CMDFRAMESEQ relative frame address/command
+void                         x393_cmdframeseq_abs                (u32 d, int sens_chn, int offset){writel(d, mmio_ptr + (0x1e00 + 0x80 * sens_chn + 0x4 * offset));} // CMDFRAMESEQ absolute frame address/command
+void                         x393_cmdframeseq_rel                (u32 d, int sens_chn, int offset){writel(d, mmio_ptr + (0x1e40 + 0x80 * sens_chn + 0x4 * offset));} // CMDFRAMESEQ relative frame address/command
 // Command sequencer multiplexer, provides current frame number for each sensor channel and interrupt status/interrupt masks for them.
 // Interrupts and interrupt masks are controlled through channel CMDFRAMESEQ module
 void                         set_x393_cmdseqmux_status_ctrl      (x393_status_ctrl_t d){writel(d.d32, mmio_ptr + 0x1c08);}         // CMDSEQMUX status control mode (status provides current frame numbers)
