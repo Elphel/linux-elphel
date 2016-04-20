@@ -1,193 +1,21 @@
-/** @file framepars.c */
-/*!********************************************************************************
-   *! FILE NAME  : framepars.c
-   *! DESCRIPTION: Handling of frame parameters, making use of FPGA i2c
-   *! and command sequencer that accepts commands up to 6 frames ahead.
-   *! This module includes parameter storage, code called from ISR,
-   *! from other kernel drivers as well as from the user space
-   *! Copyright (C) 2008 Elphel, Inc.
-   *! -----------------------------------------------------------------------------**
-   *!
-   *!  This program is free software: you can redistribute it and/or modify
-   *!  it under the terms of the GNU General Public License as published by
-   *!  the Free Software Foundation, either version 3 of the License, or
-   *!  (at your option) any later version.
-   *!
-   *!  This program is distributed in the hope that it will be useful,
-   *!  but WITHOUT ANY WARRANTY; without even the implied warranty of
-   *!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   *!  GNU General Public License for more details.
-   *!senssensor_common.hor_common.h
-   *!  You should have received a copy of the GNU General Public License
-   *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-   *! -----------------------------------------------------------------------------**
-   *!  $Log: framepars.c,v $
-   *!  Revision 1.14  2011/12/22 05:39:07  elphel
-   *!  catching up after some missed interrupts
-   *!
-   *!  Revision 1.13  2010/08/10 21:10:41  elphel
-   *!  portrait mode now includes all 4 rotations (2 bits)
-   *!
-   *!  Revision 1.12  2010/08/03 23:37:34  elphel
-   *!  rev 8.0.8.37, portrait mode support
-   *!
-   *!  Revision 1.11  2010/05/25 00:52:23  elphel
-   *!  8.0.8.20, working on multi-sensor
-   *!
-   *!  Revision 1.10  2010/05/21 06:12:16  elphel
-   *!  continue working on multi-sensor software
-   *!
-   *!  Revision 1.9  2010/05/16 02:03:47  elphel
-   *!  8.0.8.4 - driver working with individual/broadcast sensor registers
-   *!
-   *!  Revision 1.8  2010/05/13 03:39:31  elphel
-   *!  8.0.8.12 -  drivers modified for multi-sensor operation
-   *!
-   *!  Revision 1.7  2010/04/28 02:34:33  elphel
-   *!  8.0.6.6 - added support for linescan mode (also useful for high fps small images). 2.5K full line pairs/second with 5MPix sensor
-   *!
-   *!  Revision 1.6  2010/04/06 20:35:42  elphel
-   *!  8.0.7.5 - made the fpgaclock driver program 10359 clock in addition to the system one
-   *!
-   *!  Revision 1.5  2010/01/27 22:51:52  elphel
-   *!  turned off ELPHEL_DEBUG, fixed errors caused by that.
-   *!
-   *!  Revision 1.4  2008/12/02 19:08:54  elphel
-   *!  Bug fixin setFramePar()
-   *!
-   *!  Revision 1.3  2008/11/30 05:01:03  elphel
-   *!  Changing gains/scales behavior
-   *!
-   *!  Revision 1.2  2008/11/28 08:17:09  elphel
-   *!  keeping Doxygen a little happier
-   *!
-   *!  Revision 1.1.1.1  2008/11/27 20:04:00  elphel
-   *!
-   *!
-   *!  Revision 1.41  2008/11/17 06:42:37  elphel
-   *!  added SETFRAMEREL - skipping specified number of frames from current (through lseek)
-   *!
-   *!  Revision 1.40  2008/11/14 07:09:48  elphel
-   *!  additional test to prevent "JUST_THIS" parameters to be written to the future-most frame (otherwise it can get stuck)
-   *!
-   *!  Revision 1.39  2008/11/13 05:40:45  elphel
-   *!  8.0.alpha16 - modified histogram storage, profiling
-   *!
-   *!  Revision 1.38  2008/11/05 02:01:25  elphel
-   *!  Added bit field manipulation in parameters
-   *!
-   *!  Revision 1.37  2008/11/02 00:31:25  elphel
-   *!  reduced required initialization steps
-   *!
-   *!  Revision 1.36  2008/10/29 04:18:28  elphel
-   *!  v.8.0.alpha10 made a separate structure for global parameters (not related to particular frames in a frame queue)
-   *!
-   *!  Revision 1.35  2008/10/25 19:59:48  elphel
-   *!  added lseek() calls to enable/disable daemons at events (compressed frame available, any frame available, histogram-Y and histograms-C available)
-   *!
-   *!  Revision 1.34  2008/10/23 18:25:40  elphel
-   *!  removed unneeded test condition before calling wait_event_interruptible()
-   *!
-   *!  Revision 1.33  2008/10/23 08:03:38  elphel
-   *!  cleanup
-   *!
-   *!  Revision 1.32  2008/10/21 21:28:26  elphel
-   *!  minor bug fix
-   *!
-   *!  Revision 1.31  2008/10/20 18:46:36  elphel
-   *!  all the functions for the same target frame are processed in the order regardless of latencies
-   *!
-   *!  Revision 1.30  2008/10/19 06:51:51  elphel
-   *!  rearranged initialization, added frame number reset (to avoid unlikely integer overflow)
-   *!
-   *!  Revision 1.29  2008/10/17 05:44:48  elphel
-   *!  fixing latencies
-   *!
-   *!  Revision 1.28  2008/10/15 22:28:56  elphel
-   *!  snapshot 8.0.alpha2
-   *!
-   *!  Revision 1.27  2008/10/12 06:13:10  elphel
-   *!  snapshot
-   *!
-   *!  Revision 1.26  2008/10/11 18:46:07  elphel
-   *!  snapshot
-   *!
-   *!  Revision 1.25  2008/10/10 17:06:59  elphel
-   *!  just a snapshot
-   *!
-   *!  Revision 1.24  2008/10/08 21:26:25  elphel
-   *!  snapsot 7.2.0.pre4 - first images (actually - second)
-   *!
-   *!  Revision 1.23  2008/10/06 08:31:08  elphel
-   *!  snapshot, first images
-   *!
-   *!  Revision 1.22  2008/10/05 05:13:33  elphel
-   *!  snapshot003
-   *!
-   *!  Revision 1.21  2008/10/04 16:10:12  elphel
-   *!  snapshot
-   *!
-   *!  Revision 1.20  2008/09/28 00:31:57  elphel
-   *!  snapshot
-   *!
-   *!  Revision 1.19  2008/09/25 00:58:11  elphel
-   *!  snapshot
-   *!
-   *!  Revision 1.18  2008/09/20 00:29:50  elphel
-   *!  moved driver major/minor numbers to a single file - include/asm-cris/elphel/driver_numbers.h
-   *!
-   *!  Revision 1.17  2008/09/19 04:37:25  elphel
-   *!  snapshot
-   *!
-   *!  Revision 1.16  2008/09/16 00:49:31  elphel
-   *!  snapshot
-   *!
-   *!  Revision 1.15  2008/09/12 20:40:11  elphel
-   *!  snapshot
-   *!
-   *!  Revision 1.14  2008/09/12 00:28:54  elphel
-   *!  typo fixed
-   *!
-   *!  Revision 1.13  2008/09/12 00:23:59  elphel
-   *!  removed cc353.c, cc353.h
-   *!
-   *!  Revision 1.12  2008/09/07 19:48:08  elphel
-   *!  snapshot
-   *!
-   *!  Revision 1.11  2008/09/05 23:20:26  elphel
-   *!  just a snapshot
-   *!
-   *!  Revision 1.10  2008/09/04 17:37:13  elphel
-   *!  documenting
-   *!
-   *!  Revision 1.9  2008/09/02 21:01:06  elphel
-   *!  just next...
-   *!
-   *!  Revision 1.8  2008/07/27 04:27:49  elphel
-   *!  next snapshot
-   *!
-   *!  Revision 1.7  2008/06/24 00:43:44  elphel
-   *!  just a snapshot
-   *!
-   *!  Revision 1.6  2008/06/20 03:54:19  elphel
-   *!  another snapshot
-   *!
-   *!  Revision 1.5  2008/06/19 02:17:36  elphel
-   *!  continuing work - just a snapshot
-   *!
-   *!  Revision 1.4  2008/06/16 06:51:21  elphel
-   *!  work in progress, intermediate commit
-   *!
-   *!  Revision 1.3  2008/06/10 00:03:14  elphel
-   *!  storing past frame data - subset of the frame parameters
-   *!
-   *!  Revision 1.2  2008/06/08 23:48:39  elphel
-   *!  minor cleanup
-   *!
-   *!  Revision 1.1  2008/05/26 23:33:00  elphel
-   *!  Added driver to handle multi-frame parameters
-   *!
-   *!
+/** @file framepars.c
+ * @brief Handling of frame parameters, making use of FPGA i2c
+ * and command sequencer that accepts commands up to 6 frames ahead.
+ * This module includes parameter storage, code called from ISR,
+ * from other kernel drivers as well as from the user space
+ * Copyright (C) 2016 Elphel, Inc.
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 //copied from cxi2c.c - TODO:remove unneeded
@@ -201,7 +29,7 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/errno.h>
+//#include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/string.h>
@@ -209,16 +37,14 @@
 //#include <linux/autoconf.h>
 #include <linux/vmalloc.h>
 #include <linux/platform_device.h>
-#include <linux/of.h>
-#include <linux/of_device.h>
 
 //#include <asm/system.h>
-#include <asm/byteorder.h> // endians
-#include <asm/io.h>
+//#include <asm/byteorder.h> // endians
+//#include <asm/io.h>
 
-#include <asm/irq.h>
+//#include <asm/irq.h>
 
-#include <asm/delay.h>
+//#include <asm/delay.h>
 #include <asm/uaccess.h>
 #include <elphel/driver_numbers.h>
 #include <elphel/c313a.h>
@@ -235,6 +61,7 @@
 //#include "cxdma.h" // x313_dma_init
 //#include "cci2c.h" // to use void i2c_reset_wait(void), reset shadow static 'i2c_hardware_on'
 #include "x393_macro.h"
+#include "x393.h"
 
 /**
  * \def MDF1(x) optional debug output
@@ -284,14 +111,12 @@
   #define D1(x)
   #define D1I(x) x
 #endif
-//#define ELP_KERR(x) printk("%s:%d:%s: ERROR ",__FILE__,__LINE__,__FUNCTION__); x
 
 /**
  * \def FRAMEPARS_DRIVER_NAME driver name to display
  */
 #define  FRAMEPARS_DRIVER_NAME "Elphel (R) Model 393 Frame Parameters device driver"
 
-static const struct of_device_id elphel393_framepars_of_match[];
 static struct framepars_all_t sFrameParsAll __attribute__ ((aligned(PAGE_SIZE)));       ///< Sensor Parameters, currently 8 pages all and 2048 pages some, static struct
 unsigned long frameParsInitialized;                                                     /// set to 0 at startup, 1 after initialization that is triggered by setParsAtomic()
 #define  thisFrameNumber GLOBALPARS(G_THIS_FRAME)                                       // Current frame number (may lag from the hardware)
@@ -432,6 +257,7 @@ int initMultiPars(void)
 			}
 		}
 	}
+	// remark: the line below is called from initFramePars, consider removing it
 	for (i = 0; i < P_SENSOR_NUMREGS; i++) funcs2call[P_SENSOR_REGS + i] = ONCHANGE_SENSORREGS;  /// by default each "manual" write to any of 256 registers will trigger pgm_sensorreg function
 	MDF(printk("GLOBALPARS(G_MULTI_NUM)=%lx\n", GLOBALPARS(G_MULTI_NUM)));
 	return GLOBALPARS(G_MULTI_NUM);
@@ -446,7 +272,6 @@ inline unsigned long get_imageParamsThis(int n)
 {
 	return framepars[thisFrameNumber & PARS_FRAMES_MASK].pars[n];
 }
-//EXPORT_SYMBOL_GPL(get_imageParamsThis);
 
 /**
  * @brief reads parameters from the previous frame (matching hardware index) - used to determine if historam was needed
@@ -479,7 +304,6 @@ inline unsigned long get_globalParam(int n)
 {
 	return GLOBALPARS(n);
 }
-//EXPORT_SYMBOL_GPL(get_globalParam);
 /**
  * @brief sets global (not related to particular frames) parameters
  * @param n number of a parameter to set  (numbers start from FRAMEPAR_GLOBALS)
@@ -490,7 +314,6 @@ inline void          set_globalParam(int n, unsigned long d)
 {
 	GLOBALPARS(n) = d;
 }
-//EXPORT_SYMBOL_GPL(set_globalParam);
 
 /**
  * @brief set same parameters in all frames
@@ -572,8 +395,11 @@ void updateFramePars(int frame8, struct interframe_params_t * interframe_pars)
 			framepars[findex_prev].modsince32 = 0; ///  mark as not "modified since" super index
 		}
 /// clear "modified" and  flags on the brand new future frame
+		// remark: framepars[findex_prev].mod is 31 dwords long abd here 32 dwords are cleared
+		// explanation: mod32 goes after mod[31] and it is cleared too
 		if (framepars[findex_prev].mod32) memset(framepars[findex_prev].mod, 0, 32 * 4);        /// .mod[0]-.mod[30], .mod32
 		framepars[findex_prev].functions = 0;                                                   /// No functions yet needed on the brand new frame
+		// remark: replace number 7 with named constant, it should correspond to total frame num (16 in new camera)
 		framepars[findex_prev].pars[P_FRAME] = thisFrameNumber + 7;                             /// that will be the full frame number
 /// NOTE: Handle past due - copy functions, and mod if functions were non-zero
 		if (framepars[findex_this].functions) {                                                 /// Some functions were not yet processed (past due)
@@ -1044,6 +870,7 @@ int setFramePars(struct framepars_t * this_framepars, int numPars, struct framep
 		val = pars[npar].val;
 		index = pars[npar].num & 0xffff;
 		MDF8(printk(":    ---   frame8=%d index=%d (0x%x) val=0x%x\n", frame8, index, (int)pars[npar].num, (int)val));
+		// remark: code below looks similar to setFramePar function, call it instead
 		if (index > ((index >= FRAMEPAR_GLOBALS) ? (P_MAX_GPAR + FRAMEPAR_GLOBALS) : P_MAX_PAR)) {
 			D1I(local_irq_restore(flags));
 			ELP_KERR(printk(" bad index=%d > %d\n", index, P_MAX_PAR));
@@ -1377,16 +1204,11 @@ int framepars_mmap(struct file *file, struct vm_area_struct *vma)
  * @param[in]   pdev   pointer to \b platform_device structure
  * @return      0 on success or negative error code otherwise
  */
-static int framepars_init(struct platform_device *pdev)
+int framepars_init(struct platform_device *pdev)
 {
 	int res;
 	struct device *dev = &pdev->dev;
 	const struct of_device_id *match;
-
-	/* sanity check */
-	match = of_match_device(elphel393_framepars_of_match, dev);
-	if (!match)
-		return -EINVAL;
 
 	init_framepars_ptr();
 	initGlobalPars();       /// sets default debug if enabled - not anymore. Add here?
@@ -1404,30 +1226,30 @@ static int framepars_init(struct platform_device *pdev)
 	return 0;
 }
 
-static int framepars_remove(struct platform_device *pdev)
+int framepars_remove(struct platform_device *pdev)
 {
 	unregister_chrdev(FRAMEPARS_MAJOR, "framepars_operations");
 
 	return 0;
 }
 
-static const struct of_device_id elphel393_framepars_of_match[] = {
-	{ .compatible = "elphel,elphel393-framepars-1.00" },
-	{ /* end of list */ }
-};
-MODULE_DEVICE_TABLE(of, elphel393_framepars_of_match);
-
-static struct platform_driver elphel393_framepars = {
-	.probe			= framepars_init,
-	.remove			= framepars_remove,
-	.driver			= {
-		.name		= FRAMEPARS_DRIVER_NAME,
-		.of_match_table = elphel393_framepars_of_match,
-	},
-};
-
-module_platform_driver(elphel393_framepars);
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-MODULE_DESCRIPTION(X3X3_FRAMEPARS_DRIVER_NAME);
+//static const struct of_device_id elphel393_framepars_of_match[] = {
+//	{ .compatible = "elphel,elphel393-framepars-1.00" },
+//	{ /* end of list */ }
+//};
+//MODULE_DEVICE_TABLE(of, elphel393_framepars_of_match);
+//
+//static struct platform_driver elphel393_framepars = {
+//	.probe			= framepars_init,
+//	.remove			= framepars_remove,
+//	.driver			= {
+//		.name		= FRAMEPARS_DRIVER_NAME,
+//		.of_match_table = elphel393_framepars_of_match,
+//	},
+//};
+//
+//module_platform_driver(elphel393_framepars);
+//
+//MODULE_LICENSE("GPL");
+//MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
+//MODULE_DESCRIPTION(X3X3_FRAMEPARS_DRIVER_NAME);

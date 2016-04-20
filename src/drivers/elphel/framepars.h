@@ -62,4 +62,7 @@ inline void processParsSeq (struct sensorproc_t * sensorproc, int frame8, int ma
 void processPars (struct sensorproc_t * sensorproc, int frame8, int maxahead);
 ///*** TODO: Add option (flag?) to write "single" (like single compress, single sensor) so it will not make all the next frames "single"
 
+int framepars_init(struct platform_device *pdev);
+int framepars_remove(struct platform_device *pdev);
+
 #endif

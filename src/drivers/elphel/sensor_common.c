@@ -765,6 +765,8 @@ int image_acq_init(struct platform_device *pdev)
 	//init_pgm_proc ();   /// setup pointers to functions (not sensor-specific)
 	//MDD1(printk("reset_qtables()\n"));
 
+	framepars_init(pdev);
+
 	return 0;
 }
 
