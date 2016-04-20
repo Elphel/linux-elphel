@@ -1,12 +1,12 @@
 /*!***************************************************************************
 *! FILE NAME  : fpgajtag353.c
 *! DESCRIPTION: TBD
-*! Copyright 2002-2007 (C) Elphel, Inc.
+*! Copyright 2002-20016 (C) Elphel, Inc.
 *! -----------------------------------------------------------------------------**
 *!
 *!  This program is free software: you can redistribute it and/or modify
 *!  it under the terms of the GNU General Public License as published by
-*!  the Free Software Foundation, either version 3 of the License, or
+*!  the Free Software Foundation, either version 2 of the License, or
 *!  (at your option) any later version.
 *!
 *!  This program is distributed in the hope that it will be useful,
@@ -17,58 +17,6 @@
 *!  You should have received a copy of the GNU General Public License
 *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *! -----------------------------------------------------------------------------**
-*!  $Log: fpgajtag353.c,v $
-*!  Revision 1.2  2011/05/20 21:36:52  elphel
-*!  typo fix
-*!
-*!  Revision 1.1.1.1  2008/11/27 20:04:01  elphel
-*!
-*!
-*!  Revision 1.4  2008/09/22 22:55:48  elphel
-*!  snapshot
-*!
-*!  Revision 1.3  2008/09/20 00:29:50  elphel
-*!  moved driver major/minor numbers to a single file - include/asm-cris/elphel/driver_numbers.h
-*!
-*!  Revision 1.2  2008/09/16 00:49:31  elphel
-*!  snapshot
-*!
-*!  Revision 1.2  2008/04/11 23:16:51  elphel
-*!  removed unneeded local_irq_disable() after local_irq_save_flags()
-*!
-*!  Revision 1.1.1.1  2007/08/17 10:23:18  elphel
-*!  This is a fresh tree based on elphel353-2.10
-*!
-*!  Revision 1.7  2007/08/17 10:23:18  spectr_rain
-*!  switch to GPL3 license
-*!
-*!  Revision 1.6  2007/07/20 10:17:46  spectr_rain
-*!  *** empty log message ***
-*!
-*!  Revision 1.5  2007/06/28 02:20:39  elphel
-*!  Slowed down sensor FPGA programming while working with long cables. Problem was different, so maybe that change may be undone.
-*!
-*!  Revision 1.4  2007/05/21 21:23:50  elphel
-*!  remove compile-time warning
-*!
-*!  Revision 1.3  2007/05/21 17:45:11  elphel
-*!  boundary scan support, added 359/347 detection
-*!
-*!  Revision 1.2  2007/03/25 10:14:23  elphel
-*!  Accommodating 10359 board
-*!
-*!  Revision 1.1.1.1  2007/02/23 10:11:48  elphel
-*!  initial import into CVS
-*!
-*!  Revision 1.2  2005/05/10 21:08:49  elphel
-*!  *** empty log message ***
-*!
-
-TODO: replace static buffer (what a waste!)
-I suspect "somebody" is is playing with portA during JTAG configuration.
-To test that I'll use 256K static buffer, copy all the bitstream there,
-disable interrupts and do the programming.
-No debug with printk ... 
 */
 #undef DEBUG
 /****************** INCLUDE FILES SECTION ***********************************/
@@ -111,9 +59,9 @@ No debug with printk ...
 
 //#define JTAG_DISABLE_IRQ y
 
-//#define D(x)
-#define D(x) printk("%s:%d:",__FILE__,__LINE__);x
-
+#define D(x)
+//#define D(x) printk("%s:%d:",__FILE__,__LINE__);x
+#define PARALLEL_JTAG
 /*
 port C 353:
  0 - TDO  (in)
@@ -495,6 +443,7 @@ static int fpga_jtag_release(struct inode *inode, struct file *filp) {
    JTAG_channels[chn].mode=JTAG_MODE_CLOSED;
    //D(printk("fpga_jtag_release:  done\r\n"));
    dev_dbg(NULL, "fpga_jtag_release:  done\r\n");
+   dev_info(NULL, "fpga_jtag_release:  done, res= %d\n",res);
    return (res<0)?res:0;
 }
 
@@ -776,6 +725,26 @@ inline u32 read_tdo(int sens_num)
 	return stat.xfpgatdo;
 }
 
+// read last 8 TDO bits, shifted at rising edge of TCL
+inline u32 read_tdo_byte(int sens_num)
+{
+	x393_status_sens_io_t stat;
+	x393_status_ctrl_t stat_ctrl;
+    int i;
+	stat_ctrl.d32 = 0;
+	stat = x393_sensio_status(sens_num);
+	stat_ctrl.seq_num = stat.seq_num + 1;
+	stat_ctrl.mode = 1;
+	set_x393_sensio_status_cntrl(stat_ctrl, sens_num);
+	for (i = 0; i < 10; i++) {
+		stat = x393_sensio_status(sens_num & 3); // sens_num);
+		if (likely(stat.seq_num == stat_ctrl.seq_num)) {
+			return stat.xfpgatdo_byte;
+		}
+	}
+	dev_err(NULL,"read_tdo_byte(%d): failed to  get expected seq_num in 10 cycles, expected = 0x%x, got 0x%x\n",sens_num,stat_ctrl.seq_num, stat.seq_num);
+	return stat.xfpgatdo_byte;
+}
 
 
 
@@ -858,8 +827,8 @@ int jtag_send (int chn, int tms, int len, int d) {
 	int sens_num = chn & 3;
 	x393_sensio_jtag_t data;
 	x393_status_sens_io_t stat;
-	u32 seq_num;
-	int i; //,m;
+//	u32 seq_num;
+	int i, bm = 0; //,m;
 	int r=0;
 	int d0;
 	i = len & 7;
@@ -919,8 +888,11 @@ int jtag_send (int chn, int tms, int len, int d) {
 //			x393_sensio_jtag(data, sens_num);
 
 			/* read TDO before TCK pulse */
-			r = (r << 1) +  read_tdo(sens_num); // may to need to read twice to increase delay?
-
+#ifndef PARALLEL_JTAG
+			r = (r << 1) +  read_tdo(sens_num); // may need to read twice to increase delay?
+#else
+			bm = (bm <<1 ) | 1;
+#endif
 			data.tck = 1;
 			x393_sensio_jtag(data, sens_num);  // keep other signals, set TCK == 1
 //			x393_sensio_jtag(data, sens_num);  // repeat if delay will be needed to increase length of the TCK signal
@@ -929,6 +901,10 @@ int jtag_send (int chn, int tms, int len, int d) {
 //			x393_sensio_jtag(data, sens_num);
 		}
 		x393_sensio_jtag(data, sens_num);
+#ifdef  PARALLEL_JTAG
+		r = read_tdo_byte(sens_num) & bm;
+#endif
+//		x393_sensio_jtag(data, sens_num);
 		dev_dbg(NULL, " ---> %02x\n", r);
 
 		break;
@@ -947,14 +923,15 @@ int jtag_send (int chn, int tms, int len, int d) {
 
 int jtag_write_bits (int chn,
                      unsigned char *buf, // data to write
-                     int len,            // number of bytes to write
+                     int len,            // number of bits to write
                      int check,          // compare readback data with previously written, abort on mismatch
                      int last,           // output last bit with TMS=1
                      int prev[2])      // if null - don't use
 {
 	int sens_num = chn & 3;
 	int i,j;
-	int r=0;
+	int r =  0;
+	int bm = 0;
 	int d,d0;
 //	u32 seq_num;
 	x393_status_sens_io_t stat;
@@ -1046,26 +1023,34 @@ int jtag_write_bits (int chn,
 		for (i = 0; len > 0; i++) {
 			d0 = (d = buf[i]);
 			dev_dbg(NULL,"jtag_write_bits(), i=0x%x ", i);
+			bm = 0;
 			for (j = 0; j < 8; j++) {
 				if (len > 0) {
 					data.tms = (len == 1 && last)? 1:0 ;
 					data.tdi = ((d <<= 1) >> 8) & 1;
 					data.tck = 0;
 					x393_sensio_jtag(data, sens_num);
-//					x393_sensio_jtag(data, sens_num); // repeat writel() if needed for delay
+#ifndef PARALLEL_JTAG
 					r = (r << 1) +  read_tdo(sens_num);
+#else
+					bm = (bm <<1 ) | 1;
+#endif
 					data.tck = 1;
 					x393_sensio_jtag(data, sens_num);
-//					x393_sensio_jtag(data, sens_num); // remove if no delay is needed
 
 					data.tck = 0;
 					x393_sensio_jtag(data, sens_num);
-//					x393_sensio_jtag(data, sens_num);
 				} else {
 					r <<= 1;
 				}
 				len--;
 			}
+#ifdef  PARALLEL_JTAG
+			r = read_tdo_byte(sens_num) & bm;
+			if (unlikely(len < 0)){
+				r <<= -len;
+			}
+#endif
 			buf[i] = r;
 			dev_dbg(NULL," ===> %02x\n", r);
 			if (check && ((r ^ (prev[1]>>24)) & 0xff)) {
@@ -1110,14 +1095,14 @@ int JTAG_configure (int chn, unsigned char * buf, int len) {
     }
   }
   if (datastart<0) {
-    printk("Bitstream not found - bad file\r\n");
-    return -EFAULT;
+	  dev_err(NULL,"Bitstream not found - bad file\r\n");
+	  return -EFAULT;
   }
 // check for right bitstream length
   if ((len-datastart)!=(XC3S1200E_BITSIZE>>3)) {
-    printk("Wrong bitstream size - XC3S1200E has bitstream of %d bits (%d bytes)\n",XC3S1200E_BITSIZE,XC3S1200E_BITSIZE>>3);
-    printk ("header size - %d, data size - %d\r\n",datastart, len-datastart);
-    return -EFAULT;
+	  dev_err(NULL,"Wrong bitstream size - XC3S1200E has bitstream of %d bits (%d bytes)\n",XC3S1200E_BITSIZE,XC3S1200E_BITSIZE>>3);
+	  dev_err(NULL,"header size - %d, data size - %d\r\n",datastart, len-datastart);
+	  return -EFAULT;
   }
 // enable programmimg mode (nop for the 10353 FPGA)
    set_pgm_mode(chn, 1);
@@ -1169,8 +1154,8 @@ int JTAG_configure (int chn, unsigned char * buf, int len) {
      set_pgm (chn, 0);
 // disable programmimg mode (nop for the 10353 FPGA)
      set_pgm_mode(chn, 0);
-     printk ("**** Configuration failed at byte # %d (%x)****\n", (i-datastart),(i-datastart));
-     printk ("**** r= %x, prev64=%x prev32=%x****\n", r,prev[1], prev[0]);
+     dev_err(NULL,"**** Configuration failed at byte # %d (%x)****\n", (i-datastart),(i-datastart));
+     dev_err(NULL,"**** r= %x, prev64=%x prev32=%x****\n", r,prev[1], prev[0]);
      return -EFAULT; 
   }
   jtag_send(chn, 1, 1, 0   ); //step 11 - set UPDATE-DR state
@@ -1195,12 +1180,13 @@ int JTAG_configure (int chn, unsigned char * buf, int len) {
   set_pgm_mode(chn, 0);
 
   if (r==0) {
-    printk("*** FPGA did not start after configuration ***\r\n");
-    return -EFAULT; 
+	  dev_err(NULL,"*** FPGA did not start after configuration ***\r\n");
+	  return -EFAULT;
   }
 
   //D( udelay (100000);printk("\nJTAG_configure() OK!\r\n"));
   D( mdelay (100);printk("\nJTAG_configure() OK!\r\n"));
+  dev_info(NULL,"JTAG_configure() OK!\n");
   return 0;
 } //int JTAG_configure
 
@@ -1398,10 +1384,10 @@ static int __init fpga_jtag_init(void) {
    int i,res;
    res = register_chrdev(FPGA_JTAG_MAJOR, fpga_jtag_name, &fpga_jtag_fops);
    if(res < 0) {
-     printk(KERN_ERR "\nfpga_jtag_init: couldn't get a major number %d.\n",FPGA_JTAG_MAJOR);
+	   dev_err(NULL,"\nfpga_jtag_init: couldn't get a major number %d.\n",FPGA_JTAG_MAJOR);
      return res;
    }
-   printk(FPGA_JTAG_DRIVER_NAME" - %d\n",FPGA_JTAG_MAJOR);
+   dev_dbg(NULL,FPGA_JTAG_DRIVER_NAME" - %d\n",FPGA_JTAG_MAJOR);
    for (i=0;i<=FPGA_JTAG_MAXMINOR;i++) minors[i]=0;
    initPortC();
 
