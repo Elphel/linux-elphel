@@ -26,5 +26,4 @@ config ELPHEL393_EXTERNAL
         default m
         help
             If unsure, say Y.
-			
 endmenu  
