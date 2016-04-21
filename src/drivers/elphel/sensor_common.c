@@ -523,9 +523,6 @@ void tasklet_fpga_function(unsigned long arg) {
   int i, j;
   int last_image_chunk;
   int len32;
-  int circbuf_size = get_globalParam(G_CIRCBUFSIZE);
-  unsigned long *buf_ptr;
-  printk(KERN_DEBUG "%s: get_globalParam(G_CIRCBUFSIZE) = %d\n", __func__, circbuf_size);
 
 
 #ifdef TEST_DISABLE_CODE

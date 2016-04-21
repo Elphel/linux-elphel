@@ -271,7 +271,7 @@ int circbuf_open(struct inode *inode, struct file *filp)
 void dump_interframe_params(struct interframe_params_t *params, int offset)
 {
 	dev_dbg(g_dev_ptr, "Dump of interframe parameters at offset 0x%x:\n", offset);
-	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, params, sizeof(struct interframe_params_t));
+	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, params, sizeof(struct interframe_params_t) - 4);
 }
 
 /**
@@ -318,10 +318,10 @@ int circbuf_valid_ptr(int rp, struct interframe_params_t **fpp, unsigned int chn
 		dev_dbg(g_dev_ptr, "misaligned pointer rp = 0x%x for channel %d\n", rp, chn);
 		return -2;
 	}
-	fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[BYTE2DW(X393_BUFFSUB(rp, sizeof(struct interframe_params_t)))];
+	fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[BYTE2DW(X393_BUFFSUB(rp, sizeof(struct interframe_params_t) - 4))];
 	*fpp = fp;
 
-	dump_interframe_params(fp, X393_BUFFSUB(rp, sizeof(struct interframe_params_t)));
+	dump_interframe_params(fp, X393_BUFFSUB(rp, sizeof(struct interframe_params_t) - 4));
 
 	if (BYTE2DW(rp) == wp)
 		// read pointer and write pointer coincide, frame not yet acquired
@@ -724,16 +724,6 @@ static int circbuf_all_init(struct platform_device *pdev)
    }
    dev_info(dev, "registered MAJOR: %d\n", CIRCBUF_MAJOR);
 
-   res = init_ccam_dma_buf_ptr(pdev);
-   if (res < 0) {
-	   dev_err(dev, "ERROR allocating coherent DMA buffer\n");
-	   return -ENOMEM;
-   }
-
-   dev_dbg(dev, "initialize circbuf wait queue\n");
-   init_waitqueue_head(&circbuf_wait_queue);
-   dev_dbg(dev, "initialize Huffman tables with default data\n");
-
    res = jpeghead_init(pdev);
    if (res < 0) {
 	   dev_err(dev, "unable to initialize jpeghead module\n");
@@ -744,6 +734,15 @@ static int circbuf_all_init(struct platform_device *pdev)
 	   dev_err(dev, "unable to initialize sensor_common module\n");
 	   return res;
    }
+   res = init_ccam_dma_buf_ptr(pdev);
+   if (res < 0) {
+	   dev_err(dev, "ERROR allocating coherent DMA buffer\n");
+	   return -ENOMEM;
+   }
+
+   dev_dbg(dev, "initialize circbuf wait queue\n");
+   init_waitqueue_head(&circbuf_wait_queue);
+   dev_dbg(dev, "initialize Huffman tables with default data\n");
 
    g_dev_ptr = dev;
 
