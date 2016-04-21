@@ -4,7 +4,7 @@
  */
 
 #ifndef _ASM_CMOSCAM_H
-#define _ASM_CMOSCAM_H
+#define _ASM_CMOSCAM_HPARS_FRAMES
 #define SAFE_CHECK  1 // perform more verification on the paremeters
 //#define ELPHEL_DEBUG 0 //global debug on/off in multiple files
 //#define ELPHEL_DEBUG_STARTUP 000a4c00 ; 
@@ -320,7 +320,7 @@
 #define P_COLOR_SATURATION_BLUE 54 // 100*realtive saturation blue - preserve?
 #define P_COLOR_SATURATION_RED  55 // 100*realtive saturation red
 
-/// Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C
+/// Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C *** 393: These will  need to be split for each subchannel
 #define P_VIGNET_AX     56
 #define P_VIGNET_AY     57
 #define P_VIGNET_BX     58
@@ -329,6 +329,8 @@
 #define P_VIGNET_SHL    61 /// shift left color_coeff*vign_correction. 0..7, default=1 (up to 4x color correction* vignetting correction)
 #define P_SCALE_ZERO_IN  62 /// signed 16 bit - subtract from pixel 16-bit data before multiplication
 #define P_SCALE_ZERO_OUT 63 /// signed 16 bit - add after correction
+
+
 /// "digital gains" for color correction, 17-bit unsigned data (default 0x8000).
 #define P_DGAINR        64
 #define P_DGAING        65
@@ -338,19 +340,19 @@
 #define P_RSCALE_ALL    68 /// bits 0..29: Ratio of [P_GAINR]/[P_GAING] or one of special, bit 30 - recalculate(self cleaning), bit 31 - ignore
 #define P_GSCALE_ALL    69
 #define P_BSCALE_ALL    70
-#define CSCALES_WIDTH     28
-#define CSCALES_CTL_BIT   28
-#define CSCALES_CTL_WIDTH  2
-/// commands to be written to P_*SCALE_CTL
-#define CSCALES_CTL_NORMAL  0 /// USE P_*SCALE as is
-#define CSCALES_CTL_RECALC  1 /// Recalculate P_*SCALE from P_GAIN*, P_GAING, then use it (will change to CSCALES_CTL_NORMAL when applied)
-#define CSCALES_CTL_FOLLOW  2 /// Don't apply P_*SCALE to P_GAIN*, but update it from the current P_*SCALE from P_GAIN*/P_GAING
-#define CSCALES_CTL_DISABLE 3 /// Disable P_*SCALE - don't apply P_*SCALE to P_GAIN*, don't update P_*SCALE from P_GAIN*, P_GAING
+	#define CSCALES_WIDTH     28
+	#define CSCALES_CTL_BIT   28
+	#define CSCALES_CTL_WIDTH  2
+	/// commands to be written to P_*SCALE_CTL
+	#define CSCALES_CTL_NORMAL  0 /// USE P_*SCALE as is
+	#define CSCALES_CTL_RECALC  1 /// Recalculate P_*SCALE from P_GAIN*, P_GAING, then use it (will change to CSCALES_CTL_NORMAL when applied)
+	#define CSCALES_CTL_FOLLOW  2 /// Don't apply P_*SCALE to P_GAIN*, but update it from the current P_*SCALE from P_GAIN*/P_GAING
+	#define CSCALES_CTL_DISABLE 3 /// Disable P_*SCALE - don't apply P_*SCALE to P_GAIN*, don't update P_*SCALE from P_GAIN*, P_GAING
 
 
-#define P_CORING_PAGE     71 // zero bin + ((rounding add) << 8) 8-bit JPEG quantizer zero bin size, fractional addition to absolute value before truncating
+#define P_CORING_PAGE   71 // zero bin + ((rounding add) << 8) 8-bit JPEG quantizer zero bin size, fractional addition to absolute value before truncating
 #define P_HISTRQ        72 // per-frame enabling of histogram calculation - bit 0 - Y (G), bit 2 - C (R,G2,B)
-#define P_TILES         73 // Number of 16x16 (20x20) tiles in a compressed frame
+#define P_TILES         73 // Number of 16x16 (20x20) tiles in a compressed frame // 393: Still needed?
 #define P_SENSOR_PHASE  74 // packed, low 16 bit - signed fine phase, bits [18:17] - 90-degrees shift
 
 #define P_TEMPERATURE_PERIOD  75 // period of temperature measurements, ms (normally - multiple seconds)
@@ -364,16 +366,16 @@
 #define P_HISTWND_RTOP    80 // unsigned long top (%);
 
 /// Are these used anywhere now? ...P_AUTOEXP_SKIP_T
-#define P_AUTOEXP_EXP_MAX 81 //unsigned long exp_max;		/* 100 usec == 1 etc... */
+#define P_AUTOEXP_EXP_MAX     81 //unsigned long exp_max;		/* 100 usec == 1 etc... */
 #define P_AUTOEXP_OVEREXP_MAX 82 // unsigned long overexp_max;	/* percentages for overexposured pixels - 1% == 100, 5% == 500, 0.02% == 2 etc... */
-#define P_AUTOEXP_S_PERCENT 83 // unsigned long s_percent;(controlling that % of pixels that should have value greater than S_INDEX - below)
-#define P_AUTOEXP_S_INDEX 84 // unsigned long s_index; Specified number of pixels (S_PERCENT) should have value above S_INDEX
-#define P_AUTOEXP_EXP   85 // unsigned long exp; Current exposure time
-#define P_AUTOEXP_SKIP_PMIN 86 // unsigned long skip_pmin;	/* percent of delta for skip changes: 1% == 100 */ - no exposure corrections if the desired change is less than that
-#define P_AUTOEXP_SKIP_PMAX 87 // unsigned long skip_pmax;	/* percent of changes for wait one frame before apply changes: 1% == 100 */ - do not apply chnanges if they are to big - wait for the next frame
-#define P_AUTOEXP_SKIP_T 88 //	unsigned long skip_t;		/* time for skip changes: 100 usec == 1 */ Not quite sure what it is
+#define P_AUTOEXP_S_PERCENT   83 // unsigned long s_percent;(controlling that % of pixels that should have value greater than S_INDEX - below)
+#define P_AUTOEXP_S_INDEX     84 // unsigned long s_index; Specified number of pixels (S_PERCENT) should have value above S_INDEX
+#define P_AUTOEXP_EXP         85 // unsigned long exp; Current exposure time
+#define P_AUTOEXP_SKIP_PMIN   86 // unsigned long skip_pmin;	/* percent of delta for skip changes: 1% == 100 */ - no exposure corrections if the desired change is less than that
+#define P_AUTOEXP_SKIP_PMAX   87 // unsigned long skip_pmax;	/* percent of changes for wait one frame before apply changes: 1% == 100 */ - do not apply chnanges if they are to big - wait for the next frame
+#define P_AUTOEXP_SKIP_T      88 //	unsigned long skip_t;		/* time for skip changes: 100 usec == 1 */ Not quite sure what it is
 
-///same as written to the FPGA for the histogram window
+///same as written to the FPGA for the histogram window // 393: Need to split to sub-channels (hist and focus parameters)
 #define P_HISTWND_WIDTH  89 // autoexposure window width  (pixels)
 #define P_HISTWND_HEIGHT 90 // autoexposure window height (pixels)
 #define P_HISTWND_TOP    91 // autoexposure window top    (pixels)
@@ -402,22 +404,25 @@
 
 
 #define P_SKIP_FRAMES    107 // number of frames to skip after restarting sensor+compressor - now zero/nonzero?
-#define P_I2C_QPERIOD    108 // number of system clock periods in 1/4 of i2c SCL period to the sensor/sensor board
+#define P_I2C_QPERIOD    108 // number of system clock periods in 1/4 of i2c SCL period to the sensor/sensor board // 393: Moved to DT
 #define P_I2C_BYTES      109 // number of bytes in hardware i2c write (after slave addr) -0/1/2
-#define P_IRQ_SMART      110 // "smart" IRQ modes: +1 - wait for VACT in early compressor_done, +2 - wait for dma fifo ready
+#define P_IRQ_SMART      110 // "smart" IRQ modes: +1 - wait for VACT in early compressor_done, +2 - wait for dma fifo ready // 393: Combine IRQ?
                              /// Currently bit 0 will be always 1 (needs fix in FPGA)
 #define P_EXTERN_TIMESTAMP 111 // Use external timestamp (received with sync) when availabele, 0 - always use local timestamp
 #define P_OVERSIZE       112 // ignore sensor dimensions, use absolute WOI_LEFT, WOI_TOP
 #define P_XMIT_TIMESTAMP 113 // 0 - transmit just sync pulse, 1 - pulse+timestamp over the sync line
-//#define P_VALID          113 // frame parameters valid (all needed parameters written in time, smth. else)
-//#define P_QTABLE         114 // number of quantization table used (0..7)
+
 #define P_CORING_INDEX   114 // MSW - color coring index (if 0 - use LSW), LSW - Y coring index. Currently 1 step is 1/10 of the pre-quantized DCT
                              // coefficient, maximum of 10. For the same filtering effect it should be higher for higher JPEG quality
+
+
+
 #define P_RFOCUS_LEFT    115 // relative (0x10000 - 1.0) focus WOI left margin, inclusive (3 LSB will be zeroed as it should be multiple of 8x8 block width) 
 #define P_RFOCUS_WIDTH   116 // relative (0x10000 - 1.0)focus WOI width (3 LSB will be zeroed as it should be multiple of 8x8 block width) 
 #define P_RFOCUS_TOP     117 // relative (0x10000 - 1.0)focus WOI top margin, inclusive (3 LSB will be zeroed as it should be multiple of 8x8 block height) 
 #define P_RFOCUS_HEIGHT  118 // relative (0x10000 - 1.0)focus WOI height (3 LSB will be zeroed as it should be multiple of 8x8 block height) 
 
+// Obsolete in x393, may need something different
 #define P_SDRAM_CHN20    125 // data to be written to the SDRAM CH2 REG 0  (last moment)
 #define P_SDRAM_CHN21    126 // data to be written to the SDRAM CH2 REG 1 
 #define P_SDRAM_CHN22    127 // data to be written to the SDRAM CH2 REG 2 
@@ -425,14 +430,18 @@
 
 /// The following 4 parameters should have consecutive indexes
 /// see  FRAMEPAIR_MASK_BYTES  to modify just part of the word (i.e. scale, not hash16
+///
 #define P_GTAB_R         128 // combines (P_PIXEL_LOW<<24) | (P_GAMMA <<16) and 16-bit (6.10) scale for gamma tables, individually for each color.
                              //  16Msbs are also "hash16" and do not need to be black level/gamma, just uniquely identify the table for applications
 #define P_GTAB_G         129 // same for the first green (red line)
 #define P_GTAB_GB        130 // same for the second green (blue line)
 #define P_GTAB_B         131 // same for the blue
+
 #define P_QUALITY        132 //JPEG IMAGE QUALITY (now uses 2 bytes)
 #define P_ACTUAL_WIDTH   133 // RD P_RO_WIDTH  1  pixels/row
 #define P_ACTUAL_HEIGHT  134 // RD P_RO_HEIGHT 2  pixels/column
+
+// 393: Are they the same?
 #define P_COLOR          135 /// mono - 0, color mode - 1, +0 - normal, 256 - sensor test, 512 - FPGA test
   #define COLORMODE_MONO6     0 // monochrome, (4:2:0),
   #define COLORMODE_COLOR     1 // color, 4:2:0, 18x18(old)
@@ -447,6 +456,7 @@
   #define COLORMODE_JP4HDR2  10 // jp4, 4 blocks, differential HDR: red := (R-G1)/2, blue:=(B-G1)/2, green=G1, green2 (high gain)=G2), 
   #define COLORMODE_MONO4    14 // monochrome, 4 blocks (but still with 2x2 macroblocks)
 /// the following 8 values should go in the same sequence as fields in the histogram page
+/// 393: per sub-channel
 #define P_FRAME          136 // Frame number (reset with JPEG pointers) -(read only)
 #define P_GAINR          137 // R channel gain  8.16 (0x10000 - 1.0). Combines both analog gain and digital scaling
 #define P_GAING          138 // G channel gain ("red line")
@@ -456,7 +466,7 @@
 #define P_VEXPOS         142 // video exposure (if 0 - use P_RW_EXPOS in ms)
 #define P_FOCUS_VALUE    143 // (readonly) - sum of all blocks focus values inside focus WOI
 
-/// 143 - last to copy
+/// 143 - last to copy ============
 
 #define P_COMPMOD_BYRSH  160 // Bayer shift in compressor
 #define P_PORTRAIT       161 // Quantization coefficients optimized for verical scan lines
@@ -610,7 +620,7 @@
 #define GLOBALPARS(x) globalPars[(x)-FRAMEPAR_GLOBALS] // should work in drivers and applications
 
 #define G_DEBUG         (FRAMEPAR_GLOBALS + 2) /// Each bit turns on/off some debug outputs
-#define G_TEST_CTL_BITS (FRAMEPAR_GLOBALS + 3) /// turn some features on/off in the drivers for debuggin purposes
+#define G_TEST_CTL_BITS (FRAMEPAR_GLOBALS + 3) /// turn some features on/off in the drivers for debugging purposes
 #define   G_TEST_CTL_BITS_RESET_DMA_COMPRESSOR 0 /// reset compressor and DMA when detecting sensor, bit number in G_TEST_CTL_BITS
 
 #define G_CABLE_TIM     (FRAMEPAR_GLOBALS + 7) /// Extra cable delay, signed ps)
@@ -705,7 +715,7 @@
 
 
 
-///Modifies to the parameter numbers/addresses
+///Modifiers to the parameter numbers/addresses
 #define FRAMEPAIR_FORCE_NEW     0x040000000 // will mark parameter as "modified" even the new==old
 #define FRAMEPAIR_FORCE_PROC    0x080000000 // will mark schedule functions for that parameter even if called from setFramePars/setFramePar (normally it is not)
 #define FRAMEPAIR_FORCE_NEWPROC 0x0c0000000 // combines both
@@ -720,15 +730,15 @@
 /// read bit field from the data (d), use bit information encoded in bits 16..25 of the parameter address (a)
 #define FRAMEPAIR_FRAME_FIELD(a,d) (((d) >> (((a)>>16) & 0x1f)) &  ((1 << (((a) >> 21) & 0x1f))-1))
 
-#define FRAMEPAIR_MASK_BYTES   (FRAMEPAIR_FRAME_BITS(31,31)) /// 0x03ff0000 - if parameter address & FRAMEPAIR_FRAME_MASK is nonzero, chnage only some bits
+#define FRAMEPAIR_MASK_BYTES   (FRAMEPAIR_FRAME_BITS(31,31)) /// 0x03ff0000 - if parameter address & FRAMEPAIR_FRAME_MASK is nonzero, change only some bits
 
 ///NOTE: byte/word masks not to be OR-ed!
-#define FRAMEPAIR_BYTE0        (FRAMEPAIR_FRAME_BITS( 8,  0)) // overwrite only byte0 (LSB) in the paremater
-#define FRAMEPAIR_BYTE1        (FRAMEPAIR_FRAME_BITS( 8,  8)) // overwrite only byte1 in the paremater
-#define FRAMEPAIR_BYTE2        (FRAMEPAIR_FRAME_BITS( 8, 16)) // overwrite only byte2 in the parematerhttp://192.168.0.229
-#define FRAMEPAIR_BYTE3        (FRAMEPAIR_FRAME_BITS( 8, 24)) // overwrite only byte3 (MSB) in the paremater
-#define FRAMEPAIR_WORD0        (FRAMEPAIR_FRAME_BITS(16,  0)) // overwrite only word0 (LSW) in the paremater (i.e. gamma scale)
-#define FRAMEPAIR_WORD1        (FRAMEPAIR_FRAME_BITS(16, 16)) // overwrite only word1 (MSW) in the paremater (i.e. gamma hash16)
+#define FRAMEPAIR_BYTE0        (FRAMEPAIR_FRAME_BITS( 8,  0)) // overwrite only byte0 (LSB) in the parameter
+#define FRAMEPAIR_BYTE1        (FRAMEPAIR_FRAME_BITS( 8,  8)) // overwrite only byte1 in the parameter
+#define FRAMEPAIR_BYTE2        (FRAMEPAIR_FRAME_BITS( 8, 16)) // overwrite only byte2 in the parameter
+#define FRAMEPAIR_BYTE3        (FRAMEPAIR_FRAME_BITS( 8, 24)) // overwrite only byte3 (MSB) in the parameter
+#define FRAMEPAIR_WORD0        (FRAMEPAIR_FRAME_BITS(16,  0)) // overwrite only word0 (LSW) in the parameter (i.e. gamma scale)
+#define FRAMEPAIR_WORD1        (FRAMEPAIR_FRAME_BITS(16, 16)) // overwrite only word1 (MSW) in the parameter (i.e. gamma hash16)
 
 //#define P_DAEMON_EN      165 // disable all autoexp features AEXP, WB, HDR- make extra sleep for AUTOEXP_EN to become non-zero (normal frame rules)
 #define DAEMON_BIT_AUTOEXPOSURE 0
