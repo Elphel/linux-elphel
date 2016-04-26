@@ -279,12 +279,27 @@ void dump_interframe_params(struct interframe_params_t *params, int offset)
  */
 unsigned long get_image_length(int byte_offset, unsigned int chn, int *last_chunk_offset)
 {
+	unsigned int offset;
 	unsigned long len32;
-	int last_image_chunk = byte_offset - OFFSET_X40;
+	int last_image_chunk = X393_BUFFSUB(byte_offset, OFFSET_X40);
 
-	if (last_image_chunk < 0)
-		last_image_chunk += CCAM_DMA_SIZE;
-	len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH))];
+//	if (last_image_chunk < 0)
+//		last_image_chunk += CCAM_DMA_SIZE;
+//	len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH))];
+	offset = last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH);
+	len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(offset)];
+
+	if ((len32 & MARKER_FF) != MARKER_FF) {
+		printk(KERN_DEBUG "failed to get 0xff marker at offset 0x%x\n", offset);
+		byte_offset = X393_BUFFSUB(byte_offset, 0x20);
+		last_image_chunk = X393_BUFFSUB(byte_offset, OFFSET_X40);
+		offset = last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH);
+		len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(offset)];
+		if ((len32 & MARKER_FF) != MARKER_FF) {
+			printk(KERN_DEBUG "failed to get 0xff marker at CORRECTED offset 0x%x\n", offset);
+			return 0;
+		}
+	}
 
 	dev_dbg(g_dev_ptr, "got len32 = 0x%lx at 0x%x\n", len32, last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH));
 
@@ -301,6 +316,7 @@ unsigned long get_image_length(int byte_offset, unsigned int chn, int *last_chun
  * frame header before \e rp and will point to its parameters
  * @param[in]   chn  specify compressor channel number which pointer should be checked
  * @return 0 if the pointer is for the frame yet to be acquired, 1 if there is a valid frame at this address,
+ * 2 if file pointer should be advanced by 32 bytes,
  * -1 if there is no frame at this index, -2 if the pointer is not 32-bytes aligned
  * sets *fpp to the frame header, including signature and length
  */
@@ -311,7 +327,7 @@ int circbuf_valid_ptr(int rp, struct interframe_params_t **fpp, unsigned int chn
 	unsigned int usec;
 	int wp = camseq_get_jpeg_wp(chn);
 	unsigned int len32 = get_image_length(DW2BYTE(wp), chn, &last_image_chunk);
-	struct interframe_params_t *fp;
+	struct interframe_params_t *fp, *fp_off;
 
 	if (rp & 0x1f) {
 		// rp is not 32-bytes aligned
@@ -328,11 +344,31 @@ int circbuf_valid_ptr(int rp, struct interframe_params_t **fpp, unsigned int chn
 		return 0;
 
 	if (fp->signffff != MARKER_FFFF) {
-		dev_dbg(g_dev_ptr, "interframe signature is overwritten\n");
-		return -1;
+		dev_dbg(g_dev_ptr, "interframe signature is overwritten, signffff = 0x%x\n", fp->signffff);
+		fp_off = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[BYTE2DW(rp)];
+		if (fp_off->signffff != MARKER_FFFF) {
+			dev_dbg(g_dev_ptr, "interframe signature is overwritten at CORRECTED offset, signffff = 0x%x\n", fp_off->signffff);
+			return -1;
+		} else {
+			dev_dbg(g_dev_ptr, "interframe pointer is advanced by 0x20\n");
+			*fpp = fp_off;
+			dump_interframe_params(fp_off, rp);
+			return 2;
+		}
 	}
 
 	return 1;
+}
+
+/**
+ * @brief Get image start offset pointed by its last data chunk
+ * @param[in]   last_chunk_offset   offset of the last image data chunk
+ * @param[in]   len32               length of image
+ * @return      image start offset
+ */
+inline int get_image_start(int last_chunk_offset, unsigned int len32)
+{
+	return X393_BUFFSUB(last_chunk_offset + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
 }
 
 /**
@@ -380,6 +416,62 @@ int circbuf_valid_ptr(int rp, struct interframe_params_t **fpp, unsigned int chn
  *  @param[in]   orig   origin
  *  @return      current file pointer position if operation was successful and error code otherwise
  */
+/* debug code follows */
+void stop_compressor(unsigned int chn)
+{
+	x393_cmprs_mode_t mode;
+
+	mode.run = 1;
+	mode.run_set = 1;
+	x393_cmprs_control_reg(mode, chn);
+}
+void dump_state(unsigned int chn)
+{
+	int img_start, last_image_chunk;
+	int len32;
+	int prev_ptr, prevprev_ptr;
+	int read_ptr = DW2BYTE(camseq_get_jpeg_wp(chn));
+	unsigned int nf, nz;
+	struct interframe_params_t *fp;
+
+	nf = 0;
+	nz = 1;
+	printk(KERN_DEBUG "=== start of state dump, chn = %d ===\n", chn);
+	printk(KERN_DEBUG "hardware pointer at 0x%x\n", read_ptr);
+	// move to the beginning of last frame
+	len32 = get_image_length(read_ptr, chn, &last_image_chunk);
+	if ((len32 & MARKER_FF) != MARKER_FF) {
+		printk(KERN_DEBUG "last acquired frame at location 0x%x is damaged\n", read_ptr);
+		return;
+	}
+	len32 &= FRAME_LENGTH_MASK;
+	//img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
+	img_start = get_image_start(last_image_chunk, len32);
+	read_ptr = img_start;
+	// move back in history
+	while ((circbuf_valid_ptr(read_ptr, &fp, chn) >= 0) && (nz >= 0)) {
+		printk(KERN_DEBUG "analyzing frame starting at 0x%x\n", read_ptr);
+		//printk(KERN_DEBUG "mem dump of 0x40 bytes at (pointer - 0x20) = 0x%x:\n", read_ptr - OFFSET_X40 / 2);
+		//print_hex_dump_bytes("\t\t", DUMP_PREFIX_OFFSET, &circbuf_priv[chn].buf_ptr[BYTE2DW(read_ptr - OFFSET_X40 / 2)], OFFSET_X40);
+		nf++;
+		prevprev_ptr = prev_ptr;
+		prev_ptr = read_ptr;
+		len32 = get_image_length(read_ptr, chn, &last_image_chunk);
+		if ((len32 & MARKER_FF) != MARKER_FF) {
+			printk(KERN_DEBUG "\t\tno image before 0x%x\n", read_ptr);
+			break;
+		}
+		len32 &= FRAME_LENGTH_MASK;
+		//printk(KERN_DEBUG "\t\tgot len32 = 0x%x", len32);
+		//img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
+		img_start = get_image_start(last_image_chunk, len32);
+		read_ptr = img_start;
+		if (read_ptr > prev_ptr)
+			nz--;
+	}
+	printk(KERN_DEBUG "=== end of state dump, %d frame(s) analyzed ===\n", nf);
+}
+/* end of debug code */
 loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 {
 	unsigned int len32 = 0;
@@ -418,6 +510,18 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 			case LSEEK_CIRC_USED:
 				if ((fvld = circbuf_valid_ptr(file->f_pos, &fp, chn)) < 0)
 					return -EINVAL; // no frames at the specified location
+				break;
+			/* debug code follows */
+			case LSEEK_CIRC_STOP_COMPRESSOR:
+			{
+				int s;
+				dev_dbg(g_dev_ptr, "stopping all compressors, current channel %d, fvld = %d, file->f_pos = 0x%llx\n", chn, fvld, file->f_pos);
+				for (s = 0; s < IMAGE_CHN_NUM; s++)
+					stop_compressor(s);
+				dump_state(chn);
+			}
+				break;
+			/* end of debug code */
 			}
 			switch (offset) {
 			case LSEEK_CIRC_FREE:
@@ -448,7 +552,8 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 					return -EOVERFLOW;
 				}
 				len32 &= FRAME_LENGTH_MASK;
-				img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
+				//img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
+				img_start = get_image_start(last_image_chunk, len32);
 				dev_dbg(g_dev_ptr, "calculated start address = 0x%x, length = 0x%x\n", img_start, len32);
 				if (circbuf_valid_ptr(img_start, &fp, chn) < 0)
 					return -EOVERFLOW;
@@ -470,7 +575,8 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 					return -EOVERFLOW;
 				}
 				len32 &= FRAME_LENGTH_MASK;
-				img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
+				//img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
+				img_start = get_image_start(last_image_chunk, len32);
 				dev_dbg(g_dev_ptr, "LSEEK_CIRC_PREV: calculated start address = 0x%x, length = 0x%x\n", img_start, len32);
 
 				// move file pointer only if previous frame valid
@@ -481,8 +587,11 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 				break;
 			case LSEEK_CIRC_NEXT:
 				dev_dbg(g_dev_ptr, "LSEEK_CIRC_NEXT: file->f_pos = 0x%lx, fvld = %d, fp->len32 = 0x%lx\n", file->f_pos, fvld, fp->frame_length);
-				if (fvld <= 0)
+				if (fvld <= 0) {
 					return -EOVERFLOW; //! no frames after current
+				} else if (fvld == 2) {
+					file->f_pos += CHUNK_SIZE;
+				}
 				// calculate the full length of current frame and advance file pointer by this value
 				padded_frame = fp->frame_length + INSERTED_BYTES(fp->frame_length) + CHUNK_SIZE + CCAM_MMAP_META;
 				file->f_pos = X393_BUFFADD(file->f_pos, padded_frame); // do it even if the next frame does not yet exist
@@ -507,7 +616,8 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 					if ((len32 & MARKER_FF) != MARKER_FF ) break;  //! no frames before rp (==prev_p)
 					//! move rp to the previous frame
 					len32 &= FRAME_LENGTH_MASK;
-					img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
+					//img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
+					img_start = get_image_start(last_image_chunk, len32);
 					dev_dbg(g_dev_ptr, "LSEEK_CIRC_FIRST or LSEEK_CIRC_SCND: calculated start address = 0x%x, length = 0x%x\n", img_start, len32);
 					rp = BYTE2DW(img_start);
 					if (rp > prev_p) nz--; // rolled through zero - make sure we'll not stuck in this loop forever
@@ -562,12 +672,17 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
  * @param[in]   off   offset
  * @return      number of bytes read form \e buf
  */
+unsigned short circbuf_quality = 100;
 ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *off)
 {
 	unsigned long p;
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
 	unsigned int chn = minor_to_chn(minor, NULL);
-	dev_dbg(g_dev_ptr, "minor = 0x%x, count = 0x%x, off = 0x%lx", minor, count, off);
+	int i;
+	int ret;
+	long val;
+	char *buf_copy = (char *)buf;
+	dev_dbg(g_dev_ptr, "minor = 0x%x, count = 0x%x, off = 0x%llx", minor, count, off);
 
 	/* debug code follows*/
 	switch (buf[0] - 0x30) {
@@ -576,6 +691,24 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 		break;
 	case 1:
 		camera_interrupts(1);
+		break;
+	case 3:
+		buf_copy[count - 1] = 0;
+		ret = kstrtol(&buf_copy[2], 10, &val);
+		dev_dbg(g_dev_ptr, "ret: %d, buf[2]: %s\n", ret, &buf_copy[2]);
+		if (count > 2 &&  ret == 0) {
+			if (val > 0 && val <= 100) {
+				circbuf_quality = val;
+				dev_dbg(g_dev_ptr, "set quality %d\n", circbuf_quality);
+			}
+		} else {
+			dev_dbg(g_dev_ptr, "error, unable to process quality parameter\n");
+		}
+		break;
+	case 4:
+		for (i = 0; i < IMAGE_CHN_NUM; i++)
+			stop_compressor(i);
+		dump_state(chn);
 		break;
 	}
 	/* debug code end */

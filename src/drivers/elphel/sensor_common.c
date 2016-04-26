@@ -41,6 +41,8 @@
 //#include <linux/of.h>
 //#include <linux/of_device.h>
 
+#include <asm/outercache.h>
+#include <asm/cacheflush.h>
 
 //#include <asm/system.h>
 //#include <asm/byteorder.h> // endians
@@ -114,6 +116,10 @@ struct image_acq_pd_t {
     int minor;
     struct jpeg_ptr_t jpeg_ptr[IMAGE_CHN_NUM];
 };
+/* debug code follows */
+// jpeg_hw_wp is equal to hardware pointer, jpeg_wp will lag from jpeg_hw_wp by one frame
+static volatile int jpeg_hw_wp[IMAGE_CHN_NUM];
+/* end of debug code */
 
 static struct image_acq_pd_t image_acq_priv;
 
@@ -242,10 +248,12 @@ DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); /// 0 - no arguments fo
  */
 static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 {
+	phys_addr_t phys_addr;
+	void *virt_addr;
 	int xferred;                                           /// number of 32-byte chunks transferred since compressor was reset
 	x393_afimux_status_t stat = x393_afimux0_status(jptr->chn_num);
-	//int circbuf_size = get_globalParam(G_CIRCBUFSIZE) >> 2;
-	int circbuf_size = get_globalParam(G_CIRCBUFSIZE);
+	int circbuf_size = get_globalParam(G_CIRCBUFSIZE) >> 2;
+	//int circbuf_size = get_globalParam(G_CIRCBUFSIZE);
 
 	xferred = stat.offset256 - jptr->fpga_cntr_prev;
 	if (xferred == 0)
@@ -253,8 +261,27 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 
 	jptr->flags |= SENS_FLAG_IRQ;
 	jptr->fpga_cntr_prev = stat.offset256;
+//	if (xferred < 0)
+//		xferred += (1 << 26);
 	// increment in 32 bit words
-	jptr->jpeg_wp += (xferred << 3);
+//	jptr->jpeg_wp += (xferred << 3);
+
+	jptr->jpeg_wp = (stat.offset256 << 3);
+
+//	if (jptr->jpeg_wp > circbuf_size)
+//		jptr->jpeg_wp -= circbuf_size;
+
+	// invalidate CPU L1 and L2 caches
+	phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE;
+	virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr + jptr->jpeg_wp - INTERFRAME_PARAMS_SZ;
+	outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
+	__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
+//	printk(KERN_DEBUG "this channel start address: phys_addr = 0x%x; buf_ptr = 0x%x",
+//			circbuf_priv_ptr[jptr->chn_num].phys_addr, circbuf_priv_ptr[jptr->chn_num].buf_ptr);
+//	printk(KERN_DEBUG "invalidate cache for channel %d: phys_addr = 0x%x; virt_addr = 0x%x\n",
+//			jptr->chn_num, phys_addr, virt_addr);
+//	printk(KERN_DEBUG "\t\tcurrent parameters: offset256 = 0x%x, fpga_prev_cntr = 0x%x, jpeg_wp = 0x%x, xferred = 0x%x\n",
+//			stat.offset256, jptr->fpga_cntr_prev, jptr->jpeg_wp, xferred);
 
 	return 1;
 }
@@ -289,7 +316,8 @@ inline static void set_default_interframe(struct interframe_params_t *params)
 	params->width = 2592;
 	params->byrshift = 3;
 	params->color = 0;
-	params->quality2 = 100;
+	params->quality2 = circbuf_quality;
+	//params->quality2 = 100;
 }
 
 /**
@@ -313,6 +341,8 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 //    set_globalParam          (0x306,get_globalParam (0x306)+1);
 //#endif
 
+	dma_addr_t phys_addr;
+	void *virt_addr;
 	struct interframe_params_t *interframe;
 	int len_offset = X393_BUFFSUB(jptr->jpeg_wp, INTERFRAME_PARAMS_SZ + 1);
 	int jpeg_len = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset] & FRAME_LENGTH_MASK;
@@ -327,6 +357,19 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 	set_default_interframe(interframe);
 
 	set_globalParam(G_FRAME_SIZE, jpeg_len);
+
+	// invalidate CPU L1 and L2 caches
+	phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(frame_params_offset);
+	//virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr + frame_params_offset;
+	virt_addr = interframe;
+	__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
+	outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
+	if (jptr->chn_num == 0) {
+		printk(KERN_DEBUG "this channel start address: phys_addr = 0x%x; buf_ptr = 0x%x",
+				circbuf_priv_ptr[jptr->chn_num].phys_addr, circbuf_priv_ptr[jptr->chn_num].buf_ptr);
+		printk(KERN_DEBUG "invalidate cache for channel %d: phys_addr = 0x%x; virt_addr = 0x%x\n",
+				jptr->chn_num, phys_addr, virt_addr);
+	}
 
    return interframe;
 }
@@ -644,6 +687,9 @@ void reset_compressor(unsigned int chn)
 	image_acq_priv.jpeg_ptr[chn].jpeg_rp = 0;
 	image_acq_priv.jpeg_ptr[chn].fpga_cntr_prev = 0;
 	image_acq_priv.jpeg_ptr[chn].flags = 0;
+	/* debug code follows */
+	jpeg_hw_wp[chn] = 0;
+	/* debug code end */
 	//update_irq_circbuf(jptr);
 	local_irq_restore(flags);
 }

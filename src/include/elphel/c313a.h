@@ -1361,6 +1361,7 @@ struct p_names_t {
 #define      LSEEK_CIRC_WAIT        11
 #define      LSEEK_CIRC_FREE        12
 #define      LSEEK_CIRC_USED        13
+#define      LSEEK_CIRC_STOP_COMPRESSOR 14
 
 #define      LSEEK_HUFFMAN_DC0      1
 #define      LSEEK_HUFFMAN_AC0      2
