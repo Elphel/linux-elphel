@@ -286,14 +286,14 @@ unsigned long get_image_length(int byte_offset, unsigned int chn, int *last_chun
 //	if (last_image_chunk < 0)
 //		last_image_chunk += CCAM_DMA_SIZE;
 //	len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH))];
-	offset = last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH);
+	offset = X393_BUFFADD(last_image_chunk, CHUNK_SIZE - CCAM_MMAP_META_LENGTH);
 	len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(offset)];
 
 	if ((len32 & MARKER_FF) != MARKER_FF) {
 		dev_dbg(g_dev_ptr, "failed to get 0xff marker at offset 0x%x\n", offset);
 		byte_offset = X393_BUFFSUB(byte_offset, 0x20);
 		last_image_chunk = X393_BUFFSUB(byte_offset, OFFSET_X40);
-		offset = last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH);
+		offset = X393_BUFFADD(last_image_chunk, CHUNK_SIZE - CCAM_MMAP_META_LENGTH);
 		len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(offset)];
 		if ((len32 & MARKER_FF) != MARKER_FF) {
 			dev_dbg(g_dev_ptr, "failed to get 0xff marker at CORRECTED offset 0x%x\n", offset);
@@ -301,7 +301,7 @@ unsigned long get_image_length(int byte_offset, unsigned int chn, int *last_chun
 		}
 	}
 
-	dev_dbg(g_dev_ptr, "got len32 = 0x%lx at 0x%x\n", len32, last_image_chunk + (CHUNK_SIZE - CCAM_MMAP_META_LENGTH));
+	dev_dbg(g_dev_ptr, "got len32 = 0x%lx at 0x%x\n", len32, offset);
 
 	if (last_chunk_offset != NULL)
 		*last_chunk_offset = last_image_chunk;
@@ -353,7 +353,7 @@ int circbuf_valid_ptr(int *rp_offset, struct interframe_params_t **fpp, unsigned
 		} else {
 			dev_dbg(g_dev_ptr, "interframe pointer and file ponter is advanced by 0x20\n");
 			*fpp = fp_off;
-			*rp_offset += CHUNK_SIZE;
+			*rp_offset = X393_BUFFADD(*rp_offset, CHUNK_SIZE);
 			dump_interframe_params(fp_off, rp);
 			return 2;
 		}

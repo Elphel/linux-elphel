@@ -356,7 +356,7 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 	int prev_len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_len32_off)];
 	if ((prev_len32 & MARKER_FF) != MARKER_FF) {
 		printk(KERN_DEBUG "warning: applying offset\n");
-		prev_len32_off -= 0x20;
+		prev_len32_off = X393_BUFFSUB(prev_len32_off, 0x20);
 		prev_len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_len32_off)];
 		if ((prev_len32 & MARKER_FF) == MARKER_FF) {
 			frame_params_offset = BYTE2DW(X393_BUFFADD(prev_len32_off, 4));
@@ -381,12 +381,12 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 	virt_addr = interframe;
 	__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
 	outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
-	if (jptr->chn_num == 0) {
-		printk(KERN_DEBUG "this channel start address: phys_addr = 0x%x; buf_ptr = 0x%x",
-				circbuf_priv_ptr[jptr->chn_num].phys_addr, circbuf_priv_ptr[jptr->chn_num].buf_ptr);
-		printk(KERN_DEBUG "invalidate cache for channel %d: phys_addr = 0x%x; virt_addr = 0x%x\n",
-				jptr->chn_num, phys_addr, virt_addr);
-	}
+//	if (jptr->chn_num == 0) {
+//		printk(KERN_DEBUG "this channel start address: phys_addr = 0x%x; buf_ptr = 0x%x",
+//				circbuf_priv_ptr[jptr->chn_num].phys_addr, circbuf_priv_ptr[jptr->chn_num].buf_ptr);
+//		printk(KERN_DEBUG "invalidate cache for channel %d: phys_addr = 0x%x; virt_addr = 0x%x\n",
+//				jptr->chn_num, phys_addr, virt_addr);
+//	}
 
    return interframe;
 }
