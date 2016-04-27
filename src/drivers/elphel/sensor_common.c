@@ -345,10 +345,27 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 	void *virt_addr;
 	struct interframe_params_t *interframe;
 	int len_offset = X393_BUFFSUB(jptr->jpeg_wp, INTERFRAME_PARAMS_SZ + 1);
-	int jpeg_len = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset] & FRAME_LENGTH_MASK;
+	//int jpeg_len = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset] & FRAME_LENGTH_MASK;
+	int jpeg_len = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset];
+	jpeg_len &= FRAME_LENGTH_MASK;
+
 	int jpeg_start = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE - INSERTED_BYTES(jpeg_len) - CCAM_MMAP_META, jpeg_len);
 	// frame_params_offset points to interframe_params_t area before current frame (this parameters belong to the frame below in memory, not the previous)
 	int frame_params_offset = BYTE2DW(X393_BUFFSUB(jpeg_start, CHUNK_SIZE));
+	int prev_len32_off = X393_BUFFSUB(jpeg_start, CHUNK_SIZE + 4);
+	int prev_len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_len32_off)];
+	if ((prev_len32 & MARKER_FF) != MARKER_FF) {
+		printk(KERN_DEBUG "warning: applying offset\n");
+		prev_len32_off -= 0x20;
+		prev_len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_len32_off)];
+		if ((prev_len32 & MARKER_FF) == MARKER_FF) {
+			frame_params_offset = BYTE2DW(X393_BUFFADD(prev_len32_off, 4));
+			printk(KERN_DEBUG "moving frame_params_offset to 0x%x\n", frame_params_offset);
+		} else {
+			printk(KERN_DEBUG "offset not applied\n");
+		}
+	}
+
 
 	interframe = (struct interframe_params_t *) &circbuf_priv_ptr[jptr->chn_num].buf_ptr[frame_params_offset];
 	interframe->frame_length = jpeg_len;
