@@ -56,4 +56,10 @@ int image_acq_init(struct platform_device *pdev);
 // got 0x20 more than start of the new image
 #define OFFSET_X40      0x40
 
+/* debug code follows */
+int get_zero_counter(unsigned int chn);
+long long get_frame_counter(unsigned int chn);
+long long get_frame_pos(unsigned int chn, unsigned int pos);
+/* end of debug code */
+
 #endif

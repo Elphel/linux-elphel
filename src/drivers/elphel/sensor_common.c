@@ -119,6 +119,23 @@ struct image_acq_pd_t {
 /* debug code follows */
 // jpeg_hw_wp is equal to hardware pointer, jpeg_wp will lag from jpeg_hw_wp by one frame
 static volatile int jpeg_hw_wp[IMAGE_CHN_NUM];
+long long zero_counter[IMAGE_CHN_NUM] = {0};
+long long frame_counter[IMAGE_CHN_NUM] = {0};
+long long frame_pos[IMAGE_CHN_NUM][1000] = {0};
+int get_zero_counter(unsigned int chn)
+{
+	return zero_counter[chn];
+}
+long long get_frame_counter(unsigned int chn)
+{
+	return frame_counter[chn];
+}
+long long get_frame_pos(unsigned int chn, unsigned int pos)
+{
+	if (chn < IMAGE_CHN_NUM && pos < 1000)
+		return frame_pos[chn][pos];
+	return 0;
+}
 /* end of debug code */
 
 static struct image_acq_pd_t image_acq_priv;
@@ -235,12 +252,21 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 	jptr->fpga_cntr_prev = stat.offset256;
 	jptr->jpeg_wp = (stat.offset256 << 3);
 
+	/* debug code follows */
+	frame_counter[jptr->chn_num] += 1;
+	if (jptr->jpeg_wp == 0) {
+		zero_counter[jptr->chn_num] += 1;
+		if (zero_counter < 1000)
+		frame_pos[jptr->chn_num][zero_counter[jptr->chn_num]] = frame_counter[jptr->chn_num];
+	}
+	/* end of debug code */
+
 	// invalidate CPU L1 and L2 caches
 	// the code below was used to find cache coherence issues
-//	phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE;
-//	virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr + jptr->jpeg_wp - INTERFRAME_PARAMS_SZ;
-//	outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
-//	__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
+	phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE;
+	virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr + jptr->jpeg_wp - INTERFRAME_PARAMS_SZ;
+	outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
+	__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
 
 	return 1;
 }
@@ -287,7 +313,7 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 {
 	dma_addr_t phys_addr;
 	void *virt_addr;
-	struct interframe_params_t *interframe;
+	struct interframe_params_t *interframe = NULL;
 	int len_offset = X393_BUFFSUB(jptr->jpeg_wp, INTERFRAME_PARAMS_SZ + 1);
 	int jpeg_len = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset] & FRAME_LENGTH_MASK;
 	int jpeg_start = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE - INSERTED_BYTES(jpeg_len) - CCAM_MMAP_META, jpeg_len);
@@ -461,21 +487,24 @@ static irqreturn_t frame_sync_irq_handler(int irq, void *dev_id)
 static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
 {
 	struct jpeg_ptr_t *priv = dev_id;
-	struct interframe_params_t *interframe;
+	struct interframe_params_t *interframe = NULL;
 	x393_cmprs_interrupts_t irq_ctrl;
+	unsigned long flag;
 
+	local_irq_save(flag);
 	if (updateIRQJPEG_wp(priv)) {
-		update_irq_circbuf(priv);
-		updateIRQFocus(priv);
+//		update_irq_circbuf(priv);
+//		updateIRQFocus(priv);
 		interframe = updateIRQ_interframe(priv);
 		//updateIRQ_Exif(interframe);
 		wake_up_interruptible(&circbuf_wait_queue);
 	}
 	//wake_up_interruptible(&framepars_wait_queue);
 
-	tasklet_schedule(&tasklet_fpga);
+//	tasklet_schedule(&tasklet_fpga);
 	irq_ctrl.interrupt_cmd = IRQ_CLEAR;
 	x393_cmprs_interrupts(irq_ctrl, priv->chn_num);
+	local_irq_restore(flag);
 
 	return IRQ_HANDLED;
 }
