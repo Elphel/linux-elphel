@@ -252,6 +252,7 @@ static ssize_t enable_por_show(struct device *dev, struct device_attribute *attr
 static ssize_t enable_por_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 
 static int por_ctrl(struct device *dev, int disable_por);
+static int shutdown(struct device *dev);
 static int get_and_disable_por(struct device *dev, int chn_bits, int * old_dis_por);
 static int reenable_por(struct device *dev);
 static int wait_all_pgood(struct device *dev);
@@ -294,11 +295,13 @@ static DEVICE_ATTR(simulate,    SYSFS_PERMISSIONS,                     simulate_
 static DEVICE_ATTR(output_state, SYSFS_PERMISSIONS & SYSFS_READONLY,    outputs_all_show,    NULL);
 static DEVICE_ATTR(configs,     SYSFS_PERMISSIONS & SYSFS_READONLY,    configs_all_show,    NULL);
 
-static DEVICE_ATTR(channels_en, SYSFS_PERMISSIONS,                     channels_en_show,    channels_en_store);
-static DEVICE_ATTR(channels_dis,SYSFS_PERMISSIONS,                     channels_dis_show,   channels_dis_store);
-static DEVICE_ATTR(power_good,  SYSFS_PERMISSIONS & SYSFS_READONLY,    pgood_show,          NULL);
-static DEVICE_ATTR(power_bad,   SYSFS_PERMISSIONS & SYSFS_READONLY,    pbad_show,           NULL);
-static DEVICE_ATTR(enable_por,  SYSFS_PERMISSIONS,                     enable_por_show,     enable_por_store);
+static DEVICE_ATTR(channels_en,   SYSFS_PERMISSIONS,                     channels_en_show,    channels_en_store);
+static DEVICE_ATTR(channels_dis,  SYSFS_PERMISSIONS,                     channels_dis_show,   channels_dis_store);
+static DEVICE_ATTR(power_good,    SYSFS_PERMISSIONS & SYSFS_READONLY,    pgood_show,          NULL);
+static DEVICE_ATTR(power_bad,     SYSFS_PERMISSIONS & SYSFS_READONLY,    pbad_show,           NULL);
+static DEVICE_ATTR(enable_por,    SYSFS_PERMISSIONS,                     enable_por_show,     enable_por_store);
+static DEVICE_ATTR(power_shutdown,SYSFS_PERMISSIONS                 ,    NULL,                shutdown);
+
 
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_simulate.attr,
@@ -309,6 +312,7 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_power_good.attr,
 		&dev_attr_power_bad.attr,
 		&dev_attr_enable_por.attr,
+		&dev_attr_power_shutdown.attr,
 	    NULL
 };
 static const struct attribute_group dev_attr_root_group = {
@@ -571,6 +575,14 @@ static ssize_t enable_por_store(struct device *dev, struct device_attribute *att
     else        rc=por_ctrl(dev, 1); /* disable POR */
 	if (rc<0) return rc;
 	return count;
+}
+
+int shutdown(struct device *dev)
+{
+	int gpio_shutdown_index=get_gpio_index_by_name("NSHUTDOWN");
+	if (gpio_shutdown_index<0) return gpio_shutdown_index;
+	pr_info("POWER OFF\n");
+	return gpio_conf_by_index(dev, gpio_shutdown_index, 1,  0);
 }
 
 int por_ctrl(struct device *dev, int disable_por)
