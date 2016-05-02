@@ -117,14 +117,17 @@ struct image_acq_pd_t {
     struct jpeg_ptr_t jpeg_ptr[IMAGE_CHN_NUM];
 };
 /* debug code follows */
-// jpeg_hw_wp is equal to hardware pointer, jpeg_wp will lag from jpeg_hw_wp by one frame
-static volatile int jpeg_hw_wp[IMAGE_CHN_NUM];
 long long zero_counter[IMAGE_CHN_NUM] = {0};
+long long corrected_offset[IMAGE_CHN_NUM] = {0};
 long long frame_counter[IMAGE_CHN_NUM] = {0};
 long long frame_pos[IMAGE_CHN_NUM][1000] = {0};
-int get_zero_counter(unsigned int chn)
+long long get_zero_counter(unsigned int chn)
 {
 	return zero_counter[chn];
+}
+long long get_corrected_offset(unsigned int chn)
+{
+	return corrected_offset[chn];
 }
 long long get_frame_counter(unsigned int chn)
 {
@@ -256,10 +259,21 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 	frame_counter[jptr->chn_num] += 1;
 	if (jptr->jpeg_wp == 0) {
 		zero_counter[jptr->chn_num] += 1;
-		if (zero_counter < 1000)
-		frame_pos[jptr->chn_num][zero_counter[jptr->chn_num]] = frame_counter[jptr->chn_num];
+		if (zero_counter[jptr->chn_num] < 1000)
+			frame_pos[jptr->chn_num][zero_counter[jptr->chn_num] - 1] = frame_counter[jptr->chn_num];
 	}
 	/* end of debug code */
+
+	/* Looks like compressor is reporting HW pointer with offset when last frame ends precisely at the
+	 * end of buffer and 32 zero bytes start from the beginning of the buffer. HW pointer in this case should
+	 * be 0x20, but it is 0x00 in fact. Try to detect this situation and correct the offset.
+	 */
+	if (jptr->jpeg_wp == 0 &&
+		circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] == 0x00 &&
+		(circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp - 1] & MARKER_FF) == MARKER_FF) {
+		jptr->jpeg_wp += INTERFRAME_PARAMS_SZ;
+		corrected_offset[jptr->chn_num] += 1;
+	}
 
 	// invalidate CPU L1 and L2 caches
 	// the code below was used to find cache coherence issues
@@ -314,8 +328,8 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 	dma_addr_t phys_addr;
 	void *virt_addr;
 	struct interframe_params_t *interframe = NULL;
-	int len_offset = X393_BUFFSUB(jptr->jpeg_wp, INTERFRAME_PARAMS_SZ + 1);
-	int jpeg_len = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset] & FRAME_LENGTH_MASK;
+	int len_offset = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp), CHUNK_SIZE + 4);
+	int jpeg_len = circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(len_offset)] & FRAME_LENGTH_MASK;
 	int jpeg_start = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE - INSERTED_BYTES(jpeg_len) - CCAM_MMAP_META, jpeg_len);
 	// frame_params_offset points to interframe_params_t area before current frame (this parameters belong to the frame below in memory, not the previous)
 	int frame_params_offset = BYTE2DW(X393_BUFFSUB(jpeg_start, CHUNK_SIZE));
@@ -339,7 +353,7 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 	set_default_interframe(interframe);
 	/* end of debug code */
 
-	set_globalParam(G_FRAME_SIZE, jpeg_len);
+//	set_globalParam(G_FRAME_SIZE, jpeg_len);
 
 	// invalidate CPU L1 and L2 caches (in this order)
 	phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(frame_params_offset);
@@ -542,11 +556,6 @@ void tasklet_fpga_function(unsigned long arg) {
   unsigned long * hash32p=&(framepars[(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]);
   unsigned long * framep= &(framepars[(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
 
-  int i, j;
-  int last_image_chunk;
-  int len32;
-
-
 #ifdef TEST_DISABLE_CODE
 /// Time is out?
   if ((getThisFrameNumber() ^ X3X3_I2C_FRAME)  & PARS_FRAMES_MASK) return; /// already next frame
@@ -652,7 +661,6 @@ GLOBALPARS(0x1044)=thisFrameNumber;
  */
 void reset_compressor(unsigned int chn)
 {
-	int i;
 	unsigned long flags;
 
 	local_irq_save(flags);
@@ -666,9 +674,6 @@ void reset_compressor(unsigned int chn)
 	image_acq_priv.jpeg_ptr[chn].jpeg_rp = 0;
 	image_acq_priv.jpeg_ptr[chn].fpga_cntr_prev = 0;
 	image_acq_priv.jpeg_ptr[chn].flags = 0;
-	/* debug code follows */
-	jpeg_hw_wp[chn] = 0;
-	/* debug code end */
 	//update_irq_circbuf(jptr);
 	local_irq_restore(flags);
 }

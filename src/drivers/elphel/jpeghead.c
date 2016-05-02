@@ -683,7 +683,7 @@ void jpeg_htable_fpga_pgm(unsigned int chn)
 	table_addr.type = 3;
 	local_irq_save(flags);
 	x393_cmprs_tables_address(table_addr, chn);
-	for (i = 0; i < sizeof(huff_tables->fpga_huffman_table); i++) {
+	for (i = 0; i < sizeof(huff_tables->fpga_huffman_table) / sizeof(huff_tables->fpga_huffman_table[0]); i++) {
 		x393_cmprs_tables_data((u32)huff_tables->fpga_huffman_table[i], chn);
 	}
 	local_irq_restore(flags);

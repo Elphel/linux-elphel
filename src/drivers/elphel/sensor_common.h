@@ -57,7 +57,8 @@ int image_acq_init(struct platform_device *pdev);
 #define OFFSET_X40      0x40
 
 /* debug code follows */
-int get_zero_counter(unsigned int chn);
+long long get_zero_counter(unsigned int chn);
+long long get_corrected_offset(unsigned int chn);
 long long get_frame_counter(unsigned int chn);
 long long get_frame_pos(unsigned int chn, unsigned int pos);
 /* end of debug code */

@@ -111,7 +111,7 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 	}
 
 	// set circular buffer size in bytes
-	set_globalParam(G_CIRCBUFSIZE, CCAM_DMA_SIZE);
+//	set_globalParam(G_CIRCBUFSIZE, CCAM_DMA_SIZE);
 
 	for (i = 0; i < IMAGE_CHN_NUM; i++) {
 		circbuf_priv[i].buf_ptr = ccam_dma_buf_ptr + BYTE2DW(CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE);
@@ -290,6 +290,8 @@ unsigned long get_image_length(int byte_offset, unsigned int chn, int *last_chun
 	offset = X393_BUFFADD(last_image_chunk, CHUNK_SIZE - CCAM_MMAP_META_LENGTH);
 	len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(offset)];
 
+	dev_dbg(g_dev_ptr, "[chn %d] byte_offset = 0x%x, calculated offset = 0x%x, len32 = 0x%lx\n", chn, byte_offset, offset, len32);
+
 	if ((len32 & MARKER_FF) != MARKER_FF) {
 		dev_dbg(g_dev_ptr, "[chn %u] failed to get 0xff marker at offset 0x%x\n", chn, offset);
 //		byte_offset = X393_BUFFSUB(byte_offset, CHUNK_SIZE);
@@ -321,7 +323,7 @@ unsigned long get_image_length(int byte_offset, unsigned int chn, int *last_chun
  * -1 if there is no frame at this index, -2 if the pointer is not 32-bytes aligned
  * sets *fpp to the frame header, including signature and length
  */
-int circbuf_valid_ptr(int *rp_offset, struct interframe_params_t **fpp, unsigned int chn)
+int circbuf_valid_ptr(loff_t *rp_offset, struct interframe_params_t **fpp, unsigned int chn)
 {
 	int rp = *rp_offset;
 	int last_image_chunk;
@@ -478,7 +480,6 @@ void dump_state(unsigned int chn)
 loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 {
 	unsigned int len32 = 0;
-	int inserted_bytes;
 	int last_image_chunk;
 	int img_start, next_img, padded_frame;
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
@@ -486,7 +487,7 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 	struct interframe_params_t * fp;
 	int fvld = -1;
 	int rp, bp;
-	dev_dbg(g_dev_ptr, "start processing LSEEK operation: offset = 0x%x, orig = 0x%x\n",(int) offset, (int) orig);
+	dev_dbg(g_dev_ptr, "start processing LSEEK operation: offset = 0x%x, orig = 0x%x, file->f_pos = 0x%llx\n",(int) offset, (int) orig, file->f_pos);
 
 	switch (orig) {
 	case SEEK_SET:
@@ -642,14 +643,14 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 				break;
 			case LSEEK_CIRC_VALID:
 				// no actions to be done here, the pointer was checked on previous step
-				dev_dbg(g_dev_ptr, "[chn %u] LSEEK_CIRC_VALID: no action required\n", chn);
+				dev_dbg(g_dev_ptr, "[chn %u] LSEEK_CIRC_VALID: no action required, fvld = %d, file->f_pos = 0x%llx\n", chn, fvld, file->f_pos);
 				break;
 			case LSEEK_CIRC_READY:
-				dev_dbg(g_dev_ptr, "[chn %u] LSEEK_CIRC_READY: checking fvld, fvld = %d\n", chn, fvld);
+				dev_dbg(g_dev_ptr, "[chn %u] LSEEK_CIRC_READY: checking fvld, fvld = %d, file->f_pos = 0x%llx\n", chn, fvld, file->f_pos);
 				if (fvld <= 0) return -EINVAL; // no frame is available better code?
 				break;
 			case LSEEK_CIRC_WAIT:
-				dev_dbg(g_dev_ptr, "[chn %u] LSEEK_CIRC_WAIT\n", chn);
+				dev_dbg(g_dev_ptr, "[chn %u] LSEEK_CIRC_WAIT: fvld = %d, file->f_pos = 0x%llx\n", chn, fvld, file->f_pos);
 				while (((fvld=circbuf_valid_ptr(&file->f_pos, &fp, chn)))==0) { // only while not ready, ready or BAD - return
 					wait_event_interruptible(circbuf_wait_queue, (camseq_get_jpeg_wp(chn) << 2) != file->f_pos);
 				}
@@ -660,6 +661,7 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 					wait_event_interruptible(circbuf_wait_queue, get_imageParamsThis(P_DAEMON_EN) & (1<<(offset & 0x1f)));
 				}
 			}
+			dev_dbg(g_dev_ptr, "[chn %u] finish SEEK_END processing; return file->f_pos = %lld\n", chn, file->f_pos);
 			return ( file->f_pos ); // file position >= 0
 		}
 		break;
@@ -727,8 +729,8 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 		long long res;
 		for (i = 0; i < IMAGE_CHN_NUM; i++) {
 			cntr = get_zero_counter(i);
-			printk(KERN_DEBUG "channel = %d, hw pointer = 0x%x, zero_counter = %d, frame_counter = %lld\n", i,
-					DW2BYTE(camseq_get_jpeg_wp(i)), cntr, get_frame_counter(i));
+			printk(KERN_DEBUG "channel = %d, hw pointer = 0x%x, zero_counter = %d, corrected_offset = %d, frame_counter = %lld\n",
+					i, DW2BYTE(camseq_get_jpeg_wp(i)), cntr, get_corrected_offset(i), get_frame_counter(i));
 			if (cntr != 0) {
 				for (j = 0; j < cntr; j++) {
 					res = get_frame_pos(i, j);
