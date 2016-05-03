@@ -15,7 +15,7 @@ obj-$(CONFIG_ELPHEL393)           += clock10359.o
 #obj-$(CONFIG_ELPHEL393_EXTERNAL)  += fpgajtag.o
 
 obj-$(CONFIG_ELPHEL393)           += framepars.o
-obj-$(CONFIG_ELPHEL393)           += sensor_common.o x393.o
-obj-$(CONFIG_ELPHEL393)           += quantization_tables.o
-obj-$(CONFIG_ELPHEL393)           += circbuf.o jpeghead.o
+#obj-$(CONFIG_ELPHEL393)           += sensor_common.o x393.o
+#obj-$(CONFIG_ELPHEL393)           += quantization_tables.o
+#obj-$(CONFIG_ELPHEL393)           += circbuf.o jpeghead.o
 

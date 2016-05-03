@@ -9,7 +9,7 @@ extern struct framepars_past_t *apastpars[SENSOR_PORTS];
 extern unsigned long           *aglobalPars[SENSOR_PORTS];
 extern unsigned long           *amultiSensIndex[SENSOR_PORTS];
 extern unsigned long           *amultiSensRvrsIndex[SENSOR_PORTS];
-extern wait_queue_head_t        framepars_wait_queue[SENSOR_PORTS];
+extern wait_queue_head_t       aframepars_wait_queue[SENSOR_PORTS];
 
 ///TODO: init framepars (zero parameters) before initscripts (not when detecting the sensors) - then initscript will be able to overwrite some
 void init_framepars_ptr(int sensor_port);

@@ -84,11 +84,21 @@
 #define FPGA_SJTAG_MINOR_OFFSET     8 // Minors range start for the sensor port JTAG
 #define FPGA_SJTAG_BOUNDARY_OFFSET 12 // Minors range start for the sensor port boundary
 
-#define X3X3_EXIF_EXIF    0 // read encoded Exif data (SEEK_END,
-#define X3X3_EXIF_META    1 // write metadata, concurently opened files. All writes atomic
+//#define X3X3_EXIF_EXIF    0 // read encoded Exif data (SEEK_END,
+//#define X3X3_EXIF_META    1 // write metadata, concurently opened files. All writes atomic
 // control/setup devices
 #define X3X3_EXIF_TEMPLATE 2 // write Exif template
 #define X3X3_EXIF_METADIR  3 // write metadata to Exif header translation (dir_table[MAX_EXIF_FIELDS])
 // those 2 files will disable exif_enable and exif_valid, truncate file size to file pointer on release.
 #define X3X3_EXIF_TIME     4 // write today/tomorrow date (YYYY:MM:DD) and number of seconds at today/tomorrow
                              // midnight (00:00:00) in seconds from epoch (long, startting from LSB)
+
+#define X3X3_EXIF_EXIF_CHN_0   0x10 // read encoded Exif data (SEEK_END,
+#define X3X3_EXIF_EXIF_CHN_1   0x11 // read encoded Exif data (SEEK_END,
+#define X3X3_EXIF_EXIF_CHN_2   0x12 // read encoded Exif data (SEEK_END,
+#define X3X3_EXIF_EXIF_CHN_3   0x13 // read encoded Exif data (SEEK_END,
+#define X3X3_EXIF_META_CHN_0   0x20 // write metadata, concurently opened files. All writes atomic
+#define X3X3_EXIF_META_CHN_1   0x21 // write metadata, concurently opened files. All writes atomic
+#define X3X3_EXIF_META_CHN_2   0x22 // write metadata, concurently opened files. All writes atomic
+#define X3X3_EXIF_META_CHN_3   0x23 // write metadata, concurently opened files. All writes atomic
+

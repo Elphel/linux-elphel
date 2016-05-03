@@ -68,7 +68,7 @@
 #include "sensor_common.h"
 //#include "pgm_functions.h"
 #include "circbuf.h"
-//#include "exif353.h"
+#include "exif393.h"
 //#include "histograms.h"
 //#include "gamma_tables.h"
 #include "quantization_tables.h"
@@ -115,47 +115,47 @@ struct image_acq_pd_t {
     struct jpeg_ptr_t jpeg_ptr[IMAGE_CHN_NUM];
 };
 
-static struct image_acq_pd_t image_acq_priv;
+static struct image_acq_pd_t aimage_acq_priv[SENSOR_PORTS];
 
-static volatile int JPEG_wp;
-static volatile int JPEG_rp;
-static int fpga_counter_prev=0; /// Previous value of the FPGA transfer counter (to find out if it did change)
-  static struct meta_offsets_t { // works like a cache to time save on looking for tags in the directory (forced to recalcualte if does not match)
+static volatile int aJPEG_wp[SENSOR_PORTS];
+static volatile int aJPEG_rp;
+static int afpga_counter_prev[SENSOR_PORTS]; /// Previous value of the FPGA transfer counter (to find out if it did change)
+static struct meta_offsets_t { // works like a cache to time save on looking for tags in the directory (forced to recalcualte if does not match)
     int Image_DateTime;          // will have offset of the Exif_Image_DateTime data in meta page (Exif_Photo_SubSecTime should go immediately after in meta page)
     int Photo_DateTimeOriginal;
     int Photo_ExposureTime;
     int Image_FrameNumber;
     int Image_Orientation;
     int Photo_MakerNote;
-  } meta_offsets;
+} meta_offsets;
 
-#ifdef TEST_DISABLE_CODE
-int  camSeqGetJPEG_wp(void) {return JPEG_wp;}
-int  camSeqGetJPEG_rp(void) {return JPEG_rp;}
-void camSeqSetJPEG_rp(int p) {
-                              JPEG_rp=p;
-                              set_globalParam(G_CIRCBUFRP,  p<< 2);
-                              set_globalParam(G_FREECIRCBUF,
-                                    (((get_globalParam(G_CIRCBUFRP) <= get_globalParam(G_CIRCBUFWP))?
-                                       get_globalParam(G_CIRCBUFSIZE):0)+ get_globalParam(G_CIRCBUFRP))
-                                       - get_globalParam(G_CIRCBUFWP));
+//#ifdef TEST_DISABLE_CODE
+int  camSeqGetJPEG_wp(int sensor_port) {return aJPEG_wp[sensor_port];}
+int  camSeqGetJPEG_rp(int sensor_port) {return aJPEG_rp[sensor_port];}
+void camSeqSetJPEG_rp(int sensor_port, int p) {
+                              aJPEG_rp[sensor_port]=p;
+                              set_globalParam(sensor_port, G_CIRCBUFRP,  p<< 2);
+                              set_globalParam(sensor_port, G_FREECIRCBUF,
+                                    (((get_globalParam(sensor_port, G_CIRCBUFRP) <= get_globalParam(sensor_port, G_CIRCBUFWP))?
+                                       get_globalParam(sensor_port, G_CIRCBUFSIZE):0)+ get_globalParam(sensor_port, G_CIRCBUFRP))
+                                       - get_globalParam(sensor_port, G_CIRCBUFWP));
                                }
-#endif /* TEST_DISABLE_CODE */
+//#endif /* TEST_DISABLE_CODE */
 
-int camseq_get_jpeg_wp(unsigned int chn)
+int camseq_get_jpeg_wp(int sensor_port, unsigned int chn)
 {
-	return (chn < IMAGE_CHN_NUM) ? image_acq_priv.jpeg_ptr[chn].jpeg_wp : 0;
+	return (chn < IMAGE_CHN_NUM) ? aimage_acq_priv.jpeg_ptr[chn].jpeg_wp : 0;
 }
 
-int camseq_get_jpeg_rp(unsigned int chn)
+int camseq_get_jpeg_rp(int sensor_port, unsigned int chn)
 {
-	return (chn < IMAGE_CHN_NUM) ? image_acq_priv.jpeg_ptr[chn].jpeg_rp : 0;
+	return (chn < IMAGE_CHN_NUM) ? aimage_acq_priv[sensor_port].jpeg_ptr[chn].jpeg_rp : 0;
 }
 
-void camseq_set_jpeg_rp(unsigned int chn, int ptr)
+void camseq_set_jpeg_rp(int sensor_port, unsigned int chn, int ptr)
 {
 	if (chn < IMAGE_CHN_NUM) {
-		image_acq_priv.jpeg_ptr[chn].jpeg_rp = ptr;
+		aimage_acq_priv[sensor_port].jpeg_ptr[chn].jpeg_rp = ptr;
 	}
 }
 
@@ -163,40 +163,43 @@ void camseq_set_jpeg_rp(unsigned int chn, int ptr)
    End of compressor-related code - TODO: move to a separate file?
 */
 
-static void dump_priv_data(int chn)
+static void dump_priv_data(int sensor_port, int chn)
 {
 	int i;
 
 	if (chn < IMAGE_CHN_NUM) {
-		printk(KERN_DEBUG "jpeg_wp (in bytes): 0x%x\n", image_acq_priv.jpeg_ptr[chn].jpeg_wp << 2);
-		printk(KERN_DEBUG "jpeg_rp (in bytes): 0x%x\n", image_acq_priv.jpeg_ptr[chn].jpeg_rp << 2);
-		printk(KERN_DEBUG "fpga_cntr_prev: 0x%x\n", image_acq_priv.jpeg_ptr[chn].fpga_cntr_prev);
-		printk(KERN_DEBUG "irq_num_comp: 0x%x\n", image_acq_priv.jpeg_ptr[chn].irq_num_comp);
-		printk(KERN_DEBUG "irq_num_sens: 0x%x\n", image_acq_priv.jpeg_ptr[chn].irq_num_sens);
-		printk(KERN_DEBUG "chn_num: 0x%x\n", image_acq_priv.jpeg_ptr[chn].chn_num);
-		printk(KERN_DEBUG "flags: 0x%x\n", image_acq_priv.jpeg_ptr[chn].flags);
+		printk(KERN_DEBUG "jpeg_wp (in bytes): 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[chn].jpeg_wp << 2);
+		printk(KERN_DEBUG "jpeg_rp (in bytes): 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[chn].jpeg_rp << 2);
+		printk(KERN_DEBUG "fpga_cntr_prev: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[chn].fpga_cntr_prev);
+		printk(KERN_DEBUG "irq_num_comp: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[chn].irq_num_comp);
+		printk(KERN_DEBUG "irq_num_sens: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[chn].irq_num_sens);
+		printk(KERN_DEBUG "chn_num: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[chn].chn_num);
+		printk(KERN_DEBUG "flags: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[chn].flags);
 	} else {
 		for (i = 0; i < IMAGE_CHN_NUM; i++) {
-			printk(KERN_DEBUG "jpeg_wp: 0x%x\n", image_acq_priv.jpeg_ptr[i].jpeg_wp);
-			printk(KERN_DEBUG "jpeg_rp: 0x%x\n", image_acq_priv.jpeg_ptr[i].jpeg_rp);
-			printk(KERN_DEBUG "fpga_cntr_prev: 0x%x\n", image_acq_priv.jpeg_ptr[i].fpga_cntr_prev);
-			printk(KERN_DEBUG "irq_num_comp: 0x%x\n", image_acq_priv.jpeg_ptr[i].irq_num_comp);
-			printk(KERN_DEBUG "irq_num_sens: 0x%x\n", image_acq_priv.jpeg_ptr[i].irq_num_sens);
-			printk(KERN_DEBUG "chn_num: 0x%x\n", image_acq_priv.jpeg_ptr[i].chn_num);
-			printk(KERN_DEBUG "flags: 0x%x\n", image_acq_priv.jpeg_ptr[i].flags);
+			printk(KERN_DEBUG "jpeg_wp: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[i].jpeg_wp);
+			printk(KERN_DEBUG "jpeg_rp: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[i].jpeg_rp);
+			printk(KERN_DEBUG "fpga_cntr_prev: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[i].fpga_cntr_prev);
+			printk(KERN_DEBUG "irq_num_comp: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[i].irq_num_comp);
+			printk(KERN_DEBUG "irq_num_sens: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[i].irq_num_sens);
+			printk(KERN_DEBUG "chn_num: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[i].chn_num);
+			printk(KERN_DEBUG "flags: 0x%x\n", aimage_acq_priv[sensor_port].jpeg_ptr[i].flags);
 		}
 	}
 }
 
 
 static const struct of_device_id elphel393_sensor_of_match[];
-static struct sensorproc_t s_sensorproc; // sensor parameters and functions to call
-struct sensorproc_t * sensorproc = NULL;
+static struct sensorproc_t as_sensorproc[SENSOR_PORTS]; // sensor parameters and functions to call
+struct sensorproc_t * asensorproc = NULL;
 //EXPORT_SYMBOL_GPL(sensorproc);
 //wait_queue_head_t image_acq_wait_queue;  /// queue for the sensor frame interrupts
 
 
-void tasklet_fpga_function(unsigned long arg);
+void tasklet_fpga_function_chn0(unsigned long arg);
+void tasklet_fpga_function_chn1(unsigned long arg);
+void tasklet_fpga_function_chn2(unsigned long arg);
+void tasklet_fpga_function_chn3(unsigned long arg);
 
 /**
  * @brief Copy #sensorproc structure, needed for multisensor board to be able
@@ -204,10 +207,10 @@ void tasklet_fpga_function(unsigned long arg);
  * @param[in]   copy   pointer to a copy structure
  * @return      pointer to a \b copy structure
  */
-struct sensorproc_t * copy_sensorproc (struct sensorproc_t * copy)
+struct sensorproc_t * copy_sensorproc (int sensor_port, struct sensorproc_t * copy)
 {
 	/** copy sensor functions */
-	memcpy(copy, sensorproc, sizeof(struct sensorproc_t));
+	memcpy(copy, asensorproc[sensor_port], sizeof(struct sensorproc_t));
 	return copy;
 }
 
@@ -225,9 +228,12 @@ struct sensorproc_t * copy_sensorproc (struct sensorproc_t * copy)
 ///#define CCAM_VSYNC_ON  port_csp0_addr[X313_WA_DCR1]=X353_DCR1(BLOCKVSYNC,0)
 ///#define CCAM_VSYNC_OFF port_csp0_addr[X313_WA_DCR1]=X353_DCR1(BLOCKVSYNC,1)
 ///
-int init_acq_sensor(void);
+int init_acq_sensor(void); // Never used?
 
-DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); /// 0 - no arguments for now
+DECLARE_TASKLET(tasklet_fpga_chn0, tasklet_fpga_function_chn0, 0); /// 0 - no arguments for now
+DECLARE_TASKLET(tasklet_fpga_chn1, tasklet_fpga_function_chn1, 1); /// 0 - no arguments for now
+DECLARE_TASKLET(tasklet_fpga_chn2, tasklet_fpga_function_chn2, 2); /// 0 - no arguments for now
+DECLARE_TASKLET(tasklet_fpga_chn3, tasklet_fpga_function_chn3, 3); /// 0 - no arguments for now
 
 
 
@@ -242,11 +248,10 @@ DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); /// 0 - no arguments fo
  */
 static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 {
-	int xferred;                                           /// number of 32-byte chunks transferred since compressor was reset
+	int xferred;    /// number of 32-byte chunks transferred since compressor was reset
 	x393_afimux_status_t stat = x393_afimux0_status(jptr->chn_num);
 	//int circbuf_size = get_globalParam(G_CIRCBUFSIZE) >> 2;
-	int circbuf_size = get_globalParam(G_CIRCBUFSIZE);
-
+	int circbuf_size = get_globalParam(jptr->chn_num, G_CIRCBUFSIZE);
 	xferred = stat.offset256 - jptr->fpga_cntr_prev;
 	if (xferred == 0)
 		return 0;                    /// no advance (compressor was off?)
@@ -281,6 +286,8 @@ inline void updateIRQFocus(struct jpeg_ptr_t *jptr)
     //set_globalParam     (G_GFOCUS_VALUE, X313_HIGHFREQ);
     //set_imageParamsThis (P_FOCUS_VALUE, X313_HIGHFREQ);
 	u32 high_freq = x393_cmprs_hifreq(jptr->chn_num);
+    set_globalParam     (jptr->chn_num, G_GFOCUS_VALUE, high_freq);
+    set_imageParamsThis (jptr->chn_num, P_FOCUS_VALUE, high_freq);
 }
 
 inline static void set_default_interframe(struct interframe_params_t *params)
@@ -326,7 +333,7 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 
 	set_default_interframe(interframe);
 
-	set_globalParam(G_FRAME_SIZE, jpeg_len);
+	set_globalParam(jptr->chn_num, G_FRAME_SIZE, jpeg_len);
 
    return interframe;
 }
@@ -335,9 +342,10 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
  * @brief Fill exif data with the current frame data, save pointer to Exif page in the interframe area
  * @param interframe pointer to interframe parameters structure
  */
-inline void updateIRQ_Exif(struct interframe_params_t* interframe) {
-   int  index_time = JPEG_wp-11; if (index_time<0) index_time+=get_globalParam (G_CIRCBUFSIZE)>>2;
-#ifdef TES_DISABLE_CODE
+inline void updateIRQ_Exif(int sensor_port, struct interframe_params_t* interframe) {
+   int  index_time = aJPEG_wp-11[sensor_port]; if (index_time<0) index_time+=get_globalParam (sensor_port, G_CIRCBUFSIZE)>>2;
+//   struct exif_datetime_t
+//#ifdef TES_DISABLE_CODE
 /// calculates datetime([20] and subsec[7], returns  pointer to char[27]
    char * exif_meta_time_string=encode_time(ccam_dma_buf_ptr[index_time], ccam_dma_buf_ptr[index_time+1]);
 /// may be split in datetime/subsec - now it will not notice missing subseq field in template
@@ -397,7 +405,7 @@ inline void updateIRQ_Exif(struct interframe_params_t* interframe) {
    }
    interframe->meta_index=store_meta();
 
-#endif /* TES_DISABLE_CODE */
+//#endif /* TES_DISABLE_CODE */
 }
 
 
@@ -408,7 +416,8 @@ inline void updateIRQ_Exif(struct interframe_params_t* interframe) {
  * @param dev_id 
  * @return 
  */
-/*static irqreturn_t elphel_FPGA_interrupt(int irq, void *dev_id) {
+#ifdef X353
+static irqreturn_t elphel_FPGA_interrupt(int irq, void *dev_id) {
    unsigned long irq_state;
 
    irq_state = X313_IRQSTATE; //!making dummy read - see c353.h
@@ -436,8 +445,8 @@ inline void updateIRQ_Exif(struct interframe_params_t* interframe) {
    EN_INTERRUPT(SMART);
 
    return IRQ_HANDLED;
-}*/
-
+}
+#endif
 /**
  * @brief Handle interrupts from sensor channels. This handler is installed without SA_INTERRUPT
  * flag meaning that interrupts are enabled during processing. Such behavior is recommended in LDD3.
@@ -448,10 +457,10 @@ inline void updateIRQ_Exif(struct interframe_params_t* interframe) {
  */
 static irqreturn_t frame_sync_irq_handler(int irq, void *dev_id)
 {
-	struct jpeg_ptr_t *priv = dev_id;
+	struct jpeg_ptr_t *jptr = dev_id;
 
 	update_frame_pars();
-	wake_up_interruptible(&framepars_wait_queue);
+	wake_up_interruptible(&aframepars_wait_queue[jptr->chn_num]);
 	tasklet_schedule(&tasklet_fpga);
 
 	return IRQ_HANDLED;
@@ -555,7 +564,7 @@ void tasklet_fpga_function(unsigned long arg) {
      default:                   /// calculate always (safer)
        hist_en=1;
   }
-#ifdef TEST_DISABLE_CODE
+//#ifdef TEST_DISABLE_CODE
   if (hist_en) {
 /// after updateFramePars gammaHash are from framepars[this-1]
     set_histograms (prevFrameNumber, (1 << COLOR_Y_NUMBER), hash32p, framep); /// 0x2 Green1
@@ -570,17 +579,17 @@ void tasklet_fpga_function(unsigned long arg) {
     wake_up_interruptible(&hist_y_wait_queue);    /// wait queue for the G1 histogram (used as Y)
   }
 #endif
-#endif /* TEST_DISABLE_CODE */
+//#endif /* TEST_DISABLE_CODE */
 /// Process parameters 
   if ((tasklet_disable & (1 << TASKLET_CTL_PGM))   == 0) {
       processPars (sensorproc, getThisFrameNumber(), get_globalParam(G_MAXAHEAD)); /// program parameters
       PROFILE_NOW(4);
   }
-#ifdef TEST_DISABLE_CODE
+//#ifdef TEST_DISABLE_CODE
 /// Time is out?
   if ((getThisFrameNumber() ^ X3X3_I2C_FRAME)  & PARS_FRAMES_MASK) return; /// already next frame
 /// Are C histograms needed?
-#endif /* TEST_DISABLE_CODE */
+//#endif /* TEST_DISABLE_CODE */
   switch ((tasklet_disable >> TASKLET_CTL_HISTC_BIT) & 7) {
      case TASKLET_HIST_NEVER:   /// never calculate
        hist_en=0;
@@ -608,7 +617,7 @@ GLOBALPARS(0x1042)=((thisFrameNumber & 7) ==0);
 GLOBALPARS(0x1043)=hist_en;
 GLOBALPARS(0x1044)=thisFrameNumber;
 */
-#ifdef TEST_DISABLE_CODE
+//#ifdef TEST_DISABLE_CODE
   if (hist_en) {
 /// after updateFramePars gammaHash are from framepars[this-1]
     set_histograms (prevFrameNumber, 0xf, hash32p, framep); /// all 4 colors, including Y (it will be skipped)
@@ -623,7 +632,7 @@ GLOBALPARS(0x1044)=thisFrameNumber;
     wake_up_interruptible(&hist_c_wait_queue);   /// wait queue for all the other (R,G2,B) histograms (color)
   }
 #endif
-#endif /* TEST_DISABLE_CODE */
+//#endif /* TEST_DISABLE_CODE */
 }
 
 //#endif /* TEST_DISABLE_CODE */
@@ -705,7 +714,7 @@ int image_acq_init(struct platform_device *pdev)
 	if (!match)
 		return -EINVAL;*/
 
-	sensorproc= &s_sensorproc;
+	asensorproc= &as_sensorproc[0];
 	//MDD1(printk("sensorproc=0x%x\n",(int) sensorproc));
 	dev_dbg(dev, "sensorproc address: 0x%x\n", (int)sensorproc);
 

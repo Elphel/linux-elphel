@@ -62,6 +62,8 @@
 //#include "cci2c.h" // to use void i2c_reset_wait(void), reset shadow static 'i2c_hardware_on'
 #include "x393_macro.h"
 #include "x393.h"
+//#undef _LINUX_WAIT_H
+//#include <linux/wait.h>
 
 /**
  * \def MDF1(x) optional debug output
@@ -142,7 +144,32 @@ unsigned long           *aglobalPars[SENSOR_PORTS];          /// parameters that
 unsigned long           *amultiSensIndex[SENSOR_PORTS];      /// index for per-sensor alternatives
 unsigned long           *amultiSensRvrsIndex[SENSOR_PORTS];  /// reverse index (to parent) for the multiSensIndex
 wait_queue_head_t       aframepars_wait_queue[SENSOR_PORTS];/// used to wait for the frame to be acquired
-wait_queue_head_t framepars_wait_queue; /// used to wait for the frame to be acquired
+
+/* Remove after compilation OK */
+struct sensorproc_t * sensorproc = NULL;
+void camera_interrupts (int on) {}
+#if 0
+#define wait_event_interruptible(wq, condition)				\
+({									\
+	int __ret = 0;							\
+	might_sleep();							\
+	if (!(condition))						\
+		__ret = __wait_event_interruptible(wq, condition);	\
+	__ret;								\
+})
+
+#define __wait_event_interruptible_timeout(wq, condition, timeout)	\
+	___wait_event(wq, ___wait_cond_timeout(condition),		\
+		      TASK_INTERRUPTIBLE, 0, timeout,			\
+		      __ret = schedule_timeout(__ret))
+
+#define __wait_event_interruptible(wq, condition)			\
+	___wait_event(wq, condition, TASK_INTERRUPTIBLE, 0, 0,		\
+		      schedule())
+
+#endif
+
+//wait_queue_head_t framepars_wait_queue; /// used to wait for the frame to be acquired
 
 /**
  * @brief file private data
@@ -253,7 +280,7 @@ void initFramePars(int sensor_port)
 /// Same for 10359 registers - will not change anything if there is no 10359 - these registers will not be changed, and if will be it wil cause no action
 	for (i = 0; i < P_M10359_NUMREGS; i++) afuncs2call[sensor_port][P_M10359_REGS + i] = ONCHANGE_SENSORREGS;     /// by default each "manual" write to any of 256 registers will trigger pgm_sensorreg function
 
-	initMultiPars();                                                                                /// initialize structures for individual per-sensor parameters. Now only works for sensor registers using G_MULTI_REGSM. Should be called after/during sensor detection
+	initMultiPars(sensor_port);                                                                                /// initialize structures for individual per-sensor parameters. Now only works for sensor registers using G_MULTI_REGSM. Should be called after/during sensor detection
 	frameParsInitialized = 1;
 }
 
@@ -335,7 +362,7 @@ inline unsigned long get_imageParamsPrev(int sensor_port, int n)
  * @param d data to write to the selected parameter
  */
 
-inline void set_imageParamsThis(int sensor_port, int sensor_port, int n, unsigned long d)
+inline void set_imageParamsThis(int sensor_port, int n, unsigned long d)
 {
 	aframepars[sensor_port][thisFrameNumber(sensor_port) & PARS_FRAMES_MASK].pars[n] = d;
 }
@@ -490,7 +517,6 @@ inline void processParsASAP(int sensor_port, struct sensorproc_t * sensorproc, i
 	unsigned long * p_nasap = &GLOBALPARS(sensor_port, G_CALLNASAP);
 	int i;
 	int rslt;
-	struct framepars_t *framepars = aframepars[sensor_port];
 #if ELPHEL_DEBUG
 	unsigned long allfunctions = framepars[0].functions  | framepars[1].functions | framepars[2].functions | framepars[3].functions |
 				     framepars[4].functions | framepars[5].functions | framepars[6].functions | framepars[7].functions;
@@ -727,7 +753,7 @@ int setFrameParsAtomic(int sensor_port, unsigned long frameno, int maxLatency, i
 	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 	if (!frameParsInitialized) {
-		initSequencers(); /// Will call  initFramePars(); and initialize functions
+		initSequencers(sensor_port); /// Will call  initFramePars(); and initialize functions
 	}
 	int findex_this =  thisFrameNumber(sensor_port) & PARS_FRAMES_MASK;
 	int findex_prev = (findex_this - 1)  & PARS_FRAMES_MASK;
@@ -810,10 +836,10 @@ int setFrameParsAtomic(int sensor_port, unsigned long frameno, int maxLatency, i
 /// Try to process parameters immediately after written. If 0, only non-ASAP will be processed to prevent
 /// effects of uncertainty of when was it called relative to frame sync
 /// Changed to all (don't care about uncertainty - they will trigger only if it is too late or during sensor detection/initialization)
-	if (!(get_globalParam(G_TASKLET_CTL) & (1 << TASKLET_CTL_NOSAME))) {
+	if (!(get_globalParam(sensor_port, G_TASKLET_CTL) & (1 << TASKLET_CTL_NOSAME))) {
 //    processParsSeq (sensorproc, thisFrameNumber & PARS_FRAMES_MASK, 0); ///maxahead=0, the rest will be processed after frame sync, from the tasklet
 		MDF5(printk("\n"));
-		processPars(sensorproc, thisFrameNumber(sensor_port) & PARS_FRAMES_MASK, 0); ///maxahead=0, the rest will be processed after frame sync, from the tasklet
+		processPars(sensor_port, sensorproc, thisFrameNumber(sensor_port) & PARS_FRAMES_MASK, 0); ///maxahead=0, the rest will be processed after frame sync, from the tasklet
 	}
 	PROFILE_NOW(7);
 	D1I(local_irq_restore(flags));
@@ -1088,6 +1114,7 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 	unsigned long target_frame;
 	struct framepars_pd * privData = (struct framepars_pd*) file -> private_data;
 	int sensor_port = privData -> minor - CMOSCAM_MINOR_FRAMEPARS_CHN_0;
+	struct framepars_t *framepars = aframepars[sensor_port];
 	MDF1(printk(" offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port));
 	switch (orig) {
 	case SEEK_SET:
@@ -1105,15 +1132,14 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 			else target_frame = getThisFrameNumber(sensor_port) + offset - LSEEK_FRAME_WAIT_REL;
 			/// Skip 0..255 frames
 //			wait_event_interruptible (framepars_wait_queue, getThisFrameNumber()>=target_frame);
-			wait_event_interruptible (framepars_wait_queue, 1);
 			wait_event_interruptible(aframepars_wait_queue[sensor_port], getThisFrameNumber(sensor_port) >= target_frame);
 
 //       if (getThisFrameNumber()<target_frame) wait_event_interruptible (framepars_wait_queue,getThisFrameNumber()>=target_frame);
-			return getThisFrameNumber();    /// Does not modify current frame pointer? lseek (,0,SEEK_CUR) anyway returns getThisFrameNumber()
+			return getThisFrameNumber(sensor_port);    /// Does not modify current frame pointer? lseek (,0,SEEK_CUR) anyway returns getThisFrameNumber()
 		} else {                                //! Other lseek commands
 			switch (offset & ~0x1f) {
 			case  LSEEK_DAEMON_FRAME:       /// wait the daemon enabled and a new frame interrupt (sensor frame sync)
-				wait_event_interruptible(framepars_wait_queue, get_imageParamsThis(P_DAEMON_EN) & (1 << (offset & 0x1f)));
+				wait_event_interruptible(aframepars_wait_queue[sensor_port], get_imageParamsThis(sensor_port, P_DAEMON_EN) & (1 << (offset & 0x1f)));
 				break;
 			default:
 				switch (offset) {
@@ -1127,16 +1153,16 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 					break;
 				case LSEEK_FRAMEPARS_INIT:      /// reset hardware sequencers, init framepars structure
 					MDF2(printk("LSEEK_FRAMEPARS_INIT\n"));
-					initGlobalPars();       /// reset all global parameters but the first 32
-					initSequencers();
+					initGlobalPars(sensor_port);       /// reset all global parameters but the first 32
+					initSequencers(sensor_port);
 					break;
-				case LSEEK_FRAME_RESET: /// reset absoulte frame number to avoid integer frame number overflow
+				case LSEEK_FRAME_RESET: /// reset absolute frame number to avoid integer frame number overflow
 					MDF2(printk("LSEEK_FRAME_RESET\n"));
-					resetFrameNumber();
+					resetFrameNumber(sensor_port);
 					break;
 				case LSEEK_SENSORPROC:                  /// process modified parameters in frame 0 (to start sensor detection)
 					MDF2(printk("LSEEK_SENSORPROC: framepars[0].functions=0x%08lx\n", framepars[0].functions));
-					processPars(sensorproc, 0, 8);  ///frame0, all 8 frames (maxAhead==8)
+					processPars(sensor_port, sensorproc, 0, 8);  ///frame0, all 8 frames (maxAhead==8)
 					break;
 				case LSEEK_DMA_INIT:                    /// initialize ETRAX DMA (normally done in sensor_common.c at driver init
 					MDF2(printk("LSEEK_DMA_INIT\n"));
@@ -1187,6 +1213,8 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 	struct frameparspair_t pars_static[256]; /// will be sufficient for most calls
 	struct frameparspair_t * pars = pars_static;
 	struct framepars_pd * privData = (struct framepars_pd*)file->private_data;
+	int sensor_port = privData -> minor - CMOSCAM_MINOR_FRAMEPARS_CHN_0;
+	//	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long frame = *off; /// ************* NOTE: Never use file->f_pos in write() and read() !!!
 	int latency = -1;
 	int first = 0;
@@ -1213,7 +1241,7 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 						frame = pars[first].val;
 						break;
 					case FRAMEPARS_SETFRAMEREL:
-						frame = pars[first].val + getThisFrameNumber();
+						frame = pars[first].val + getThisFrameNumber(sensor_port);
 						break;
 					case FRAMEPARS_SETLATENCY:
 						latency = (pars[first].val & 0x80000000) ? -1 : pars[first].val;
@@ -1231,7 +1259,7 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 				}
 				last = first + 1;
 				while ((last < count) && ((pars[last].num & 0xff00) != 0xff00)) last++;  // skip to the end or next special instructions
-				result = setFrameParsAtomic(frame, latency, last - first, &pars[first]);
+				result = setFrameParsAtomic(sensor_port,frame, latency, last - first, &pars[first]);
 				MDF1(printk("setFrameParsAtomic(%ld, %d, %d)\n", frame, latency, last - first));
 				if (result < 0) {
 					if (count > sizeof(pars_static)) kfree(pars);
@@ -1249,7 +1277,7 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 /**
  * @brief Driver MMAP method (should be used read only)
  * provides access to both 8-frame parameters (including future ones), frame - 0 - some static ones too and
- * much longer retained pastparameters - subset of all parameters
+ * much longer retained past parameters - subset of all parameters
  * @param file
  * @param vma
  * @return OK - 0, negative - errors
@@ -1258,13 +1286,14 @@ int framepars_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	int result;
 	struct framepars_pd * privData = (struct framepars_pd*)file->private_data;
+	int sensor_port = privData -> minor - CMOSCAM_MINOR_FRAMEPARS_CHN_0;
 
 	MDF1(printk(": minor=0x%x\n", privData->minor));
 	switch (privData->minor) {
 	case  CMOSCAM_MINOR_FRAMEPARS:
 		result = remap_pfn_range(vma,
 					 vma->vm_start,
-					 ((unsigned long)virt_to_phys(frameparsall)) >> PAGE_SHIFT, // Should be page-aligned
+					 ((unsigned long)virt_to_phys(&aframeparsall[sensor_port])) >> PAGE_SHIFT, // Should be page-aligned
 					 vma->vm_end - vma->vm_start,
 					 vma->vm_page_prot);
 		MDF1(printk("remap_pfn_range returned=%x\r\n", result));
@@ -1284,18 +1313,22 @@ int framepars_init(struct platform_device *pdev)
 	int res;
 	struct device *dev = &pdev->dev;
 	const struct of_device_id *match;
+	int sensor_port;
 
-	init_framepars_ptr();
-	initGlobalPars();       /// sets default debug if enabled - not anymore. Add here?
-	initMultiPars();        /// just clear - needs to be called again when sensor is recognized
+	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
+		init_framepars_ptr(sensor_port);
+		initGlobalPars(sensor_port);       /// sets default debug if enabled - not anymore. Add here?
+		initMultiPars(sensor_port);        /// just clear - needs to be called again when sensor is recognized
+	}
 	frameParsInitialized = 0;
-
 	res = register_chrdev(FRAMEPARS_MAJOR, "framepars_operations", &framepars_fops);
 	if (res < 0) {
 		printk(KERN_ERR "\nframepars_init: couldn't get a major number %d.\n", FRAMEPARS_MAJOR);
 		return res;
 	}
-	init_waitqueue_head(&framepars_wait_queue);
+	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
+		init_waitqueue_head(&aframepars_wait_queue[sensor_port]);
+	}
 	dev_info(dev, "registered MAJOR: %d\n", FRAMEPARS_MAJOR);
 
 	return 0;
@@ -1308,23 +1341,23 @@ int framepars_remove(struct platform_device *pdev)
 	return 0;
 }
 
-//static const struct of_device_id elphel393_framepars_of_match[] = {
-//	{ .compatible = "elphel,elphel393-framepars-1.00" },
-//	{ /* end of list */ }
-//};
-//MODULE_DEVICE_TABLE(of, elphel393_framepars_of_match);
-//
-//static struct platform_driver elphel393_framepars = {
-//	.probe			= framepars_init,
-//	.remove			= framepars_remove,
-//	.driver			= {
-//		.name		= FRAMEPARS_DRIVER_NAME,
-//		.of_match_table = elphel393_framepars_of_match,
-//	},
-//};
-//
-//module_platform_driver(elphel393_framepars);
-//
-//MODULE_LICENSE("GPL");
-//MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-//MODULE_DESCRIPTION(X3X3_FRAMEPARS_DRIVER_NAME);
+static const struct of_device_id elphel393_framepars_of_match[] = {
+	{ .compatible = "elphel,elphel393-framepars-1.00" },
+	{ /* end of list */ }
+};
+MODULE_DEVICE_TABLE(of, elphel393_framepars_of_match);
+
+static struct platform_driver elphel393_framepars = {
+	.probe			= framepars_init,
+	.remove			= framepars_remove,
+	.driver			= {
+		.name		= FRAMEPARS_DRIVER_NAME,
+		.of_match_table = elphel393_framepars_of_match,
+	},
+};
+
+module_platform_driver(elphel393_framepars);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
+MODULE_DESCRIPTION(X3X3_FRAMEPARS_DRIVER_NAME);
