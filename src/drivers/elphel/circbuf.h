@@ -42,4 +42,8 @@ struct circbuf_priv_t {
 };
 extern struct circbuf_priv_t *circbuf_priv_ptr;
 
+/* debug code follows */
+extern unsigned short circbuf_quality;
+/* end of debug code */
+
 #endif /* _CIRCBUF_H */

@@ -41,6 +41,8 @@
 //#include <linux/of.h>
 //#include <linux/of_device.h>
 
+#include <asm/outercache.h>
+#include <asm/cacheflush.h>
 
 //#include <asm/system.h>
 //#include <asm/byteorder.h> // endians
@@ -114,6 +116,30 @@ struct image_acq_pd_t {
     int minor;
     struct jpeg_ptr_t jpeg_ptr[IMAGE_CHN_NUM];
 };
+/* debug code follows */
+long long zero_counter[IMAGE_CHN_NUM] = {0};
+long long corrected_offset[IMAGE_CHN_NUM] = {0};
+long long frame_counter[IMAGE_CHN_NUM] = {0};
+long long frame_pos[IMAGE_CHN_NUM][1000] = {0};
+long long get_zero_counter(unsigned int chn)
+{
+	return zero_counter[chn];
+}
+long long get_corrected_offset(unsigned int chn)
+{
+	return corrected_offset[chn];
+}
+long long get_frame_counter(unsigned int chn)
+{
+	return frame_counter[chn];
+}
+long long get_frame_pos(unsigned int chn, unsigned int pos)
+{
+	if (chn < IMAGE_CHN_NUM && pos < 1000)
+		return frame_pos[chn][pos];
+	return 0;
+}
+/* end of debug code */
 
 static struct image_acq_pd_t image_acq_priv;
 
@@ -162,32 +188,6 @@ void camseq_set_jpeg_rp(unsigned int chn, int ptr)
 /*!
    End of compressor-related code - TODO: move to a separate file?
 */
-
-static void dump_priv_data(int chn)
-{
-	int i;
-
-	if (chn < IMAGE_CHN_NUM) {
-		printk(KERN_DEBUG "jpeg_wp (in bytes): 0x%x\n", image_acq_priv.jpeg_ptr[chn].jpeg_wp << 2);
-		printk(KERN_DEBUG "jpeg_rp (in bytes): 0x%x\n", image_acq_priv.jpeg_ptr[chn].jpeg_rp << 2);
-		printk(KERN_DEBUG "fpga_cntr_prev: 0x%x\n", image_acq_priv.jpeg_ptr[chn].fpga_cntr_prev);
-		printk(KERN_DEBUG "irq_num_comp: 0x%x\n", image_acq_priv.jpeg_ptr[chn].irq_num_comp);
-		printk(KERN_DEBUG "irq_num_sens: 0x%x\n", image_acq_priv.jpeg_ptr[chn].irq_num_sens);
-		printk(KERN_DEBUG "chn_num: 0x%x\n", image_acq_priv.jpeg_ptr[chn].chn_num);
-		printk(KERN_DEBUG "flags: 0x%x\n", image_acq_priv.jpeg_ptr[chn].flags);
-	} else {
-		for (i = 0; i < IMAGE_CHN_NUM; i++) {
-			printk(KERN_DEBUG "jpeg_wp: 0x%x\n", image_acq_priv.jpeg_ptr[i].jpeg_wp);
-			printk(KERN_DEBUG "jpeg_rp: 0x%x\n", image_acq_priv.jpeg_ptr[i].jpeg_rp);
-			printk(KERN_DEBUG "fpga_cntr_prev: 0x%x\n", image_acq_priv.jpeg_ptr[i].fpga_cntr_prev);
-			printk(KERN_DEBUG "irq_num_comp: 0x%x\n", image_acq_priv.jpeg_ptr[i].irq_num_comp);
-			printk(KERN_DEBUG "irq_num_sens: 0x%x\n", image_acq_priv.jpeg_ptr[i].irq_num_sens);
-			printk(KERN_DEBUG "chn_num: 0x%x\n", image_acq_priv.jpeg_ptr[i].chn_num);
-			printk(KERN_DEBUG "flags: 0x%x\n", image_acq_priv.jpeg_ptr[i].flags);
-		}
-	}
-}
-
 
 static const struct of_device_id elphel393_sensor_of_match[];
 static struct sensorproc_t s_sensorproc; // sensor parameters and functions to call
@@ -242,19 +242,45 @@ DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); /// 0 - no arguments fo
  */
 static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 {
+	phys_addr_t phys_addr;
+	void *virt_addr;
 	int xferred;                                           /// number of 32-byte chunks transferred since compressor was reset
 	x393_afimux_status_t stat = x393_afimux0_status(jptr->chn_num);
-	//int circbuf_size = get_globalParam(G_CIRCBUFSIZE) >> 2;
-	int circbuf_size = get_globalParam(G_CIRCBUFSIZE);
 
 	xferred = stat.offset256 - jptr->fpga_cntr_prev;
 	if (xferred == 0)
-		return 0;                    /// no advance (compressor was off?)
+		return 0;                                          /// no advance (compressor was off?)
 
 	jptr->flags |= SENS_FLAG_IRQ;
 	jptr->fpga_cntr_prev = stat.offset256;
-	// increment in 32 bit words
-	jptr->jpeg_wp += (xferred << 3);
+	jptr->jpeg_wp = (stat.offset256 << 3);
+
+	/* debug code follows */
+	frame_counter[jptr->chn_num] += 1;
+	if (jptr->jpeg_wp == 0) {
+		zero_counter[jptr->chn_num] += 1;
+		if (zero_counter[jptr->chn_num] < 1000)
+			frame_pos[jptr->chn_num][zero_counter[jptr->chn_num] - 1] = frame_counter[jptr->chn_num];
+	}
+	/* end of debug code */
+
+	/* Looks like compressor is reporting HW pointer with offset when last frame ends precisely at the
+	 * end of buffer and 32 zero bytes start from the beginning of the buffer. HW pointer in this case should
+	 * be 0x20, but it is 0x00 in fact. Try to detect this situation and correct the offset.
+	 */
+	if (jptr->jpeg_wp == 0 &&
+		circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] == 0x00 &&
+		(circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp - 1] & MARKER_FF) == MARKER_FF) {
+		jptr->jpeg_wp += INTERFRAME_PARAMS_SZ;
+		corrected_offset[jptr->chn_num] += 1;
+	}
+
+	// invalidate CPU L1 and L2 caches
+	// the code below was used to find cache coherence issues
+	phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE;
+	virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr + jptr->jpeg_wp - INTERFRAME_PARAMS_SZ;
+	outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
+	__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
 
 	return 1;
 }
@@ -289,44 +315,51 @@ inline static void set_default_interframe(struct interframe_params_t *params)
 	params->width = 2592;
 	params->byrshift = 3;
 	params->color = 0;
-	params->quality2 = 100;
+	params->quality2 = circbuf_quality;
+	//params->quality2 = 100;
 }
 
 /**
  * @brief Locate area between frames in the circular buffer
  * @return pointer to interframe parameters structure
  */
-inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr) {
-//   int circbuf_size=get_globalParam (G_CIRCBUFSIZE)>>2;
-//   int alen = JPEG_wp-9; if (alen<0) alen+=circbuf_size;
-//   int jpeg_len=ccam_dma_buf_ptr[alen] & 0xffffff;
-//   set_globalParam(G_FRAME_SIZE,jpeg_len);
-//   int aframe_params=(alen & 0xfffffff8)-
-//                     (((jpeg_len + CCAM_MMAP_META + 3) & 0xffffffe0)>>2) /// multiple of 32-byte chunks to subtract
-//                     -8; /// size of the storage area to be filled before the frame
-//   if(aframe_params < 0) aframe_params += circbuf_size;
-//   struct interframe_params_t* interframe= (struct interframe_params_t*) &ccam_dma_buf_ptr[aframe_params];
-///// should we use memcpy as before here?
-//   interframe->frame_length=jpeg_len;
-//   interframe->signffff=0xffff;
-//#if ELPHEL_DEBUG_THIS
-//    set_globalParam          (0x306,get_globalParam (0x306)+1);
-//#endif
-
-	struct interframe_params_t *interframe;
-	int len_offset = X393_BUFFSUB(jptr->jpeg_wp, INTERFRAME_PARAMS_SZ + 1);
-	int jpeg_len = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len_offset] & FRAME_LENGTH_MASK;
+inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
+{
+	dma_addr_t phys_addr;
+	void *virt_addr;
+	struct interframe_params_t *interframe = NULL;
+	int len_offset = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp), CHUNK_SIZE + 4);
+	int jpeg_len = circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(len_offset)] & FRAME_LENGTH_MASK;
 	int jpeg_start = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE - INSERTED_BYTES(jpeg_len) - CCAM_MMAP_META, jpeg_len);
 	// frame_params_offset points to interframe_params_t area before current frame (this parameters belong to the frame below in memory, not the previous)
 	int frame_params_offset = BYTE2DW(X393_BUFFSUB(jpeg_start, CHUNK_SIZE));
+	int prev_len32_off = X393_BUFFSUB(jpeg_start, CHUNK_SIZE + 4);
+	int prev_len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_len32_off)];
+
+	if ((prev_len32 & MARKER_FF) != MARKER_FF) {
+		// try to correct offset
+		prev_len32_off = X393_BUFFSUB(prev_len32_off, 0x20);
+		prev_len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_len32_off)];
+		if ((prev_len32 & MARKER_FF) == MARKER_FF) {
+			frame_params_offset = BYTE2DW(X393_BUFFADD(prev_len32_off, 4));
+		}
+	}
 
 	interframe = (struct interframe_params_t *) &circbuf_priv_ptr[jptr->chn_num].buf_ptr[frame_params_offset];
 	interframe->frame_length = jpeg_len;
 	interframe->signffff = 0xffff;
 
+	/* debug code follows */
 	set_default_interframe(interframe);
+	/* end of debug code */
 
-	set_globalParam(G_FRAME_SIZE, jpeg_len);
+//	set_globalParam(G_FRAME_SIZE, jpeg_len);
+
+	// invalidate CPU L1 and L2 caches (in this order)
+	phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(frame_params_offset);
+	virt_addr = interframe;
+	__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
+	outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
 
    return interframe;
 }
@@ -468,21 +501,24 @@ static irqreturn_t frame_sync_irq_handler(int irq, void *dev_id)
 static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
 {
 	struct jpeg_ptr_t *priv = dev_id;
-	struct interframe_params_t *interframe;
+	struct interframe_params_t *interframe = NULL;
 	x393_cmprs_interrupts_t irq_ctrl;
+	unsigned long flag;
 
+	local_irq_save(flag);
 	if (updateIRQJPEG_wp(priv)) {
-		update_irq_circbuf(priv);
-		updateIRQFocus(priv);
+//		update_irq_circbuf(priv);
+//		updateIRQFocus(priv);
 		interframe = updateIRQ_interframe(priv);
 		//updateIRQ_Exif(interframe);
 		wake_up_interruptible(&circbuf_wait_queue);
 	}
 	//wake_up_interruptible(&framepars_wait_queue);
 
-	tasklet_schedule(&tasklet_fpga);
+//	tasklet_schedule(&tasklet_fpga);
 	irq_ctrl.interrupt_cmd = IRQ_CLEAR;
 	x393_cmprs_interrupts(irq_ctrl, priv->chn_num);
+	local_irq_restore(flag);
 
 	return IRQ_HANDLED;
 }
@@ -519,11 +555,6 @@ void tasklet_fpga_function(unsigned long arg) {
   unsigned long prevFrameNumber=thisFrameNumber-1;
   unsigned long * hash32p=&(framepars[(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]);
   unsigned long * framep= &(framepars[(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
-
-  int i, j;
-  int last_image_chunk;
-  int len32;
-
 
 #ifdef TEST_DISABLE_CODE
 /// Time is out?
@@ -630,7 +661,6 @@ GLOBALPARS(0x1044)=thisFrameNumber;
  */
 void reset_compressor(unsigned int chn)
 {
-	int i;
 	unsigned long flags;
 
 	local_irq_save(flags);
