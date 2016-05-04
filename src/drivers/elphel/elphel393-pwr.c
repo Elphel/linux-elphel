@@ -1226,8 +1226,10 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
     for (i=0;i<ARRAY_SIZE(pwr_gpio);i++) if (pwr_gpio[i].label){
     	clientdata->pwr_gpio[i].label=pwr_gpio[i].label;
     	clientdata->pwr_gpio[i].pin=base[i>>3]+(i & 7);
+
     	if (i<16) clientdata->pwr_gpio[i].dir=0; /* input */
     	else      clientdata->pwr_gpio[i].dir=1; /* output */
+
     	//if (i<16) clientdata->pwr_gpio[i].out_val=0;
     	//else      clientdata->pwr_gpio[i].out_val=1;
 
@@ -1259,6 +1261,10 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 	 * 2. To perform a proper system shutdown with power off ("shutdown -hP now") this function is set here.
 	 */
 	pm_power_off = shutdown;
+
+	//turn off PCA9571
+	gpio_10389_ctrl(&pdev->dev, 0xf0f);
+	gpio_10389_ctrl(&pdev->dev, 0xf00);
 
 	return 0;
 }	
