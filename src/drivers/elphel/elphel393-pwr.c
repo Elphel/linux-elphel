@@ -287,6 +287,7 @@ static int get_enable(struct device *dev, int chn);
 static int set_enable(struct device *dev, int chn, int enable);
 static int get_pgood(struct device *dev, int chn);
 
+int gpio_10389_ctrl(struct device *dev, int value);
 
 /*
  Voltages:
@@ -640,6 +641,13 @@ static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, 
 	return count;
 }
 
+int gpio_shutdown(struct device *dev)
+{
+	int gpio_shutdown_index=get_gpio_index_by_name("NSHUTDOWN");
+	if (gpio_shutdown_index<0) return gpio_shutdown_index;
+	return gpio_conf_by_index(dev, gpio_shutdown_index, 1,  0);
+}
+
 int gpio_10389_ctrl(struct device *dev, int value){
 	int i, res;
 	int val = 0;
@@ -647,21 +655,14 @@ int gpio_10389_ctrl(struct device *dev, int value){
 	for(i=16;i<20;i++){
 		if ((value>>(i-8))&0x1){
 			val = (value>>(i-16))&0x1;
-			res = gpio_conf_by_index(dev, i, 1, ~val);
-			if (res<0) return res;
+			//res = gpio_conf_by_index(dev, i, 1, ~val);
+			//if (res<0) return res;
 			res = gpio_conf_by_index(dev, i, 1, val);
 			if (res<0) return res;
 		}
 	}
 	//unlock somewhere here
 	return 0;
-}
-
-int gpio_shutdown(struct device *dev)
-{
-	int gpio_shutdown_index=get_gpio_index_by_name("NSHUTDOWN");
-	if (gpio_shutdown_index<0) return gpio_shutdown_index;
-	return gpio_conf_by_index(dev, gpio_shutdown_index, 1,  0);
 }
 
 int por_ctrl(struct device *dev, int disable_por)
@@ -1227,7 +1228,11 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
     	clientdata->pwr_gpio[i].pin=base[i>>3]+(i & 7);
     	if (i<16) clientdata->pwr_gpio[i].dir=0; /* input */
     	else      clientdata->pwr_gpio[i].dir=1; /* output */
-    	clientdata->pwr_gpio[i].out_val=0; 
+    	//if (i<16) clientdata->pwr_gpio[i].out_val=0;
+    	//else      clientdata->pwr_gpio[i].out_val=1;
+
+    	clientdata->pwr_gpio[i].out_val=0;
+
     	rc=gpio_request(clientdata->pwr_gpio[i].pin, clientdata->pwr_gpio[i].label);
     	if (rc<0){
     		dev_err(&pdev->dev," Failed to get GPIO[%d] with label %s\n",clientdata->pwr_gpio[i].pin,clientdata->pwr_gpio[i].label);
