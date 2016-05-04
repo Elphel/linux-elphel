@@ -38,9 +38,10 @@
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
 
-
+/* PCA6408As */
 #define GPIO_CHIP1_ADDR    0x20
 #define GPIO_CHIP2_ADDR    0x21
+/* PCA9571 on 10389, high 4 pins are NC */
 #define GPIO_10389_U4_ADDR 0x25
 #define LTC3589_ADDR       0x34
 
@@ -315,7 +316,21 @@ static DEVICE_ATTR(channels_dis, SYSFS_PERMISSIONS,                     channels
 static DEVICE_ATTR(power_good,   SYSFS_PERMISSIONS & SYSFS_READONLY,    pgood_show,          NULL);
 static DEVICE_ATTR(power_bad,    SYSFS_PERMISSIONS & SYSFS_READONLY,    pbad_show,           NULL);
 static DEVICE_ATTR(enable_por,   SYSFS_PERMISSIONS,                     enable_por_show,     enable_por_store);
+/*
+ * Performs power off whtough CHIP2 P0
+ * examples:
+ *  1. echo "anything" > power_off - immediate shutdown
+ *  2. shutdown -hP now - civilized shutdown
+ */
 static DEVICE_ATTR(power_off,    SYSFS_PERMISSIONS                 ,    NULL,                gpio_poweroff);
+/*
+ * input is hex, set all outputs at once with a mask, 8xMSB - enable mask, 8xLSB - pin values.
+ * examples:
+ *  1. echo 0x101 > gpio_10389 - set P0 high, P1-P3 keep
+ *  2. echo 0xf01 > gpio_10389 - set P0 high, P1-P3 - low
+ *  3. echo 0x605 > gpio_10389 - P0 keep, P1 low, P2 high, P3 keep
+ *  P7-P4 - NC, 0xX0X0 - not supported even on this driver level.
+ */
 static DEVICE_ATTR(gpio_10389,   SYSFS_PERMISSIONS,                     gpio_10389_get,      gpio_10389_set);
 
 static struct attribute *root_dev_attrs[] = {
@@ -593,23 +608,6 @@ static ssize_t enable_por_store(struct device *dev, struct device_attribute *att
 	return count;
 }
 
-int gpio_10389_ctrl(struct device *dev, int value){
-	int i, res;
-	int val = 0;
-	//lock here
-	for(i=16;i<20;i++){
-		if ((value>>(i-8))&0x1){
-			val = (value>>(i-16))&0x1;
-			res = gpio_conf_by_index(dev, i, 1, ~val);
-			if (res<0) return res;
-			res = gpio_conf_by_index(dev, i, 1, val);
-			if (res<0) return res;
-		}
-	}
-	//unlock somewhere here
-	return 0;
-}
-
 static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
 {
 	int result;
@@ -620,6 +618,7 @@ static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
+/* hardcoded to be [19:16] in pwr_gpio */
 static ssize_t gpio_10389_get(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int i;
@@ -639,6 +638,23 @@ static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, 
 	int rc=gpio_shutdown(dev);
 	if (rc<0) return rc;
 	return count;
+}
+
+int gpio_10389_ctrl(struct device *dev, int value){
+	int i, res;
+	int val = 0;
+	//lock here
+	for(i=16;i<20;i++){
+		if ((value>>(i-8))&0x1){
+			val = (value>>(i-16))&0x1;
+			res = gpio_conf_by_index(dev, i, 1, ~val);
+			if (res<0) return res;
+			res = gpio_conf_by_index(dev, i, 1, val);
+			if (res<0) return res;
+		}
+	}
+	//unlock somewhere here
+	return 0;
 }
 
 int gpio_shutdown(struct device *dev)
@@ -1233,6 +1249,10 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev,"LTC3589 status= 0x%02x\n",ltc3589_read_field(ltc3589_client, LTC3589_AWE_PGSTAT));
 	elphel393_pwr_init_of(pdev);
 	
+	/*
+	 * 1. pm_power_off - arch/arm/kernel/process.c - called in the end of halt if power off requested
+	 * 2. To perform a proper system shutdown with power off ("shutdown -hP now") this function is set here.
+	 */
 	pm_power_off = shutdown;
 
 	return 0;
