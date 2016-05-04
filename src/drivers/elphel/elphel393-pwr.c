@@ -39,10 +39,10 @@
 #define SYSFS_WRITEONLY           0222
 
 
-#define GPIO_CHIP1_ADDR 0x20
-#define GPIO_CHIP2_ADDR 0x21
+#define GPIO_CHIP1_ADDR    0x20
+#define GPIO_CHIP2_ADDR    0x21
 #define GPIO_10389_U4_ADDR 0x25
-#define LTC3589_ADDR    0x34
+#define LTC3589_ADDR       0x34
 
 /* TODO: set resistors in device tree to accommodate different revisions ( elphel393_pwr,vp15_r1 = <357000>)*/
 #define VP15_R1       357000
@@ -73,7 +73,7 @@ struct pwr_gpio_t {
 struct elphel393_pwr_data_t {
 	int chip_i2c_addr[4];
 	struct device * ltc3489_dev;
-	struct pwr_gpio_t pwr_gpio [16];
+	struct pwr_gpio_t pwr_gpio [24];
 	int simulate; /* do not perform actual i2c writes */
 	struct mutex lock;
 	int pgoot_timeout;
@@ -204,7 +204,7 @@ static struct voltage_reg_t voltage_reg[]={
 		},
 }; 
 
-static struct pwr_gpio_t pwr_gpio[16]={
+static struct pwr_gpio_t pwr_gpio[24]={
 /* 0x20: */
 		{"PWR_MGB1",    0, 0, 0}, /* 1.8V margining magnitude (0 - 5%, 1 - 10%, float - 15%) */
 		{"PWR_MG1",     1, 0, 0}, /* 1.8V margining enable 0 - negative margining, 1 - positive margining, float - no margining */
@@ -262,9 +262,12 @@ static ssize_t pgood_show(struct device *dev, struct device_attribute *attr, cha
 static ssize_t pbad_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t enable_por_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t enable_por_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+static ssize_t gpio_10389_get(struct device *dev, struct device_attribute *attr, char *buf);
+static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr, char *buf, size_t count);
+static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, char *buf, size_t count);
 
-static int por_ctrl(struct device *dev, int disable_por);
 static int gpio_shutdown(struct device *dev);
+static int por_ctrl(struct device *dev, int disable_por);
 static int get_and_disable_por(struct device *dev, int chn_bits, int * old_dis_por);
 static int reenable_por(struct device *dev);
 static int wait_all_pgood(struct device *dev);
@@ -312,8 +315,8 @@ static DEVICE_ATTR(channels_dis, SYSFS_PERMISSIONS,                     channels
 static DEVICE_ATTR(power_good,   SYSFS_PERMISSIONS & SYSFS_READONLY,    pgood_show,          NULL);
 static DEVICE_ATTR(power_bad,    SYSFS_PERMISSIONS & SYSFS_READONLY,    pbad_show,           NULL);
 static DEVICE_ATTR(enable_por,   SYSFS_PERMISSIONS,                     enable_por_show,     enable_por_store);
-static DEVICE_ATTR(power_off,    SYSFS_PERMISSIONS                 ,    NULL,                gpio_shutdown);
-
+static DEVICE_ATTR(power_off,    SYSFS_PERMISSIONS                 ,    NULL,                gpio_poweroff);
+static DEVICE_ATTR(gpio_10389,   SYSFS_PERMISSIONS,                     gpio_10389_get,      gpio_10389_set);
 
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_simulate.attr,
@@ -325,6 +328,7 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_power_bad.attr,
 		&dev_attr_enable_por.attr,
 		&dev_attr_power_off.attr,
+		&dev_attr_gpio_10389.attr,
 	    NULL
 };
 static const struct attribute_group dev_attr_root_group = {
@@ -585,6 +589,54 @@ static ssize_t enable_por_store(struct device *dev, struct device_attribute *att
     sscanf(buf, "%du", &en_por);
     if (en_por)	rc=reenable_por(dev); /* will wait pgood, then enable POR */
     else        rc=por_ctrl(dev, 1); /* disable POR */
+	if (rc<0) return rc;
+	return count;
+}
+
+int gpio_10389_ctrl(struct device *dev, int value){
+	int i, res;
+	int val = 0;
+	//lock here
+	for(i=16;i<20;i++){
+		if ((value>>(i-8))&0x1){
+			val = (value>>(i-16))&0x1;
+			res = gpio_conf_by_index(dev, i, 1, ~val);
+			if (res<0) return res;
+			res = gpio_conf_by_index(dev, i, 1, val);
+			if (res<0) return res;
+		}
+	}
+	//unlock somewhere here
+	return 0;
+}
+
+static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
+{
+	int result;
+	int value;
+	sscanf(buf, "%x", &value);
+	result = gpio_10389_ctrl(dev,value);
+	if (result<0) return result;
+	return count;
+}
+
+static ssize_t gpio_10389_get(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int i;
+	unsigned int res=0;
+	struct elphel393_pwr_data_t *clientdata=platform_get_drvdata(to_platform_device(dev));
+	// just 4 of them
+	for (i=16;i<20;i++){
+		if (pwr_gpio[i].label){
+			res += ((clientdata->pwr_gpio[i].out_val)?1:0)<<(i-16);
+		}
+	}
+	return sprintf(buf,"%02x\n",res);
+}
+
+static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
+{
+	int rc=gpio_shutdown(dev);
 	if (rc<0) return rc;
 	return count;
 }
@@ -1157,11 +1209,8 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
     for (i=0;i<ARRAY_SIZE(pwr_gpio);i++) if (pwr_gpio[i].label){
     	clientdata->pwr_gpio[i].label=pwr_gpio[i].label;
     	clientdata->pwr_gpio[i].pin=base[i>>3]+(i & 7);
-    	if (i<16) {
-    		clientdata->pwr_gpio[i].dir=0; /* input */
-    	}else{
-    		clientdata->pwr_gpio[i].dir=1; /* output */
-    	}
+    	if (i<16) clientdata->pwr_gpio[i].dir=0; /* input */
+    	else      clientdata->pwr_gpio[i].dir=1; /* output */
     	clientdata->pwr_gpio[i].out_val=0; 
     	rc=gpio_request(clientdata->pwr_gpio[i].pin, clientdata->pwr_gpio[i].label);
     	if (rc<0){
