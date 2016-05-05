@@ -665,6 +665,11 @@ int gpio_10389_ctrl(struct device *dev, int value){
 	return 0;
 }
 
+int gpio_10389_control(int value){
+	return gpio_10389_ctrl(shutdown_dev,value);
+}
+EXPORT_SYMBOL_GPL(gpio_10389_control);
+
 int por_ctrl(struct device *dev, int disable_por)
 {
 	int gpio_disable_por_index=get_gpio_index_by_name("DIS_POR");
