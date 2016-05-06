@@ -649,11 +649,10 @@ int gpio_shutdown(struct device *dev)
 	return gpio_conf_by_index(dev, gpio_shutdown_index, 1,  0);
 }
 
+//TODO: test mutex_lock/unlock works
 int gpio_10389_ctrl(struct device *dev, int value){
 	int i, res;
 	int val = 0;
-	//lock here
-	//doesn't work
 	mutex_lock(&gpio_10389_lock);
 	for(i=16;i<20;i++){
 		if ((value>>(i-8))&0x1){
@@ -664,8 +663,6 @@ int gpio_10389_ctrl(struct device *dev, int value){
 			if (res<0) return res;
 		}
 	}
-	//unlock somewhere here
-	//doesn't work
 	mutex_unlock(&gpio_10389_lock);
 	return 0;
 }
