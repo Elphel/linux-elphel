@@ -63,6 +63,7 @@
 #define REF_VAR_STEP_TENTH_MV  125
 #define DEAFULT_TIMEOUT        300 /* number of retries testing pgood before giving up */
 
+static DEFINE_MUTEX(gpio_10389_lock);
 
 struct pwr_gpio_t {
 	const char * label;
@@ -653,7 +654,7 @@ int gpio_10389_ctrl(struct device *dev, int value){
 	int val = 0;
 	//lock here
 	//doesn't work
-	//mutex_lock(&dev->mutex);
+	mutex_lock(&gpio_10389_lock);
 	for(i=16;i<20;i++){
 		if ((value>>(i-8))&0x1){
 			val = (value>>(i-16))&0x1;
@@ -665,12 +666,13 @@ int gpio_10389_ctrl(struct device *dev, int value){
 	}
 	//unlock somewhere here
 	//doesn't work
-	//mutex_unlock(&dev->mutex);
+	mutex_unlock(&gpio_10389_lock);
 	return 0;
 }
 
 int gpio_10389_control(int value){
-	return gpio_10389_ctrl(shutdown_dev,value);
+	gpio_10389_ctrl(shutdown_dev,value);
+	return 0;
 }
 EXPORT_SYMBOL_GPL(gpio_10389_control);
 
