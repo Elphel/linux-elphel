@@ -652,6 +652,8 @@ int gpio_10389_ctrl(struct device *dev, int value){
 	int i, res;
 	int val = 0;
 	//lock here
+	//doesn't work
+	//mutex_lock(&dev->mutex);
 	for(i=16;i<20;i++){
 		if ((value>>(i-8))&0x1){
 			val = (value>>(i-16))&0x1;
@@ -662,6 +664,8 @@ int gpio_10389_ctrl(struct device *dev, int value){
 		}
 	}
 	//unlock somewhere here
+	//doesn't work
+	//mutex_unlock(&dev->mutex);
 	return 0;
 }
 
