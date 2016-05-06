@@ -244,6 +244,7 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 {
 	phys_addr_t phys_addr;
 	void *virt_addr;
+	int prev_dword;
 	int xferred;                                           /// number of 32-byte chunks transferred since compressor was reset
 	x393_afimux_status_t stat = x393_afimux0_status(jptr->chn_num);
 
@@ -268,11 +269,31 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 	 * end of buffer and 32 zero bytes start from the beginning of the buffer. HW pointer in this case should
 	 * be 0x20, but it is 0x00 in fact. Try to detect this situation and correct the offset.
 	 */
-	if (jptr->jpeg_wp == 0 &&
-		circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] == 0x00 &&
-		(circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp - 1] & MARKER_FF) == MARKER_FF) {
-		jptr->jpeg_wp += INTERFRAME_PARAMS_SZ;
-		corrected_offset[jptr->chn_num] += 1;
+	if (jptr->jpeg_wp == 0) {
+		// if pointer is set incorrectly, then we need two invalidate two cache lines in order to
+		// estimate the situation correctly: one line after the pointer, which should be the line of
+		// 32 zeros, and one line before the pointer, which should be the last line of the frame. If this is not done
+		// then the data read from memory can be incorrect and error detection will give false result. Barrier is set to
+		// prevent compiler from reordering operations.
+		phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr;
+		virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr;
+		dev_dbg(NULL, "from updateIRQJPEG_wp: phys_addr = 0x%x, virt_addr = 0x%p\n", phys_addr, virt_addr);
+		outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
+		__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
+		phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + CCAM_DMA_SIZE - CHUNK_SIZE;
+		virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr + BYTE2DW(CCAM_DMA_SIZE - CHUNK_SIZE);
+		outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
+		__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
+		dev_dbg(NULL, "from updateIRQJPEG_wp: phys_addr = 0x%x, virt_addr = 0x%p\n", phys_addr, virt_addr);
+		barrier();
+		prev_dword = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp), 4);
+		dev_dbg(NULL, "circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] = 0x%x\n", circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp]);
+		dev_dbg(NULL, "circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)] = 0x%x\n", circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)]);
+		if (circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] == 0x00 &&
+		(circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)] & MARKER_FF) == MARKER_FF) {
+			jptr->jpeg_wp += INTERFRAME_PARAMS_SZ;
+			corrected_offset[jptr->chn_num] += 1;
+		}
 	}
 
 	// invalidate CPU L1 and L2 caches

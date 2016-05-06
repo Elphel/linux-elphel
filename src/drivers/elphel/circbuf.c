@@ -184,8 +184,8 @@ loff_t circbuf_all_lseek(struct file *file, loff_t offset, int orig)
 		return  circbuf_lseek(file, offset, orig);
 	case JPEGHEAD_MINOR:
 		if (orig == SEEK_END && offset > 0) {
-			rp = BYTE2DW(offset) & (~7); // convert to index to long, align to 32-bytes
-			fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[X393_BUFFSUB(rp, 8)];
+			rp = BYTE2DW(X393_BUFFSUB(offset, CHUNK_SIZE)) & (~7); // convert to index to long, align to 32-bytes
+			fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[rp];
 		}
 		return  jpeghead_lseek(file, offset, orig, fp);
 	case HUFFMAN_MINOR:
