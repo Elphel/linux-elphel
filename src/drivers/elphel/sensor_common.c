@@ -265,14 +265,33 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 	}
 	/* end of debug code */
 
-	/* Looks like compressor is reporting HW pointer with offset when last frame ends precisely at the
-	 * end of buffer and 32 zero bytes start from the beginning of the buffer. HW pointer in this case should
-	 * be 0x20, but it is 0x00 in fact. Try to detect this situation and correct the offset.
+	/* Correct frame length and re-adjust interframe params.
+	 * This operations was scheduled on previous interrupt.
+	 */
+	if (jptr->flags & SENS_FLAG_HW_OFF) {
+		int len32;
+		int len32_ptr = jptr->jpeg_wp - INTERFRAME_PARAMS_SZ - 1;
+		phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE;
+		virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr + jptr->jpeg_wp - INTERFRAME_PARAMS_SZ;
+		outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
+		__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
+		len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len32_ptr];
+		len32 -= INTERFRAME_PARAMS_SZ;
+		circbuf_priv_ptr[jptr->chn_num].buf_ptr[len32_ptr] = len32;
+		__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
+		outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
+		jptr->flags &= ~SENS_FLAG_HW_OFF;
+	}
+
+	/* Looks like compressor is not writing 32 zero bytes when last frame ends precisely at the
+	 * end of buffer. Try to detect this situation and set a flag so that we can overwrite first
+	 * 32 bytes of the buffer on next interrupt. These bytes will be used as interframe parameters and current frame length
+	 * will be decreased by these 32 bytes. Such a measure will corrupt the frame but preserve the structure.
 	 */
 	if (jptr->jpeg_wp == 0) {
-		// if pointer is set incorrectly, then we need two invalidate two cache lines in order to
+		// we need to invalidate two cache lines in order to
 		// estimate the situation correctly: one line after the pointer, which should be the line of
-		// 32 zeros, and one line before the pointer, which should be the last line of the frame. If this is not done
+		// 32 bytes of newly compressed frame(or zero bytes?), and one line before the pointer, which should be the last line of the frame. If this is not done
 		// then the data read from memory can be incorrect and error detection will give false result. Barrier is set to
 		// prevent compiler from reordering operations.
 		phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr;
@@ -289,9 +308,10 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 		prev_dword = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp), 4);
 		dev_dbg(NULL, "circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] = 0x%x\n", circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp]);
 		dev_dbg(NULL, "circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)] = 0x%x\n", circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)]);
-		if (circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] == 0x00 &&
-		(circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)] & MARKER_FF) == MARKER_FF) {
-			jptr->jpeg_wp += INTERFRAME_PARAMS_SZ;
+//		if (circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] == 0x00 &&
+		if ((circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)] & MARKER_FF) == MARKER_FF) {
+//			jptr->jpeg_wp += INTERFRAME_PARAMS_SZ;
+			jptr->flags |= SENS_FLAG_HW_OFF;
 			corrected_offset[jptr->chn_num] += 1;
 		}
 	}
