@@ -37,6 +37,8 @@
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
 #include <elphel/elphel393-mem.h>
+#include "x393_helpers.h"
+
 #define SYSFS_PERMISSIONS         0644 /* default permissions for sysfs files */
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
@@ -310,6 +312,7 @@ static ssize_t sync_for_device_bidir(struct device *dev, struct device_attribute
 
     return count;
 }
+
 static ssize_t flush_cpu_cache(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	const int buff_size = 0x1000000;
@@ -318,8 +321,10 @@ static ssize_t flush_cpu_cache(struct device *dev, struct device_attribute *attr
 	int start_offset, end_offset;
 	int num_items;
 	dma_addr_t phys_addr_start, phys_addr_end;
+	u32 start_time, end_time;
 
 	num_items = sscanf(buf, "%u:%d:%d", &chn, &start_offset, &end_offset);
+	start_time = get_rtc_usec();
 	if (num_items == 3) {
 		// invalidate L2 caches
 		if (end_offset > start_offset) {
@@ -339,6 +344,12 @@ static ssize_t flush_cpu_cache(struct device *dev, struct device_attribute *attr
 			phys_addr_end = _elphel_buf.paddr + buff_start_offset + chn * buff_size + end_offset - 1;
 			outer_inv_range(phys_addr_start, phys_addr_end);
 		}
+	}
+	end_time = get_rtc_usec();
+	if (start_time == 0 && end_time == 0) {
+		pr_info("Unable to get usec values\n");
+	} else {
+		pr_info("Cache invalidate time: %lu\n", end_time - start_time);
 	}
 	return count;
 }
