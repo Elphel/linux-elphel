@@ -692,6 +692,8 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
  * @return      number of bytes read form \e buf
  */
 unsigned short circbuf_quality = 100;
+unsigned short circbuf_height = 1936;
+unsigned short circbuf_width = 2592;
 ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *off)
 {
 	unsigned long p;
@@ -744,6 +746,17 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 				}
 			}
 			}
+		}
+		break;
+	case 6:
+		{
+		unsigned int w, h;
+		int res = sscanf(&buf[2], "%u:%u", &w, &h);
+		if (res == 2) {
+			circbuf_width = w;
+			circbuf_height = h;
+			dev_dbg(g_dev_ptr, "set image size %u x %u\n", w, h);
+		}
 		}
 		break;
 	}

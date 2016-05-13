@@ -7,8 +7,9 @@
  * - interrupts handling
  * - tasklets
  * - device driver that includes waiting for the next frame regardless of compression
- *
- * Copyright (C) 2016 Elphel, Inc.
+ */
+
+/* Copyright (C) 2016 Elphel, Inc.
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -82,7 +83,7 @@
 #define IMAGEACQ_DRIVER_NAME      "Elphel (R) Model 393 Image Acquisition device driver"
 /** @brief The size in bytes of L2 cache invalidation area. This size must be aligned to cache line size.
  * 16 kbytes seems to be good starting point. */
-#define L2_INVAL_SIZE             (16 * 1024)
+#define L2_INVAL_SIZE             (32 * 1024)
 
 /**@struct jpeg_ptr_t
  * @brief \e jpeg_ptr_t structure contains read and write pointers along with
@@ -358,8 +359,10 @@ inline void updateIRQFocus(struct jpeg_ptr_t *jptr)
 
 inline static void set_default_interframe(struct interframe_params_t *params)
 {
-	params->height = 1936;
-	params->width = 2592;
+//	params->height = 1936;
+//	params->width = 2592;
+	params->height = circbuf_height;
+	params->width = circbuf_width;
 	params->byrshift = 3;
 	params->color = 0;
 	params->quality2 = circbuf_quality;
@@ -543,7 +546,7 @@ static irqreturn_t frame_sync_irq_handler(int irq, void *dev_id)
  * flag meaning that interrupts are enabled during processing. Such behavior is recommended in LDD3.
  * @param[in]   irq   interrupt number
  * @param[in]   dev_id pointer to driver's private data structure #jpeg_ptr_t corresponding to
- * the channel which raise interrupt
+ * the channel which raised interrupt
  * @return \e IRQ_HANDLED if interrupt was processed and \e IRQ_NONE otherwise
  */
 static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
