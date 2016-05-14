@@ -609,21 +609,27 @@ void tasklet_fpga_function(unsigned long arg) {
   unsigned long * framep= &(framepars[(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
   const struct jpeg_ptr_t *jptr = &image_acq_priv.jpeg_ptr[arg];
   dma_addr_t phys_addr_start, phys_addr_end;
+  void *virt_addr_start;
   unsigned int sz;
 
   /* invalidate L2 cache lines in the beginning of current frame */
 	phys_addr_start = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->fpga_cntr_prev);
+	virt_addr_start = circbuf_priv_ptr[jptr->chn_num].buf_ptr + jptr->fpga_cntr_prev;
 	sz = DW2BYTE(jptr->fpga_cntr_prev) + L2_INVAL_SIZE;
 	if (sz < CCAM_DMA_SIZE) {
 		phys_addr_end = phys_addr_start + L2_INVAL_SIZE - 1;
 		outer_inv_range(phys_addr_start, phys_addr_end);
+		__cpuc_flush_dcache_area(virt_addr_start, L2_INVAL_SIZE);
 	} else {
 		phys_addr_end = phys_addr_start + (CCAM_DMA_SIZE - DW2BYTE(jptr->fpga_cntr_prev) - 1);
 		outer_inv_range(phys_addr_start, phys_addr_end);
+		__cpuc_flush_dcache_area(virt_addr_start, CCAM_DMA_SIZE - DW2BYTE(jptr->fpga_cntr_prev));
 
 		phys_addr_start = circbuf_priv_ptr[jptr->chn_num].phys_addr;
 		phys_addr_end = phys_addr_start + (sz - CCAM_DMA_SIZE - 1);
+		virt_addr_start = circbuf_priv_ptr[jptr->chn_num].buf_ptr;
 		outer_inv_range(phys_addr_start, phys_addr_end);
+		__cpuc_flush_dcache_area(virt_addr_start, sz - CCAM_DMA_SIZE);
 	}
 
 
