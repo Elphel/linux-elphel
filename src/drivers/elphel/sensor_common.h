@@ -52,7 +52,7 @@ struct sensorproc_t * copy_sensorproc (struct sensorproc_t * copy);
 int image_acq_init(struct platform_device *pdev);
 
 // indicate that this channel need attention; set in interrupt handler, reset in bottom half
-#define SENS_FLAG_IRQ   0x01
+#define SENS_FLAG_IRQ             0x01
 // got 0x20 more than start of the new image
 #define OFFSET_X40      0x40
 

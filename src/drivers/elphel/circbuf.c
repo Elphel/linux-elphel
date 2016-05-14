@@ -69,7 +69,8 @@
 #include "circbuf.h"
 #include "exif.h"
 #include "x393_macro.h"
-#include "x393.h"
+//#include "x393.h"
+#include "x393_helpers.h"
 
 #define CIRCBUF_DRIVER_NAME "circbuf driver"
 
@@ -184,8 +185,8 @@ loff_t circbuf_all_lseek(struct file *file, loff_t offset, int orig)
 		return  circbuf_lseek(file, offset, orig);
 	case JPEGHEAD_MINOR:
 		if (orig == SEEK_END && offset > 0) {
-			rp = BYTE2DW(offset) & (~7); // convert to index to long, align to 32-bytes
-			fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[X393_BUFFSUB(rp, 8)];
+			rp = BYTE2DW(X393_BUFFSUB(offset, CHUNK_SIZE)) & (~7); // convert to index to long, align to 32-bytes
+			fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[rp];
 		}
 		return  jpeghead_lseek(file, offset, orig, fp);
 	case HUFFMAN_MINOR:
@@ -416,6 +417,8 @@ inline int get_image_start(int last_chunk_offset, unsigned int len32)
  *                   free memory may be less by a whole frame if compressor is running.
  *  LSEEK_CIRC_USED - returns memory used in the in circbuf from the current file pointer,
  *                   or -EINVAL if the pointer is invalid
+ * The following command is used for profiling from user space applications. It does not change file pointer:
+ *  LSEEK_CIRC_UTIME  return current value of microsecond counter.
  *  @param[in]   file   pointer to \e file structure
  *  @param[in]   offset offset inside buffer in bytes
  *  @param[in]   orig   origin
@@ -656,6 +659,9 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 				}
 				if (fvld < 0) return -ESPIPE;      // invalid seek - have better code?
 				return file->f_pos ; // data already available, return file pointer
+			case LSEEK_CIRC_UTIME:
+				return get_rtc_usec();
+				break;
 			default:
 				if ((offset & ~0x1f)==LSEEK_DAEMON_CIRCBUF) {
 					wait_event_interruptible(circbuf_wait_queue, get_imageParamsThis(P_DAEMON_EN) & (1<<(offset & 0x1f)));
@@ -686,6 +692,8 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
  * @return      number of bytes read form \e buf
  */
 unsigned short circbuf_quality = 100;
+unsigned short circbuf_height = 1936;
+unsigned short circbuf_width = 2592;
 ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *off)
 {
 	unsigned long p;
@@ -738,6 +746,17 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 				}
 			}
 			}
+		}
+		break;
+	case 6:
+		{
+		unsigned int w, h;
+		int res = sscanf(&buf[2], "%u:%u", &w, &h);
+		if (res == 2) {
+			circbuf_width = w;
+			circbuf_height = h;
+			dev_dbg(g_dev_ptr, "set image size %u x %u\n", w, h);
+		}
 		}
 		break;
 	}
@@ -803,6 +822,17 @@ int circbuf_mmap(struct file *file, struct vm_area_struct *vma)
 			circbuf_priv[chn].phys_addr >> PAGE_SHIFT,
 			vma->vm_end - vma->vm_start,
 			vma->vm_page_prot);
+
+//	ret = dma_common_mmap(g_dev_ptr, vma,
+//			circbuf_priv[chn].buf_ptr,
+//			circbuf_priv[chn].phys_addr,
+//			pElphel_buf->size * PAGE_SIZE);
+//
+//	ret = arm_dma_mmap(g_dev_ptr, vma,
+//			circbuf_priv[chn].buf_ptr,
+//			circbuf_priv[chn].phys_addr,
+//			pElphel_buf->size * PAGE_SIZE,
+//			NULL);
 
 	dev_dbg(g_dev_ptr, "remap_pfn_range returned 0x%x\n", ret);
 	if (ret) return -EAGAIN;
