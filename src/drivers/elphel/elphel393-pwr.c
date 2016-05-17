@@ -1207,6 +1207,8 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 	struct i2c_client *ltc3589_client;
 	struct elphel393_pwr_data_t *clientdata = NULL;
 
+	struct gpio_desc *desc;
+
 	shutdown_dev = &pdev->dev;
 
 	dev_info(&pdev->dev,"Probing elphel393-pwr\n");
@@ -1228,27 +1230,46 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 	/* locate GPIO chips by i2c address */
     for (i=0;i<3;i++){
     	chip = gpiochip_find(&clientdata->chip_i2c_addr[i], i2c_addr_gpiochip_match);
-    	base[i]=chip->base;
-    	dev_dbg(&pdev->dev,"Found gpio_chip with i2c_addr=0x%02x, label=%s, base=0x%x\n",clientdata->chip_i2c_addr[i],chip->label,base[i]);
+    	if (chip!=NULL) {
+    		base[i]=chip->base;
+    		dev_dbg(&pdev->dev,"Found gpio_chip with i2c_addr=0x%02x, label=%s, base=0x%x\n",clientdata->chip_i2c_addr[i],chip->label,base[i]);
+    	}else{
+    		base[i]=NULL;
+    	}
     }
-    for (i=0;i<ARRAY_SIZE(pwr_gpio);i++) if (pwr_gpio[i].label){
-    	clientdata->pwr_gpio[i].label=pwr_gpio[i].label;
-    	clientdata->pwr_gpio[i].pin=base[i>>3]+(i & 7);
 
-    	if (i<16) clientdata->pwr_gpio[i].dir=0; /* input */
-    	else      clientdata->pwr_gpio[i].dir=1; /* output */
+    for (i=0;i<ARRAY_SIZE(pwr_gpio);i++){
+    	if (base[i>>3]!=NULL) if (pwr_gpio[i].label){
+    		clientdata->pwr_gpio[i].label=pwr_gpio[i].label;
+    	    clientdata->pwr_gpio[i].pin=base[i>>3]+(i & 7);
 
-    	//if (i<16) clientdata->pwr_gpio[i].out_val=0;
-    	//else      clientdata->pwr_gpio[i].out_val=1;
+    	    if (i<16) clientdata->pwr_gpio[i].dir=0; /* input */
+    	    else      clientdata->pwr_gpio[i].dir=1; /* output */
 
-    	clientdata->pwr_gpio[i].out_val=0;
+    	    //if (i<16) clientdata->pwr_gpio[i].out_val=0;
+    	    //else      clientdata->pwr_gpio[i].out_val=1;
 
-    	rc=gpio_request(clientdata->pwr_gpio[i].pin, clientdata->pwr_gpio[i].label);
-    	if (rc<0){
-    		dev_err(&pdev->dev," Failed to get GPIO[%d] with label %s\n",clientdata->pwr_gpio[i].pin,clientdata->pwr_gpio[i].label);
-    		return rc;
-    	} else {
-    		dev_dbg(&pdev->dev,"Confirmed request GPIO[%d] with label %s\n",clientdata->pwr_gpio[i].pin,clientdata->pwr_gpio[i].label);
+    	    clientdata->pwr_gpio[i].out_val=0;
+
+    	    rc=gpio_request(clientdata->pwr_gpio[i].pin, clientdata->pwr_gpio[i].label);
+    	    if (rc<0){
+    	    	dev_err(&pdev->dev," Failed to get GPIO[%d] with label %s\n",clientdata->pwr_gpio[i].pin,clientdata->pwr_gpio[i].label);
+    	    	return rc;
+    	    } else {
+    	    	dev_dbg(&pdev->dev,"Confirmed request GPIO[%d] with label %s\n",clientdata->pwr_gpio[i].pin,clientdata->pwr_gpio[i].label);
+    	    }
+
+			//now try to read and update the structure
+
+			//gpiod_direction_output_raw(gpio_to_desc(gpio), value);
+
+			//desc = gpio_to_desc(base[i>>3]+(i & 7));
+			//rc = gpiod_get_direction(desc);
+			//pr_info("the %d direction is %d\n",i,rc);
+
+			//clientdata->ltc3489_dev=find_device_by_i2c_addr(clientdata->chip_i2c_addr[i>>3]);
+			//ltc3589_client = to_i2c_client(clientdata->ltc3489_dev);
+			//pr_info("read %d from i2c: %d\n",i,ltc3589_read_field(ltc3589_client, 0x3));
     	}
     }
 
@@ -1270,9 +1291,11 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 	 */
 	pm_power_off = shutdown;
 
-	//turn off PCA9571
-	gpio_10389_ctrl(&pdev->dev, 0xf0f);
-	gpio_10389_ctrl(&pdev->dev, 0xf00);
+	if (base[2]!=NULL){
+		//turn off PCA9571
+		gpio_10389_ctrl(&pdev->dev, 0xf0f);
+		gpio_10389_ctrl(&pdev->dev, 0xf00);
+	}
 
 	return 0;
 }	
