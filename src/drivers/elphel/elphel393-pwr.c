@@ -288,6 +288,7 @@ static int get_enable(struct device *dev, int chn);
 static int set_enable(struct device *dev, int chn, int enable);
 static int get_pgood(struct device *dev, int chn);
 
+static struct device * find_device_by_i2c_addr(int address);
 int gpio_10389_ctrl(struct device *dev, int value);
 
 /*
@@ -567,6 +568,7 @@ static ssize_t pgood_show(struct device *dev, struct device_attribute *attr, cha
 {
 	int chn, en_bits, pgood_bits=0;
 	char * cp=buf;
+
 	en_bits= get_enabled_mask(dev);
 	if (en_bits<0) return en_bits;
 	for (chn=0;chn<ARRAY_SIZE(voltage_reg);chn++) if (en_bits & (1 << chn)){ /* only deal with enabled channels */
@@ -653,6 +655,14 @@ int gpio_shutdown(struct device *dev)
 int gpio_10389_ctrl(struct device *dev, int value){
 	int i, res;
 	int val = 0;
+
+	struct device *tmp_dev;
+	tmp_dev=find_device_by_i2c_addr(GPIO_10389_U4_ADDR);
+	if (!tmp_dev) {
+		pr_err("10389 is not connected\n");
+		return -ENODEV;
+	}
+
 	mutex_lock(&gpio_10389_lock);
 	for(i=16;i<20;i++){
 		if ((value>>(i-8))&0x1){
@@ -1201,9 +1211,12 @@ static void shutdown(void){
 static int elphel393_pwr_probe(struct platform_device *pdev)
 {
 	struct gpio_chip *chip;
-//	struct device * ltc3489_dev;
 	int i,rc;
-	int base[3];
+
+	struct device *tmp_dev;
+	struct i2c_client *tmp_i2c_client;
+	int base[3],dir[3],out_val[3];
+
 	struct i2c_client *ltc3589_client;
 	struct elphel393_pwr_data_t *clientdata = NULL;
 
@@ -1233,6 +1246,23 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
     	if (chip!=NULL) {
     		base[i]=chip->base;
     		dev_dbg(&pdev->dev,"Found gpio_chip with i2c_addr=0x%02x, label=%s, base=0x%x\n",clientdata->chip_i2c_addr[i],chip->label,base[i]);
+
+			tmp_dev=find_device_by_i2c_addr(clientdata->chip_i2c_addr[i]);
+			tmp_i2c_client = to_i2c_client(tmp_dev);
+
+			//chip0 and chip1 have registers, chip2 - no regs, only outputs
+    		if (i<2){
+    			//need to invert direction register value
+    			dir[i]=i2c_smbus_read_byte_data(tmp_i2c_client, 0x3)^0xff;
+    			out_val[i]=i2c_smbus_read_byte_data(tmp_i2c_client, 0x1)&0xff;
+    			//dir[i]=0x0;
+    			//out_val[i]=0x0;
+    			pr_debug("chip %d: dir=%d val=%d\n",i,dir[i],out_val[i]);
+    		}else{
+    			dir[i]=0xff;
+    			out_val[i]=i2c_smbus_read_byte(tmp_i2c_client)&0xff;
+    			out_val[i]=0x0;
+    		}
     	}else{
     		base[i]=NULL;
     	}
@@ -1243,13 +1273,17 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
     		clientdata->pwr_gpio[i].label=pwr_gpio[i].label;
     	    clientdata->pwr_gpio[i].pin=base[i>>3]+(i & 7);
 
-    	    if (i<16) clientdata->pwr_gpio[i].dir=0; /* input */
-    	    else      clientdata->pwr_gpio[i].dir=1; /* output */
+    	    pr_debug("setting gpio %d struct to dir=%d val=%d\n",i,(dir[i>>3]>>(i&7))&0x1,(out_val[i>>3]>>(i&7))&0x1);
+    	    clientdata->pwr_gpio[i].dir = (dir[i>>3]>>(i&7))&0x1;
+    	    clientdata->pwr_gpio[i].out_val = (out_val[i>>3]>>(i&7))&0x1;
+
+    	    //if (i<16) clientdata->pwr_gpio[i].dir=0; /* input */
+    	    //else      clientdata->pwr_gpio[i].dir=1; /* output */
 
     	    //if (i<16) clientdata->pwr_gpio[i].out_val=0;
     	    //else      clientdata->pwr_gpio[i].out_val=1;
 
-    	    clientdata->pwr_gpio[i].out_val=0;
+    	    //clientdata->pwr_gpio[i].out_val=0;
 
     	    rc=gpio_request(clientdata->pwr_gpio[i].pin, clientdata->pwr_gpio[i].label);
     	    if (rc<0){
@@ -1258,18 +1292,6 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
     	    } else {
     	    	dev_dbg(&pdev->dev,"Confirmed request GPIO[%d] with label %s\n",clientdata->pwr_gpio[i].pin,clientdata->pwr_gpio[i].label);
     	    }
-
-			//now try to read and update the structure
-
-			//gpiod_direction_output_raw(gpio_to_desc(gpio), value);
-
-			//desc = gpio_to_desc(base[i>>3]+(i & 7));
-			//rc = gpiod_get_direction(desc);
-			//pr_info("the %d direction is %d\n",i,rc);
-
-			//clientdata->ltc3489_dev=find_device_by_i2c_addr(clientdata->chip_i2c_addr[i>>3]);
-			//ltc3589_client = to_i2c_client(clientdata->ltc3489_dev);
-			//pr_info("read %d from i2c: %d\n",i,ltc3589_read_field(ltc3589_client, 0x3));
     	}
     }
 
