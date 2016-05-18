@@ -615,7 +615,7 @@ static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr,
 {
 	int result;
 	int value;
-	sscanf(buf, "%x", &value);
+	sscanf(buf, "%i", &value);
 	result = gpio_10389_ctrl(dev,value);
 	if (result<0) return result;
 	return count;
