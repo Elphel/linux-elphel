@@ -1270,6 +1270,10 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
     	}
     }
 
+    if (base[2]==NULL){
+    	device_remove_file(&pdev->dev, &dev_attr_gpio_10389);
+    }
+
     for (i=0;i<ARRAY_SIZE(pwr_gpio);i++){
     	if (base[i>>3]!=NULL) if (pwr_gpio[i].label){
     		clientdata->pwr_gpio[i].label=pwr_gpio[i].label;
