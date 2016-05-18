@@ -288,8 +288,6 @@ static int get_enable(struct device *dev, int chn);
 static int set_enable(struct device *dev, int chn, int enable);
 static int get_pgood(struct device *dev, int chn);
 
-static struct device * find_device_by_i2c_addr(int address);
-static int i2c_addr_gpiochip_match(struct gpio_chip *chip, void *data);
 int gpio_10389_ctrl(struct device *dev, int value);
 
 /*
@@ -656,14 +654,6 @@ int gpio_shutdown(struct device *dev)
 int gpio_10389_ctrl(struct device *dev, int value){
 	int i, res;
 	int val = 0;
-
-	struct gpio_chip *chip;
-	int tmp_addr = GPIO_10389_U4_ADDR;
-	chip = gpiochip_find(&tmp_addr, i2c_addr_gpiochip_match);
-	if (chip==NULL) {
-		pr_err("10389 is not connected\n");
-		return -ENODEV;
-	}
 
 	mutex_lock(&gpio_10389_lock);
 	for(i=16;i<20;i++){
