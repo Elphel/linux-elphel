@@ -694,6 +694,7 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 unsigned short circbuf_quality = 100;
 unsigned short circbuf_height = 1936;
 unsigned short circbuf_width = 2592;
+unsigned char circbuf_byrshift = 3;
 ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *off)
 {
 	unsigned long p;
@@ -714,6 +715,7 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 		camera_interrupts(1);
 		break;
 	case 3:
+		/* update image quality */
 		buf_copy[count - 1] = 0;
 		ret = kstrtol(&buf_copy[2], 10, &val);
 		dev_dbg(g_dev_ptr, "ret: %d, buf[2]: %s\n", ret, &buf_copy[2]);
@@ -732,6 +734,7 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 		dump_state(chn);
 		break;
 	case 5:
+		/* print debug statistics */
 		{
 		int j, cntr;
 		long long res;
@@ -749,6 +752,7 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 		}
 		break;
 	case 6:
+		/* update frame size */
 		{
 		unsigned int w, h;
 		int res = sscanf(&buf[2], "%u:%u", &w, &h);
@@ -756,6 +760,17 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 			circbuf_width = w;
 			circbuf_height = h;
 			dev_dbg(g_dev_ptr, "set image size %u x %u\n", w, h);
+		}
+		}
+		break;
+	case 7:
+		/* update Bayer shift */
+		{
+		unsigned char val;
+		int res = sscanf(&buf[2], "%u", &val);
+		if (res == 1) {
+			circbuf_byrshift = val;
+			dev_dbg(g_dev_ptr, "set new bayer shift: %u\n", val);
 		}
 		}
 		break;

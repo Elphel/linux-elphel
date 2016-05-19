@@ -363,7 +363,8 @@ inline static void set_default_interframe(struct interframe_params_t *params)
 //	params->width = 2592;
 	params->height = circbuf_height;
 	params->width = circbuf_width;
-	params->byrshift = 3;
+//	params->byrshift = 3;
+	params->byrshift = circbuf_byrshift;
 	params->color = 0;
 	params->quality2 = circbuf_quality;
 	//params->quality2 = 100;

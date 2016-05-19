@@ -46,6 +46,7 @@ extern struct circbuf_priv_t *circbuf_priv_ptr;
 extern unsigned short circbuf_quality;
 extern unsigned short circbuf_height;
 extern unsigned short circbuf_width;
+extern unsigned char  circbuf_byrshift;
 /* end of debug code */
 
 #endif /* _CIRCBUF_H */
