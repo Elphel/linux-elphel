@@ -210,7 +210,7 @@ void tasklet_fpga_function(unsigned long arg);
 struct sensorproc_t * copy_sensorproc (int sensor_port, struct sensorproc_t * copy)
 {
 	/** copy sensor functions */
-	memcpy(copy, asensorproc[sensor_port], sizeof(struct sensorproc_t));
+	memcpy(copy, &asensorproc[sensor_port], sizeof(struct sensorproc_t));
 	return copy;
 }
 
@@ -341,9 +341,9 @@ inline void update_irq_circbuf(struct jpeg_ptr_t *jptr) {
      set_globalParam (G_FREECIRCBUF, (((get_globalParam (G_CIRCBUFRP) <= get_globalParam (G_CIRCBUFWP))? get_globalParam (G_CIRCBUFSIZE):0)+ 
                                      get_globalParam (G_CIRCBUFRP)) -    get_globalParam (G_CIRCBUFWP));*/
 	/* the concept of global parameters will be changed, use one channel only for testing */
-	set_globalParam(G_CIRCBUFWP, jptr->jpeg_wp);
-	set_globalParam (G_FREECIRCBUF, (((get_globalParam (G_CIRCBUFRP) <= get_globalParam (G_CIRCBUFWP))? get_globalParam (G_CIRCBUFSIZE):0)+
-			get_globalParam (G_CIRCBUFRP)) -    get_globalParam (G_CIRCBUFWP));
+	set_globalParam(jptr->chn_num, G_CIRCBUFWP, jptr->jpeg_wp);
+	set_globalParam (jptr->chn_num, G_FREECIRCBUF, (((get_globalParam (jptr->chn_num, G_CIRCBUFRP) <= get_globalParam (jptr->chn_num, G_CIRCBUFWP))? get_globalParam (jptr->chn_num, G_CIRCBUFSIZE):0)+
+			get_globalParam (jptr->chn_num, G_CIRCBUFRP)) -    get_globalParam (jptr->chn_num, G_CIRCBUFWP));
 }
 
 /**
@@ -421,22 +421,24 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
  * @brief Fill exif data with the current frame data, save pointer to Exif page in the interframe area
  * @param interframe pointer to interframe parameters structure
  */
-inline void updateIRQ_Exif(int sensor_port, struct interframe_params_t* interframe) {
-   int  index_time = aJPEG_wp-11[sensor_port]; if (index_time<0) index_time+=get_globalParam (sensor_port, G_CIRCBUFSIZE)>>2;
+inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr, struct interframe_params_t* interframe) {
+//   int  index_time = aJPEG_wp-11[sensor_port]; if (index_time<0) index_time+=get_globalParam (sensor_port, G_CIRCBUFSIZE)>>2;
+	int sensor_port = jptr->chn_num;
+   int  index_time = jptr->jpeg_wp - 11; if (index_time<0) index_time+=get_globalParam (sensor_port, G_CIRCBUFSIZE)>>2;
 //   struct exif_datetime_t
-//#ifdef TES_DISABLE_CODE
 /// calculates datetime([20] and subsec[7], returns  pointer to char[27]
-   char * exif_meta_time_string=encode_time(ccam_dma_buf_ptr[index_time], ccam_dma_buf_ptr[index_time+1]);
+   char time_buff[27];
+   char * exif_meta_time_string=encode_time(time_buff, ccam_dma_buf_ptr[sensor_port][index_time], ccam_dma_buf_ptr[sensor_port][index_time+1]);
 /// may be split in datetime/subsec - now it will not notice missing subseq field in template
-   write_meta_irq(exif_meta_time_string, &meta_offsets.Photo_DateTimeOriginal,  Exif_Photo_DateTimeOriginal, 27);
-   write_meta_irq(exif_meta_time_string, &meta_offsets.Image_DateTime,  Exif_Image_DateTime, 20); // may use 27 if room is provided
-   putlong_meta_irq(get_imageParamsThis(P_EXPOS), &meta_offsets.Photo_ExposureTime,  Exif_Photo_ExposureTime);
-   putlong_meta_irq(get_imageParamsThis(P_FRAME), &meta_offsets.Image_FrameNumber,   Exif_Image_FrameNumber);
+   write_meta_irq(sensor_port, exif_meta_time_string, &meta_offsets.Photo_DateTimeOriginal,  Exif_Photo_DateTimeOriginal, 27);
+   write_meta_irq(sensor_port, exif_meta_time_string, &meta_offsets.Image_DateTime,  Exif_Image_DateTime, 20); // may use 27 if room is provided
+   putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_EXPOS), &meta_offsets.Photo_ExposureTime,  Exif_Photo_ExposureTime);
+   putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_FRAME), &meta_offsets.Image_FrameNumber,   Exif_Image_FrameNumber);
 //Exif_Photo_MakerNote
-  int global_flips=(get_imageParamsThis(P_FLIPH) & 1) | ((get_imageParamsThis(P_FLIPV)<<1)  & 2);
+  int global_flips=(get_imageParamsThis(sensor_port, P_FLIPH) & 1) | ((get_imageParamsThis(sensor_port, P_FLIPV)<<1)  & 2);
   int extra_flips=0;
-  if (get_imageParamsThis(P_MULTI_MODE)!=0) {
-    extra_flips=get_imageParamsThis(P_MULTI_MODE_FLIPS);
+  if (get_imageParamsThis(sensor_port, P_MULTI_MODE)!=0) {
+    extra_flips=get_imageParamsThis(sensor_port, P_MULTI_MODE_FLIPS);
     global_flips=extra_flips & 3;
   }
 /*  unsigned char orientations[]={1,6,3,8,
@@ -449,42 +451,41 @@ inline void updateIRQ_Exif(int sensor_port, struct interframe_params_t* interfra
 
   unsigned char orientation_short[2];
   orientation_short[0]=0;
-  orientation_short[1]=0xf & orientations[(get_imageParamsThis(P_PORTRAIT)&3) | (global_flips<<2)];
-  write_meta_irq(orientation_short, &meta_offsets.Image_Orientation,   Exif_Image_Orientation, 2);
+  orientation_short[1]=0xf & orientations[(get_imageParamsThis(sensor_port, P_PORTRAIT)&3) | (global_flips<<2)];
+  write_meta_irq(sensor_port, orientation_short, &meta_offsets.Image_Orientation,   Exif_Image_Orientation, 2);
 
 //TODO - use memcpy
    int maker_offset;
-   maker_offset=putlong_meta_irq(get_imageParamsThis(P_GAINR),   &meta_offsets.Photo_MakerNote, Exif_Photo_MakerNote);
+   maker_offset=putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_GAINR),   &meta_offsets.Photo_MakerNote, Exif_Photo_MakerNote);
    if (maker_offset>0) {
-     putlong_meta_raw_irq(get_imageParamsThis(P_GAING),   maker_offset+4);
-     putlong_meta_raw_irq(get_imageParamsThis(P_GAINGB),  maker_offset+8);
-     putlong_meta_raw_irq(get_imageParamsThis(P_GAINB),   maker_offset+12);
-     putlong_meta_raw_irq(get_imageParamsThis(P_GTAB_R),  maker_offset+16);
-     putlong_meta_raw_irq(get_imageParamsThis(P_GTAB_G),  maker_offset+20);
-     putlong_meta_raw_irq(get_imageParamsThis(P_GTAB_GB), maker_offset+24);
-     putlong_meta_raw_irq(get_imageParamsThis(P_GTAB_B),  maker_offset+28);
-     putlong_meta_raw_irq(get_imageParamsThis(P_WOI_LEFT) | (get_imageParamsThis(P_WOI_WIDTH)<<16),  maker_offset+32);
-     putlong_meta_raw_irq(get_imageParamsThis(P_WOI_TOP) | (get_imageParamsThis(P_WOI_HEIGHT)<<16),  maker_offset+36);
-     putlong_meta_raw_irq(  global_flips |
-                          ((get_imageParamsThis(P_BAYER)<<2)     & 0xc) |
-                          ((get_imageParamsThis(P_COLOR)<<4)     & 0xF0) |
-                          ((get_imageParamsThis(P_DCM_HOR)<<8)   & 0xF00) |
-                          ((get_imageParamsThis(P_DCM_VERT)<<12) & 0xF000) |
-                          ((get_imageParamsThis(P_BIN_HOR)<<16)  & 0xF0000) |
-                          ((get_imageParamsThis(P_BIN_VERT)<<20) & 0xF00000) |
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GAING),   maker_offset+4);
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GAINGB),  maker_offset+8);
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GAINB),   maker_offset+12);
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GTAB_R),  maker_offset+16);
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GTAB_G),  maker_offset+20);
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GTAB_GB), maker_offset+24);
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GTAB_B),  maker_offset+28);
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_WOI_LEFT) | (get_imageParamsThis(sensor_port, P_WOI_WIDTH)<<16),  maker_offset+32);
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_WOI_TOP) | (get_imageParamsThis(sensor_port, P_WOI_HEIGHT)<<16),  maker_offset+36);
+     putlong_meta_raw_irq(sensor_port,   global_flips |
+                          ((get_imageParamsThis(sensor_port, P_BAYER)<<2)     & 0xc) |
+                          ((get_imageParamsThis(sensor_port, P_COLOR)<<4)     & 0xF0) |
+                          ((get_imageParamsThis(sensor_port, P_DCM_HOR)<<8)   & 0xF00) |
+                          ((get_imageParamsThis(sensor_port, P_DCM_VERT)<<12) & 0xF000) |
+                          ((get_imageParamsThis(sensor_port, P_BIN_HOR)<<16)  & 0xF0000) |
+                          ((get_imageParamsThis(sensor_port, P_BIN_VERT)<<20) & 0xF00000) |
                            (extra_flips <<24) ,  maker_offset+40);
-     putlong_meta_raw_irq(get_imageParamsThis(P_MULTI_HEIGHT_BLANK1),   maker_offset+44);
-     putlong_meta_raw_irq(get_imageParamsThis(P_MULTI_HEIGHT_BLANK2),   maker_offset+48);
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_MULTI_HEIGHT_BLANK1),   maker_offset+44);
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_MULTI_HEIGHT_BLANK2),   maker_offset+48);
 //     putlong_meta_raw_irq(0x1234567,  maker_offset+52); // just testing
-     putlong_meta_raw_irq(get_imageParamsThis(P_QUALITY) | ((get_imageParamsThis(P_PORTRAIT)&1)<<7) | (get_imageParamsThis(P_CORING_INDEX)<<16),  maker_offset+52);
-     putlong_meta_raw_irq(get_globalParam(G_TEMPERATURE01),  maker_offset+56); // data should be provided by a running daemon
-     putlong_meta_raw_irq(get_globalParam(G_TEMPERATURE23),  maker_offset+60);
+     putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_QUALITY) | ((get_imageParamsThis(sensor_port, P_PORTRAIT)&1)<<7) | (get_imageParamsThis(sensor_port, P_CORING_INDEX)<<16),  maker_offset+52);
+     putlong_meta_raw_irq(sensor_port, get_globalParam(sensor_port, G_TEMPERATURE01),  maker_offset+56); // data should be provided by a running daemon
+     putlong_meta_raw_irq(sensor_port, get_globalParam(sensor_port, G_TEMPERATURE23),  maker_offset+60);
 //get_globalParam(G_TASKLET_CTL)
 // left 1 long spare (+44)                          
    }
-   interframe->meta_index=store_meta();
+   interframe->meta_index=store_meta(sensor_port);
 
-//#endif /* TES_DISABLE_CODE */
 }
 
 
@@ -537,8 +538,8 @@ static irqreturn_t frame_sync_irq_handler(int irq, void *dev_id)
 {
 	struct jpeg_ptr_t *jptr = dev_id;
 
-	update_frame_pars();
-	wake_up_interruptible(&framepars_wait_queue);
+//	update_frame_pars();
+	wake_up_interruptible(&aframepars_wait_queue[jptr->chn_num]);
 //	tasklet_schedule(&tasklet_fpga);
 	tasklet_schedule(tasklets[jptr->chn_num]);
 
@@ -562,10 +563,10 @@ static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
 
 	local_irq_save(flag);
 	if (updateIRQJPEG_wp(jptr)) {
-//		update_irq_circbuf(priv);
-//		updateIRQFocus(priv);
+		update_irq_circbuf(jptr);
+		updateIRQFocus(jptr);
 		interframe = updateIRQ_interframe(jptr);
-		//updateIRQ_Exif(interframe);
+		updateIRQ_Exif(jptr, interframe);
 		wake_up_interruptible(&circbuf_wait_queue);
 	}
 	//wake_up_interruptible(&framepars_wait_queue);
@@ -606,11 +607,12 @@ For displaying histograms - try use latest available - not waiting fro a particu
 //#define HISTOGRAMS_WAKEUP_ALWAYS 0
 void tasklet_fpga_function(unsigned long arg) {
   int hist_en;
-  int tasklet_disable=get_globalParam(G_TASKLET_CTL);
-  unsigned long thisFrameNumber=getThisFrameNumber();
+  int sensor_port = image_acq_priv.jpeg_ptr[arg].chn_num;
+  int tasklet_disable=get_globalParam(sensor_port, G_TASKLET_CTL);
+  unsigned long thisFrameNumber=getThisFrameNumber(sensor_port);
   unsigned long prevFrameNumber=thisFrameNumber-1;
-  unsigned long * hash32p=&(framepars[(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]);
-  unsigned long * framep= &(framepars[(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
+  unsigned long * hash32p=&(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]);
+  unsigned long * framep= &(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
   const struct jpeg_ptr_t *jptr = &image_acq_priv.jpeg_ptr[arg];
   dma_addr_t phys_addr_start, phys_addr_end;
   void *virt_addr_start;
@@ -649,16 +651,16 @@ void tasklet_fpga_function(unsigned long arg) {
       hist_en=0;
       break;
      case TASKLET_HIST_HALF:    /// calculate each even (0,2,4,6 frme of 8)
-      hist_en= ((thisFrameNumber & 1) ==0) || (get_imageParamsPrev(P_HISTRQ) & (1<<HISTRQ_BIT_Y));
+      hist_en= ((thisFrameNumber & 1) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
       break;
      case TASKLET_HIST_QUATER:  /// calculate twice per 8 (0, 4)
-      hist_en= ((thisFrameNumber & 3) ==0) || (get_imageParamsPrev(P_HISTRQ) & (1<<HISTRQ_BIT_Y));
+      hist_en= ((thisFrameNumber & 3) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
       break;
      case TASKLET_HIST_ONCE:    /// calculate once  per 8 (0)
-      hist_en= ((thisFrameNumber & 7) ==0) || (get_imageParamsPrev(P_HISTRQ) & (1<<HISTRQ_BIT_Y));
+      hist_en= ((thisFrameNumber & 7) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
       break;
      case TASKLET_HIST_RQONLY:  /// calculate only when specifically requested
-      hist_en= (get_imageParamsPrev(P_HISTRQ) & (1<<HISTRQ_BIT_Y));
+      hist_en= (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
       break;
      case TASKLET_HIST_ALL:     /// calculate each frame
      default:                   /// calculate always (safer)
@@ -682,7 +684,7 @@ void tasklet_fpga_function(unsigned long arg) {
 #endif /* TEST_DISABLE_CODE */
 /// Process parameters 
   if ((tasklet_disable & (1 << TASKLET_CTL_PGM))   == 0) {
-      processPars (sensorproc, getThisFrameNumber(), get_globalParam(G_MAXAHEAD)); /// program parameters
+      processPars (sensor_port, sensorproc, getThisFrameNumber(sensor_port), get_globalParam(sensor_port, G_MAXAHEAD)); /// program parameters
       PROFILE_NOW(4);
   }
 #ifdef TEST_DISABLE_CODE
@@ -695,16 +697,16 @@ void tasklet_fpga_function(unsigned long arg) {
        hist_en=0;
       break;
      case TASKLET_HIST_HALF:    /// calculate each even (0,2,4,6 frme of 8)
-      hist_en= ((thisFrameNumber & 1) ==0) || (get_imageParamsPrev(P_HISTRQ) & (1<<HISTRQ_BIT_C));
+      hist_en= ((thisFrameNumber & 1) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
       break;
      case TASKLET_HIST_QUATER:  /// calculate twice per 8 (0, 4)
-      hist_en= ((thisFrameNumber & 3) ==0) || (get_imageParamsPrev(P_HISTRQ) & (1<<HISTRQ_BIT_C));
+      hist_en= ((thisFrameNumber & 3) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
       break;
      case TASKLET_HIST_ONCE:    /// calculate once  per 8 (0)
-      hist_en= ((thisFrameNumber & 7) ==0) || (get_imageParamsPrev(P_HISTRQ) & (1<<HISTRQ_BIT_C));
+      hist_en= ((thisFrameNumber & 7) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
       break;
      case TASKLET_HIST_RQONLY:  /// calculate only when specifically requested
-      hist_en= (get_imageParamsPrev(P_HISTRQ) & (1<<HISTRQ_BIT_C));
+      hist_en= (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
       break;
      case TASKLET_HIST_ALL:     /// calculate each frame
      default:                   /// calculate always (safer)

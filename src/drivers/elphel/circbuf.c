@@ -84,6 +84,8 @@ static struct device *g_dev_ptr;
 
 static const struct of_device_id elphel393_circbuf_of_match[];
 
+unsigned long *ccam_dma_buf_ptr[SENSOR_PORTS] = {NULL};
+
 /* debug code */
 //extern long long zero_counter[IMAGE_CHN_NUM];
 /* end of debug code*/
@@ -94,16 +96,16 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 	dma_addr_t dma_handle;
 	const size_t dma_size = (CCAM_DMA_SIZE + (PAGE_SIZE >> 2)) * sizeof(int);
 	struct device *dev = &pdev->dev;
-	unsigned long *ccam_dma_buf_ptr = NULL;
+	unsigned long *dma_buf_ptr = NULL;
 
 	// use Elphel_buf if it was allocated
 	if (pElphel_buf != NULL) {
-		ccam_dma_buf_ptr = pElphel_buf->vaddr;
+		dma_buf_ptr = pElphel_buf->vaddr;
 		dma_handle = pElphel_buf->paddr;
 		dev_info(dev, "using %lu bytes of DMA memory from pElphel_buf at address 0x%08x", pElphel_buf->size * PAGE_SIZE, dma_handle);
 	} else {
-		ccam_dma_buf_ptr = dmam_alloc_coherent(dev, dma_size, &dma_handle, GFP_KERNEL);
-		if (!ccam_dma_buf_ptr) {
+		dma_buf_ptr = dmam_alloc_coherent(dev, dma_size, &dma_handle, GFP_KERNEL);
+		if (!dma_buf_ptr) {
 			dev_err(dev, "unable to allocate DMA buffer\n");
 			return -ENOMEM;
 		} else {
@@ -111,12 +113,12 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 		}
 	}
 
-	// set circular buffer size in bytes
-//	set_globalParam(G_CIRCBUFSIZE, CCAM_DMA_SIZE);
-
 	for (i = 0; i < IMAGE_CHN_NUM; i++) {
-		circbuf_priv[i].buf_ptr = ccam_dma_buf_ptr + BYTE2DW(CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE);
+		circbuf_priv[i].buf_ptr = dma_buf_ptr + BYTE2DW(CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE);
 		circbuf_priv[i].phys_addr = dma_handle + CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE;
+		ccam_dma_buf_ptr[i] = circbuf_priv[i].buf_ptr;
+		// set circular buffer size in bytes
+		set_globalParam(i, G_CIRCBUFSIZE, CCAM_DMA_SIZE);
 	}
 
 	return 0;
@@ -664,7 +666,7 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 				break;
 			default:
 				if ((offset & ~0x1f)==LSEEK_DAEMON_CIRCBUF) {
-					wait_event_interruptible(circbuf_wait_queue, get_imageParamsThis(P_DAEMON_EN) & (1<<(offset & 0x1f)));
+					wait_event_interruptible(circbuf_wait_queue, get_imageParamsThis(chn, P_DAEMON_EN) & (1<<(offset & 0x1f)));
 				}
 			}
 			dev_dbg(g_dev_ptr, "[chn %u] finish SEEK_END processing; return file->f_pos = %lld\n", chn, file->f_pos);

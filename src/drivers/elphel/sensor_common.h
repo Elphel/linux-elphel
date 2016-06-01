@@ -20,7 +20,7 @@ int camseq_get_jpeg_rp(unsigned int chn);
 void camseq_set_jpeg_rp(unsigned int chn, int ptr);
 
 ///CIRCBUF macros
-extern unsigned long  * ccam_dma_buf_ptr;
+extern unsigned long  * ccam_dma_buf_ptr[SENSOR_PORTS];
 
 /* move these lines to x313_macro.h
 #define X313_LENGTH_MASK      0xff000000
@@ -33,7 +33,7 @@ extern unsigned long  * ccam_dma_buf_ptr;
 ///can be verified with if (!X313_IS_SDRAM_ON)
 void reset_compressor(unsigned int chn);
 void camera_interrupts (int on);
-struct sensorproc_t * copy_sensorproc (struct sensorproc_t * copy);
+struct sensorproc_t * copy_sensorproc (int sensor_port, struct sensorproc_t * copy);
 
 ///NOTE: If profiling is enabled (TASKLET_CTL_ENPROF is set in G_TASKLET_CTL) - save current time in 2 of the 32-bit locations that can be read as pastpars (i.e. from PHP)
 #ifdef TEST_DISABLE_CODE
