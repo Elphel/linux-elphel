@@ -25,7 +25,7 @@
  #define EDBG(x)
 #endif
 
-
+#define ROUND_UP(N, S) ((((N) + (S) - 1) / (S)) * (S))
 
 // _IOC_TYPE, bits 8 to 15 in ioctl cmd
 
@@ -234,8 +234,11 @@
 #define SENSORWIDTH_IBIS51300  1280
 #define SENSORHEIGHT_IBIS51300 1024
 /// Parameters related to multi-sensor (10359A) setup
-#define MAX_SENSORS 3 // maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
-//! Parameters below are accessed through mmap, because of cache coherency problem it make sense to keep them compact (maybe group by 8 - cache line of 32 bytes)
+//#define MAX_SENSORS 3 // maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
+/* Modified for 393 - using up to 4 sub-sensors (even as 10359 only supports 3 */
+#define MAX_SENSORS  4        // maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
+#define SENSOR_PORTS 4        // Number of sensor ports (each has individual framepars_all_t
+//! Parameters below are accessed through mmap, because of cache coherence problem it make sense to keep them compact (maybe group by 8 - cache line of 32 bytes)
 #define P_SENSOR_RUN     4 // 0 - stop, 1 - single, 2 - run
   #define SENSOR_RUN_STOP   0
   #define SENSOR_RUN_SINGLE 1
@@ -592,6 +595,13 @@
 #define P_MULTI_REGS          (P_M10359_REGS + P_M10359_NUMREGS) /// 32-words aligned
 
 #define P_MAX_PAR         (P_MULTI_REGS + (MAX_SENSORS * P_MULTI_NUMREGS )) /// maximal # of used parameter+1
+/* 393: Making P_MAX_PAR multiple of PAGE_SIZE/2, so framepars_all_t will be multiple of PAGE_SIZE*/
+#ifndef PAGE_SIZE
+	#define PAGE_SIZE 4096 // not using <asm/page.h> as this file may be used outside of kernel
+#endif
+#define P_MAX_PAR_ROUNDUP ROUND_UP (P_MAX_PAR , (PAGE_SIZE/8)) // half page in DWORDs
+
+
 #ifdef SAFE_CHECK
   #define MULTIREG(x,n) ((((n)>=0) && ((n)<MAX_SENSORS) && ((x) >0) && ((x) < P_MAX_PAR) && (multiSensIndex[x] > 0))? (multiSensIndex[x]+(n)) : 0)
 #else
@@ -602,8 +612,9 @@
 
 //#define P_MAX_PAR        511 /// maximal # of used parameter
 //#define P_MAX_GPAR      1023 // maximal # of global parameter
-#define P_MAX_GPAR      2047 /// maximal # of global parameter - TODO: change name to NUM_GPAR and make it 2048
-
+//#define P_MAX_GPAR      2047 /// maximal # of global parameter - TODO: change name to NUM_GPAR and make it 2048
+#define NUM_GPAR        2048           /// maximal # of global parameter - TODO: change name to NUM_GPAR and make it 2048
+#define P_MAX_GPAR      (NUM_GPAR - 1) /// maximal # of global parameter - TODO: change name to NUM_GPAR and make it 2048
 
 #define PARS_SAVE_FROM   128 /// PARS_SAVE_NUM parameters starting from PARS_SAVE_FROM from "this" frame will be saved in circular buffer, PASTPARS_SAVE_ENTRIES entries
 #define PARS_SAVE_COPY    16 /// number of parameters copied from future (framepars) to the past (pastpars)
@@ -617,7 +628,7 @@
 #define GLOBALS_PRESERVE   0x20     /// number of parameters that are not erased during initGlobalPars
 
 /// First 32 parameter values are not erased with initGlobalPars
-#define GLOBALPARS(x) globalPars[(x)-FRAMEPAR_GLOBALS] // should work in drivers and applications
+#define GLOBALPARS(p, x) (aglobalPars[p][(x)-FRAMEPAR_GLOBALS]) // should work in drivers and applications
 
 #define G_DEBUG         (FRAMEPAR_GLOBALS + 2) /// Each bit turns on/off some debug outputs
 #define G_TEST_CTL_BITS (FRAMEPAR_GLOBALS + 3) /// turn some features on/off in the drivers for debugging purposes
@@ -817,10 +828,14 @@
 /// when the 3-bit counter is combined with the software variable to get the full 32-bit frame number
 /// Each parameter page includes 927 parameter registers, as well as 97 bitmasks to speed up updates between frames
 /// So if no parameters are changed - nothing to be copied from page to page
-#define PARS_FRAMES                                  8      // number of frames handled in buffer
-#define PARS_FRAMES_MASK     (PARS_FRAMES-1)               // currently 7
-#define PASTPARS_SAVE_ENTRIES       (PARS_FRAMES << 8)     // 2048
-#define PASTPARS_SAVE_ENTRIES_MASK ((PARS_FRAMES << 8)-1)  // 0x7ff
+/* Modified for 393 : 16 hardware frames, aligning framepars_all_t to PAGE_SIZE*/
+#define PARS_FRAMES                                  16 //    8      // number of frames handled in buffer
+#define PARS_FRAMES_MASK     (PARS_FRAMES-1)               // currently 15t // 7
+// Keeping the same size of past frames storage as in 353:
+//#define PASTPARS_SAVE_ENTRIES       (PARS_FRAMES << 8)     // 2048
+//#define PASTPARS_SAVE_ENTRIES_MASK ((PARS_FRAMES << 8)-1)  // 0x7ff
+#define PASTPARS_SAVE_ENTRIES       (PARS_FRAMES << 7)     // 2048
+#define PASTPARS_SAVE_ENTRIES_MASK ((PARS_FRAMES << 7)-1)  // 0x7ff
 struct framepars_t {
         unsigned long pars[927];      // parameter values (indexed by P_* constants)
         unsigned long functions;      // each bit specifies function to be executed (triggered by some parameters change)
@@ -893,13 +908,14 @@ struct framepars_past_t {
     unsigned long past_pars[PARS_SAVE_NUM];
 };
 
+// size should be PAGE_SIZE aligned
 struct framepars_all_t {
     struct framepars_t      framePars[PARS_FRAMES];
     struct framepars_t      func2call;        /// func2call.pars[] - each parameter has a 32-bit mask of what pgm_function to call - other fields not used
-     unsigned long          globalPars[P_MAX_GPAR]; /// parameters that are not frame-related, their changes do not initiate any actions so they can be mmaped for both R/W
+     unsigned long          globalPars[NUM_GPAR];                  /// parameters that are not frame-related, their changes do not initiate any actions so they can be mmaped for both R/W
     struct framepars_past_t pastPars [PASTPARS_SAVE_ENTRIES];
-     unsigned long          multiSensIndex[P_MAX_PAR];     /// indexes of individual sensor register shadows (first of 3) - now for all parameters, not just sensor ones
-     unsigned long          multiSensRvrsIndex[P_MAX_PAR]; /// reverse index (to parent) for the multiSensIndex in lower 16 bits, high 16 bits - sensor number
+     unsigned long          multiSensIndex[P_MAX_PAR_ROUNDUP];     /// indexes of individual sensor register shadows (first of 3) - now for all parameters, not just sensor ones
+     unsigned long          multiSensRvrsIndex[P_MAX_PAR_ROUNDUP]; /// reverse index (to parent) for the multiSensIndex in lower 16 bits, high 16 bits - sensor number
 };
 
 struct frameparspair_t {
@@ -1773,7 +1789,7 @@ struct gamma_stuct_t {
 #define HISTOGRAM_TABLE_OFFSET 52 /// Histogram tables data starts 44 bytes from the histogram page structure (for PHP raw histogram)
 ///TODO: Update when histogram_stuct_t is changed
 struct histogram_stuct_t {
-   unsigned long frame;                /// frame number correspoding to the current histogram
+   unsigned long frame;                /// frame number corresponding to the current histogram
 /// Color gains for the frame of the histogram
    union {
        unsigned long gains[4];

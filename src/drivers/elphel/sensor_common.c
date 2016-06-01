@@ -71,7 +71,7 @@
 #include "sensor_common.h"
 //#include "pgm_functions.h"
 #include "circbuf.h"
-//#include "exif353.h"
+#include "exif393.h"
 //#include "histograms.h"
 //#include "gamma_tables.h"
 #include "quantization_tables.h"
@@ -193,8 +193,8 @@ void camseq_set_jpeg_rp(unsigned int chn, int ptr)
 */
 
 static const struct of_device_id elphel393_sensor_of_match[];
-static struct sensorproc_t s_sensorproc; // sensor parameters and functions to call
-struct sensorproc_t * sensorproc = NULL;
+static struct sensorproc_t as_sensorproc[SENSOR_PORTS]; // sensor parameters and functions to call
+struct sensorproc_t * asensorproc = NULL;
 //EXPORT_SYMBOL_GPL(sensorproc);
 //wait_queue_head_t image_acq_wait_queue;  /// queue for the sensor frame interrupts
 
@@ -207,10 +207,10 @@ void tasklet_fpga_function(unsigned long arg);
  * @param[in]   copy   pointer to a copy structure
  * @return      pointer to a \b copy structure
  */
-struct sensorproc_t * copy_sensorproc (struct sensorproc_t * copy)
+struct sensorproc_t * copy_sensorproc (int sensor_port, struct sensorproc_t * copy)
 {
 	/** copy sensor functions */
-	memcpy(copy, sensorproc, sizeof(struct sensorproc_t));
+	memcpy(copy, asensorproc[sensor_port], sizeof(struct sensorproc_t));
 	return copy;
 }
 
@@ -228,7 +228,7 @@ struct sensorproc_t * copy_sensorproc (struct sensorproc_t * copy)
 ///#define CCAM_VSYNC_ON  port_csp0_addr[X313_WA_DCR1]=X353_DCR1(BLOCKVSYNC,0)
 ///#define CCAM_VSYNC_OFF port_csp0_addr[X313_WA_DCR1]=X353_DCR1(BLOCKVSYNC,1)
 ///
-int init_acq_sensor(void);
+int init_acq_sensor(void); // Never used?
 
 //DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); /// 0 - no arguments for now
 DECLARE_TASKLET(tasklet_fpga_0, tasklet_fpga_function, 0); /// 0 - no arguments for now
@@ -355,6 +355,8 @@ inline void updateIRQFocus(struct jpeg_ptr_t *jptr)
     //set_globalParam     (G_GFOCUS_VALUE, X313_HIGHFREQ);
     //set_imageParamsThis (P_FOCUS_VALUE, X313_HIGHFREQ);
 	u32 high_freq = x393_cmprs_hifreq(jptr->chn_num);
+    set_globalParam     (jptr->chn_num, G_GFOCUS_VALUE, high_freq);
+    set_imageParamsThis (jptr->chn_num, P_FOCUS_VALUE, high_freq);
 }
 
 inline static void set_default_interframe(struct interframe_params_t *params)
@@ -404,7 +406,7 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 	set_default_interframe(interframe);
 	/* end of debug code */
 
-//	set_globalParam(G_FRAME_SIZE, jpeg_len);
+	set_globalParam(jptr->chn_num, G_FRAME_SIZE, jpeg_len);
 
 	// invalidate CPU L1 and L2 caches (in this order)
 	phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(frame_params_offset);
@@ -419,9 +421,10 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
  * @brief Fill exif data with the current frame data, save pointer to Exif page in the interframe area
  * @param interframe pointer to interframe parameters structure
  */
-inline void updateIRQ_Exif(struct interframe_params_t* interframe) {
-   int  index_time = JPEG_wp-11; if (index_time<0) index_time+=get_globalParam (G_CIRCBUFSIZE)>>2;
-#ifdef TES_DISABLE_CODE
+inline void updateIRQ_Exif(int sensor_port, struct interframe_params_t* interframe) {
+   int  index_time = aJPEG_wp-11[sensor_port]; if (index_time<0) index_time+=get_globalParam (sensor_port, G_CIRCBUFSIZE)>>2;
+//   struct exif_datetime_t
+//#ifdef TES_DISABLE_CODE
 /// calculates datetime([20] and subsec[7], returns  pointer to char[27]
    char * exif_meta_time_string=encode_time(ccam_dma_buf_ptr[index_time], ccam_dma_buf_ptr[index_time+1]);
 /// may be split in datetime/subsec - now it will not notice missing subseq field in template
@@ -481,7 +484,7 @@ inline void updateIRQ_Exif(struct interframe_params_t* interframe) {
    }
    interframe->meta_index=store_meta();
 
-#endif /* TES_DISABLE_CODE */
+//#endif /* TES_DISABLE_CODE */
 }
 
 
@@ -810,7 +813,7 @@ int image_acq_init(struct platform_device *pdev)
 	if (!match)
 		return -EINVAL;*/
 
-	sensorproc= &s_sensorproc;
+	asensorproc= &as_sensorproc[0];
 	//MDD1(printk("sensorproc=0x%x\n",(int) sensorproc));
 	dev_dbg(dev, "sensorproc address: 0x%x\n", (int)sensorproc);
 
