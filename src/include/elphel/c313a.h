@@ -4,7 +4,7 @@
  */
 
 #ifndef _ASM_CMOSCAM_H
-#define _ASM_CMOSCAM_HPARS_FRAMES
+#define _ASM_CMOSCAM_H
 #define SAFE_CHECK  1 // perform more verification on the paremeters
 //#define ELPHEL_DEBUG 0 //global debug on/off in multiple files
 //#define ELPHEL_DEBUG_STARTUP 000a4c00 ; 

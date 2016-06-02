@@ -176,12 +176,24 @@ ssize_t minor_file_size(int minor) { //return current file size for different mi
 }
 ssize_t minor_max_size(int minor) { //return max file size for different minors
 	switch (minor) {
-	case X3X3_EXIF_TEMPLATE: return MAX_EXIF_SIZE;
-	case X3X3_EXIF_EXIF:     return MAX_EXIF_SIZE * (MAX_EXIF_FRAMES+1);
-	case X3X3_EXIF_META:     return MAX_EXIF_SIZE;
-	case X3X3_EXIF_METADIR:  return MAX_EXIF_FIELDS * sizeof(struct exif_dir_table_t);
-	case X3X3_EXIF_TIME:     return sizeof(struct exif_time_t);
-	default:return 0;
+	case X3X3_EXIF_TEMPLATE:
+		return MAX_EXIF_SIZE;
+	case X3X3_EXIF_EXIF_CHN_0:
+	case X3X3_EXIF_EXIF_CHN_1:
+	case X3X3_EXIF_EXIF_CHN_2:
+	case X3X3_EXIF_EXIF_CHN_3:
+		return MAX_EXIF_SIZE * (MAX_EXIF_FRAMES+1);
+	case X3X3_EXIF_META_CHN_0:
+	case X3X3_EXIF_META_CHN_1:
+	case X3X3_EXIF_META_CHN_2:
+	case X3X3_EXIF_META_CHN_3:
+		return MAX_EXIF_SIZE;
+	case X3X3_EXIF_METADIR:
+		return MAX_EXIF_FIELDS * sizeof(struct exif_dir_table_t);
+	case X3X3_EXIF_TIME:
+		return sizeof(struct exif_time_t);
+	default:
+		return 0;
 	}
 }
 void exif_invalidate(void) { // 393: OK, only invalidates all ayt once
@@ -231,6 +243,7 @@ int exif_rebuild_chn(int sensor_port, int frames) {
 		return -1;
 	}
 	memset(meta_buffer, 0, aexif_meta_size[sensor_port] * (MAX_EXIF_FRAMES+1));
+	ameta_buffer[sensor_port] = meta_buffer;
 	aexif_valid[sensor_port]  = 1;
 	return 0;
 }
@@ -507,7 +520,6 @@ static loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
 	int maxsize=minor_max_size(p);
 	//   int sensor_port;
 	int fp;
-
 	switch (orig) {
 	case SEEK_SET:
 		file->f_pos = offset;
@@ -539,44 +551,44 @@ static loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
 				default:return -EINVAL;
 				}
 				break;
-				case X3X3_EXIF_EXIF_CHN_0:
-				case X3X3_EXIF_EXIF_CHN_1:
-				case X3X3_EXIF_EXIF_CHN_2:
-				case X3X3_EXIF_EXIF_CHN_3:
-					//            sensor_port = p - X3X3_EXIF_EXIF_CHN_0;
-					if (offset > MAX_EXIF_FRAMES) return -EOVERFLOW; //larger than buffer
-					//            file->f_pos=exif_meta_size * offset;
-					file->f_pos=exif_template_size * offset;
+			case X3X3_EXIF_EXIF_CHN_0:
+			case X3X3_EXIF_EXIF_CHN_1:
+			case X3X3_EXIF_EXIF_CHN_2:
+			case X3X3_EXIF_EXIF_CHN_3:
+				//            sensor_port = p - X3X3_EXIF_EXIF_CHN_0;
+				if (offset > MAX_EXIF_FRAMES) return -EOVERFLOW; //larger than buffer
+				//            file->f_pos=exif_meta_size * offset;
+				file->f_pos=exif_template_size * offset;
+				break;
+			case X3X3_EXIF_META: // iterate
+				fp= dir_find_tag (offset);
+				if (fp < 0) return -EOVERFLOW; // tag is not in the directory
+				file->f_pos=fp;
+				break;
+			case X3X3_EXIF_META_CHN_0:
+			case X3X3_EXIF_META_CHN_1:
+			case X3X3_EXIF_META_CHN_2:
+			case X3X3_EXIF_META_CHN_3:
+				file->f_pos=offset*sizeof(struct exif_dir_table_t);
+				break;
+			case X3X3_EXIF_TIME:
+				switch (offset) {
+				case EXIF_LSEEK_TOMORROW_DATE:
+					file->f_pos=exif_time.tomorrow_date - ((char *) &exif_time);
 					break;
-				case X3X3_EXIF_META: // iterate
-					fp= dir_find_tag (offset);
-					if (fp < 0) return -EOVERFLOW; // tag is not in the directory
-					file->f_pos=fp;
+				case EXIF_LSEEK_TOMORROW_SEC:
+					file->f_pos=((char *) &exif_time.tomorrow_sec) - ((char *) &exif_time);
 					break;
-				case X3X3_EXIF_META_CHN_0:
-				case X3X3_EXIF_META_CHN_1:
-				case X3X3_EXIF_META_CHN_2:
-				case X3X3_EXIF_META_CHN_3:
-					file->f_pos=offset*sizeof(struct exif_dir_table_t);
+				case EXIF_LSEEK_TODAY_DATE:
+					file->f_pos=exif_time.today_date - ((char *) &exif_time);
 					break;
-				case X3X3_EXIF_TIME:
-					switch (offset) {
-					case EXIF_LSEEK_TOMORROW_DATE:
-						file->f_pos=exif_time.tomorrow_date - ((char *) &exif_time);
-						break;
-					case EXIF_LSEEK_TOMORROW_SEC:
-						file->f_pos=((char *) &exif_time.tomorrow_sec) - ((char *) &exif_time);
-						break;
-					case EXIF_LSEEK_TODAY_DATE:
-						file->f_pos=exif_time.today_date - ((char *) &exif_time);
-						break;
-					case EXIF_LSEEK_TODAY_SEC:
-						file->f_pos=((char *) &exif_time.today_sec) - ((char *) &exif_time);
-						break;
-					default:return -EINVAL;
-					}
+				case EXIF_LSEEK_TODAY_SEC:
+					file->f_pos=((char *) &exif_time.today_sec) - ((char *) &exif_time);
 					break;
-					default:return -EINVAL;
+				default:return -EINVAL;
+				}
+				break;
+				default:return -EINVAL;
 			}
 		}
 		break;
