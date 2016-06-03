@@ -117,13 +117,13 @@ struct jpeg_ptr_t {
  */
 struct image_acq_pd_t {
 	int minor;
-	struct jpeg_ptr_t jpeg_ptr[IMAGE_CHN_NUM];
+	struct jpeg_ptr_t jpeg_ptr[SENSOR_PORTS];
 };
 /* debug code follows */
-long long zero_counter[IMAGE_CHN_NUM] = {0};
-long long corrected_offset[IMAGE_CHN_NUM] = {0};
-long long frame_counter[IMAGE_CHN_NUM] = {0};
-long long frame_pos[IMAGE_CHN_NUM][1000] = {0};
+long long zero_counter[SENSOR_PORTS] = {0};
+long long corrected_offset[SENSOR_PORTS] = {0};
+long long frame_counter[SENSOR_PORTS] = {0};
+long long frame_pos[SENSOR_PORTS][1000] = {0};
 long long get_zero_counter(unsigned int chn)
 {
 	return zero_counter[chn];
@@ -138,7 +138,7 @@ long long get_frame_counter(unsigned int chn)
 }
 long long get_frame_pos(unsigned int chn, unsigned int pos)
 {
-	if (chn < IMAGE_CHN_NUM && pos < 1000)
+	if (chn < SENSOR_PORTS && pos < 1000)
 		return frame_pos[chn][pos];
 	return 0;
 }
@@ -174,17 +174,17 @@ void camSeqSetJPEG_rp(int p) {
 
 int camseq_get_jpeg_wp(unsigned int chn)
 {
-	return (chn < IMAGE_CHN_NUM) ? image_acq_priv.jpeg_ptr[chn].jpeg_wp : 0;
+	return (chn < SENSOR_PORTS) ? image_acq_priv.jpeg_ptr[chn].jpeg_wp : 0;
 }
 
 int camseq_get_jpeg_rp(unsigned int chn)
 {
-	return (chn < IMAGE_CHN_NUM) ? image_acq_priv.jpeg_ptr[chn].jpeg_rp : 0;
+	return (chn < SENSOR_PORTS) ? image_acq_priv.jpeg_ptr[chn].jpeg_rp : 0;
 }
 
 void camseq_set_jpeg_rp(unsigned int chn, int ptr)
 {
-	if (chn < IMAGE_CHN_NUM) {
+	if (chn < SENSOR_PORTS) {
 		image_acq_priv.jpeg_ptr[chn].jpeg_rp = ptr;
 	}
 }
@@ -236,7 +236,7 @@ DECLARE_TASKLET(tasklet_fpga_0, tasklet_fpga_function, 0); /// 0 - no arguments 
 DECLARE_TASKLET(tasklet_fpga_1, tasklet_fpga_function, 1); /// 0 - no arguments for now
 DECLARE_TASKLET(tasklet_fpga_2, tasklet_fpga_function, 2); /// 0 - no arguments for now
 DECLARE_TASKLET(tasklet_fpga_3, tasklet_fpga_function, 3); /// 0 - no arguments for now
-static struct tasklet_struct *tasklets[IMAGE_CHN_NUM] = {&tasklet_fpga_0, &tasklet_fpga_1, &tasklet_fpga_2, &tasklet_fpga_3};
+static struct tasklet_struct *tasklets[SENSOR_PORTS] = {&tasklet_fpga_0, &tasklet_fpga_1, &tasklet_fpga_2, &tasklet_fpga_3};
 
 
 /**
@@ -788,7 +788,7 @@ void camera_interrupts (int on) {
 #endif /* TEST_DISABLE_CODE */
 
 	irq_ctrl.interrupt_cmd = on ? IRQ_ENABLE : IRQ_DISABLE;
-	for (i = 0; i < IMAGE_CHN_NUM; i++) {
+	for (i = 0; i < SENSOR_PORTS; i++) {
 		x393_cmprs_interrupts(irq_ctrl, i);
 	}
 }
@@ -820,7 +820,7 @@ int image_acq_init(struct platform_device *pdev)
 	//MDD1(printk("sensorproc=0x%x\n",(int) sensorproc));
 	dev_dbg(dev, "sensorproc address: 0x%x\n", (int)sensorproc);
 
-	for (i = 0; i < IMAGE_CHN_NUM; i++) {
+	for (i = 0; i < SENSOR_PORTS; i++) {
 		irq = platform_get_irq_byname(pdev, frame_sync_irq_names[i]);
 		if (request_irq(irq,
 				frame_sync_irq_handler,
@@ -866,7 +866,7 @@ int image_acq_init(struct platform_device *pdev)
 
 	dev_dbg(dev, "Elphel FPGA interrupts initialized\n");
 	dev_dbg(dev, "reset all compressors\n");
-	for (i = 0; i < IMAGE_CHN_NUM; i++) {
+	for (i = 0; i < SENSOR_PORTS; i++) {
 		reset_compressor(i);
 	}
 	//reset_compressor(); /// reset compressor and buffer pointers

@@ -77,7 +77,7 @@
 /** Wait queue for the processes waiting for a new frame to appear in the circular buffer */
 wait_queue_head_t circbuf_wait_queue;
 
-struct circbuf_priv_t circbuf_priv[IMAGE_CHN_NUM];
+struct circbuf_priv_t circbuf_priv[SENSOR_PORTS];
 struct circbuf_priv_t *circbuf_priv_ptr = circbuf_priv;
 
 static struct device *g_dev_ptr;
@@ -113,7 +113,7 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 		}
 	}
 
-	for (i = 0; i < IMAGE_CHN_NUM; i++) {
+	for (i = 0; i < SENSOR_PORTS; i++) {
 		circbuf_priv[i].buf_ptr = dma_buf_ptr + BYTE2DW(CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE);
 		circbuf_priv[i].phys_addr = dma_handle + CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE;
 		ccam_dma_buf_ptr[i] = circbuf_priv[i].buf_ptr;
@@ -525,7 +525,7 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 			{
 				int s;
 				dev_dbg(g_dev_ptr, "stopping all compressors, current channel %d, fvld = %d, file->f_pos = 0x%llx\n", chn, fvld, file->f_pos);
-				for (s = 0; s < IMAGE_CHN_NUM; s++)
+				for (s = 0; s < SENSOR_PORTS; s++)
 					stop_compressor(s);
 				dump_state(chn);
 			}
@@ -731,7 +731,7 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 		}
 		break;
 	case 4:
-		for (i = 0; i < IMAGE_CHN_NUM; i++)
+		for (i = 0; i < SENSOR_PORTS; i++)
 			stop_compressor(i);
 		dump_state(chn);
 		break;
@@ -740,7 +740,7 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 		{
 		int j, cntr;
 		long long res;
-		for (i = 0; i < IMAGE_CHN_NUM; i++) {
+		for (i = 0; i < SENSOR_PORTS; i++) {
 			cntr = get_zero_counter(i);
 			printk(KERN_DEBUG "channel = %d, hw pointer = 0x%x, zero_counter = %d, corrected_offset = %d, frame_counter = %lld\n",
 					i, DW2BYTE(camseq_get_jpeg_wp(i)), cntr, get_corrected_offset(i), get_frame_counter(i));

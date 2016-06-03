@@ -90,7 +90,7 @@ static struct jpeghead_priv_t {
 	unsigned int             fpga_programmed;
 	unsigned long            jpeg_h_sz;  /// JPEG header size (no Exif)
 	unsigned char            header[JPEG_HEADER_MAXSIZE];
-} jpeghead_priv[IMAGE_CHN_NUM];
+} jpeghead_priv[SENSOR_PORTS];
 
 #define HEADER_COPY_SOF(x) {buf[bpl] = sizeof( x ) + 8; \
                             buf[bp++] = sizeof( x ) / 3; \
@@ -748,7 +748,7 @@ int jpeghead_init(struct platform_device *pdev)
 	int i;
 
 	g_dev_ptr = &pdev->dev;
-	for (i = 0; i < IMAGE_CHN_NUM; i++) {
+	for (i = 0; i < SENSOR_PORTS; i++) {
 		jpeghead_priv[i].fpga_programmed = 0;
 		jpeg_htable_init(i);
 	}
@@ -759,7 +759,7 @@ int jpeghead_init(struct platform_device *pdev)
 	if (get_cache_policy() == COMMON_CACHE) {
 		reset_qtables(0);
 	} else if (get_cache_policy() == PER_CHN_CACHE) {
-		for (i = 0; i < IMAGE_CHN_NUM; i++)
+		for (i = 0; i < SENSOR_PORTS; i++)
 			reset_qtables(i);
 	}
 

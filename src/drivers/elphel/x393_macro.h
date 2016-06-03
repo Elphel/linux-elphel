@@ -7,9 +7,6 @@
 
 #include <elphel/driver_numbers.h>
 
-/** @brief Number of image channels */
-#define IMAGE_CHN_NUM        4
-
 /** @brief Resolution of current/OEF pointer in bits */
 #define OFFSET256_CNTR_RES   26
 
@@ -62,7 +59,7 @@ static inline unsigned int minor_to_chn(unsigned int minor, unsigned int *dev_ty
 		else
 			*dev_type = 0;
 	}
-	if ((minor & 0x0f) < IMAGE_CHN_NUM)
+	if ((minor & 0x0f) < SENSOR_PORTS)
 		return minor & 0x0f;
 	else
 		return 0;
