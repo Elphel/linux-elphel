@@ -61,11 +61,10 @@ struct exif_dir_table_t {
 #define  Exif_Image_Software           0x00131
 #define  Exif_Image_DateTime           0x00132
 #define  Exif_Image_Artist             0x0013b
-#define  Exif_Image_HostComputer       0x0013c
+#define  Exif_Image_CameraSerialNumber 0x0c62f
 #define  Exif_Image_Orientation        0x00112
-// hack, reusing field to keep it protected
-#define  Exif_Image_IPTCNAA            0x083bb
-#define  Exif_Image_FrameNumber        0x083bb
+// used for frame number as defined in Exif specification
+#define  Exif_Image_ImageNumber        0x09211
 // used for sensor number
 #define  Exif_Image_PageNumber         0x00129
 
@@ -178,7 +177,7 @@ struct meta_CompassInfo_t {
 #define  Exif_GPSInfo_CompassPitch_Index        0x10
 #define  Exif_GPSInfo_CompassRollRef_Index      0x11
 #define  Exif_GPSInfo_CompassRoll_Index         0x12
-#define  Exif_Image_FrameNumber_Index           0x13
+#define  Exif_Image_ImageNumber_Index           0x13
 #define  Exif_Image_Orientation_Index           0x14
 #define  Exif_Image_PageNumber_Index            0x15
 #define  Exif_Photo_MakerNote_Index             0x16

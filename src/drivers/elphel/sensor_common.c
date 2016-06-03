@@ -153,7 +153,7 @@ static struct meta_offsets_t { // works like a cache to time save on looking for
 	int Image_DateTime;          // will have offset of the Exif_Image_DateTime data in meta page (Exif_Photo_SubSecTime should go immediately after in meta page)
 	int Photo_DateTimeOriginal;
 	int Photo_ExposureTime;
-	int Image_FrameNumber;
+	int Image_ImageNumber;
 	int Image_Orientation;
 	int Photo_MakerNote;
 	int PageNumber;
@@ -434,7 +434,7 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr, struct interframe_params_t* 
 	write_meta_irq(sensor_port, exif_meta_time_string, &meta_offsets.Photo_DateTimeOriginal,  Exif_Photo_DateTimeOriginal, 27);
 	write_meta_irq(sensor_port, exif_meta_time_string, &meta_offsets.Image_DateTime,  Exif_Image_DateTime, 20); // may use 27 if room is provided
 	putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_EXPOS), &meta_offsets.Photo_ExposureTime,  Exif_Photo_ExposureTime);
-	putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_FRAME), &meta_offsets.Image_FrameNumber,   Exif_Image_FrameNumber);
+	putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_FRAME), &meta_offsets.Image_ImageNumber,   Exif_Image_ImageNumber);
 	//Exif_Photo_MakerNote
 	int global_flips=(get_imageParamsThis(sensor_port, P_FLIPH) & 1) | ((get_imageParamsThis(sensor_port, P_FLIPV)<<1)  & 2);
 	int extra_flips=0;
