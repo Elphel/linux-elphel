@@ -1527,7 +1527,7 @@ struct p_names_t {
 /*  For past compatibility, CCMA_DMA_SIZE...
 */
 //#define CCAM_DMA_SIZE CCAM_WORDS_PER_DMABUF
-#define CCAM_DMA_SIZE   0x1000000
+#define CCAM_DMA_SIZE   0x4000000
 #define CIRCBUF_START_OFFSET 0x100000
 
 /*
