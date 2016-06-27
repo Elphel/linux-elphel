@@ -21,7 +21,7 @@
  * -----------------------------------------------------------------------------**
  */
 
-#define DEBUG 1
+//#define DEBUG 1
 #include <linux/device.h>
 
 #include <linux/module.h>
