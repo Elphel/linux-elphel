@@ -61,11 +61,12 @@ struct exif_dir_table_t {
 #define  Exif_Image_Software           0x00131
 #define  Exif_Image_DateTime           0x00132
 #define  Exif_Image_Artist             0x0013b
-#define  Exif_Image_HostComputer       0x0013c
+#define  Exif_Image_CameraSerialNumber 0x0c62f
 #define  Exif_Image_Orientation        0x00112
-// hack, reusing field to keep it protected
-#define  Exif_Image_IPTCNAA            0x083bb
-#define  Exif_Image_FrameNumber        0x083bb
+// used for frame number as defined in Exif specification
+#define  Exif_Image_ImageNumber        0x09211
+// used for sensor number
+#define  Exif_Image_PageNumber         0x00129
 
 #define  Exif_Image_ExifTag            0x08769
 #define  Exif_Image_GPSTag             0x08825
@@ -176,15 +177,34 @@ struct meta_CompassInfo_t {
 #define  Exif_GPSInfo_CompassPitch_Index        0x10
 #define  Exif_GPSInfo_CompassRollRef_Index      0x11
 #define  Exif_GPSInfo_CompassRoll_Index         0x12
-#define  Exif_Image_FrameNumber_Index           0x13
+#define  Exif_Image_ImageNumber_Index           0x13
 #define  Exif_Image_Orientation_Index           0x14
-#define  Exif_Photo_MakerNote_Index             0x15
+#define  Exif_Image_PageNumber_Index            0x15
+#define  Exif_Photo_MakerNote_Index             0x16
 /// update ExifKmlNumber to be total number of *_Index entries
 #define  ExifKmlNumber                          Exif_Photo_MakerNote_Index+1
 
-
-#define EXIF_DEV_NAME "/dev/exif_exif"
+//#define EXIF_DEV_NAME "/dev/exif_exif"
 #define EXIFDIR_DEV_NAME "/dev/exif_metadir"
-#define EXIFMETA_DEV_NAME "/dev/exif_meta"
+//#define EXIFMETA_DEV_NAME "/dev/exif_meta"
 
-#endif
+/**
+ * @brief This macro is used to construct file names in user space applications. Example
+ * of usage: <e>const char *exif_file_names[SENSOR_PORTS] = { EXIF_DEV_NAMES };</e>. Then the
+ * sensor port number can be used to access file name.
+ */
+#define EXIF_DEV_NAMES		"/dev/exif_exif0", \
+							"/dev/exif_exif1", \
+							"/dev/exif_exif2", \
+							"/dev/exif_exif3"
+/**
+ * @brief This macro is used to construct file names in user space applications. Example
+ * of usage: <e>const char *exifmeta_file_names[SENSOR_PORTS] = { EXIFMETA_DEV_NAMES };</e>. Then
+ * the sensor port number can be used to access file name.
+ */
+#define EXIFMETA_DEV_NAMES	"/dev/exif_meta0", \
+							"/dev/exif_meta1", \
+							"/dev/exif_meta2", \
+							"/dev/exif_meta3"
+
+#endif /* _ASM_EXIF_H */

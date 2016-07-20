@@ -78,7 +78,7 @@
 /** @brief Total number of quantization table pairs */
 #define FPGA_NQTAB           8
 #define CORING_SIZE          32 // longs
-#define QTABLE_SETS_NUM      (IMAGE_CHN_NUM + 1)
+#define QTABLE_SETS_NUM      (SENSOR_PORTS + 1)
 #define COMMON_CACHE_INDEX   0
 
 

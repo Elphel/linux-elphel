@@ -38,10 +38,12 @@
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
 
-
-#define GPIO_CHIP1_ADDR 0x20
-#define GPIO_CHIP2_ADDR 0x21
-#define LTC3589_ADDR    0x34
+/* PCA6408As */
+#define GPIO_CHIP1_ADDR    0x20
+#define GPIO_CHIP2_ADDR    0x21
+/* PCA9571 on 10389, high 4 pins are NC */
+#define GPIO_10389_U4_ADDR 0x25
+#define LTC3589_ADDR       0x34
 
 /* TODO: set resistors in device tree to accommodate different revisions ( elphel393_pwr,vp15_r1 = <357000>)*/
 #define VP15_R1       357000
@@ -61,6 +63,7 @@
 #define REF_VAR_STEP_TENTH_MV  125
 #define DEAFULT_TIMEOUT        300 /* number of retries testing pgood before giving up */
 
+static DEFINE_MUTEX(gpio_10389_lock);
 
 struct pwr_gpio_t {
 	const char * label;
@@ -70,9 +73,9 @@ struct pwr_gpio_t {
 };
 
 struct elphel393_pwr_data_t {
-	int chip_i2c_addr[3];
+	int chip_i2c_addr[4];
 	struct device * ltc3489_dev;
-	struct pwr_gpio_t pwr_gpio [16];
+	struct pwr_gpio_t pwr_gpio [24];
 	int simulate; /* do not perform actual i2c writes */
 	struct mutex lock;
 	int pgoot_timeout;
@@ -203,7 +206,7 @@ static struct voltage_reg_t voltage_reg[]={
 		},
 }; 
 
-static struct pwr_gpio_t pwr_gpio[16]={
+static struct pwr_gpio_t pwr_gpio[24]={
 /* 0x20: */
 		{"PWR_MGB1",    0, 0, 0}, /* 1.8V margining magnitude (0 - 5%, 1 - 10%, float - 15%) */
 		{"PWR_MG1",     1, 0, 0}, /* 1.8V margining enable 0 - negative margining, 1 - positive margining, float - no margining */
@@ -221,8 +224,19 @@ static struct pwr_gpio_t pwr_gpio[16]={
 		{ NULL,        12, 0, 0}, /* Not connected */
 		{ NULL,        13, 0, 0}, /* Not connected */
 		{"MGTAVTTGOOD",14, 0, 0}, /*  (input) 1.2V linear regulator status (generated from 1.8V) */
-		{"PGOOD18",    15, 0, 0} /*  (input). Combines other voltages, can be monitored when DIS_POR is activated */
+		{"PGOOD18",    15, 0, 0}, /*  (input). Combines other voltages, can be monitored when DIS_POR is activated */
+/* 0x25: */
+		{ "FAN_CTL",   16, 1, 0}, /* Fan Control, 1 - on, 0 - off */
+		{ "DAS_DSS",   17, 1, 0}, /* ? */
+		{ "DEVSLP",    18, 1, 0}, /* ? */
+		{ "EPGMA",     19, 1, 0}, /* ? */
+		{ NULL,        20, 1, 0}, /* Not connected */
+		{ NULL,        21, 1, 0}, /* Not connected */
+		{ NULL,        22, 1, 0}, /* Not connected */
+		{ NULL,        23, 1, 0}  /* Not connected */
 };
+
+static struct device * shutdown_dev;
 
 static int make_group (struct device *dev, const char * name,
 		ssize_t (*show)(struct device *dev, struct device_attribute *attr,
@@ -250,7 +264,11 @@ static ssize_t pgood_show(struct device *dev, struct device_attribute *attr, cha
 static ssize_t pbad_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t enable_por_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t enable_por_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+static ssize_t gpio_10389_get(struct device *dev, struct device_attribute *attr, char *buf);
+static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr, char *buf, size_t count);
+static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, char *buf, size_t count);
 
+static int gpio_shutdown(struct device *dev);
 static int por_ctrl(struct device *dev, int disable_por);
 static int get_and_disable_por(struct device *dev, int chn_bits, int * old_dis_por);
 static int reenable_por(struct device *dev);
@@ -270,6 +288,7 @@ static int get_enable(struct device *dev, int chn);
 static int set_enable(struct device *dev, int chn, int enable);
 static int get_pgood(struct device *dev, int chn);
 
+int gpio_10389_ctrl(struct device *dev, int value);
 
 /*
  Voltages:
@@ -290,15 +309,31 @@ static int get_pgood(struct device *dev, int chn);
  */
 
 /* root directory */
-static DEVICE_ATTR(simulate,    SYSFS_PERMISSIONS,                     simulate_show,       simulate_store);
+static DEVICE_ATTR(simulate,     SYSFS_PERMISSIONS,                     simulate_show,       simulate_store);
 static DEVICE_ATTR(output_state, SYSFS_PERMISSIONS & SYSFS_READONLY,    outputs_all_show,    NULL);
-static DEVICE_ATTR(configs,     SYSFS_PERMISSIONS & SYSFS_READONLY,    configs_all_show,    NULL);
+static DEVICE_ATTR(configs,      SYSFS_PERMISSIONS & SYSFS_READONLY,    configs_all_show,    NULL);
 
-static DEVICE_ATTR(channels_en, SYSFS_PERMISSIONS,                     channels_en_show,    channels_en_store);
-static DEVICE_ATTR(channels_dis,SYSFS_PERMISSIONS,                     channels_dis_show,   channels_dis_store);
-static DEVICE_ATTR(power_good,  SYSFS_PERMISSIONS & SYSFS_READONLY,    pgood_show,          NULL);
-static DEVICE_ATTR(power_bad,   SYSFS_PERMISSIONS & SYSFS_READONLY,    pbad_show,           NULL);
-static DEVICE_ATTR(enable_por,  SYSFS_PERMISSIONS,                     enable_por_show,     enable_por_store);
+static DEVICE_ATTR(channels_en,  SYSFS_PERMISSIONS,                     channels_en_show,    channels_en_store);
+static DEVICE_ATTR(channels_dis, SYSFS_PERMISSIONS,                     channels_dis_show,   channels_dis_store);
+static DEVICE_ATTR(power_good,   SYSFS_PERMISSIONS & SYSFS_READONLY,    pgood_show,          NULL);
+static DEVICE_ATTR(power_bad,    SYSFS_PERMISSIONS & SYSFS_READONLY,    pbad_show,           NULL);
+static DEVICE_ATTR(enable_por,   SYSFS_PERMISSIONS,                     enable_por_show,     enable_por_store);
+/*
+ * Performs power off whtough CHIP2 P0
+ * examples:
+ *  1. echo "anything" > power_off - immediate shutdown
+ *  2. shutdown -hP now - civilized shutdown
+ */
+static DEVICE_ATTR(power_off,    SYSFS_PERMISSIONS                 ,    NULL,                gpio_poweroff);
+/*
+ * input is hex, set all outputs at once with a mask, 8xMSB - enable mask, 8xLSB - pin values.
+ * examples:
+ *  1. echo 0x101 > gpio_10389 - set P0 high, P1-P3 keep
+ *  2. echo 0xf01 > gpio_10389 - set P0 high, P1-P3 - low
+ *  3. echo 0x605 > gpio_10389 - P0 keep, P1 low, P2 high, P3 keep
+ *  P7-P4 - NC, 0xX0X0 - not supported even on this driver level.
+ */
+static DEVICE_ATTR(gpio_10389,   SYSFS_PERMISSIONS,                     gpio_10389_get,      gpio_10389_set);
 
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_simulate.attr,
@@ -309,6 +344,8 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_power_good.attr,
 		&dev_attr_power_bad.attr,
 		&dev_attr_enable_por.attr,
+		&dev_attr_power_off.attr,
+		&dev_attr_gpio_10389.attr,
 	    NULL
 };
 static const struct attribute_group dev_attr_root_group = {
@@ -530,6 +567,7 @@ static ssize_t pgood_show(struct device *dev, struct device_attribute *attr, cha
 {
 	int chn, en_bits, pgood_bits=0;
 	char * cp=buf;
+
 	en_bits= get_enabled_mask(dev);
 	if (en_bits<0) return en_bits;
 	for (chn=0;chn<ARRAY_SIZE(voltage_reg);chn++) if (en_bits & (1 << chn)){ /* only deal with enabled channels */
@@ -572,6 +610,70 @@ static ssize_t enable_por_store(struct device *dev, struct device_attribute *att
 	if (rc<0) return rc;
 	return count;
 }
+
+static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
+{
+	int result;
+	int value;
+	sscanf(buf, "%i", &value);
+	result = gpio_10389_ctrl(dev,value);
+	if (result<0) return result;
+	return count;
+}
+
+/* hardcoded to be [19:16] in pwr_gpio */
+static ssize_t gpio_10389_get(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int i;
+	unsigned int res=0;
+	struct elphel393_pwr_data_t *clientdata=platform_get_drvdata(to_platform_device(dev));
+	// just 4 of them
+	for (i=16;i<20;i++){
+		if (pwr_gpio[i].label){
+			res += ((clientdata->pwr_gpio[i].out_val)?1:0)<<(i-16);
+		}
+	}
+	return sprintf(buf,"%02x\n",res);
+}
+
+static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
+{
+	int rc=gpio_shutdown(dev);
+	if (rc<0) return rc;
+	return count;
+}
+
+int gpio_shutdown(struct device *dev)
+{
+	int gpio_shutdown_index=get_gpio_index_by_name("NSHUTDOWN");
+	if (gpio_shutdown_index<0) return gpio_shutdown_index;
+	return gpio_conf_by_index(dev, gpio_shutdown_index, 1,  0);
+}
+
+//TODO: test mutex_lock/unlock works
+int gpio_10389_ctrl(struct device *dev, int value){
+	int i, res;
+	int val = 0;
+
+	mutex_lock(&gpio_10389_lock);
+	for(i=16;i<20;i++){
+		if ((value>>(i-8))&0x1){
+			val = (value>>(i-16))&0x1;
+			//res = gpio_conf_by_index(dev, i, 1, ~val);
+			//if (res<0) return res;
+			res = gpio_conf_by_index(dev, i, 1, val);
+			if (res<0) return res;
+		}
+	}
+	mutex_unlock(&gpio_10389_lock);
+	return 0;
+}
+
+int gpio_10389_control(int value){
+	gpio_10389_ctrl(shutdown_dev,value);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(gpio_10389_control);
 
 int por_ctrl(struct device *dev, int disable_por)
 {
@@ -1094,23 +1196,35 @@ static int i2c_addr_gpiochip_match(struct gpio_chip *chip, void *data)
 	return i2c_verify_client(chip->dev) && (client->addr==addr[0]);
 }
 
+static void shutdown(void){
+	gpio_shutdown(shutdown_dev);
+}
+
 static int elphel393_pwr_probe(struct platform_device *pdev)
 {
 	struct gpio_chip *chip;
-//	struct device * ltc3489_dev;
 	int i,rc;
-	int base[2];
+
+	struct device *tmp_dev;
+	struct i2c_client *tmp_i2c_client;
+	int base[3],dir[3],out_val[3];
+
 	struct i2c_client *ltc3589_client;
 	struct elphel393_pwr_data_t *clientdata = NULL;
+
+	struct gpio_desc *desc;
+
+	shutdown_dev = &pdev->dev;
 
 	dev_info(&pdev->dev,"Probing elphel393-pwr\n");
 	clientdata = devm_kzalloc(&pdev->dev, sizeof(*clientdata), GFP_KERNEL);
 	clientdata->pgoot_timeout=DEAFULT_TIMEOUT;
 	clientdata->pinstrapped_oven=PINSTRAPPED_OVEN;
 
-	clientdata->chip_i2c_addr[0]=0x20;
-	clientdata->chip_i2c_addr[1]=0x21;
-	clientdata->chip_i2c_addr[2]=0x34;
+	clientdata->chip_i2c_addr[0]=GPIO_CHIP1_ADDR;
+	clientdata->chip_i2c_addr[1]=GPIO_CHIP2_ADDR;
+	clientdata->chip_i2c_addr[2]=GPIO_10389_U4_ADDR;
+	clientdata->chip_i2c_addr[3]=LTC3589_ADDR;
 	platform_set_drvdata(pdev, clientdata);
 
 	elphel393_pwr_sysfs_register(pdev);
@@ -1119,24 +1233,64 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 	mutex_init(&clientdata->lock);
 	
 	/* locate GPIO chips by i2c address */
-    for (i=0;i<2;i++){
+    for (i=0;i<3;i++){
     	chip = gpiochip_find(&clientdata->chip_i2c_addr[i], i2c_addr_gpiochip_match);
-    	base[i]=chip->base;
-    	dev_dbg(&pdev->dev,"Found gpio_chip with i2c_addr=0x%02x, label=%s, base=0x%x\n",clientdata->chip_i2c_addr[i],chip->label,base[i]);
-    }
-    for (i=0;i<ARRAY_SIZE(pwr_gpio);i++) if (pwr_gpio[i].label){
-    	clientdata->pwr_gpio[i].label=pwr_gpio[i].label;
-    	clientdata->pwr_gpio[i].pin=base[i>>3]+(i & 7);
-    	clientdata->pwr_gpio[i].dir=0; /* input */
-    	clientdata->pwr_gpio[i].out_val=0; 
-    	rc=gpio_request(clientdata->pwr_gpio[i].pin, clientdata->pwr_gpio[i].label);
-    	if (rc<0){
-    		dev_err(&pdev->dev," Failed to get GPIO[%d] with label %s\n",clientdata->pwr_gpio[i].pin,clientdata->pwr_gpio[i].label);
-    		return rc;
-    	} else {
-    		dev_dbg(&pdev->dev,"Confirmed request GPIO[%d] with label %s\n",clientdata->pwr_gpio[i].pin,clientdata->pwr_gpio[i].label);
+    	if (chip!=NULL) {
+    		base[i]=chip->base;
+    		dev_dbg(&pdev->dev,"Found gpio_chip with i2c_addr=0x%02x, label=%s, base=0x%x\n",clientdata->chip_i2c_addr[i],chip->label,base[i]);
+
+			tmp_dev=find_device_by_i2c_addr(clientdata->chip_i2c_addr[i]);
+			tmp_i2c_client = to_i2c_client(tmp_dev);
+
+			//chip0 and chip1 have registers, chip2 - no regs, only outputs
+    		if (i<2){
+    			//need to invert direction register value
+    			dir[i]=i2c_smbus_read_byte_data(tmp_i2c_client, 0x3)^0xff;
+    			out_val[i]=i2c_smbus_read_byte_data(tmp_i2c_client, 0x1)&0xff;
+    			//dir[i]=0x0;
+    			//out_val[i]=0x0;
+    			pr_debug("chip %d: dir=%d val=%d\n",i,dir[i],out_val[i]);
+    		}else{
+    			dir[i]=0xff;
+    			out_val[i]=i2c_smbus_read_byte(tmp_i2c_client)&0xff;
+    			out_val[i]=0x0;
+    		}
+    	}else{
+    		base[i]=NULL;
     	}
     }
+
+    if (base[2]==NULL){
+    	device_remove_file(&pdev->dev, &dev_attr_gpio_10389);
+    }
+
+    for (i=0;i<ARRAY_SIZE(pwr_gpio);i++){
+    	if (base[i>>3]!=NULL) if (pwr_gpio[i].label){
+    		clientdata->pwr_gpio[i].label=pwr_gpio[i].label;
+    	    clientdata->pwr_gpio[i].pin=base[i>>3]+(i & 7);
+
+    	    pr_debug("setting gpio %d struct to dir=%d val=%d\n",i,(dir[i>>3]>>(i&7))&0x1,(out_val[i>>3]>>(i&7))&0x1);
+    	    clientdata->pwr_gpio[i].dir = (dir[i>>3]>>(i&7))&0x1;
+    	    clientdata->pwr_gpio[i].out_val = (out_val[i>>3]>>(i&7))&0x1;
+
+    	    //if (i<16) clientdata->pwr_gpio[i].dir=0; /* input */
+    	    //else      clientdata->pwr_gpio[i].dir=1; /* output */
+
+    	    //if (i<16) clientdata->pwr_gpio[i].out_val=0;
+    	    //else      clientdata->pwr_gpio[i].out_val=1;
+
+    	    //clientdata->pwr_gpio[i].out_val=0;
+
+    	    rc=gpio_request(clientdata->pwr_gpio[i].pin, clientdata->pwr_gpio[i].label);
+    	    if (rc<0){
+    	    	dev_err(&pdev->dev," Failed to get GPIO[%d] with label %s\n",clientdata->pwr_gpio[i].pin,clientdata->pwr_gpio[i].label);
+    	    	return rc;
+    	    } else {
+    	    	dev_dbg(&pdev->dev,"Confirmed request GPIO[%d] with label %s\n",clientdata->pwr_gpio[i].pin,clientdata->pwr_gpio[i].label);
+    	    }
+    	}
+    }
+
     /* find ltc3589 */
     clientdata->ltc3489_dev=find_device_by_i2c_addr(LTC3589_ADDR);
     if (!clientdata->ltc3489_dev){
@@ -1149,6 +1303,20 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev,"LTC3589 status= 0x%02x\n",ltc3589_read_field(ltc3589_client, LTC3589_AWE_PGSTAT));
 	elphel393_pwr_init_of(pdev);
 	
+	/*
+	 * 1. pm_power_off - arch/arm/kernel/process.c - called in the end of halt if power off requested
+	 * 2. To perform a proper system shutdown with power off ("shutdown -hP now") this function is set here.
+	 */
+	pm_power_off = shutdown;
+
+	/*
+	if (base[2]!=NULL){
+		//turn off PCA9571
+		gpio_10389_ctrl(&pdev->dev, 0xf0f);
+		gpio_10389_ctrl(&pdev->dev, 0xf00);
+	}
+	*/
+
 	return 0;
 }	
 

@@ -19,6 +19,8 @@ Run Eclipse from its location directory and provide additional heap memory to it
 ```
 ./eclipse -vmargs -Xmx4G
 ```
+or just edit eclipse.ini (same directory as eclipse executable) and make sure -Xmx has at least 4G
+
  - File → Import... → General → Existing Project into Workspace
  - [Next] → Select root directory → Browse → specify project location (`poky/linux-elphel/`) → [OK] → [Finish]
 

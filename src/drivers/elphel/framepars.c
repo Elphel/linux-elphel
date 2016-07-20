@@ -19,7 +19,7 @@
  */
 
 //copied from cxi2c.c - TODO:remove unneeded
-#undef JTAG_BRANCH
+
 
 #include <linux/types.h>        /// div for 64
 #include <asm/div64.h>          /// div for 64
@@ -147,9 +147,7 @@ wait_queue_head_t       aframepars_wait_queue[SENSOR_PORTS];/// used to wait for
 
 /* Remove after compilation OK */
 struct sensorproc_t * sensorproc = NULL;
-#ifdef JTAG_BRANCH
-void camera_interrupts (int on) {}
-#endif
+//void camera_interrupts (int on) {}
 #if 0
 #define wait_event_interruptible(wq, condition)				\
 ({									\
@@ -1342,25 +1340,24 @@ int framepars_remove(struct platform_device *pdev)
 
 	return 0;
 }
-#ifdef JTAG_BRANCH
-static const struct of_device_id elphel393_framepars_of_match[] = {
-	{ .compatible = "elphel,elphel393-framepars-1.00" },
-	{ /* end of list */ }
-};
-MODULE_DEVICE_TABLE(of, elphel393_framepars_of_match);
 
-static struct platform_driver elphel393_framepars = {
-	.probe			= framepars_init,
-	.remove			= framepars_remove,
-	.driver			= {
-		.name		= FRAMEPARS_DRIVER_NAME,
-		.of_match_table = elphel393_framepars_of_match,
-	},
-};
-
-module_platform_driver(elphel393_framepars);
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-MODULE_DESCRIPTION(X3X3_FRAMEPARS_DRIVER_NAME);
-#endif
+//static const struct of_device_id elphel393_framepars_of_match[] = {
+//	{ .compatible = "elphel,elphel393-framepars-1.00" },
+//	{ /* end of list */ }
+//};
+//MODULE_DEVICE_TABLE(of, elphel393_framepars_of_match);
+//
+//static struct platform_driver elphel393_framepars = {
+//	.probe			= framepars_init,
+//	.remove			= framepars_remove,
+//	.driver			= {
+//		.name		= FRAMEPARS_DRIVER_NAME,
+//		.of_match_table = elphel393_framepars_of_match,
+//	},
+//};
+//
+//module_platform_driver(elphel393_framepars);
+//
+//MODULE_LICENSE("GPL");
+//MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
+//MODULE_DESCRIPTION(X3X3_FRAMEPARS_DRIVER_NAME);
