@@ -415,12 +415,12 @@ static int elphel393_clock10359_probe(struct platform_device *pdev)
 
 static int elphel393_clock10359_remove(struct platform_device *pdev)
 {
-	dev_info(&pdev->dev,"Removing elphel393-sensor-i2c");
+	dev_info(&pdev->dev,"Removing elphel393_clock10359");
 	return 0;
 }
 
 static struct of_device_id elphel393_clock10359_of_match[] = {
-	{ .compatible = "elphel,elphel393-sensor-i2c-1.00", },
+	{ .compatible = "elphel,elphel393_clock10359-1.00", },
 	{ /* end of table */}
 };
 
@@ -430,7 +430,7 @@ static struct platform_driver elphel393_clock10359 = {
 	.probe   = elphel393_clock10359_probe,
 	.remove  = elphel393_clock10359_remove,
 	.driver  = {
-		.name  = "elphel393-sensor-i2c",
+		.name  = DRV_NAME,
 		.owner = THIS_MODULE,
 		.of_match_table = elphel393_clock10359_of_match,
 		.pm = NULL, /* power management */
@@ -440,7 +440,7 @@ static struct platform_driver elphel393_clock10359 = {
 module_platform_driver(elphel393_clock10359);
 
 MODULE_AUTHOR("Andrey Filippov  <andrey@elphel.com>");
-MODULE_DESCRIPTION("Elphel 10393 sensor ports i2c");
+MODULE_DESCRIPTION("Elphel 10393 10359");
 MODULE_LICENSE("GPL");
 
 

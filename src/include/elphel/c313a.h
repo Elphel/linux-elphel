@@ -4,13 +4,13 @@
  */
 
 #ifndef _ASM_CMOSCAM_H
-#define _ASM_CMOSCAM_HPARS_FRAMES
+#define _ASM_CMOSCAM_H
 #define SAFE_CHECK  1 // perform more verification on the paremeters
 //#define ELPHEL_DEBUG 0 //global debug on/off in multiple files
 //#define ELPHEL_DEBUG_STARTUP 000a4c00 ; 
 //#define ELPHEL_DEBUG_STARTUP 0 ; // removed - add write to fpga init script
 //#define ELPHEL_DEBUG 0 //global debug on/off in multiple files
-#define ELPHEL_DEBUG 1 //global debug on/off in multiple files
+#define ELPHEL_DEBUG 0 //global debug on/off in multiple files
 #define ELPHEL_DEBUG_DELAY 100000 //delay after some printk-s
 #define ELP_KERR(x) printk("%s:%d:%s: ERROR ",__FILE__,__LINE__,__FUNCTION__);x
 #define ELP_FERR(x) fprintf(stderr,"%s:%d:%s: ERROR ",__FILE__,__LINE__,__FUNCTION__);x
@@ -911,7 +911,7 @@ struct framepars_past_t {
 // size should be PAGE_SIZE aligned
 struct framepars_all_t {
     struct framepars_t      framePars[PARS_FRAMES];
-    struct framepars_t      func2call;                             /// func2call.pars[] - each parameter has a 32-bit mask of what pgm_function to call - other fields not used
+    struct framepars_t      func2call;        /// func2call.pars[] - each parameter has a 32-bit mask of what pgm_function to call - other fields not used
      unsigned long          globalPars[NUM_GPAR];                  /// parameters that are not frame-related, their changes do not initiate any actions so they can be mmaped for both R/W
     struct framepars_past_t pastPars [PASTPARS_SAVE_ENTRIES];
      unsigned long          multiSensIndex[P_MAX_PAR_ROUNDUP];     /// indexes of individual sensor register shadows (first of 3) - now for all parameters, not just sensor ones
@@ -1377,6 +1377,8 @@ struct p_names_t {
 #define      LSEEK_CIRC_WAIT        11
 #define      LSEEK_CIRC_FREE        12
 #define      LSEEK_CIRC_USED        13
+#define      LSEEK_CIRC_STOP_COMPRESSOR 14
+#define      LSEEK_CIRC_UTIME       15
 
 #define      LSEEK_HUFFMAN_DC0      1
 #define      LSEEK_HUFFMAN_AC0      2
@@ -1525,7 +1527,7 @@ struct p_names_t {
 /*  For past compatibility, CCMA_DMA_SIZE...
 */
 //#define CCAM_DMA_SIZE CCAM_WORDS_PER_DMABUF
-#define CCAM_DMA_SIZE   0x1000000
+#define CCAM_DMA_SIZE   0x4000000
 #define CIRCBUF_START_OFFSET 0x100000
 
 /*

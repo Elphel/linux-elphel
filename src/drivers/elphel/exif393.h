@@ -25,10 +25,10 @@ int exif_enable_chn(int sensor_port, int en);     // enable/disable Exif process
 int exif_enable(int en);                          // For all sensor ports
 int dir_find_tag (unsigned long tag); //!find location of the tag field in meta page using long tag (Exif tag and tag group)
 
-inline void write_meta_raw_irq(int sensor_port, char * data, int offset, int len); //write data to meta, called from IRQ
-inline int write_meta_irq(int sensor_port, char * data, int * indx,  unsigned long ltag, int len); //write data to meta, called from IRQ(len==0 => use field length)
-inline void putlong_meta_raw_irq(int sensor_port, unsigned long data, int offset); //write data to meta (4 bytes, big endian), called from IRQ
-inline int putlong_meta_irq(int sensor_port, unsigned long data, int * indx,  unsigned long ltag); //write data to meta (4 bytes, big endian), from IRQ
+void write_meta_raw_irq(int sensor_port, char * data, int offset, int len); //write data to meta, called from IRQ
+int write_meta_irq(int sensor_port, char * data, int * indx,  unsigned long ltag, int len); //write data to meta, called from IRQ(len==0 => use field length)
+void putlong_meta_raw_irq(int sensor_port, unsigned long data, int offset); //write data to meta (4 bytes, big endian), called from IRQ
+int putlong_meta_irq(int sensor_port, unsigned long data, int * indx,  unsigned long ltag); //write data to meta (4 bytes, big endian), from IRQ
 //void write_meta_raw_irq(char * data, int offset, int len); //write data to meta, called from IRQ
 //int write_meta_irq(char * data, int * indx,  unsigned long ltag, int len); //write data to meta, called from IRQ(len==0 => use field length). Returns index of the written data, -1 if not written
 
@@ -37,7 +37,7 @@ int write_meta(int sensor_port, char * data, int * indx,  unsigned long ltag, in
 void putlong_meta_raw(int sensor_port, unsigned long data, int offset); //write data to meta (4 bytes, big endian), called from outside IRQ (atomic)
 int putlong_meta(int sensor_port, unsigned long data, int * indx,  unsigned long ltag); //write data to meta (4 bytes, big endian), from outside IRQ (atomic). Returns index of the written data, -1 if not written
 
-char * encode_time(unsigned long sec, unsigned long usec);
+char * encode_time(char buf[27], unsigned long sec, unsigned long usec);
 int store_meta(int sensor_port); //called from IRQ service - put current metadata to meta_buffer, return page index
 
 

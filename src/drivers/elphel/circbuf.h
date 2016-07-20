@@ -31,9 +31,6 @@ unsigned int circbuf_poll  (struct file *file,    poll_table *wait);
  *!======================================================================================*/
 extern wait_queue_head_t circbuf_wait_queue;
 
-extern unsigned long  *ccam_dma_buf_ptr;
-//unsigned long *circbuf_get_ccam_ptr(void);
-
 // private data
 struct circbuf_priv_t {
 	int                 minor;
@@ -41,5 +38,12 @@ struct circbuf_priv_t {
 	dma_addr_t          phys_addr;
 };
 extern struct circbuf_priv_t *circbuf_priv_ptr;
+
+/* debug code follows */
+extern unsigned short circbuf_quality;
+extern unsigned short circbuf_height;
+extern unsigned short circbuf_width;
+extern unsigned char  circbuf_byrshift;
+/* end of debug code */
 
 #endif /* _CIRCBUF_H */
