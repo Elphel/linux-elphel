@@ -9,7 +9,9 @@ sysroots
 .externalToolBuilders
 .settings
 .pydevproject
-
+html
+*.directory
+doxygen.tag
 # auto-generated files from x393 project
 src/drivers/elphel/x393.c
 src/drivers/elphel/x393.h
