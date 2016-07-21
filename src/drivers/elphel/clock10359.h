@@ -1,6 +1,6 @@
 /*******************************************************************************
-* FILE NAME  : clock10359.h
-* DESCRIPTION: Control of the CY22393 clock on the 10359 multiplexer connected
+* @file   clock10359.h
+* @brief   Control of the CY22393 clock on the 10359 multiplexer connected
 * to the sensor port
 * Copyright 2002-2016 (C) Elphel, Inc.
 * -----------------------------------------------------------------------------*

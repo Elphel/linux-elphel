@@ -1,4 +1,5 @@
-/** @file sensor_common.h
+/**
+ * @file sensor_common.c
  * @brief This module handles sensor discovery, initialization and programming tasks
  * common for all sensors. Task that are implemented:
  * - system initialization (?)
@@ -7,9 +8,7 @@
  * - interrupts handling
  * - tasklets
  * - device driver that includes waiting for the next frame regardless of compression
- */
-
-/* Copyright (C) 2016 Elphel, Inc.
+ * @copyright Copyright (C) 2016 Elphel, Inc.
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -79,45 +78,27 @@
 //#include "x393.h"
 #include "x393_helpers.h"
 
-/** @brief Driver name to display in log messages. */
+/** @brief Driver name to display in log messages.*/
 #define IMAGEACQ_DRIVER_NAME      "Elphel (R) Model 393 Image Acquisition device driver"
-/** @brief The size in bytes of L2 cache invalidation area. This size must be aligned to cache line size.
- * 16 kbytes seems to be good starting point. */
+
+/** @brief The size in bytes of L2 cache invalidation area. This size must be aligned to cache line size. 16 kbytes seems to be good starting point.*/
 #define L2_INVAL_SIZE             (32 * 1024)
 
-/**@struct jpeg_ptr_t
- * @brief \e jpeg_ptr_t structure contains read and write pointers along with
- * IRQ number for a single channel
- * @var jpeg_ptr_t::jpeg_wr
- * JPEG write pointer in 32 bit words
- * @var jpeg_ptr_t::jpeg_rp
- * JPEG read pointer in 32 bit words
- * @var jpeg_ptr_t::fpga_cntr_prev
- * This field contains previous value of the FPGA transfer counter which is used
- * to find out if it has changed. This pointer is in 32 bit words.
- * @var jpeg_ptr_t::irq_num_comp
- * IRQ number associated with compressor
- * @var jpeg_ptr_t::irq_num_sens
- * IRQ number associated with sensor
- * @var jpeg_ptr_t::chn_num
- * Current channel number
- */
+/** @brief Contains read and write pointers along with IRQ number for a single channel*/
 struct jpeg_ptr_t {
-	volatile int jpeg_wp;
-	volatile int jpeg_rp;
-	volatile int fpga_cntr_prev;
-	unsigned int irq_num_comp;
-	unsigned int irq_num_sens;
-	unsigned int chn_num;
+	volatile int jpeg_wp;        ///< JPEG write pointer in 32 bit words
+	volatile int jpeg_rp;        ///< JPEG read pointer in 32 bit words
+	volatile int fpga_cntr_prev; ///< This field contains previous value of the FPGA transfer counter which is used to find out if it has changed. This pointer is in 32 bit words.
+	unsigned int irq_num_comp;   ///< IRQ number associated with compressor
+	unsigned int irq_num_sens;   ///< IRQ number associated with sensor
+	unsigned int chn_num;        ///< Current channel number
 	volatile unsigned int flags;
 };
 
-/**@struct image_acq_pd_t
- * @brief \e image_acq_pd contains private data for the image acquisition driver
- */
+/** @brief Contains private data for the image acquisition driver */
 struct image_acq_pd_t {
-	int minor;
-	struct jpeg_ptr_t jpeg_ptr[SENSOR_PORTS];
+	int minor;								   ///< Driver minor number
+	struct jpeg_ptr_t jpeg_ptr[SENSOR_PORTS];  ///< Array of read/write pointers
 };
 /* debug code follows */
 long long zero_counter[SENSOR_PORTS] = {0};
@@ -146,17 +127,21 @@ long long get_frame_pos(unsigned int chn, unsigned int pos)
 
 static struct image_acq_pd_t image_acq_priv;
 
-static volatile int JPEG_wp;
-static volatile int JPEG_rp;
-static int fpga_counter_prev=0; /// Previous value of the FPGA transfer counter (to find out if it did change)
-static struct meta_offsets_t { // works like a cache to time save on looking for tags in the directory (forced to recalculate if does not match)
-	int Image_DateTime;          // will have offset of the Exif_Image_DateTime data in meta page (Exif_Photo_SubSecTime should go immediately after in meta page)
-	int Photo_DateTimeOriginal;
-	int Photo_ExposureTime;
-	int Image_ImageNumber;
-	int Image_Orientation;
-	int Photo_MakerNote;
-	int PageNumber;
+//static volatile int JPEG_wp;
+//static volatile int JPEG_rp;
+//static int fpga_counter_prev=0; ///< Previous value of the FPGA transfer counter (to find out if it did change)
+
+/** @brief  Works like a cache to time save on looking for tags in the directory (forced to recalculate if does not match)
+ *  will have offset of the Exif_Image_DateTime data in meta page (Exif_Photo_SubSecTime should go immediately after in meta page)
+ */
+static struct meta_offsets_t {
+	int Image_DateTime;           ///< EXIF Date/Time offset
+	int Photo_DateTimeOriginal;   ///< EXIF Date/Time Original offset
+	int Photo_ExposureTime;       ///< EXIF exposure offset
+	int Image_ImageNumber;        ///< EXIF image number offset
+	int Image_Orientation;        ///< EXIF image orientation offset
+	int Photo_MakerNote;          ///< EXIF maker note (custom data for multi-frame composite images) offset
+	int PageNumber;               ///< EXIF subchannel (0..3) number offset
 } meta_offsets;
 
 #ifdef TEST_DISABLE_CODE
@@ -205,6 +190,7 @@ void tasklet_fpga_function(unsigned long arg);
 /**
  * @brief Copy #sensorproc structure, needed for multisensor board to be able
  * to replace some of the functions
+ * @param[in]   sensor_port sesnolr port number
  * @param[in]   copy   pointer to a copy structure
  * @return      pointer to a \b copy structure
  */
@@ -420,6 +406,7 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 
 /**
  * @brief Fill exif data with the current frame data, save pointer to Exif page in the interframe area
+ * @param jptr pointer to jpeg_ptr_t structure with read/write image pointers
  * @param interframe pointer to interframe parameters structure
  */
 inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr, struct interframe_params_t* interframe) {

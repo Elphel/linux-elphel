@@ -1,5 +1,5 @@
 /*!********************************************************************************
-*! FILE NAME  : param_depend.h
+* file   param_depend.h
 *! DESCRIPTION: Specifies, which actions should be performed when some acquisition
 *! parameters are changed
 *! Copyright (C) 2008 Elphel, Inc.

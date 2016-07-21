@@ -1,7 +1,7 @@
 /*******************************************************************************
-* FILE NAME  : sensor_i2c.h
-* DESCRIPTION: Interface to FPGA-based i2c sequencer for sensor ports
-* Copyright 2016 (C) Elphel, Inc.
+* @file      sensor_i2c.h
+* @brief     Interface to FPGA-based i2c sequencer for sensor ports
+* @copyright Copyright 2016 (C) Elphel, Inc.
 * -----------------------------------------------------------------------------*
 *
 *  This program is free software: you can redistribute it and/or modify

@@ -1,48 +1,48 @@
 /*!********************************************************************************
- *! FILE NAME  : exif353.c
- *! DESCRIPTION: Drivers for Exif manipulation
- *! Copyright (C) 2008 Elphel, Inc.
- *! -----------------------------------------------------------------------------**
- *!
- *!  This program is free software: you can redistribute it and/or modify
- *!  it under the terms of the GNU General Public License as published by
- *!  the Free Software Foundation, either version 3 of the License, or
- *!  (at your option) any later version.
- *!
- *!  This program is distributed in the hope that it will be useful,
- *!  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *!  GNU General Public License for more details.
- *!
- *!  You should have received a copy of the GNU General Public License
- *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *! -----------------------------------------------------------------------------**
- *!  $Log: exif353.c,v $
- *!  Revision 1.2  2009/02/18 06:27:34  elphel
- *!  fixed system date calculation fro Exif (was 2 days ahead in the years after leap)
- *!
- *!  Revision 1.1.1.1  2008/11/27 20:04:00  elphel
- *!
- *!
- *!  Revision 1.3  2008/09/20 00:29:49  elphel
- *!  moved driver major/minor numbers to a single file - include/asm-cris/elphel/driver_numbers.h
- *!
- *!  Revision 1.2  2008/09/12 00:23:59  elphel
- *!  removed cc353.c, cc353.h
- *!
- *!  Revision 1.4  2008/04/25 21:28:56  elphel
- *!  added more functions for access from the IRQ, changed them to inline
- *!
- *!  Revision 1.3  2008/04/11 23:16:51  elphel
- *!  removed unneeded local_irq_disable() after local_irq_save_flags()
- *!
- *!  Revision 1.2  2008/04/07 09:45:30  elphel
- *!  removed unused variable
- *!
- *!  Revision 1.1  2008/04/07 09:09:07  elphel
- *!  New driver to handle Exif
- *!
- *!
+ * @file   exif353.c
+ * @brief  Drivers for Exif manipulation
+ * @copyright Copyright (C) 2008 Elphel, Inc.
+
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+ *  $Log: exif353.c,v $
+ *  Revision 1.2  2009/02/18 06:27:34  elphel
+ *  fixed system date calculation fro Exif (was 2 days ahead in the years after leap)
+ *
+ *  Revision 1.1.1.1  2008/11/27 20:04:00  elphel
+ *
+ *
+ *  Revision 1.3  2008/09/20 00:29:49  elphel
+ *  moved driver major/minor numbers to a single file - include/asm-cris/elphel/driver_numbers.h
+ *
+ *  Revision 1.2  2008/09/12 00:23:59  elphel
+ *  removed cc353.c, cc353.h
+ *
+ *  Revision 1.4  2008/04/25 21:28:56  elphel
+ *  added more functions for access from the IRQ, changed them to inline
+ *
+ *  Revision 1.3  2008/04/11 23:16:51  elphel
+ *  removed unneeded local_irq_disable() after local_irq_save_flags()
+ *
+ *  Revision 1.2  2008/04/07 09:45:30  elphel
+ *  removed unused variable
+ *
+ *  Revision 1.1  2008/04/07 09:09:07  elphel
+ *  New driver to handle Exif
+ *
+ *
  */
 
 

@@ -1,9 +1,10 @@
 /** @file framepars.c
  * @brief Handling of frame parameters, making use of FPGA i2c
  * and command sequencer that accepts commands up to 6 frames ahead.
+ *
  * This module includes parameter storage, code called from ISR,
  * from other kernel drivers as well as from the user space
- * Copyright (C) 2016 Elphel, Inc.
+ * @copyright Copyright (C) 2016 Elphel, Inc.
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by

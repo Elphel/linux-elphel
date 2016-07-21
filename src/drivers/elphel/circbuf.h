@@ -27,8 +27,8 @@ unsigned int circbuf_poll  (struct file *file,    poll_table *wait);
 
 //int init_ccam_dma_buf_ptr(void);
 /*!======================================================================================
- *! Wait queue for the processes waiting for a new frame to appear in the circular buffer
- *!======================================================================================*/
+ * Wait queue for the processes waiting for a new frame to appear in the circular buffer
+ *======================================================================================*/
 extern wait_queue_head_t circbuf_wait_queue;
 
 // private data

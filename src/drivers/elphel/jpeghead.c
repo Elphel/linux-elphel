@@ -3,7 +3,7 @@
  * @brief This file contains methods for JPEG tables and headers generation and
  * JPEG files composition from data compressed by FPGA.
  *
- * Copyright (C) 2016 Elphel, Inc
+ * @copyright Copyright (C) 2016 Elphel, Inc
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -328,18 +328,18 @@ int jpeghead_open(struct inode *inode, struct file *filp)
 }
 
 /*!=================================================================
- *! Overloading lseek with additional functionality (to avoid ioctls)
- *! with orig==SEEK_END lseek will treat (offset>0) as a byte pointer
- *! in (char *)ccam_dma_buf_ptr of a frame pointer and use quality,
- *! width and height to regenerate header.
- *! frame pointers are 32-bytes aligned, so adding 1 to offest
- *! will make sure it is always >0 (as offset=0, orig=SEEK_END
- *! will just move pointer to the end and return file length.
- *! 
- *! When called with orig==SEEK_END, offset>0 lseek will position
- *! file at the very beginning and return 0 if OK, -EINVAL if
- *! frame header is not found for the specified offset
- *!================================================================*/
+ * Overloading lseek with additional functionality (to avoid ioctls)
+ * with orig==SEEK_END lseek will treat (offset>0) as a byte pointer
+ * in (char *)ccam_dma_buf_ptr of a frame pointer and use quality,
+ * width and height to regenerate header.
+ * frame pointers are 32-bytes aligned, so adding 1 to offest
+ * will make sure it is always >0 (as offset=0, orig=SEEK_END
+ * will just move pointer to the end and return file length.
+ * 
+ * When called with orig==SEEK_END, offset>0 lseek will position
+ * file at the very beginning and return 0 if OK, -EINVAL if
+ * frame header is not found for the specified offset
+ *================================================================*/
 loff_t jpeghead_lseek(struct file *file, loff_t offset, int orig,
 		struct interframe_params_t *fp)
 {
@@ -429,18 +429,18 @@ int huffman_open(struct inode *inode, struct file *filp)
 }
 
 /*!=================================================================
- *! Overloading lseek with additional functionality
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_DC0 - position at Huffman DC0
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_AC0 - position at Huffman DC0
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_DC1 - position at Huffman DC0
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_AC1 - position at Huffman DC0
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGATAB - position at FPGA table
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_DEFAULT - fill in default tables
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGACALC - calculate FPGA table
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGAPGM - program FPGA table
- *! those commands do not move the file pointer (return current),
- *! or negative in the case of error (calculate FPGA table)
- *!================================================================*/
+ * Overloading lseek with additional functionality
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_DC0 - position at Huffman DC0
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_AC0 - position at Huffman DC0
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_DC1 - position at Huffman DC0
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_AC1 - position at Huffman DC0
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGATAB - position at FPGA table
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_DEFAULT - fill in default tables
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGACALC - calculate FPGA table
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGAPGM - program FPGA table
+ * those commands do not move the file pointer (return current),
+ * or negative in the case of error (calculate FPGA table)
+ *================================================================*/
 loff_t huffman_lseek(struct file *file, loff_t offset, int orig)
 {
 	unsigned int minor = MINOR(file->f_inode->i_rdev);

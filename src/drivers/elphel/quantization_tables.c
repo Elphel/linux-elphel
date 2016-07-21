@@ -21,7 +21,7 @@
  * FPGA table accommodates 8 pairs of quantization coefficients, so software tries
  * to reuse loaded tables when possible
  *
- * Copyright (C) 2016 Elphel, Inc.
+ * @copyright Copyright (C) 2016 Elphel, Inc.
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by

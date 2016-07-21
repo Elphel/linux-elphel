@@ -4,7 +4,7 @@
  * images/video. Buffer frame data is filled in by the FPGA, frame pointers and
  * essential frames metadata filled during servicing of the interrupts.
  *
- * Copyright (C) 2016 Elphel, Inc
+ * @copyright Copyright (C) 2016 Elphel, Inc
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- * -----------------------------------------------------------------------------**
+
  */
 
 //#define DEBUG 1

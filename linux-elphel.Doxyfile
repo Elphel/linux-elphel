@@ -99,9 +99,9 @@ WARN_LOGFILE =
 #---------------------------------------------------------------------------
 # Configuration options related to the input files
 #---------------------------------------------------------------------------
-INPUT = linux/source/drivers/elphel linux/source/drivers/ata/ahci_elphel.c linux/source/drivers/clk/clk-si5338.c linux/source/drivers/misc/ltc3589.c linux/source/drivers/misc/vsc330x.c linux/source/drivers/mmc/host/sdhci.c linux/source/drivers/mmc/host/sdhci.h linux/source/drivers/mtd/nand/nand_base.c linux/source/drivers/mtd/nand/nand.h linux/source/drivers/mtd/nand/nandchip-micron.c linux/source/drivers/mtd/nand/pl35x-nand.c linux/source/include/elphel linux/source/include/linux/i2c/ltc3589.h
+INPUT = linux/source/drivers/elphel linux/source/drivers/ata/ahci_elphel.c linux/source/drivers/clk/clk-si5338.c linux/source/drivers/misc/ltc3589.c linux/source/drivers/misc/vsc330x.c linux/source/drivers/mmc/host/sdhci.c linux/source/drivers/mmc/host/sdhci.h linux/source/drivers/mtd/nand/nand_base.c linux/source/drivers/mtd/nand/nand.h linux/source/drivers/mtd/nand/nandchip-micron.c linux/source/drivers/mtd/nand/pl35x_nand.c linux/source/include/elphel linux/source/include/linux/i2c/ltc3589.h
 INPUT_ENCODING = UTF-8
-FILE_PATTERNS = *.h *.cpp *.md
+FILE_PATTERNS = *.h *.cpp *.c *.md
 RECURSIVE = YES
 EXCLUDE = src/logos.cpp src/lodepng.cpp
 EXCLUDE_SYMLINKS = NO

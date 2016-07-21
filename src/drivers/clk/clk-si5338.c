@@ -1,21 +1,21 @@
 /*!***************************************************************************
- *! FILE NAME  : si5338.c
- *! DESCRIPTION: control of the Silicon Laboratories SI5338 clock generator
- *! Copyright (C) 2013 Elphel, Inc.
- *! -----------------------------------------------------------------------------**
- *!
- *!  This program is free software: you can redistribute it and/or modify
- *!  it under the terms of the GNU General Public License as published by
- *!  the Free Software Foundation, either version 3 of the License, or
- *!  (at your option) any later version.
- *!
- *!  This program is distributed in the hope that it will be useful,
- *!  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *!  GNU General Public License for more details.
- *!
- *!  You should have received a copy of the GNU General Public License
- *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * @file   si5338.c
+ * @brief  control of the Silicon Laboratories SI5338 clock generator
+ * @copyright Copyright (C) 2013 Elphel, Inc.
+
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)*/

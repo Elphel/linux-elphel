@@ -1,3 +1,7 @@
+/** @file sensor_common.c
+ *
+ */
+
 #ifndef _SENSOR_COMMON_H
 #define _SENSOR_COMMON_H
 
