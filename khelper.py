@@ -2,21 +2,53 @@
 # encoding: utf-8
 from __future__ import division
 from __future__ import print_function
+"""
+# @file khelper.py
+# @brief Extract file access data after build, modify CDT project configuration
+# (.cproject) accordingly
+# @copyright Copyright (C) 2016, Elphel.inc.
+# @param <b>License</b>
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http:#www.gnu.org/licenses/>.
+
+@author:     Andrey Filippov
+@license:    GPLv3.0+
+@contact:    andrey@elphel.coml
+@deffield    updated: Updated
+"""
+__author__ = "Andrey Filippov"
+__copyright__ = "Copyright 2016, Elphel, Inc."
+__license__ = "GPL"
+__version__ = "3.0+"
+__maintainer__ = "Andrey Filippov"
+__email__ = "andrey@elphel.com"
+__status__ = "Development"
+
 import sys
 import os
 import time
 import xml.etree.ElementTree as ET
 '''
-TODO: make 2 runs, first before
-bitbake linux-xlnx
-khelper.py linux -1
-#get timestamp
-#next 2 commands - I do not understand why their access timestamp is set during previous command and does not change during bitbake 
-touch /home/eyesis/git/elphel393/linux-elphel/src/drivers/ata/ahci_elphel.c
-touch /home/eyesis/git/elphel393/linux-elphel/src/drivers/elphel/sensor_common.c
-bitbake linux-xlnx -c compile -f
-khelper.py linux <timestamp_from_the_first_run>
-             
+TODO:Automate, find out why separate touch commands are needed
+Run this program twice:
+1-st run ./khelper.py linux -1
+and save shown timestamp
+Then run (some mystery here)
+touch src/drivers/ata/ahci_elphel.c
+touch src/drivers/elphel/sensor_common.c
+Wait 5 seconds and run (in a different console with appropriate sourcing)
+bitbake linux-xlnx -c compile -f 
+Then again
+./khelper.py linux <timestamp_from_the_first_run>
+If somethong went wrong you will need to resore .cproject from eclipse_project_setup directory
 '''
 def file_tree(flist): # Each file in list is a file, no directories
     ftree={}
