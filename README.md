@@ -1,5 +1,29 @@
 # linux-elphel
-Extras (drivers, etc.) and patches for the kernel
+This project handles kernel drivers and driver modification for Elphel NC393 seriees cameras.
+The best way to install it is by running installation script in the top project -
+https://github.com/Elphel/elphel393 as different parts of the camera software are inter-dependent,
+and some of the required header files are generated from the Verilog code in
+[x393 FPGA project](https://github.com/Elphel/x393).
+
+This is Eclipse CDT project, and the [setup sctipt](https://github.com/Elphel/elphel393) copies
+project configuration (.project, .cproject, .settings) from eclipse_project_setup subdirectory.
+Eclipse should be started after Linux kernel is built with `bitbake linux-xlnx` at least once
+so all the required files are already present. Do noit run `bitbake linux-xlnx -c clean` while
+the project is open in Eclipse - this command deletes all he staged files (kernel sources) and
+Eclipse will reset all file filters, so .cproject file will have to be restored from
+*eclipse_project_setup*.
+
+In Yocto project source files are staged (downloaded and optionally patched), so *clean* re-downloads
+files and erases any of your files or changes if they were made in the source directory tree. This
+project keeps all the modified or new files in a sparse copy of the Linux kernel tree (*src*
+sub-directory) and the bitbake recepie (`bitbake linux-xlnx -c link`) adds symlinks to the actual
+project files. When the full kernel is opened in Eclipse, the base kernel files are from the staging
+area (so will be refreshed after `-c clean`) and the project files edits will stay safe in the *src*
+subdirectory.
+
+The khelper.py script izs used to generate filters for the kernel by collecting information - which
+files where accessed during `bitbake linux-xlnx -s compile -f`, results are injected into
+
 
 ##Downloading
 Code must be located in `poky/` directory. Navigate to `poky/` and run:
