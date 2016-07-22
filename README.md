@@ -25,7 +25,7 @@ area (so will be refreshed after `-c clean`) and the project files edits will st
 subdirectory.
 
 The khelper.py script is used to generate filters for the kernel by collecting information - which
-files where accessed during `bitbake linux-xlnx -s compile -f`, results are injected into *.cproject*
+files where accessed during `bitbake linux-xlnx -c compile -f`, results are injected into *.cproject*
 configuratgion file, so any of the Linux kernel files that were not accessed during build will be marked
 as excluded from build (crossed out) and not resolved by the indexer.
 
