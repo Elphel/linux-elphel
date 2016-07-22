@@ -9,7 +9,7 @@ This is Eclipse CDT project, and the [setup sctipt](https://github.com/Elphel/el
 project configuration (.project, .cproject, .settings) from eclipse_project_setup subdirectory.
 Eclipse should be started after Linux kernel is built with `bitbake linux-xlnx` at least once
 so all the required files are already present. Then you may import *linux-elphel* as
-'existing Git project' in Eclipse (you need either Eclipse for C/C++ developmentg or intall [CDT
+'existing Git project' in Eclipse (you need either Eclipse for C/C++ development or intall [CDT
 plugin](https://eclipse.org/cdt/) separately.
 
 Do not run `bitbake linux-xlnx -c clean` while the project is open in Eclipse - this command
