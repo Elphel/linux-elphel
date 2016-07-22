@@ -18,3 +18,6 @@ src/drivers/elphel/x393.h
 src/drivers/elphel/x393_defs.h
 src/drivers/elphel/x393_map.h
 src/drivers/elphel/x393_types.h
+all_sources.lst
+excluding.lst
+attic
