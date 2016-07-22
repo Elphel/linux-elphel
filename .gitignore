@@ -11,6 +11,7 @@ sysroots
 .pydevproject
 html
 *.directory
+*.kate-swp
 doxygen.tag
 # auto-generated files from x393 project
 src/drivers/elphel/x393.c
@@ -18,3 +19,6 @@ src/drivers/elphel/x393.h
 src/drivers/elphel/x393_defs.h
 src/drivers/elphel/x393_map.h
 src/drivers/elphel/x393_types.h
+all_sources.lst
+excluding.lst
+attic

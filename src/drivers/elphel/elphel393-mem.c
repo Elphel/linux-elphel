@@ -37,7 +37,6 @@
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
 #include <elphel/elphel393-mem.h>
-#include "x393_helpers.h"
 
 #define SYSFS_PERMISSIONS         0644 /* default permissions for sysfs files */
 #define SYSFS_READONLY            0444
@@ -207,18 +206,6 @@ static ssize_t get_size_bidir(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf,"%u\n", _elphel_buf.bidir_size);
 }
 
-/*
-static ssize_t get_cache(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	return sprintf(buf,"Write into this file to flush L1/L2 caches to memory.\n");
-}
-static ssize_t flush_cache(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-	__cpuc_flush_kern_all();
-	outer_flush_all();
-	return count;
-}
-*/
 static ssize_t sync_for_cpu_h2d(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	dma_addr_t paddr;
@@ -313,47 +300,6 @@ static ssize_t sync_for_device_bidir(struct device *dev, struct device_attribute
     return count;
 }
 
-static ssize_t flush_cpu_cache(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-	const int buff_size = 0x1000000;
-	const int buff_start_offset = 0x100000;
-	unsigned int chn;
-	int start_offset, end_offset;
-	int num_items;
-	dma_addr_t phys_addr_start, phys_addr_end;
-	u32 start_time, end_time;
-
-	num_items = sscanf(buf, "%u:%d:%d", &chn, &start_offset, &end_offset);
-	start_time = get_rtc_usec();
-	if (num_items == 3) {
-		// invalidate L2 caches
-		if (end_offset > start_offset) {
-			// handle single buffer case
-			phys_addr_start = _elphel_buf.paddr + buff_start_offset + chn * buff_size + start_offset;
-			phys_addr_end = _elphel_buf.paddr + buff_start_offset + chn * buff_size + end_offset - 1;
-			outer_inv_range(phys_addr_start, phys_addr_end);
-		} else {
-			// handle split buffer case when pointer rolls over the end
-			// first, process the peace at the end of the buffer
-			phys_addr_start = _elphel_buf.paddr + buff_start_offset + chn * buff_size + start_offset;
-			phys_addr_end = _elphel_buf.paddr + buff_start_offset + ++chn * buff_size - 1;
-			outer_inv_range(phys_addr_start, phys_addr_end);
-
-			// second, process the peace at the start of the buffer
-			phys_addr_start = _elphel_buf.paddr + buff_start_offset + chn * buff_size;
-			phys_addr_end = _elphel_buf.paddr + buff_start_offset + chn * buff_size + end_offset - 1;
-			outer_inv_range(phys_addr_start, phys_addr_end);
-		}
-	}
-	end_time = get_rtc_usec();
-	if (start_time == 0 && end_time == 0) {
-		pr_info("Unable to get usec values\n");
-	} else {
-		pr_info("Cache invalidate time: %lu\n", end_time - start_time);
-	}
-	return count;
-}
-
 static ssize_t get_sync_for_device_h2d(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return sprintf(buf,"Write address/length pair into this file to hand this region of the host to device DMA buffer to device (after CPU writes).\n");
@@ -378,11 +324,6 @@ static ssize_t get_sync_for_cpu_bidir(struct device *dev, struct device_attribut
 {
 	return sprintf(buf,"Write address/length pair into this file to hand this region of the bidirectional DMA buffer to CPU (before CPU reads).\n");
 }
-static ssize_t get_flush_cpu_cache(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	return sprintf(buf, "Write command and address into this file to flush CPU caches. Format 'chn:start_offset:end_offset' where "
-			"'chn' is sensor channel, 'start_offset' and 'end_offset' are start and end data offsets in circbuf\n");
-}
 
 static DEVICE_ATTR(buffer_address,        SYSFS_PERMISSIONS & SYSFS_READONLY,     get_paddr,                 NULL);
 static DEVICE_ATTR(buffer_pages,          SYSFS_PERMISSIONS & SYSFS_READONLY,     get_size,                  NULL);
@@ -392,14 +333,12 @@ static DEVICE_ATTR(buffer_address_d2h,    SYSFS_PERMISSIONS & SYSFS_READONLY,   
 static DEVICE_ATTR(buffer_pages_d2h,      SYSFS_PERMISSIONS & SYSFS_READONLY,     get_size_d2h,                  NULL);
 static DEVICE_ATTR(buffer_address_bidir,  SYSFS_PERMISSIONS & SYSFS_READONLY,     get_paddr_bidir,                 NULL);
 static DEVICE_ATTR(buffer_pages_bidir,    SYSFS_PERMISSIONS & SYSFS_READONLY,     get_size_bidir,                  NULL);
-//static DEVICE_ATTR(buffer_flush,        SYSFS_PERMISSIONS,                      get_cache,                 flush_cache);
 static DEVICE_ATTR(sync_for_cpu_h2d,      SYSFS_PERMISSIONS,                      get_sync_for_cpu_h2d,      sync_for_cpu_h2d);
 static DEVICE_ATTR(sync_for_device_h2d,   SYSFS_PERMISSIONS,                      get_sync_for_device_h2d,   sync_for_device_h2d);
 static DEVICE_ATTR(sync_for_cpu_d2h,      SYSFS_PERMISSIONS,                      get_sync_for_cpu_d2h,      sync_for_cpu_d2h);
 static DEVICE_ATTR(sync_for_device_d2h,   SYSFS_PERMISSIONS,                      get_sync_for_device_d2h,   sync_for_device_d2h);
 static DEVICE_ATTR(sync_for_cpu_bidir,    SYSFS_PERMISSIONS,                      get_sync_for_cpu_bidir,    sync_for_cpu_bidir);
 static DEVICE_ATTR(sync_for_device_bidir, SYSFS_PERMISSIONS,                      get_sync_for_device_bidir, sync_for_device_bidir);
-static DEVICE_ATTR(flush_cpu_cache,       SYSFS_PERMISSIONS,                      get_flush_cpu_cache,       flush_cpu_cache);
 
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_buffer_address.attr,
@@ -410,14 +349,12 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_buffer_pages_d2h.attr,
 		&dev_attr_buffer_address_bidir.attr,
 		&dev_attr_buffer_pages_bidir.attr,
-//		&dev_attr_buffer_flush.attr,
 		&dev_attr_sync_for_cpu_h2d.attr,
 		&dev_attr_sync_for_device_h2d.attr,
 		&dev_attr_sync_for_cpu_d2h.attr,
 		&dev_attr_sync_for_device_d2h.attr,
 		&dev_attr_sync_for_cpu_bidir.attr,
 		&dev_attr_sync_for_device_bidir.attr,
-		&dev_attr_flush_cpu_cache.attr,
 		NULL
 };
 

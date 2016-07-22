@@ -6,24 +6,20 @@
  *
  * @copyright Copyright (C) 2016 Elphel, Inc
  *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
+ * @par <b>License</b>
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-//#define DEBUG 1
 #include <linux/device.h>
-
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
@@ -31,65 +27,44 @@
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
-//#include <linux/string.h>
 #include <linux/init.h>
-//#include <linux/time.h>
 #include <linux/wait.h>
 #include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
-
-//#include <asm/system.h>
-//#include <asm/arch/memmap.h>
-//#include <asm/svinto.h> obsolete
-//#include <asm/io.h>
-
-/*#include <asm/arch/dma.h>
-#include <asm/arch/hwregs/dma_defs.h>
-#include <asm/arch/hwregs/dma.h>
-#include <asm/arch/hwregs/reg_map.h>
-#include <asm/arch/hwregs/bif_dma_defs.h>
-*/
-
-//#include <asm/irq.h>
-//#include <asm/atomic.h>
-
-
-//#include <asm/delay.h>
 #include <asm/uaccess.h>
 #include <elphel/driver_numbers.h>
 #include <elphel/c313a.h>
 #include <elphel/elphel393-mem.h>
 
-#include "framepars.h" // just for ELPHEL_DEBUG bit mask
-
+#include "framepars.h"
 #include "sensor_common.h"
 #include "jpeghead.h"
 #include "circbuf.h"
 #include "exif.h"
 #include "x393_macro.h"
-//#include "x393.h"
 #include "x393_helpers.h"
 
+/** @brief Driver name displayed in system logs */
 #define CIRCBUF_DRIVER_NAME "circbuf driver"
 
-/** Wait queue for the processes waiting for a new frame to appear in the circular buffer */
+/** @brief Wait queue for the processes waiting for a new frame to appear in the circular buffer */
 wait_queue_head_t circbuf_wait_queue;
-
 struct circbuf_priv_t circbuf_priv[SENSOR_PORTS];
 struct circbuf_priv_t *circbuf_priv_ptr = circbuf_priv;
-
+/** @brief Global pointer to basic device structure. This pointer is used in debugfs output functions */
 static struct device *g_dev_ptr;
-
+/** @brief Structure used for matching a device from device tree */
 static const struct of_device_id elphel393_circbuf_of_match[];
-
 unsigned long *ccam_dma_buf_ptr[SENSOR_PORTS] = {NULL};
 
-/* debug code */
-//extern long long zero_counter[IMAGE_CHN_NUM];
-/* end of debug code*/
-
+/**
+ * @brief Set up pointers to memory where circular buffers are located. The memory
+ * for circular buffers is reserved using CMA mechanism.
+ * @param[in]   pdev   driver's platform device structure
+ * @return      0 if pointers were set up and negative error code otherwise
+ */
 int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 {
 	int i;
@@ -124,6 +99,13 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 	return 0;
 }
 
+/**
+ * @brief Process circular buffer file opening and define further action in accordance
+ * with minor file number.
+ * @param[in]   inode
+ * @param[in]   filp
+ * @return      0 if file was opened successfully and negative error code otherwise
+ */
 int circbuf_all_open(struct inode *inode, struct file *filp)
 {
 	int res;
@@ -148,6 +130,13 @@ int circbuf_all_open(struct inode *inode, struct file *filp)
 	return res;
 }
 
+/**
+ * @brief Process circular buffer file closing and define further action in accordance
+ * with minor file number.
+ * @param[in]   inode
+ * @param[in]   filp
+ * @return      0 if file was opened successfully and negative error code otherwise
+ */
 int circbuf_all_release(struct inode *inode, struct file *filp)
 {
 	int res=0;
@@ -173,6 +162,14 @@ int circbuf_all_release(struct inode *inode, struct file *filp)
 	return res;
 }
 
+/**
+ * @brief Process lseek operation on circular buffer file and define further
+ * action in accordance with minor file number.
+ * @param[in]   file   pointer to file structure corresponding to the circular buffer file
+ * @param[in]   offset offset in bytes
+ * @param[in]   orig   where the @e offset should start
+ * @return      The resulting offset location in bytes from the beginning of the file.
+ */
 loff_t circbuf_all_lseek(struct file *file, loff_t offset, int orig)
 {
 	int rp;
@@ -198,6 +195,15 @@ loff_t circbuf_all_lseek(struct file *file, loff_t offset, int orig)
 	}
 }
 
+/**
+ * @brief Process read operation on circular buffer file and define further
+ * action in accordance with minor file number.
+ * @param[in]   file   pointer to file structure corresponding to the circular buffer file
+ * @param[out]  buf    pointer to user buffer where the data should be placed
+ * @param[in]   count  the size of requested data transfer
+ * @param[in]   off    file position the user is accessing
+ * @return      The number of bytes copied or negative error code.
+ */
 ssize_t circbuf_all_read(struct file *file, char *buf, size_t count, loff_t *off)
 {
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
@@ -217,6 +223,15 @@ ssize_t circbuf_all_read(struct file *file, char *buf, size_t count, loff_t *off
 	}
 }
 
+/**
+ * @brief Process write operation on circular buffer file and define further
+ * action in accordance with minor file number.
+ * @param[in]   file   pointer to file structure corresponding to the circular buffer file
+ * @param[out]  buf    pointer to user buffer holding the data
+ * @param[in]   count  the size of requested data transfer
+ * @param[in]   off    file position the user is accessing
+ * @return      The number of bytes copied or negative error code.
+ */
 ssize_t circbuf_all_write(struct file *file, const char *buf, size_t count, loff_t *off)
 {
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
@@ -237,6 +252,14 @@ ssize_t circbuf_all_write(struct file *file, const char *buf, size_t count, loff
 	}
 }
 
+/**
+ * @brief Process memory map operation on circular buffer file and define further
+ * action in accordance with minor file number. Only circular buffer itself supports
+ * memory mapped operation, all other files will return an error.
+ * @param[in]   file   pointer to file structure corresponding to the circular buffer file
+ * @param[in]   vma    contains the information about the virtual address range
+ * @return      0 if file was mapped successfully and negative error code otherwise
+ */
 int circbuf_all_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
@@ -252,7 +275,16 @@ int circbuf_all_mmap(struct file *file, struct vm_area_struct *vma)
 	}
 }
 
-unsigned int circbuf_all_poll (struct file *file, poll_table *wait)
+/**
+ * @brief Process poll operation on circular buffer file and define further
+ * action in accordance with minor file number. Only circular buffer itself supports
+ * memory mapped operation, all other files will return an error.
+ * @param[in]   file   pointer to file structure corresponding to the circular buffer file
+ * @param[in]   wait   pointer to a wait queue
+ * @return      POLLHUP if pointer is invalid, (POLLIN | POLLRDNORM) if frame is ready,
+ *              0 in case nothing is ready or incorrect minor number received.
+ */
+unsigned int circbuf_all_poll(struct file *file, poll_table *wait)
 {
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
 	unsigned int dev_type;
@@ -263,10 +295,16 @@ unsigned int circbuf_all_poll (struct file *file, poll_table *wait)
 	case CIRCBUF_MINOR:
 		return circbuf_poll(file, wait);
 	default:
-		return -EINVAL;
+		return 0;
 	}
 }
 
+/**
+ * @brief Process circular buffer file opening.
+ * @param[in]   inode
+ * @param[in]   filp
+ * @return      Always 0.
+ */
 int circbuf_open(struct inode *inode, struct file *filp)
 {
 	inode->i_size = CCAM_DMA_SIZE;
@@ -275,6 +313,13 @@ int circbuf_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
+/**
+ * @brief Debug function, prints the content of interframe parameters.
+ * @param[in]   params   pointer to #interframe_params_t which should be printed
+ * @param[in]   offset   offset in circular buffer where the @e params is located
+ * @param[in]   chn      channel number this @e params belongs to
+ * @return      None
+ */
 void dump_interframe_params(struct interframe_params_t *params, int offset, unsigned int chn)
 {
 	dev_dbg(g_dev_ptr, "Dump of interframe parameters at offset 0x%x [chn %u]:\n", offset, chn);
@@ -282,7 +327,13 @@ void dump_interframe_params(struct interframe_params_t *params, int offset, unsi
 }
 
 /**
- * @brief Get the length of an image before given pointer
+ * @brief Get the length of an image before given pointer. The pointer @e byte_offset
+ * points to the beginning of new image data segment and this function calculates
+ * the length of the previous image data segment and returns a pointer to the end of
+ * this segment.
+ * @param[in]   byte_offset   the offset of image data in circular buffer
+ * @param[in]   chn           circular buffer channel
+ * @param[out]  last_chunk_offset the offset where image data ends
  */
 unsigned long get_image_length(int byte_offset, unsigned int chn, int *last_chunk_offset)
 {
@@ -297,7 +348,6 @@ unsigned long get_image_length(int byte_offset, unsigned int chn, int *last_chun
 
 	if ((len32 & MARKER_FF) != MARKER_FF) {
 		dev_dbg(g_dev_ptr, "[chn %u] failed to get 0xff marker at offset 0x%x\n", chn, offset);
-//		byte_offset = X393_BUFFSUB(byte_offset, CHUNK_SIZE);
 		last_image_chunk = X393_BUFFSUB(byte_offset, OFFSET_X40 + CHUNK_SIZE);
 		offset = X393_BUFFADD(last_image_chunk, CHUNK_SIZE - CCAM_MMAP_META_LENGTH);
 		len32 = circbuf_priv[chn].buf_ptr[BYTE2DW(offset)];
@@ -317,9 +367,9 @@ unsigned long get_image_length(int byte_offset, unsigned int chn, int *last_chun
 
 /**
  * @brief Check that read pointer is valid
- * @param[in]   rp   read pointer to be checked; this pointer is in bytes
+ * @param[in]   rp_offset read pointer to be checked; this pointer is in bytes
  * @param[out]  fpp  pointer to #interframe_params_t structure, this pointer will be set to
- * frame header before \e rp and will point to its parameters
+ * frame header before @e rp and will point to its parameters
  * @param[in]   chn  specify compressor channel number which pointer should be checked
  * @return 0 if the pointer is for the frame yet to be acquired, 1 if there is a valid frame at this address,
  * 2 if file pointer should be advanced by 32 bytes,
@@ -372,60 +422,13 @@ int circbuf_valid_ptr(loff_t *rp_offset, struct interframe_params_t **fpp, unsig
  * @brief Get image start offset pointed by its last data chunk
  * @param[in]   last_chunk_offset   offset of the last image data chunk
  * @param[in]   len32               length of image
- * @return      image start offset
+ * @return      Image start offset
  */
 inline int get_image_start(int last_chunk_offset, unsigned int len32)
 {
 	return X393_BUFFSUB(last_chunk_offset + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
 }
 
-/**
- * @brief Reposition read/write file offset
- *
- * This function is overloaded with additional functionality in order to avoid ioctls.
- * In case user-space program set <em>orig == SEEK_END</em>, \e lseek will treat (offset > 0) as a command
- * to manipulate frame pointer(s) or wait for the image to be ready using these commands:
- *
- *  LSEEK_CIRC_TORP  - set file pointer to global (shared) read pointer;
- *  LSEEK_CIRC_TOWP  - set file pointer to FPGA write pointer (next frame to be acquired);
- *  LSEEK_CIRC_PREV  - move pointer to the previous frame, return \e -EOVERFLOW if there are none;
- *  LSEEK_CIRC_NEXT  - advance pointer to the next frame, return \e -EOVERFLOW if it was at the last frame
- *  LSEEK_CIRC_LAST  - move pointer to the last acquired frame (default after open), this is a combination
- *                     of LSEEK_CIRC_TOWP and LSEEK_CIRC_PREV;
- *  LSEEK_CIRC_FIRST - move pointer to the first acquired frame. It s not safe to rely
- *                     on this pointer if more frames are expected - next incoming frame
- *                     can overwrite this one;
- *  LSEEK_CIRC_SCND -  move pointer to the second oldest acquired frame. A slightly safer
- *                     to use instead of LSEEK_CIRC_FIRST when constant acquisition is on
- *                     and sensor provides new frames - this frame will likely survive longer;
- *  LSEEK_CIRC_SETP -  save current pointer to global read pointer
- *  LSEEK_CIRC_VALID - verify that the frame at current location is valid (not overrun in the buffer).
- *                     Returns file pointer if it is valid and -1 otherwise;
- *  LSEEK_CIRC_READY - verify frame at current location is available (valid and acquired).
- *                     Returns file pointer if it is ready or -1 otherwise
- *  LSEEK_CIRC_WAIT -  sleep until next frame is acquired.
- * All commands but (LSEEK_CIRC_TOWP, LSEEK_CIRC_LAST, LSEEK_CIRC_FIRST) will return -EINVAL if read
- * pointer is not valid (i.e buffer was overrun and data pointed is lost). In case of success, they return
- * current (byte *) to the start of the frame data (parameters are at offset - 32 from it).
- * (0, SEEK_CUR) also verifies that the header is not overwritten. It can be used after buffering frame data to
- * verify you got it all correctly.
- *
- * SEEK_CUR also supports the circular nature of the buffer and rolls over if needed.
- *
- * Additional commands for SEEK_END (they _DO_ modify the current file pointer):
- *  LSEEK_CIRC_FREE -  returns remaining memory in circbuf from the current file pointer,
- *                   or -EINVAL if the pointer is invalid. As this command uses the buffer write pointer
- *                   that is updated only when the complete frame is in the buffer, the actual
- *                   free memory may be less by a whole frame if compressor is running.
- *  LSEEK_CIRC_USED - returns memory used in the in circbuf from the current file pointer,
- *                   or -EINVAL if the pointer is invalid
- * The following command is used for profiling from user space applications. It does not change file pointer:
- *  LSEEK_CIRC_UTIME  return current value of microsecond counter.
- *  @param[in]   file   pointer to \e file structure
- *  @param[in]   offset offset inside buffer in bytes
- *  @param[in]   orig   origin
- *  @return      current file pointer position if operation was successful and error code otherwise
- */
 /* debug code follows */
 void stop_compressor(unsigned int chn)
 {
@@ -482,6 +485,45 @@ void dump_state(unsigned int chn)
 	printk(KERN_DEBUG "=== end of state dump, %d frame(s) analyzed ===\n", nf);
 }
 /* end of debug code */
+/**
+ * @brief Reposition read/write file offset
+ *
+ * This function is overloaded with additional functionality in order to avoid ioctls.
+ * In case user-space program set <em>orig == SEEK_END</em>, @e lseek will treat (offset > 0) as a command
+ * to manipulate frame pointer(s) or wait for the image to be ready using these commands:
+ * command           | description
+ * ------------------|------------------------------------------------------------------------------------
+ *  LSEEK_CIRC_TORP  | set file pointer to global (shared) read pointer
+ *  LSEEK_CIRC_TOWP  | set file pointer to FPGA write pointer (next frame to be acquired)
+ *  LSEEK_CIRC_PREV  | move pointer to the previous frame, return @e -EOVERFLOW if there are none
+ *  LSEEK_CIRC_NEXT  | advance pointer to the next frame, return @e -EOVERFLOW if it was at the last frame
+ *  LSEEK_CIRC_LAST  | move pointer to the last acquired frame (default after open), this is a combination of LSEEK_CIRC_TOWP and LSEEK_CIRC_PREV
+ *  LSEEK_CIRC_FIRST | move pointer to the first acquired frame. It s not safe to rely on this pointer if more frames are expected - next incoming frame can overwrite this one
+ *  LSEEK_CIRC_SCND  | move pointer to the second oldest acquired frame. A slightly safer to use instead of LSEEK_CIRC_FIRST when constant acquisition is on and sensor provides new frames - this frame will likely survive longer
+ *  LSEEK_CIRC_SETP  | save current pointer to global read pointer
+ *  LSEEK_CIRC_VALID | verify that the frame at current location is valid (not overrun in the buffer). Returns file pointer if it is valid and -1 otherwise
+ *  LSEEK_CIRC_READY | verify frame at current location is available (valid and acquired). Returns file pointer if it is ready or -1 otherwise
+ *  LSEEK_CIRC_WAIT  | sleep until next frame is acquired
+ * All commands but (LSEEK_CIRC_TOWP, LSEEK_CIRC_LAST, LSEEK_CIRC_FIRST) will return -EINVAL if read
+ * pointer is not valid (i.e buffer was overrun and data pointed is lost). In case of success, they return
+ * current (byte *) to the start of the frame data (parameters are at offset - 32 from it).
+ * (0, SEEK_CUR) also verifies that the header is not overwritten. It can be used after buffering frame data to
+ * verify you got it all correctly.
+ *
+ * SEEK_CUR also supports the circular nature of the buffer and rolls over if needed.
+ *
+ * Additional commands for SEEK_END (they _DO_ modify the current file pointer):
+ * command           | description
+ * ------------------|------------------------------------------------------------------------------------
+ *  LSEEK_CIRC_FREE  | returns remaining memory in circbuf from the current file pointer, or -EINVAL if the pointer is invalid. As this command uses the buffer write pointer that is updated only when the complete frame is in the buffer, the actual free memory may be less by a whole frame if compressor is running
+ *  LSEEK_CIRC_USED  | returns memory used in the in circbuf from the current file pointer, or -EINVAL if the pointer is invalid
+ * The following command is used for profiling from user space applications. It does not change file pointer:
+ *  LSEEK_CIRC_UTIME  return current value of microsecond counter.
+ * @param[in]   file   pointer to @e file structure
+ * @param[in]   offset offset inside buffer in bytes
+ * @param[in]   orig   where the @e offset should start
+ * @return      Current file pointer position if operation was successful and error code otherwise
+ */
 loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 {
 	unsigned int len32 = 0;
@@ -500,7 +542,7 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 		break;
 	case SEEK_CUR:
 		if (offset) file->f_pos += offset;
-		else if (circbuf_valid_ptr(&file->f_pos, &fp, chn) < 0 ) return -EINVAL; //!no frames at the specified location or pointer is not 32-byte aligned
+		else if (circbuf_valid_ptr(&file->f_pos, &fp, chn) < 0 ) return -EINVAL; // no frames at the specified location or pointer is not 32-byte aligned
 		break;
 	case SEEK_END:
 		if (offset <= 0) {
@@ -536,11 +578,11 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 			case LSEEK_CIRC_FREE:
 				dev_dbg(g_dev_ptr, "[chn %u] LSEEK_CIRC_FREE: checking remaining memory in circbuf\n", chn);
 				bp = file->f_pos - (camseq_get_jpeg_wp(chn) << 2);
-				return (file->f_pos = (bp > 0) ? bp : (bp + CCAM_DMA_SIZE)); //!Has a side effect of moving a file pointer!
+				return (file->f_pos = (bp > 0) ? bp : (bp + CCAM_DMA_SIZE)); // Has a side effect of moving a file pointer!
 			case LSEEK_CIRC_USED:
 				dev_dbg(g_dev_ptr, "[chn %u] LSEEK_CIRC_USED: checking used memory in circbuf\n", chn);
 				bp = (camseq_get_jpeg_wp(chn) << 2) - file->f_pos;
-				return (file->f_pos = (bp > 0) ? bp : (bp + CCAM_DMA_SIZE)); //!Has a side effect of moving a file pointer!
+				return (file->f_pos = (bp > 0) ? bp : (bp + CCAM_DMA_SIZE)); // Has a side effect of moving a file pointer!
 			case LSEEK_CIRC_TORP:
 				// no actions to be done here, the pointer was set on previous step
 				break;
@@ -598,7 +640,7 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 				dev_dbg(g_dev_ptr, "[chn %u] LSEEK_CIRC_NEXT: file->f_pos = 0x%llx, fvld = %d, fp->len32 = 0x%lx\n", chn,
 						file->f_pos, fvld, fp->frame_length);
 				if (fvld <= 0) {
-					return -EOVERFLOW; //! no frames after current
+					return -EOVERFLOW; // no frames after current
 				} else if (fvld == 2) {
 					//file->f_pos += CHUNK_SIZE;
 					dev_dbg(g_dev_ptr, "[chn %u] read pointer file->f_pos was advanced by 0x20 bytes\n", chn);
@@ -627,8 +669,8 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 					len32 = get_image_length(rp_b, chn, &last_image_chunk);
 					dev_dbg(g_dev_ptr, "[chn %u] LSEEK_CIRC_FIRST or LSEEK_CIRC_SCND: number of frames = %d, rp_b = 0x%x, fvld = %d, len32 = 0x%x", chn,
 							nf, rp_b, fvld, len32);
-					if ((len32 & MARKER_FF) != MARKER_FF ) break;  //! no frames before rp (==prev_p)
-					//! move rp to the previous frame
+					if ((len32 & MARKER_FF) != MARKER_FF ) break;  // no frames before rp (==prev_p)
+					// move rp to the previous frame
 					len32 &= FRAME_LENGTH_MASK;
 					//img_start = X393_BUFFSUB(last_image_chunk + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32);
 					img_start = get_image_start(last_image_chunk, len32);
@@ -684,19 +726,19 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 	return  file->f_pos ;
 }
 
-/**
- * @brief This function handles write operations for circbuf files.
- * Note: never use \e file->f_pos in this function.
- * @param[in]   file  pointer to <em>struct file</em>
- * @param[in]   buf   pointer to buffer containing data
- * @param[in]   count number of bytes in buffer
- * @param[in]   off   offset
- * @return      number of bytes read form \e buf
- */
 unsigned short circbuf_quality = 100;
 unsigned short circbuf_height = 1936;
 unsigned short circbuf_width = 2592;
 unsigned char circbuf_byrshift = 3;
+/**
+ * @brief This function handles write operations for circbuf files.
+ * @note Never use @e file->f_pos in this function.
+ * @param[in]   file  pointer to <em>struct file</em>
+ * @param[in]   buf   pointer to buffer containing data
+ * @param[in]   count number of bytes in buffer
+ * @param[in]   off   offset
+ * @return      number of bytes read form @e buf
+ */
 ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *off)
 {
 	unsigned long p;
@@ -794,12 +836,12 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 
 /**
  * @brief This function handles read operations for circbuf files.
- * Note: never use \e file->f_pos in this function.
+ * @note Never use @e file->f_pos in this function.
  * @param[in]   file  pointer to <em>struct file</em>
  * @param[in]   buf   pointer to buffer where data will be written to
- * @param[in]   count number of bytes written to \e buf
+ * @param[in]   count number of bytes written to @e buf
  * @param[in]   off   offset
- * @return      number of bytes written to \e buf
+ * @return      Number of bytes written to @e buf
  */
 ssize_t circbuf_read(struct file *file, char *buf, size_t count, loff_t *off)
 {
@@ -821,6 +863,12 @@ ssize_t circbuf_read(struct file *file, char *buf, size_t count, loff_t *off)
 	return count;
 }
 
+/**
+ * @brief Process memory map operation on circular buffer file.
+ * @param[in]   file   pointer to file structure corresponding to the circular buffer file
+ * @param[in]   vma    contains the information about the virtual address range
+ * @return      0 if file was mapped successfully and negative error code otherwise
+ */
 int circbuf_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	int ret;
@@ -840,17 +888,6 @@ int circbuf_mmap(struct file *file, struct vm_area_struct *vma)
 			vma->vm_end - vma->vm_start,
 			vma->vm_page_prot);
 
-//	ret = dma_common_mmap(g_dev_ptr, vma,
-//			circbuf_priv[chn].buf_ptr,
-//			circbuf_priv[chn].phys_addr,
-//			pElphel_buf->size * PAGE_SIZE);
-//
-//	ret = arm_dma_mmap(g_dev_ptr, vma,
-//			circbuf_priv[chn].buf_ptr,
-//			circbuf_priv[chn].phys_addr,
-//			pElphel_buf->size * PAGE_SIZE,
-//			NULL);
-
 	dev_dbg(g_dev_ptr, "remap_pfn_range returned 0x%x\n", ret);
 	if (ret) return -EAGAIN;
 
@@ -859,7 +896,7 @@ int circbuf_mmap(struct file *file, struct vm_area_struct *vma)
 
 /**
  * @brief This driver method is called when user-space program performs <em>poll, select</em> or
- * \e epoll system call.
+ * @e epoll system call.
  *
  * If the current read pointer is invalid, circbuf_poll returns POLLHUP
  * as no data will be ever available until file pointer is reset.
@@ -867,7 +904,7 @@ int circbuf_mmap(struct file *file, struct vm_area_struct *vma)
  * current file pointer is equal to the FPGA write pointer.
  * @param[in]   file   pointer to <em>struct file</em> structure
  * @param[in]   wait   pointer to <em>struct poll_table</em> structure
- * return       POLLHUP if pointer is invalid, (POLLIN | POLLRDNORM) if frame is ready,
+ * @return      POLLHUP if pointer is invalid, (POLLIN | POLLRDNORM) if frame is ready,
  *              0 in case nothing is ready.
  */
 unsigned int circbuf_poll (struct file *file, poll_table *wait)
@@ -885,7 +922,7 @@ unsigned int circbuf_poll (struct file *file, poll_table *wait)
 		dev_dbg(g_dev_ptr, "invalid pointer file->f_pos = 0x%llx\n", file->f_pos);
 		return  POLLHUP ;
 	} else if (rslt > 0) {
-		return POLLIN | POLLRDNORM; //! there was frame already available
+		return POLLIN | POLLRDNORM;     // there was frame already available
 	} else {
 		// pointer valid, no frame yet
 		poll_wait(file, &circbuf_wait_queue, wait);
@@ -893,9 +930,9 @@ unsigned int circbuf_poll (struct file *file, poll_table *wait)
 		// let's see if there is still no frame.
 		w_ptr = camseq_get_jpeg_wp(chn) << 2;
 		if (w_ptr != file->f_pos)
-			return POLLIN | POLLRDNORM; //! we are lucky - got it
+			return POLLIN | POLLRDNORM; // we are lucky - got it
 	}
-	return 0; // nothing ready
+	return 0;                           // nothing ready
 }
 
 static struct file_operations circbuf_fops = {
@@ -903,7 +940,6 @@ static struct file_operations circbuf_fops = {
 		.llseek         = circbuf_all_lseek,
 		.read           = circbuf_all_read,
 		.write          = circbuf_all_write,
-		//ioctl:    circbuf_all_ioctl,
 		.open           = circbuf_all_open,
 		.mmap           = circbuf_all_mmap,
 		.poll           = circbuf_all_poll,
@@ -912,7 +948,7 @@ static struct file_operations circbuf_fops = {
 
 /**
  * @brief cirbuf driver probing function
- * @param[in]   pdev   pointer to \b platform_device structure
+ * @param[in]   pdev   pointer to @e platform_device structure
  * @return      0 on success or negative error code otherwise
  */
 static int circbuf_all_init(struct platform_device *pdev)
@@ -959,6 +995,11 @@ static int circbuf_all_init(struct platform_device *pdev)
    return 0;
 }
 
+/**
+ * @brief cirbuf driver remove function
+ * @param[in]   pdev   pointer to @e platform_device structure
+ * @return      Always 0.
+ */
 static int circbuf_remove(struct platform_device *pdev)
 {
 	unregister_chrdev(CIRCBUF_MAJOR, "circbuf_operations");
