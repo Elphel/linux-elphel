@@ -2,21 +2,18 @@
 * @file   sensor_i2c.c
 * @brief  Interface to FPGA-based i2c sequencer for sensor ports
 * @copyright Copyright 2016 (C) Elphel, Inc.
-*
+* @par <b>License</b>
 *  This program is free software: you can redistribute it and/or modify
 *  it under the terms of the GNU General Public License as published by
 *  the Free Software Foundation, either version 2 of the License, or
 *  (at your option) any later version.
-*
 *  This program is distributed in the hope that it will be useful,
 *  but WITHOUT ANY WARRANTY; without even the implied warranty of
 *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 *  GNU General Public License for more details.
-*
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
-/****************** INCLUDE FILES SECTION ***********************************/
 //#define DEBUG /* should be before linux/module.h - enables dev_dbg at boot in this file */
 
 #include <linux/module.h>
@@ -26,20 +23,15 @@
 #include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/string.h>
-//#include <linux/poll.h>
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/platform_device.h>
 #include <linux/spinlock.h>
-//#include <linux/spinlock_types.h>
 #include <linux/jiffies.h>
 #include <asm/io.h>
-//#include <asm/system.h>
 #include <asm/irq.h>
-
 #include <elphel/driver_numbers.h>
 #include <asm/uaccess.h>
-
 #include "x393.h"
 #include "sensor_i2c.h"
 
@@ -53,7 +45,7 @@
 #include <linux/of_net.h>
 #include <linux/platform_device.h>
 #include <linux/sysfs.h>
-#include  <linux/list.h>
+#include <linux/list.h>
 
 #define SYSFS_PERMISSIONS         0644 /* default permissions for sysfs files */
 #define SYSFS_READONLY            0444
@@ -67,27 +59,25 @@ struct x393_i2c_device_list {
 };
 const char of_prop_name[] = "elphel393-sensor-i2c,i2c_devices";
 const char group_name[] =   "i2c_classes";
-const int max_buf_len =     4096-256; // stop output when only 256 bytes are left in the caller's buffer
+const int max_buf_len =     4096-256; ///< stop output when only 256 bytes are left in the caller's buffer
 const int max_i2c_classes = 256;
-const int mclk_mhz =        200; // mclk frequency in MHz
+const int mclk_mhz =        200;      ///< mclk frequency in MHz
 //const int tenth_sec =       max(2, HZ/10); // make it not less than 2 jiffies for some very slow clock
 //const int tenth_sec =       (HZ >=20) ? (HZ/10) : 2; // make it not less than 2 jiffies for some very slow clock
 const int tenth_sec =       2;
 
 static LIST_HEAD(i2c_class_list);
-// Number of channels is hard-wired to 4
-static u32 free_i2c_groups[4];
+static u32 free_i2c_groups[4];        ///< Number of channels is hard-wired to 4
 static u32 free_i2c_pages [32];
 static DEFINE_SPINLOCK(lock);
-static u32 i2c_pages_shadow[1024]; // Mostly for debugging to analyze i2c pages allocation
-static int sysfs_page[4]; // when positive - page locked for exclusive access
+static u32 i2c_pages_shadow[1024];   ///< Mostly for debugging to analyze i2c pages allocation
+static int sysfs_page[4];            ///< when positive - page locked for exclusive access
+static struct device *sdev = NULL;   ///< store this device here
+static u32    i2c_read_data[4];      ///< last data read from i2c device
 
-static struct device *sdev = NULL; // store this device here
-
-static u32    i2c_read_data[4]; // last data read from i2c device
-
-/* Mark all i2c pages for each channel as free */
-void i2c_page_alloc_init(void){
+/** Mark all i2c pages for each channel as free */
+void i2c_page_alloc_init(void)
+{
 	int i;
 	for (i = 0; i < sizeof(free_i2c_groups)/sizeof(free_i2c_groups[0]); i++) free_i2c_groups[i] = 0xff000000;
 	for (i = 0; i < sizeof(free_i2c_pages)/ sizeof(free_i2c_pages[0]);  i++) free_i2c_pages[i] =  0xffffffff;
@@ -95,8 +85,11 @@ void i2c_page_alloc_init(void){
 	for (i = 0; i < sizeof(sysfs_page)/sizeof(sysfs_page[0]); i++) sysfs_page[i] = -1;
 }
 
-/* Reserve i2c page (1 of 256 for a sensor port)*/
-int i2c_page_alloc(int chn){
+/** Reserve i2c page (1 of 256) for a sensor port
+ * @param chn sensor port number (0..3)
+ */
+int i2c_page_alloc(int chn)
+{
 	int g, b;
 	u32 * fb;
 	spin_lock(&lock);
@@ -116,8 +109,12 @@ int i2c_page_alloc(int chn){
 }
 EXPORT_SYMBOL_GPL(i2c_page_alloc);
 
-/* Free i2c page */
-void i2c_page_free(int chn, int page){
+/** Free i2c page
+ * @param chn sensor port number (0..3)
+ * @param page i2c configuration page to release
+ */
+void i2c_page_free(int chn, int page)
+{
 	int g =    page >> 5;
 	int b =    page & 0x1f;
 	u32 * fb = free_i2c_pages + ((chn << 3) + g);
@@ -128,8 +125,11 @@ void i2c_page_free(int chn, int page){
 }
 EXPORT_SYMBOL_GPL(i2c_page_free);
 
-/* calculate value of SCLK 1/4 period delay from maximal SCL frequency*/
-int get_bit_delay(int khz){
+/** Calculate value of SCLK 1/4 period delay from maximal SCL frequency
+ * @param khz - maximal I2C clock frequency in KHz
+ * @return bit delay for 1/4 SCL period in mclk (now 200MHz) cycles*/
+int get_bit_delay(int khz)
+{
 	int dly;
 	if (!khz)
 		return 0;
@@ -139,10 +139,11 @@ int get_bit_delay(int khz){
 	return dly;
 }
 
-/* Set i2c table entry to raw data (will just overwrite tbl_mode = 2)*/
-void set_xi2c_raw(int chn,
-	              int page,   // index in lookup table
-				  u32 data) { // Bit delay - number of mclk periods in 1/4 of the SCL period
+/** Set i2c table entry to raw data (will just overwrite tbl_mode = 2)*/
+void set_xi2c_raw(int chn,    ///< Sensor port number
+	              int page,   ///< index in lookup table
+				  u32 data)   ///< Raw table data (bits 27:0), bits 29:28 will be set to 2
+{
 	x393_i2c_ctltbl_t tb_data, tb_addr;
 	tb_addr.d32 =      0;
 	tb_addr.tbl_mode = 3;
@@ -157,15 +158,15 @@ void set_xi2c_raw(int chn,
 }
 EXPORT_SYMBOL_GPL(set_xi2c_raw);
 
-/*
- *  Set i2c table entry for write operation using known devices
+/** Set i2c table entry for write operation using known devices.
  * Get device with xi2c_dev_get(), copy and modify, if needed to
  * offset slave address or change number of bytes to write, SCL frequency
  */
-void set_xi2c_wrc( x393_i2c_device_t * dc,   // device class
-		          int                  chn,  // sensor port
-		          int                  page, // index in lookup table
-				  int                  rah){ // High byte of the i2c register address
+void set_xi2c_wrc( x393_i2c_device_t * dc,   ///< device class
+		          int                  chn,  ///< sensor port
+		          int                  page, ///< index in lookup table
+				  int                  rah)  ///< High byte of the i2c register address
+{
 	x393_i2c_ctltbl_t tb_data, tb_addr;
 	tb_addr.d32 =      0;
 	tb_addr.tbl_mode = 3;
@@ -186,14 +187,14 @@ void set_xi2c_wrc( x393_i2c_device_t * dc,   // device class
 }
 EXPORT_SYMBOL_GPL(set_xi2c_wrc);
 
-/*
- * Set i2c table entry for read operation using known devices
+/** Set i2c table entry for read operation using known devices
  * Get device with xi2c_dev_get(), copy and modify, if needed to
  * offset slave address or change number of bytes to write, SCL frequency
  */
-void set_xi2c_rdc(x393_i2c_device_t * dc,    // device class
-        		  int                 chn,    // sensor port
-				  int                 page) { // index in lookup table
+void set_xi2c_rdc(x393_i2c_device_t * dc,  ///< device class
+        		  int                 chn, ///< sensor port
+				  int                 page)///< index in lookup table
+{
 	x393_i2c_ctltbl_t tb_data, tb_addr;
 	tb_addr.d32 =      0;
 	tb_addr.tbl_mode = 3;
@@ -215,13 +216,14 @@ void set_xi2c_rdc(x393_i2c_device_t * dc,    // device class
 EXPORT_SYMBOL_GPL(set_xi2c_rdc);
 
 
-/* Set i2c table entry for write operation */
-void set_xi2c_wr(int chn,
-		         int page,        // index in lookup table
-				 int sa7,         // slave address (7 bit)
-				 int rah,         // High byte of the i2c register address
-				 int num_bytes,   // Number of bytes to write (1..10)
-				 int bit_delay) { // Bit delay - number of mclk periods in 1/4 of the SCL period
+/** Set i2c table entry for write operation */
+void set_xi2c_wr(int chn,        ///< sensor port
+		         int page,       ///< index in lookup table
+				 int sa7,        ///< slave address (7 bit)
+				 int rah,        ///< High byte of the i2c register address
+				 int num_bytes,  ///< Number of bytes to write (1..10)
+				 int bit_delay)  ///< Bit delay - number of mclk periods in 1/4 of the SCL period
+{
 	x393_i2c_ctltbl_t tb_data, tb_addr;
 	tb_addr.d32 =      0;
 	tb_addr.tbl_mode = 3;
@@ -243,12 +245,13 @@ void set_xi2c_wr(int chn,
 EXPORT_SYMBOL_GPL(set_xi2c_wr);
 
 
-/* Set i2c table entry for read operation */
-void set_xi2c_rd(int chn,
-		         int page,          // index in lookup table
-				 int two_byte_addr, // Number of address bytes (0 - one byte, 1 - two bytes)
-				 int num_bytes,     // Number of bytes to read (1..8, 0 means 8)
-				 int bit_delay) { // Bit delay - number of mclk periods in 1/4 of the SCL period
+/** Set i2c table entry for read operation */
+void set_xi2c_rd(int chn,           ///< sensor port
+		         int page,          ///< index in lookup table
+				 int two_byte_addr, ///< Number of address bytes (0 - one byte, 1 - two bytes)
+				 int num_bytes,     ///< Number of bytes to read (1..8, 0 means 8)
+				 int bit_delay)     ///< Bit delay - number of mclk periods in 1/4 of the SCL period
+{
 	x393_i2c_ctltbl_t tb_data, tb_addr;
 	tb_addr.d32 =      0;
 	tb_addr.tbl_mode = 3;
@@ -268,29 +271,31 @@ void set_xi2c_rd(int chn,
 }
 EXPORT_SYMBOL_GPL(set_xi2c_rd);
 
-/*
-// Write i2c command to the i2c command sequencer
-// I2C command sequencer, block of 16 DWORD slots for absolute frame numbers (modulo 16) and 15 slots for relative ones
-// 0 - ASAP, 1 next frame, 14 -14-th next.
-// Data written depends on context:
-// 1 - I2C register write: index page (MSB), 3 payload bytes. Payload bytes are used according to table and sent
-//     after the slave address and optional high address byte. Other bytes are sent in descending order (LSB- last).
-//     If less than 4 bytes are programmed in the table the high bytes (starting with the one from the table) are
-//     skipped.
-//     If more than 4 bytes are programmed in the table for the page (high byte), one or two next 32-bit words
-//     bypass the index table and all 4 bytes are considered payload ones. If less than 4 extra bytes are to be
-//     sent for such extra word, only the lower bytes are sent.
-//
-// 2 - I2C register read: index page, slave address (8-bit, with lower bit 0) and one or 2 address bytes (as programmed
-//     in the table. Slave address is always in byte 2 (bits 23:16), byte1 (high register address) is skipped if
-//     read address in the table is programmed to be a single-byte one
- */
-
-/* Write one or multiple DWORDs to i2c relative (modulo16) address. Use offs = 0 for immediate (ASAP) command */
-/* Length of data is determined by the page data already preset */
-int write_xi2c_rel (int chn,
-                    int offs, // 4 bits
-                    u32 * data){
+/** @brief Write i2c command to the i2c command sequencer, block of 16 DWORD slots for absolute frame numbers
+ *  (modulo 16) and 15 slots for relative ones: 0 - ASAP, 1 next frame, 14 -14-th next.
+ * This command writes one or multiple DWORDs to i2c relative (modulo16) address. Use offs = 0 for immediate (ASAP) command.
+ * Length of data is determined by the page data already preset. Data is written MSB first, first data word starts
+ * with (in bits 31:24) table index.
+ *
+ * Data written depends on context:
+ *
+ * 1 - I2C register write: index page (MSB), 3 payload bytes. Payload bytes are used according to table and sent
+ *     after the slave address and optional high address byte. Other bytes are sent in descending order (LSB- last).
+ *     If less than 4 bytes are programmed in the table the high bytes (starting with the one from the table) are
+ *     skipped.
+ *     If more than 4 bytes are programmed in the table for the page (high byte), one or two next 32-bit words
+ *     bypass the index table and all 4 bytes are considered payload ones. If less than 4 extra bytes are to be
+ *     sent for such extra word, only the lower bytes are sent.
+ *
+ * 2 - I2C register read: index page, slave address (8-bit, with lower bit 0) and one or 2 address bytes (as programmed
+ *     in the table. Slave address is always in byte 2 (bits 23:16), byte1 (high register address) is skipped if
+ *     read address in the table is programmed to be a single-byte one. */
+int write_xi2c_rel (int chn,    ///< sensor port
+                    int offs,   ///< relative frame number modulo 16
+                    u32 * data) ///< data array. Length written is defined by the pre-configured table entry.
+                                ///< MSB (data is sent MSB first) of the first entry is index in the table.
+                                ///< @return 0 on success, negative error if table shadow is not initialized to data
+{
 	x393_i2c_ctltbl_t tb_data;
 	int len;
 	int i;
@@ -310,9 +315,16 @@ int write_xi2c_rel (int chn,
 }
 EXPORT_SYMBOL_GPL(write_xi2c_rel);
 
-int write_xi2c_abs (int chn,
-                    int offs, // 4 bits
-                    u32 * data){
+/** Write one or multiple DWORDs to i2c absolute (modulo16) address.
+ * Length of data is determined by the page data already preset. Data is written MSB first, first data word starts
+ * with (in bits 31:24) table index.
+ * @see write_xi2c_rel */
+int write_xi2c_abs (int chn,    ///< sensor port
+                    int offs,   ///< absolute frame number modulo 16
+                    u32 * data) ///< data array. Length written is defined by the pre-configured table entry.
+                                ///< MSB (data is sent MSB first) of the first entry is index in the table.
+                                ///< @return 0 on success, negative error if table shadow is not initialized to data
+{
 	x393_i2c_ctltbl_t tb_data;
 	int len;
 	int i;
@@ -332,35 +344,38 @@ int write_xi2c_abs (int chn,
 }
 EXPORT_SYMBOL_GPL(write_xi2c_abs);
 
-/* Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
-void  write_xi2c_reg16  (int chn,
-	 	                 int page, // page (8 bits)
-                         int addr, // low 8 bits
-	      				 u32 data){ // 16 or 8-bit data (LSB aligned)
+/** Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
+void  write_xi2c_reg16  (int chn,  ///< sensor port
+	 	                 int page, ///< index in the table (8 bits)
+                         int addr, ///< low byte of the register address (high is in the table), 8 bits
+	      				 u32 data) ///< 16 or 8-bit data (LSB aligned)
+{
     u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
 	x393_sensi2c_rel (dw, chn, 0);
 }
 EXPORT_SYMBOL_GPL(write_xi2c_reg16);
 
-/*
- * Initiate sensor i2c read in immediate mode (data itself has to be read from FIFO with read_xi2c_fifo)
- * Use slave address from provided class structure.
+/** Initiate sensor i2c read in immediate mode (data itself has to be read from FIFO with read_xi2c_fifo)
+ *  Use slave address from provided class structure.
  */
-void  read_xi2c (x393_i2c_device_t * dc,     // device class
-		         int chn,
-		         int page, // page (8 bits)
-                 int addr){ // 8/16 bit address
+void  read_xi2c (x393_i2c_device_t * dc, ///< device class
+		         int chn,                ///< sensor port
+		         int page,               ///< Table index (8 bits)
+                 int addr)               ///< 8/16 bit register address
+{
     u32 dw = ((page & 0xff) << 24)  | (dc -> slave7 << 17) | (addr & 0xffff);
 	x393_sensi2c_rel (dw, chn, 0);
 }
 EXPORT_SYMBOL_GPL(read_xi2c);
 
 
-/* Initiate sensor i2c read in immediate mode (data itself has to be read from FIFO with read_xi2c_fifo)*/
-void  read_xi2c_sa7 (int chn,
-		             int page,  // page (8 bits)
-					 int sa7,   // 7-bit i2c slave address
-                     int addr){ // 8/16 bit address
+/** Initiate sensor i2c read in immediate mode, specify 7-bit slave address
+ *  (data itself has to be read from FIFO with read_xi2c_fifo) */
+void  read_xi2c_sa7 (int chn,   ///< sensor port
+		             int page,  ///< Table index (8 bits)
+					 int sa7,   ///< 7-bit i2c slave address
+                     int addr)  ///< 8/16 bit register address
+{
     u32 dw = ((page & 0xff) << 24)  | (sa7 << 17) | (addr & 0xffff);
 	dev_dbg(sdev, "read_xi2c_sa7(%d,0x%x,0x%x,0x%x): 0x%08x\n",chn,page,sa7,addr,(int) dw);
 	x393_sensi2c_rel (dw, chn, 0);
@@ -368,9 +383,11 @@ void  read_xi2c_sa7 (int chn,
 EXPORT_SYMBOL_GPL(read_xi2c_sa7);
 
 
-/* Read next byte from the channel i2c FIFO. Return byte or -1 if no data available, -EIO - error */
-/* Sensor channel status will be set  to auto update mode (3) if it was in different mode */
-int read_xi2c_fifo(int chn){
+/** Read next byte from the channel i2c read FIFO.
+ * Sensor channel status will be set  to auto update mode (3) if it was in different mode */
+int read_xi2c_fifo(int chn) ///< sensor port
+                            ///< @return byte or -1 if no data available, -EIO - error
+{
 	int fifo_lsb, rslt,i;
 	x393_i2c_ctltbl_t i2c_cmd;
 	x393_status_sens_i2c_t  status;
@@ -405,12 +422,16 @@ int read_xi2c_fifo(int chn){
 }
 EXPORT_SYMBOL_GPL(read_xi2c_fifo);
 
-/* Single-command i2c write/read register using pre-defined device classes */
-int x393_xi2c_write_reg(const char * cname,    // device class name
-						int          chn,      // sensor port number
-				        int          sa7_offs, // slave address (7-bit) offset from the class defined slave address
-				        int          reg_addr, // register address (width is defined by class)
-				        int          data){    // data to write (width is defined by class)
+/** Single-command i2c write register using pre-defined device classes.
+ * This command reserves and configures table entry, releases it in the end */
+int x393_xi2c_write_reg(const char * cname,    ///< device class name
+						int          chn,      ///< sensor port number
+				        int          sa7_offs, ///< slave address (7-bit) offset from the class defined slave address,
+				                               ///< used when multiple instances of the same class devices are present.
+				        int          reg_addr, ///< register address (width is defined by class)
+				        int          data)     ///< data to write (width is defined by class)
+				                               ///< @return 0 on success, < 0 - error
+{
 	x393_i2c_device_t * dc;
 	x393_i2c_device_t   ds;
 	int                 page;
@@ -443,12 +464,17 @@ int x393_xi2c_write_reg(const char * cname,    // device class name
 	return 0;
 }
 EXPORT_SYMBOL_GPL(x393_xi2c_write_reg);
-int x393_xi2c_read_reg( const char * cname,    // device class name
-						int          chn,      // sensor port number
-				        int          sa7_offs, // slave address (7-bit) offset from the class defined slave address
-				        int          reg_addr, // register address (width is defined by class)
-				        int *        datap){   // pointer to a data receiver (read data width is defined by class)
 
+/** Single-command i2c read register using pre-defined device classes.
+ * This command reserves and configures table entry, initiates i2c read, waits and receives data, releases table entry in the end */
+int x393_xi2c_read_reg( const char * cname,    ///< device class name
+						int          chn,      ///< sensor port number
+				        int          sa7_offs, ///< slave address (7-bit) offset from the class defined slave address.
+				                               ///< Offset is non-zero when multiple devices of the same class are present.
+				        int          reg_addr, ///< register address (width is defined by class)
+				        int *        datap)    ///< pointer to a data receiver (read data width is defined by class)
+				                               ///< @return 0 on success, < 0 - error
+{
 	x393_i2c_device_t * dc;
 	int                 page, i, db=-1;
 	unsigned long       timeout_end;
@@ -470,7 +496,6 @@ int x393_xi2c_read_reg( const char * cname,    // device class name
 	dev_dbg(sdev, "got page= 0x%x\n",page);
 
 	/* Set table entry for reading */
-//	ds.slave7 = dc->slave7 + sa7_offs;
 	set_xi2c_rdc(dc,                      // device class
 			     chn,                     // sensor port
 			     page);                   // index in lookup table
@@ -489,7 +514,6 @@ int x393_xi2c_read_reg( const char * cname,    // device class name
     *datap = 0;
 	dev_dbg(sdev, "Trying to get FIFO data for channel %d\n",chn);
 	for (i = 0; i< dc->data_bytes; i++) {
-//		timeout_end = jiffies + 20*tenth_sec;
 		timeout_end = jiffies + tenth_sec;
 		while (jiffies < timeout_end){
 			db = read_xi2c_fifo(chn);
@@ -513,7 +537,10 @@ int x393_xi2c_read_reg( const char * cname,    // device class name
 EXPORT_SYMBOL_GPL(x393_xi2c_read_reg);
 
 /* Handling classes of i2c devices */
-struct x393_i2c_device_list * i2c_dev_get(const char * name){
+/** Find device list entry by device class name */
+struct x393_i2c_device_list * i2c_dev_get(const char * name) ///< Device class name as string
+                                                             ///< @return list entry or NULL (if not found)
+{
 	struct list_head *p;
 	struct x393_i2c_device_list * sp;
 	list_for_each(p, &i2c_class_list) {
@@ -525,7 +552,10 @@ struct x393_i2c_device_list * i2c_dev_get(const char * name){
 	}
 	return NULL;
 }
-x393_i2c_device_t * xi2c_dev_get(const char * name){
+/** Find device list entry by device class name */
+x393_i2c_device_t * xi2c_dev_get(const char * name) ///< Device class name as string
+                                                    ///< @return i2c device or NULL (if not found)
+{
 	struct x393_i2c_device_list * dl = i2c_dev_get(name);
 	if (dl)
 		return &dl->i2c_dev;
@@ -534,15 +564,16 @@ x393_i2c_device_t * xi2c_dev_get(const char * name){
 
 }
 EXPORT_SYMBOL_GPL(xi2c_dev_get);
-
-struct x393_i2c_device_list * i2c_dev_add(const char * name){
+/** Add new i2c device class, OK to provide existing name */
+struct x393_i2c_device_list * i2c_dev_add(const char * name) ///< Device class name (<32 characters)
+                                                             ///< @return pointer to a device list entry
+{
 	struct x393_i2c_device_list * sp = i2c_dev_get(name);
 	if (sp) return sp; /* already exists */
 	/*Allocate new structure */
 	dev_dbg(sdev,"allocating space for %s\n",name);
 	sp = (struct x393_i2c_device_list *) devm_kzalloc(sdev, sizeof(struct x393_i2c_device_list), GFP_KERNEL);
 	dev_dbg(sdev,"Copying name\n");
-//	INIT_LIST_HEAD(&sp->list);
 	strncpy(sp->i2c_dev.name, name, sizeof(sp->i2c_dev.name));
 	dev_dbg(sdev,"Done\n");
 	INIT_LIST_HEAD(&sp->list);
@@ -552,7 +583,10 @@ struct x393_i2c_device_list * i2c_dev_add(const char * name){
 	return sp;
 }
 
-int i2c_dev_remove(const char * name){
+/** Remove i2c device class by name */
+int i2c_dev_remove(const char * name) ///< existing device class name
+                                      ///< @return 0 if OK, -ENOENT if specified device class does not exist
+{
 	struct x393_i2c_device_list * sp = i2c_dev_get(name);
 	if (!sp) return - ENOENT;
 	/* remove sysfs entry */
@@ -565,17 +599,31 @@ int i2c_dev_remove(const char * name){
 
 /* =========================== sysfs functionality ============================== */
 
-/* Get channel number from the last character of the attribute name*/
-static int get_channel_from_name(struct device_attribute *attr){
+/** Sysfs helper function - get channel number from the last character of the attribute name*/
+static int get_channel_from_name(struct device_attribute *attr) ///< Linux kernel interface for exporting device attributes
+                                                                ///< @return channel number
+{
 	int reg = 0;
 	sscanf(attr->attr.name + (strlen(attr->attr.name)-1), "%du", &reg);
 	return reg;
 }
-static ssize_t i2c_member_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count){
+/** Sysfs function - respond to attempt of write to read only i2c device class member record */
+static ssize_t i2c_member_store(struct device *dev,              ///< Linux kernel basic device structure
+		                        struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+								const char *buf,                 ///< 4K buffer with what was written
+								size_t count)                    ///< offset to the end of buffer data
+								                                 ///< @return new offset to the end of buffer data
+{
 	dev_warn(dev,"i2c_member_store(): not implemented\n");
 	return count;
 }
-static ssize_t i2c_member_show(struct device *dev, struct device_attribute *attr, char *buf){
+
+/** Sysfs function - show i2c device class member record */
+static ssize_t i2c_member_show(struct device *dev,              ///< Linux kernel basic device structure
+		                       struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+							   char *buf)                       ///< 4K buffer to receive response
+							                                    ///< @return offset to the end of the output data in the *buf buffer
+{
 	struct x393_i2c_device_list * sp;
 	sp =  i2c_dev_get(attr->attr.name);
 	if (!sp)
@@ -587,7 +635,18 @@ static ssize_t i2c_member_show(struct device *dev, struct device_attribute *attr
 				       sp->i2c_dev.scl_khz);
 }
 
-static ssize_t i2c_class_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+/**Sysfs function - add new i2c device class. Buffer data should contain the following data, separated by spaces:
+ * - name
+ * - slave addr (7 bit)
+ * - address width (bytes)
+ * - data  width (bytes)
+ * - max SCL frequency (kHz)
+ */
+static ssize_t i2c_class_store(struct device *dev,              ///< Linux kernel basic device structure
+                               struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+		                       const char *buf,                 ///< 4K buffer with what was written
+		                       size_t count)                    ///< offset to the end of buffer data
+		                                                        ///< @return new offset to the end of buffer data
 {
     struct x393_i2c_device_list * dl;
 	char name[32];
@@ -633,7 +692,11 @@ static ssize_t i2c_class_store(struct device *dev, struct device_attribute *attr
 	return count;
 }
 
-static ssize_t i2c_class_show(struct device *dev, struct device_attribute *attr, char *buf)
+/** Sysfs function - show all i2c device classes */
+static ssize_t i2c_class_show(struct device *dev,              ///< Linux kernel basic device structure
+                              struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+        		              char *buf)                       ///< 4K buffer to receive response
+		                                                       ///< @return offset to the end of the output data in the *buf buffer
 {
 	struct list_head *p;
 	struct x393_i2c_device_list * sp;
@@ -656,33 +719,43 @@ static ssize_t i2c_class_show(struct device *dev, struct device_attribute *attr,
 	}
 	return buf-cp;
 }
-static ssize_t get_i2c_page_alloc(struct device *dev, struct device_attribute *attr, char *buf)
+
+/** Sysfs function - allocate new page in i2c device table, output page number as a decimal value */
+static ssize_t get_i2c_page_alloc(struct device *dev,              ///< Linux kernel basic device structure
+                                  struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                                  char *buf)                       ///< 4K buffer to receive response
+                                                                   ///< @return offset to the end of the output data in the *buf buffer, or -ENOMEM
 {
 	int chn = get_channel_from_name(attr) ;
 	int page;
-//	if (sysfs_page[chn]>=0)
-//		return -EBUSY;
 	page= i2c_page_alloc(chn);
 	if (page <0)
 		return -ENOMEM;
 	sysfs_page[chn] = page;
 	return sprintf(buf,"%d\n",page);
 }
-static ssize_t free_i2c_page(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+
+/** Sysfs function - release page in i2c device table, input buffer *buf should contain page number as decimal or hex number*/
+static ssize_t free_i2c_page(struct device *dev,              ///< Linux kernel basic device structure
+                             struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                             const char *buf,                 ///< 4K buffer with what was written
+                             size_t count)                    ///< offset to the end of buffer data
+                                                              ///< @return new offset to the end of buffer data
 {
 	int chn = get_channel_from_name(attr) ;
 	int page;
     sscanf(buf, "%i", &page);
     page &= 0xff;
-//	if (sysfs_page[chn] >= 0)
-//		i2c_page_free(chn, page);
-//	sysfs_page[chn] = -1; // free
     i2c_page_free(chn, page);
 	return count;
 }
 
-/* Set/get page number for reading */
-static ssize_t set_i2c_page_inuse(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+/** Sysfs function - set page in i2c device table to use for next reading, input buffer *buf should contain page number as decimal or hex number*/
+static ssize_t set_i2c_page_inuse(struct device *dev,              ///< Linux kernel basic device structure
+                                  struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                                  const char *buf,                 ///< 4K buffer with what was written
+                                  size_t count)                    ///< offset to the end of buffer data
+                                                                   ///< @return new offset to the end of buffer data
 {
 	int chn = get_channel_from_name(attr) ;
 	int page;
@@ -690,7 +763,13 @@ static ssize_t set_i2c_page_inuse(struct device *dev, struct device_attribute *a
     sysfs_page[chn] = page & 0xff;
 	return count;
 }
-static ssize_t get_i2c_page_inuse(struct device *dev, struct device_attribute *attr, char *buf)
+
+/** Sysfs function - get page number in i2c device table that was set to use for next reading.
+ *  Output buffer *buf provides page number as a decimal */
+static ssize_t get_i2c_page_inuse(struct device *dev,              ///< Linux kernel basic device structure
+                                  struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                                  char *buf)                       ///< 4K buffer to receive response
+                                                                   ///< @return offset to the end of the output data in the *buf buffer
 {
 	int chn = get_channel_from_name(attr) ;
 	return sprintf(buf,"%d\n",sysfs_page[chn]);
@@ -698,8 +777,11 @@ static ssize_t get_i2c_page_inuse(struct device *dev, struct device_attribute *a
 
 
 
-// Get i2c table data as raw data (hex)
-static ssize_t get_i2c_tbl_raw(struct device *dev, struct device_attribute *attr, char *buf)
+/** Sysfs function - get i2c table entry as raw value (as hex number), page number is the same as used for reading, @see set_i2c_page_inuse  */
+static ssize_t get_i2c_tbl_raw(struct device *dev,              ///< Linux kernel basic device structure
+                               struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                               char *buf)                       ///< 4K buffer to receive response
+                                                                ///< @return offset to the end of the output data in the *buf buffer, or -ENXIO
 {
 	int chn = get_channel_from_name(attr) ;
 	int page = sysfs_page[chn]; // currently selected page for sysfs reads
@@ -709,7 +791,13 @@ static ssize_t get_i2c_tbl_raw(struct device *dev, struct device_attribute *attr
 	return sprintf(buf,"0x%08x\n",i2c_pages_shadow[(chn << 8) + (page &0xff)]);
 }
 
-static ssize_t set_i2c_tbl_raw(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+/** Sysfs function - set i2c table entry as raw value. Buffer string *buf should contain space-separated
+ *  page number and table data as decimal or hex (starting with 0x) numbers */
+static ssize_t set_i2c_tbl_raw(struct device *dev,              ///< Linux kernel basic device structure
+                               struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                               const char *buf,                 ///< 4K buffer with what was written
+                               size_t count)                    ///< offset to the end of buffer data
+                                                                ///< @return new offset to the end of buffer data
 {
 	int chn = get_channel_from_name(attr) ;
 	int ni, page, data;
@@ -724,8 +812,11 @@ static ssize_t set_i2c_tbl_raw(struct device *dev, struct device_attribute *attr
 	return count;
 }
 
-// Get/parse i2c table (hex)
-static ssize_t get_i2c_tbl_human(struct device *dev, struct device_attribute *attr, char *buf)
+/** Sysfs function - read and interpret i2c table entry, page number is the same as used for reading, @see set_i2c_page_inuse  */
+static ssize_t get_i2c_tbl_human(struct device *dev,              ///< Linux kernel basic device structure
+                                 struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                                 char *buf)                       ///< 4K buffer to receive response
+                                                                  ///< @return offset to the end of the output data in the *buf buffer, or -ENXIO
 {
 	x393_i2c_ctltbl_t tb_data;
 	int chn = get_channel_from_name(attr) ;
@@ -742,7 +833,20 @@ static ssize_t get_i2c_tbl_human(struct device *dev, struct device_attribute *at
 	}
 }
 
-static ssize_t set_i2c_tbl_wr_human(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+/** Sysfs function - set i2c table entry for i2c write commands. Buffer string *buf should contain the following
+ *  space-separated items as decimal or hex (0x) values:
+ *  - page,
+ *  - slave address (7 bit),
+ *
+ *  Optional parameters (device class data will be used if not specified):
+ *  - high reg address byte,
+ *  - bytes to write (1..10),
+ *  - 1/4 scl period in mclk (5 ns for current 200 MHz) */
+static ssize_t set_i2c_tbl_wr_human(struct device *dev,              ///< Linux kernel basic device structure
+                                    struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                                    const char *buf,                 ///< 4K buffer with what was written
+                                    size_t count)                    ///< offset to the end of buffer data
+                                                                     ///< @return new offset to the end of buffer data
 {
 	int chn = get_channel_from_name(attr) ;
 	int ni, page, rah,sa7,nbwr,dly,khz;
@@ -791,7 +895,19 @@ static ssize_t set_i2c_tbl_wr_human(struct device *dev, struct device_attribute 
 	return count;
 }
 
-static ssize_t set_i2c_tbl_rd_human(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+/** Sysfs function - set i2c table entry for i2c read commands. Buffer string *buf should contain the following
+ *  space-separated items as decimal or hex (0x) values:
+ *  - page,
+ *  - two byte addr (0 - 8bit,1 - 16 bit reg. addr),
+ *
+ *  Optional parameters (device class data will be used if not specified):
+ *  - number of bytes to read (1..8),
+ *  - 1/4 scl period in mclk (5 ns for current 200 MHz) */
+static ssize_t set_i2c_tbl_rd_human(struct device *dev,              ///< Linux kernel basic device structure
+                                    struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                                    const char *buf,                 ///< 4K buffer with what was written
+                                    size_t count)                    ///< offset to the end of buffer data
+                                                                     ///< @return new offset to the end of buffer data
 {
 	int chn = get_channel_from_name(attr) ;
 	int ni, page, two_byte_addr, num_bytes, bit_delay, khz;
@@ -834,7 +950,19 @@ static ssize_t set_i2c_tbl_rd_human(struct device *dev, struct device_attribute 
 	return count;
 }
 
-static ssize_t i2c_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+/** Sysfs function - i2c read/write register (read requires subsequent reading from the same node).
+ * Buffer should contain the following space-separated items as decimal or hex (0x) values:
+ *  - device class name,
+ *  - slave offset, non-zero when multiple instances of the class are present on the bus or the address is different from the base one
+ *  - device register address,
+ *
+ *  Additional parameter
+ *  - data to write identifies write operation, if it is missing i2c read will be issued */
+static ssize_t i2c_store(struct device *dev,              ///< Linux kernel basic device structure
+                         struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                         const char *buf,                 ///< 4K buffer with what was written
+                         size_t count)                    ///< offset to the end of buffer data
+                                                          ///< @return new offset to the end of buffer data
 {
 	int chn = get_channel_from_name(attr) ;
 	char cname[32];
@@ -870,18 +998,28 @@ static ssize_t i2c_store(struct device *dev, struct device_attribute *attr, cons
     return count;
 }
 
-static ssize_t i2c_show(struct device *dev, struct device_attribute *attr, char *buf)
+// Get i2c read data from fifo
+/** Sysfs function - i2c read previously acquired i2c data from i2c read fifo, output buffer *buf
+ * will contain decimal representation of the value.
+ * This command should be preceded by the i2c command, @see i2c_store how to start an i2c read command. */
+static ssize_t i2c_show(struct device *dev,              ///< Linux kernel basic device structure
+                        struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                        char *buf)                       ///< 4K buffer to receive response
+                                                         ///< @return offset to the end of the output data in the *buf buffer
 {
 	int chn = get_channel_from_name(attr) ;
     dev_dbg(sdev, "i2c_show(), chn=%d\n",chn);
 	return sprintf(buf,"%d\n",i2c_read_data[chn]);
 }
 
-
-// Get i2c read data from fifo
-static ssize_t get_i2c_help(struct device *dev, struct device_attribute *attr, char *buf)
+/** Sysfs function - output instructions text of how to communicate with i2c devices attached to the sensor ports.
+ * Output buffer *buf will contain multi-line instructions text */
+static ssize_t get_i2c_help(struct device *dev,              ///< Linux kernel basic device structure
+                            struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                            char *buf)                       ///< 4K buffer to receive response
+                                                             ///< @return offset to the end of the output data in the *buf buffer
 {
-	return sprintf(buf,"Numeric suffix in file names selects sensor port\n"
+	return sprintf(buf,"Numeric suffix in the file names selects sensor port\n"
 			           "i2c_all: read - list classes of i2c devices, write - add new (name, sa7, address bytes, data bytes, SCL kHz)\n"
 			           "i2c_classes - directory with register i2c classes, when read provide sa7, address bytes, data bytes, SCL kHz\n"
 			           "alloc*:   read - allocate and return page, write <page> (any data) - free page\n"
@@ -923,16 +1061,13 @@ static DEVICE_ATTR(tbl_rd0 ,       SYSFS_PERMISSIONS                 ,    get_i2
 static DEVICE_ATTR(tbl_rd1 ,       SYSFS_PERMISSIONS                 ,    get_i2c_tbl_human,     set_i2c_tbl_rd_human);
 static DEVICE_ATTR(tbl_rd2 ,       SYSFS_PERMISSIONS                 ,    get_i2c_tbl_human,     set_i2c_tbl_rd_human);
 static DEVICE_ATTR(tbl_rd3 ,       SYSFS_PERMISSIONS                 ,    get_i2c_tbl_human,     set_i2c_tbl_rd_human);
-//static DEVICE_ATTR(i2c_rd0 ,       SYSFS_PERMISSIONS                 ,    get_i2c_read,          set_i2c_read);
-//static DEVICE_ATTR(i2c_rd1 ,       SYSFS_PERMISSIONS                 ,    get_i2c_read,          set_i2c_read);
-//static DEVICE_ATTR(i2c_rd2 ,       SYSFS_PERMISSIONS                 ,    get_i2c_read,          set_i2c_read);
-//static DEVICE_ATTR(i2c_rd3 ,       SYSFS_PERMISSIONS                 ,    get_i2c_read,          set_i2c_read);
 static DEVICE_ATTR(i2c0 ,          SYSFS_PERMISSIONS                 ,    i2c_show,              i2c_store);
 static DEVICE_ATTR(i2c1 ,          SYSFS_PERMISSIONS                 ,    i2c_show,              i2c_store);
 static DEVICE_ATTR(i2c2 ,          SYSFS_PERMISSIONS                 ,    i2c_show,              i2c_store);
 static DEVICE_ATTR(i2c3 ,          SYSFS_PERMISSIONS                 ,    i2c_show,              i2c_store);
 static DEVICE_ATTR(help,           SYSFS_PERMISSIONS & SYSFS_READONLY,    get_i2c_help,          NULL);
 
+/** Contains entries for the root node (directory) of the sysfs representation for sensor-port i2c devices */
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_i2c_all.attr,
 		&dev_attr_alloc0.attr,
@@ -955,10 +1090,6 @@ static struct attribute *root_dev_attrs[] = {
         &dev_attr_tbl_rd1.attr,
         &dev_attr_tbl_rd2.attr,
         &dev_attr_tbl_rd3.attr,
-//		&dev_attr_i2c_rd0.attr,
-//        &dev_attr_i2c_rd1.attr,
-//        &dev_attr_i2c_rd2.attr,
-//        &dev_attr_i2c_rd3.attr,
 		&dev_attr_i2c0.attr,
 		&dev_attr_i2c1.attr,
 		&dev_attr_i2c2.attr,
@@ -967,38 +1098,35 @@ static struct attribute *root_dev_attrs[] = {
         NULL
 };
 
+/** Attribute group for the root node (directory) of the sysfs representation for sensor-port i2c devices*/
 static const struct attribute_group dev_attr_root_group = {
-	.attrs = root_dev_attrs,
-	.name  = NULL,
+	.attrs = root_dev_attrs, ///< Array of the items in the root directory
+	.name  = NULL,           ///< No name for the root node
 };
-static int make_group (struct device *dev, const char * name/*,
-		ssize_t (*show)(struct device *dev, struct device_attribute *attr,
-				char *buf),
-		ssize_t (*store)(struct device *dev, struct device_attribute *attr,
-				 const char *buf, size_t count)*/)
+
+/** Add a named group (subdirectory) with the specified name*/
+static int make_group (struct device *dev, ///< Linux kernel basic device structure
+		               const char * name)  ///< Group name
+		                                   ///< @return 0 on success, or negative error.
 {
 	int retval=-1;
-//	int index;
 	struct attribute *pattrs[max_i2c_classes]; /* array of pointers to attibutes */
-//	struct device_attribute *dev_attrs;
 	struct attribute_group *attr_group;
 	attr_group = devm_kzalloc(dev, sizeof(*attr_group), GFP_KERNEL);
 	if (!attr_group) return -ENOMEM;
-//	memset(attr_group, 0, sizeof(*attr_group));
 	pattrs[0] = NULL;
-
 	attr_group->name  = name;
 	attr_group->attrs =pattrs;
-//	dev_dbg(dev,"name=%s, &dev->kobj=0x%08x\n",attr_group->name, (int) (&dev->kobj));
 	dev_dbg(dev,"name=%s, &dev->kobj=0x%08x\n",attr_group->name, (int) (&dev->kobj));
 	if (&dev->kobj) {
 		retval = sysfs_create_group(&dev->kobj, attr_group);
 	}
 	return retval;
-
 }
 
-static int elphel393_sens_i2c_sysfs_register(struct platform_device *pdev)
+/** Register this driver to implement sysfs interface */
+static int elphel393_sens_i2c_sysfs_register(struct platform_device *pdev) ///< Platform device structure for this driver
+                                                                           ///< @return 0 on success, or negative error.
 {
 	int retval=0;
 	struct device *dev = &pdev->dev;
@@ -1011,14 +1139,15 @@ static int elphel393_sens_i2c_sysfs_register(struct platform_device *pdev)
 	}
 	return retval;
 }
-// =======================================
-static void elphel393_sensor_i2c_init_of(struct platform_device *pdev)
+
+/** Initialize this driver from the Device Tree.
+ * Configures some i2c device classes specified in the DT. */
+static void elphel393_sensor_i2c_init_of(struct platform_device *pdev) ///< Platform device structure for this driver
+                                                                       ///< @return 0 on success, or negative error.
 {
-//	const __be32 * config_data;
     const   char * config_string;
     struct x393_i2c_device_list * dl;
 	char name[32];
-//	int len,chn,pre_disabled,old_dis_por,rc,chn_bits
 	int rslt;
 	int num_devs, nd, ni, sa7, num_addr, num_data, khz;
 	struct device_node *node = pdev->dev.of_node;
@@ -1072,8 +1201,9 @@ static void elphel393_sensor_i2c_init_of(struct platform_device *pdev)
 	pr_info("elphel393_sensor_i2c: registered %d i2c device classes\n", num_devs);
 }
 
-
-static int elphel393_sensor_i2c_probe(struct platform_device *pdev)
+/** Probe this driver, register it with sysfs and initialize from the Device Tree */
+static int elphel393_sensor_i2c_probe(struct platform_device *pdev) ///< Platform device structure for this driver
+                                                                    ///< @return 0 on success, or negative error.
 {
 	sdev =&pdev->dev;
 	dev_dbg(&pdev->dev,"Probing elphel393-sensor-i2c\n");
@@ -1089,27 +1219,30 @@ static int elphel393_sensor_i2c_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int elphel393_sensor_i2c_remove(struct platform_device *pdev)
+/** Remove device driver - does nothing, just pretends.*/
+static int elphel393_sensor_i2c_remove(struct platform_device *pdev) ///< Platform device structure for this driver
+                                                                     ///< @return 0 on success, or negative error.
 {
 	dev_info(&pdev->dev,"Removing elphel393-sensor-i2c");
 	return 0;
 }
-
+/** Compatible records in Device Tree fro this driver */
 static struct of_device_id elphel393_sensor_i2c_of_match[] = {
-	{ .compatible = "elphel,elphel393-sensor-i2c-1.00", },
+	{ .compatible = "elphel,elphel393-sensor-i2c-1.00", }, ///< Compatibility data
 	{ /* end of table */}
 };
 
 MODULE_DEVICE_TABLE(of, elphel393_sensor_i2c_of_match);
 
+/** Platform driver description of this driver */
 static struct platform_driver elphel393_sensor_i2c = {
-	.probe   = elphel393_sensor_i2c_probe,
-	.remove  = elphel393_sensor_i2c_remove,
-	.driver  = {
-		.name  = "elphel393-sensor-i2c",
-		.owner = THIS_MODULE,
-		.of_match_table = elphel393_sensor_i2c_of_match,
-		.pm = NULL, /* power management */
+	.probe   = elphel393_sensor_i2c_probe,     ///< Function executed on probe operation
+	.remove  = elphel393_sensor_i2c_remove,    ///< Function executed on remove operation
+	.driver  = {                                         ///< Driver specifications
+		.name  = "elphel393-sensor-i2c",                 ///< driver name
+		.owner = THIS_MODULE,                            ///< Driver owner
+		.of_match_table = elphel393_sensor_i2c_of_match, ///< Device tree match data
+		.pm = NULL,                                      ///< No power management supported in this driver
 	},
 };
 

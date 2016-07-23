@@ -15,16 +15,18 @@
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
 
-// I2C device description to be used with i2c sequencer
+/** I2C device description to be used with i2c sequencer*/
 typedef struct{
-	      char                         name[32];
-	      u8                           slave7; // slave address (7-bit)
-	      u8                           address_bytes;
-	      u8                           data_bytes;
-	      int                          scl_khz; // maximal SCL frequency in KHz (currently limited by 200KHz slowest)
+	      char                         name[32];      ///< Device class name (up to 31 characters)
+	      u8                           slave7;        ///< Device class base slave address (7-bit). Instances may have it
+	                                                  ///< with offset added.
+	      u8                           address_bytes; ///< Number of address bytes (1/2, used for read operations)
+	      u8                           data_bytes;    ///< Number of data bytes (1..10), for writes it includes register address bytes
+	      int                          scl_khz;       ///< maximal SCL frequency in KHz (currently limited by 200KHz slowest)
 } x393_i2c_device_t;
 
-/* Reserve i2c page (1 of 256 for a sensor port)*/
+/** Reserve i2c page (1 of 256) for a sensor port
+ * @param chn sensor port number (0..3) */
 int i2c_page_alloc(int chn);
 
 /* Free i2c page */
@@ -61,24 +63,6 @@ void set_xi2c_rd(int chn,
 				 int num_bytes,     // Number of bytes to read (1..8, 0 means 8)
 				 int bit_delay);    // Bit delay - number of mclk periods in 1/4 of the SCL period
 
-/*
-// Write i2c command to the i2c command sequencer
-// I2C command sequencer, block of 16 DWORD slots for absolute frame numbers (modulo 16) and 15 slots for relative ones
-// 0 - ASAP, 1 next frame, 14 -14-th next.
-// Data written depends on context:
-// 1 - I2C register write: index page (MSB), 3 payload bytes. Payload bytes are used according to table and sent
-//     after the slave address and optional high address byte. Other bytes are sent in descending order (LSB- last).
-//     If less than 4 bytes are programmed in the table the high bytes (starting with the one from the table) are
-//     skipped.
-//     If more than 4 bytes are programmed in the table for the page (high byte), one or two next 32-bit words
-//     bypass the index table and all 4 bytes are considered payload ones. If less than 4 extra bytes are to be
-//     sent for such extra word, only the lower bytes are sent.
-//
-// 2 - I2C register read: index page, slave address (8-bit, with lower bit 0) and one or 2 address bytes (as programmed
-//     in the table. Slave address is always in byte 2 (bits 23:16), byte1 (high register address) is skipped if
-//     read address in the table is programmed to be a single-byte one
- */
-
 /* Write one or multiple DWORDs to i2c relative (modulo16) address. Use offs = 0 for immediate (ASAP) command */
 /* Length of data is determined by the page data already preset */
 int write_xi2c_rel (int chn,
@@ -94,10 +78,8 @@ void  write_xi2c_reg16  (int chn,
                          int addr,  // low 8 bits
 	      				 u32 data); // 16 or 8-bit data (LSB aligned)
 
-/*
- * Initiate sensor i2c read in immediate mode (data itself has to be read from FIFO with read_xi2c_fifo)
- * Use slave address from provided class structure.
- */
+/* Initiate sensor i2c read in immediate mode (data itself has to be read from FIFO with read_xi2c_fifo)
+ * Use slave address from provided class structure. */
 void  read_xi2c (x393_i2c_device_t * dc,     // device class
 		         int chn,
 		         int page,  // page (8 bits)
@@ -128,5 +110,3 @@ int x393_xi2c_read_reg( const char * cname,    // device class name
 				        int          sa7_offs, // slave address (7-bit) offset from the class defined slave address
 				        int          reg_addr, // register address (width is defined by class)
 				        int *        datap);   // pointer to a data receiver (read data width is defined by class)
-
-

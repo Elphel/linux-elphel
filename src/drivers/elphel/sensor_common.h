@@ -1,4 +1,4 @@
-/** @file sensor_common.c
+/** @file sensor_common.h
  *
  */
 

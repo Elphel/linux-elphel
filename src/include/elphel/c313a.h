@@ -1,3 +1,21 @@
+/***************************************************************************//**
+* @file      c313a.h
+* @brief     Various parameters and structures accessible from both kernel
+* and userland.
+* @copyright Copyright 2002-2016 (C) Elphel, Inc.
+* @par <b>License</b>
+*  This program is free software: you can redistribute it and/or modify
+*  it under the terms of the GNU General Public License as published by
+*  the Free Software Foundation, either version 2 of the License, or
+*  (at your option) any later version.
+*  This program is distributed in the hope that it will be useful,
+*  but WITHOUT ANY WARRANTY; without even the implied warranty of
+*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*  GNU General Public License for more details.
+*  You should have received a copy of the GNU General Public License
+*  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*******************************************************************************/
+
 /*
  * 05.03.2002 changing for revA
  * 03.19.2002 Started support for different sensors
@@ -33,14 +51,15 @@
 
 /* new i2c devices */
 // minors (add more later - maybe different minors for different speed - set speed when opening)
-#define X3X3_I2C_CTRL       0  // control/reset i2c
-#define X3X3_I2C_8_AINC     1  // 8bit  registers, autoincement while read/write
-#define X3X3_I2C_16_AINC    2  // 16bit registers, autoincement while read/write
-#define X3X3_I2C1_8_AINC    3  // 8bit  registers, autoincement while read/write (bus 1)
-#define X3X3_I2C1_16_AINC   4  // 16bit registers, autoincement while read/write (bus 1)
-#define X3X3_I2C_RAW        5  // 8bit  registers, no address byte (just slave, then read/write byte(s)
-#define X3X3_I2C1_RAW       6  // 8bit  registers, no address byte (just slave, then read/write byte(s)
-#define X3X3_I2C_ENABLE     7  // enable(/protect) different I2C devices for different types of I2C accesses
+#ifdef NC353
+#define X3X3_I2C_CTRL        0  // control/reset i2c
+#define X3X3_I2C_8_AINC      1  // 8bit  registers, autoincement while read/write
+#define X3X3_I2C_16_AINC     2  // 16bit registers, autoincement while read/write
+#define X3X3_I2C1_8_AINC     3  // 8bit  registers, autoincement while read/write (bus 1)
+#define X3X3_I2C1_16_AINC    4  // 16bit registers, autoincement while read/write (bus 1)
+#define X3X3_I2C_RAW         5  // 8bit  registers, no address byte (just slave, then read/write byte(s)
+#define X3X3_I2C1_RAW        6  // 8bit  registers, no address byte (just slave, then read/write byte(s)
+#define X3X3_I2C_ENABLE      7  // enable(/protect) different I2C devices for different types of I2C accesses
 #define X3X3_I2C_ENABLE_RD   0 // bit 0 - enable i2c read
 #define X3X3_I2C_ENABLE_WR   1 // bit 1 - enable i2c write
 #define X3X3_I2C_ENABLE_RAW  2 // bit 2 - enable i2c raw (no address byte)
@@ -55,10 +74,7 @@
 #define FPGA_DCM_STEP   22 // ps/step
 #define FPGA_DCM_RANGE 250 // maximal phase correction (+/-) ?
 /* camera sequencer states */
-
-
-
-///Obsolete
+//Obsolete
 #define CAMSEQ_OFF       0 // off, not programmed (Video mode off on Zoran sensors)
 #define CAMSEQ_READY     1 // sensor programmed may acquire at will (programSensor sets number of frames to skip (if any)
 #define CAMSEQ_SKIP      2 // skipping specified number of frames, interrupt service routine counts and will start acquisition
@@ -71,15 +87,15 @@
 #define CAMSEQ_RUN       8 // compressor is constantly running (but if camSeqCount>0 - just skipping "bad" frames)
 #define CAMSEQ_STOP      9 // compressor is constantly running but will stop after next "compressor ready"
 #define CAMSEQ_SINGLE   10 // compressor is constantly running to fill one full buffer
+
 // For KAI11000 sensor board
 #define	sensorcom_W_size	1024
 #define	sensorcom_R_size	256
 
-/* MCP definitions */
+/* MCP definitions (only used in 313 with MCP image intensifier */
 
 #define	MCP_W_size	1024
 #define	MCP_R_size	256
-
 #define	MCPOtherBits	0xffa7a7ff
 #define MCPOffReset	0x00101800
 #define MCPReset	0x00001800
@@ -104,6 +120,7 @@
 #define MCPwshared	0x80
 #define MCPwrsynctb	0x100
 #define MCPwrseq	0x200
+#endif
 
 
 /* supported ioctl _IOC_NR's */
@@ -144,19 +161,15 @@
 
 
 
+#ifdef NC353
 // otherParamsRO[16]
-
 #define _CCCMD(x,y)  (_IO(CMOSCAM_IOCTYPE, (x << 6) | (y & 0x3f)))
-
-
-
 #define CCAM_CTRL(x)  ((_IOC_NR(x) >> 6) & 0x03)
 #define CCAM_ADDR(x)  (_IOC_NR(x) & 0x3f)
-
 //#define CCAM_RWSENSOR   1 /* direct read/write first 32 sensor registers */  // will not use at all
-#define CCAM_RPARS      2 /* read  parameters      0..0x3f */
-#define CCAM_WPARS      3 /* write parameters      0..0x3f */
-
+#define CCAM_RPARS        2 /* read  parameters      0..0x3f */
+#define CCAM_WPARS        3 /* write parameters      0..0x3f */
+#endif
 /* New parameters and update logic
  * Separate read and write set of 64 registers
  * User may specify:
@@ -171,435 +184,414 @@
  * 	When updating (validating) parameters and copying them to the read "registers" the I2C registers will be written
  *  only if they are different from the shadows
  */
-/// parameter indexes will be updated to grouprelated ones into the same groups of 32
-/// NOTE: P_* and G_* should not end with numbers - numbers will be used in PHP constants to add to the constant value (ELPHEL_AAA3 will be treated as ELPHEL_AAA+3)
-#define P_NUMBER         1024   //number of registers (was 64) - NOTE: obsolete?
-#define P_SENSOR         1     /* if set to 0 - will (re)detect sensor. If set to None - won't bother
-                           4  - ZR32112MLC - now there is no way to see color/mono
-                           5  - ZR32112PLC
-                           8  - ZR32212MLC
-                           9  - ZR32112PLC
-                           32 - KAC1310-mono
-                           33 - KAC1310-RGB
-                           34 - KAC1310-CMY
-                           36 - KAC5000
-                           48 - MI1300
-                           49 - MT9M001 (1280x1024,same as MI1300)
-                           50 - MT9M001 (1600x1200)
-                           51 - MT9T001 (2048*1536)
-                           52 - MT9P001 (2592*1944)
-                           64 - IBIS5-1300*/
+// parameter indexes will be updated to group-related ones into the same groups of 32
+// NOTE: P_* and G_* should not end with numbers - numbers will be used in PHP constants to add to the constant value (ELPHEL_AAA3 will be treated as ELPHEL_AAA+3)
+//#define P_NUMBER         1024   //number of registers (was 64) - NOTE: obsolete?
+#define P_SENSOR            1   /**< if set to 0 - will (re)detect sensor, if set to None - won't bother <ul>
+<li>                        4  - ZR32112MLC - now there is no way to see color/mono
+<li>                        5  - ZR32112PLC
+<li>                        8  - ZR32212MLC
+<li>                        9  - ZR32112PLC
+<li>                       32 - KAC1310-mono
+<li>                       33 - KAC1310-RGB
+<li>                       34 - KAC1310-CMY
+<li>                       36 - KAC5000
+<li>                       48 - MI1300
+<li>                       49 - MT9M001 (1280x1024,same as MI1300)
+<li>                       50 - MT9M001 (1600x1200)
+<li>                       51 - MT9T001 (2048*1536)
+<li>                       52 - MT9P001 (2592*1944)
+<li>                       64 - IBIS5-1300 </ul>*/
 
 // leave it here - may be used in user applications
-#define SENSOR_MASK      0xfc
-#define SENSOR_ZR32112   0x04
-#define SENSOR_ZR32212   0x08
-#define SENSOR_KAC1310   0x20
-#define SENSOR_KAC5000   0x24
-#define SENSOR_MI1300    0x30
-#define SENSOR_MT9X001   0x30 // MT9M001 - 31, MT9D001 - 32, MT9T001 - 33, MT9P001 - 34
-#define SENSOR_MT9Y001   0x34 // MT9P001 - 34
-#define SENSOR_IBIS51300 0x40
-#define SENSOR_KAI11000  0x80
-#define SENSOR_NONE      0xfc
+#define SENSOR_MASK      0xfc ///< Mask to apply for distinguish between different sensor groups (of similar devices)
+#define SENSOR_ZR32112   0x04 ///< Zoran ZR32112
+#define SENSOR_ZR32212   0x08 ///< Zoran ZR32212
+#define SENSOR_KAC1310   0x20 ///< Kodak KAC1310
+#define SENSOR_KAC5000   0x24 ///< Kodak KAC5000
+#define SENSOR_MI1300    0x30 ///< Micron MI1300
+#define SENSOR_MT9X001   0x30 ///< Micron: MT9M001 - 31, MT9D001 - 32, MT9T001 - 33, MT9P001 - 34
+#define SENSOR_MT9Y001   0x34 ///< Micron/Aptina/Onsemi MT9P001 - 34
+#define SENSOR_IBIS51300 0x40 ///< FillFactory IBIS51300
+#define SENSOR_KAI11000  0x80 ///< Kodak KAI11002
+#define SENSOR_NONE      0xfc ///< No sensor present
 
 // sensor sizes:
-//#define SENSORWIDTH_ZR32112  1288
-//#define SENSORHEIGHT_ZR32112 1032
-#define SENSORWIDTH_ZR32112  1280
-#define SENSORHEIGHT_ZR32112 1024
-//#define SENSORWIDTH_ZR32212  1288
-#define SENSORWIDTH_ZR32212  1280
-#define SENSORHEIGHT_ZR32212 968
-#define SENSORWIDTH_KAC1310  1280
-#define SENSORHEIGHT_KAC1310 1024
-//#define SENSORWIDTH_KAC1310  1296
-//#define SENSORHEIGHT_KAC1310 1046
-#define SENSORWIDTH_MI1300  1280
-#define SENSORHEIGHT_MI1300 1024
+#define SENSORWIDTH_ZR32112    1280 ///< Zoran ZR32112 width
+#define SENSORHEIGHT_ZR32112   1024 ///< Zoran ZR32112 height
+#define SENSORWIDTH_ZR32212    1280 ///< Zoran ZR32212 width
+#define SENSORHEIGHT_ZR32212    968 ///< Zoran ZR32212 height
+#define SENSORWIDTH_KAC1310    1280 ///< Kodak KAC1310 width
+#define SENSORHEIGHT_KAC1310   1024 ///< Kodak KAC1310 height
+#define SENSORWIDTH_MI1300     1280 ///< Micron MI1300 width
+#define SENSORHEIGHT_MI1300    1024 ///< Micron MI1300 height
+#define SENSORWIDTH_MT9M001    1280 ///< Micron MT9M001 width
+#define SENSORHEIGHT_MT9M001   1024 ///< Micron MT9M001 height
+#define SENSORWIDTH_MT9D001    1600 ///< Micron MT9D001 width
+#define SENSORHEIGHT_MT9D001   1200 ///< Micron MT9D001 height
+#define SENSORWIDTH_MT9T001    2048 ///< Micron MT9T001 width
+#define SENSORHEIGHT_MT9T001   1536 ///< Micron MT9T001 height
+#define SENSORWIDTH_MT9P001    2592 ///< Micron MT9P001 width
+#define SENSORHEIGHT_MT9P001   1944 ///< Micron MT9P001 height
+#define SENSORWIDTH_KAC5000    2592 ///< Kodak KAC5000 width
+#define SENSORHEIGHT_KAC5000   1944 ///< Kodak KAC5000 height
+#define SENSORWIDTH_IBIS51300  1280 ///< FillFactory IBIS51300 width
+#define SENSORHEIGHT_IBIS51300 1024 ///< FillFactory IBIS51300 height
 
-#define SENSORWIDTH_MT9M001  1280
-#define SENSORHEIGHT_MT9M001 1024
-#define SENSORWIDTH_MT9D001  1600
-#define SENSORHEIGHT_MT9D001 1200
-#define SENSORWIDTH_MT9T001  2048
-#define SENSORHEIGHT_MT9T001 1536
-#define SENSORWIDTH_MT9P001  2592
-#define SENSORHEIGHT_MT9P001 1944
-
-#define SENSORWIDTH_KAC5000  2592
-#define SENSORHEIGHT_KAC5000 1944
-
-
-#define SENSORWIDTH_IBIS51300  1280
-#define SENSORHEIGHT_IBIS51300 1024
 /// Parameters related to multi-sensor (10359A) setup
 //#define MAX_SENSORS 3 // maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
 /* Modified for 393 - using up to 4 sub-sensors (even as 10359 only supports 3 */
-#define MAX_SENSORS  4        // maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
-#define SENSOR_PORTS 4        // Number of sensor ports (each has individual framepars_all_t
-//! Parameters below are accessed through mmap, because of cache coherence problem it make sense to keep them compact (maybe group by 8 - cache line of 32 bytes)
-#define P_SENSOR_RUN     4 // 0 - stop, 1 - single, 2 - run
-  #define SENSOR_RUN_STOP   0
-  #define SENSOR_RUN_SINGLE 1
-  #define SENSOR_RUN_CONT   2
-#define P_COMPRESSOR_RUN 5 // 0 - stop, 1 - single, 2 - run
-  #define COMPRESSOR_RUN_STOP   0
-  #define COMPRESSOR_RUN_SINGLE 1
-  #define COMPRESSOR_RUN_CONT   2
+#define MAX_SENSORS  4        ///< maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
+#define SENSOR_PORTS 4        ///< Number of sensor ports (each has individual framepars_all_t
+/* Notes for NC353:
+ * Parameters below are accessed through mmap, because of cache coherence problem it make sense to keep them compact (maybe group by 8 - cache line of 32 bytes)
+ */
+#define P_SENSOR_RUN     4          ///< Sensor acquisition mode 0 - stop, 1 - single, 2 - run
+  #define SENSOR_RUN_STOP   0       ///< Sensor acquisition mode: STOP
+  #define SENSOR_RUN_SINGLE 1       ///< Sensor acquisition mode: SINGLE FRAME
+  #define SENSOR_RUN_CONT   2       ///< Sensor acquisition mode: RUN continjuously
 
-#define P_BAYER          6 // filter number at (0,0) 0-R, 1-G(R), 2-G(B), 3 - B. Write enabled at first, move to WindowSize later
-#define P_TRIGGERED	 7 // when trigger occured - 4 LSBs - pixel in DMA word, higher bits - number of DMA word OBSOLETE
-#define P_PERIOD         8 // Frame period in pixel clocks (read only)
-#define P_FP1000SLIM     9 // FPS limit, frames per 1000 sec
-#define P_FPSFLAGS      10 // FPS limit mode - bit 0 - limit fps (not higher than), bit 1 - maintain fps (not lower than)
+#define P_COMPRESSOR_RUN 5          ///< Compressor mode 0 - stop, 1 - single, 2 - run
+  #define COMPRESSOR_RUN_STOP   0   ///< Compressor mode: STOP
+  #define COMPRESSOR_RUN_SINGLE 1   ///< Compressor mode: SINGLE
+  #define COMPRESSOR_RUN_CONT   2   ///< Compressor mode: RUN
 
-#define P_JPEG_WP       11 // Last reported JPEG write pointer in the circular buffer. ** OBSOLETE
-                            //! In new code use G_CIRCBUFWP instead!
-#define P_CLK_FPGA      12 // FPGA clock in MHz
-#define P_CLK_SENSOR    13 // Sensor clock in MHz
-#define P_FPGA_XTRA     14 // Extra cycles needed to compressor (probably constant...)
-#define P_TRIG          15 /// External trigger mode
-                           /// bit 0  - "old" external mode (0- internal, 1 - external )
-                           /// bit 1 - enable(1) or disable(0) external trigger to stop clip
-                           /// bit 2 - async (snapshot, ext trigger) mode, 0 - continuous NOTE: Only this bit is used now !
-                           /// bit 3 - no overlap,  single frames: program - acquire/compress same frame
-#define P_BGFRAME       16 // Background measurement mode - will use 16-bit mode and no FPN correction 
+#define P_BAYER          6 ///< filter number at (0,0) 0-R, 1-G(R), 2-G(B), 3 - B. Write enabled at first, move to WindowSize later
+#define P_TRIGGERED	     7 ///< when trigger occured - 4 LSBs - pixel in DMA word, higher bits - number of DMA word OBSOLETE
+#define P_PERIOD         8 ///< Frame period in pixel clocks (read only)
+#define P_FP1000SLIM     9 ///< FPS limit, frames per 1000 sec
+#define P_FPSFLAGS      10 //v FPS limit mode - bit 0 - limit fps (not higher than), bit 1 - maintain fps (not lower than)
 
-#define P_IMGSZMEM      17 // image size in video memory (calculated when channel 0 is programmed)
-
-
+#define P_JPEG_WP       11 ///< Last reported JPEG write pointer in the circular buffer. ** OBSOLETE
+                            // In new code use G_CIRCBUFWP instead!
+#define P_CLK_FPGA      12 ///< FPGA clock in MHz
+#define P_CLK_SENSOR    13 ///< Sensor clock in MHz
+#define P_FPGA_XTRA     14 ///< Extra cycles needed to compressor (probably constant...)
+#define P_TRIG          15 /**< External trigger mode<ul>
+<li>                     bit 0  - "old" external mode (0 - internal, 1 - external )
+<li>                     bit 1 - enable(1) or disable(0) external trigger to stop clip
+<li>                     bit 2 - async (snapshot, ext trigger) mode, 0 - continuous NOTE: Only this bit is used now
+<li>                     bit 3 - no overlap,  single frames: program - acquire/compress same frame</ul>*/
+#define P_BGFRAME       16 ///< Background measurement mode - will use 16-bit mode and no FPN correction
+#define P_IMGSZMEM      17 ///< image size in video memory (calculated when channel 0 is programmed)
 // image page numbers depend on image size/pixel depth, so changing any of them will invalidate all pages
-#define P_PAGE_ACQ      18  // Number of image page buffer to acquire to (0.1?)
-#define P_PAGE_READ     19  // Number of image page buffer to read from to (0.1?)
+#define P_PAGE_ACQ      18 ///< Number of image page buffer to acquire to (0.1?)
+#define P_PAGE_READ     19 ///< Number of image page buffer to read from to (0.1?)
+#define P_OVERLAP       20 ///< number of EXRA lines to be acquired - probably dead,
+#define P_VIRT_KEEP     21 ///< 0 - recalculate P_VIRT_WIDTH, P_VIRT_HEIGHT when window is changed, 1 - keep those parameters
+#define P_VIRT_WIDTH    22 ///< Virtual window width
+#define P_VIRT_HEIGHT   23 ///< Virtual window height
+#define P_WOI_LEFT      24 ///< WOI left corner (before applying decimation)
+#define P_WOI_TOP       25 ///< WOI top corner
+#define P_WOI_WIDTH     26 ///< WOI width
+#define P_WOI_HEIGHT    27 ///< WOI height
+#define P_FLIPH         28 ///< bit 0 horizontal flip
+#define P_FLIPV         29 ///< bit 0 vertical flip
+#define P_DCM_HOR       30 ///<  Horizontal decimation (1/2/4/8)
+#define P_DCM_VERT      31 ///<  Vertical   decimation (1/2/4/8) copied from horizontal for Zoran chips
+#define P_BIN_HOR       32 ///<  binning 1/2 - KAC1310 only - now for mt9t001
+#define P_BIN_VERT      33 ///<  not used yet binning 1/2 - KAC1310 only  - now for mt9t001
+#define P_FPGATEST      34 ///<  FPGA test modes (now - just one)
+#define P_FRAMESYNC_DLY 35 ///<  maybe - temporary - delay of frame sync (vacts) by number of scan lines - for photofinish mode
+#define P_PF_HEIGHT     36 ///<  height of each strip in photofinish mode - normally 2 lines
+                           ///<  also now includes timestamping mode +0x10000 - for normal frames, 0x20000 - for photo-finish
+#define P_BITS          37 ///<  pixel depth - bits 10/8/4
+#define P_SHIFTL        38 ///<  "digital gain" - shift left by 0/1/2 bits  (3 ->-1)
+#define P_FPNS          39 ///<  FPN correction mode (subtract) 0..3
+                           ///<  0-none, 1 - fine(25%), 2 - 50%, 3 - coarse(100%)
+#define P_FPNM          40 ///<  FPN correction mode (multiply) 0..3
+                           ///<  0-none, 1 - fine(+/-12.5%), 2 - medium (+/-25%), +3 - coarse(+/-50%)
+#define P_TESTSENSOR    41 ///<  sensor test mode(s) 0x10000 - enable, lower bits - test mode
+#define P_VIRTTRIG      42 ///<  Sum of pixels in a line greater than this value - trigger acquisition
 
-#define P_OVERLAP       20 // number of EXRA lines to be acquired - probably dead,
+#define P_PERIOD_MIN    43 ///<  (readonly)  minimal frame period (in pixel clocks) limited by user or compressor
+#define P_PERIOD_MAX    44 ///<  (readonly) frame period (in pixel clocks) limited by user
+#define P_SENSOR_PIXH   45 ///<  (readonly) pixels to be read from the sensor, horizontal (including margins, excluding embedded timestamps).
+                           ///<  In multisensor (per channel) applies to the whole frame.
+#define P_SENSOR_PIXV   46 ///<  (readonly) pixels to be read from the sensor, vertical (including margins)
+#define P_FATZERO       47 ///<  subtract while adding data from to consecutive frames (async trigger)
 
-#define P_VIRT_KEEP     21 // 0 - recalculate P_VIRT_WIDTH, P_VIRT_HEIGHT when window is changed, 1 - keep those parameters
-#define P_VIRT_WIDTH    22 // Virtual window width
-#define P_VIRT_HEIGHT   23 // Virtual window height
-#define P_WOI_LEFT      24 // WOI left corner (before applying decimation)
-#define P_WOI_TOP       25 // WOI top corner
-#define P_WOI_WIDTH     26 // WOI width
-#define P_WOI_HEIGHT    27 // WOI height
+#define P_COMPMOD_TILSH 48 ///<  Horizontal tiles - obsolete in 393?
+#define P_COMPMOD_DCSUB 49 ///<  Subtract DC in compressor before DCT
+#define P_COMPMOD_QTAB  50 ///<  to be written not directly, but by  pgm_quality ?
 
-#define P_FLIPH         28 // bit 0 horizontal flip
-#define P_FLIPV         29 // bit 0 vertical flip
-
-#define P_DCM_HOR       30 /* Horizontal decimation (1/2/4/8) */
-#define P_DCM_VERT      31 /* Vertical   decimation (1/2/4/8) copied from horizontal for Zoran chips */
-#define P_BIN_HOR       32 /* binning 1/2 - KAC1310 only - now for mt9t001 */
-#define P_BIN_VERT      33 /* not used yet binning 1/2 - KAC1310 only  - now for mt9t001*/
-#define P_FPGATEST      34 // FPGA test modes (now - just one)
-
-#define P_FRAMESYNC_DLY 35 /* maybe - temporary - delay of frame sync (vacts) by number of scan lines - for photofinish mode*/
-
-#define P_PF_HEIGHT     36 /*height of each strip in photofinish mode - normally 2 lines */
-                           /*also now includes timestamping mode +0x10000 - for normal frames, 0x20000 - for photo-finish */
-
-#define P_BITS          37 /* pixel depth - bits 10/8/4 */
-
-#define P_SHIFTL        38 /* "digital gain" - shift left by 0/1/2 bits  (3 ->-1)*/
-#define P_FPNS          39 // FPN correction mode (subtract) 0..3
-                           // 0-none, 1 - fine(25%), 2 - 50%, 3 - coarse(100%)
-#define P_FPNM          40 // FPN correction mode (multiply) 0..3
-                           // 0-none, 1 - fine(+/-12.5%), 2 - medium (+/-25%), +3 - coarse(+/-50%)
-#define P_TESTSENSOR    41 // sensor test mode(s) 0x10000 - enable, lower bits - test mode
-#define P_VIRTTRIG      42 // Sum of pixels in a line greater than this value - trigger acquisition
-
-#define P_PERIOD_MIN    43 // (readonly)  minimal frame period (in pixel clocks) limited by user or compressor
-#define P_PERIOD_MAX    44 // (readonly) frame period (in pixel clocks) limited by user
-#define P_SENSOR_PIXH   45 // (readonly) pixels to be read from the sensor, horizontal (incliding margins, excluding embedded timestamps). In multisesnor applies to the whole frame
-#define P_SENSOR_PIXV   46 // (readonly) pixels to be read from the sensor, vertical (incliding margins)
-#define P_FATZERO       47 // subtract while adding data from to consequitive frames (async trigger)
-
-#define P_COMPMOD_TILSH 48
-#define P_COMPMOD_DCSUB 49
-#define P_COMPMOD_QTAB  50 // to be written not directly, but by  pgm_quality ? 
-
-#define P_FP1000S       51 // Frames per 1000 sec (fps * 1000)
-#define P_SENSOR_WIDTH  52
-#define P_SENSOR_HEIGHT 53
-#define P_COLOR_SATURATION_BLUE 54 // 100*realtive saturation blue - preserve?
-#define P_COLOR_SATURATION_RED  55 // 100*realtive saturation red
+#define P_FP1000S       51 ///<  Frames per 1000 sec (fps * 1000)
+#define P_SENSOR_WIDTH  52 ///<  Sensor width
+#define P_SENSOR_HEIGHT 53 ///<  Sensor height
+#define P_COLOR_SATURATION_BLUE 54 ///<  100*realtive saturation blue - preserve?
+#define P_COLOR_SATURATION_RED  55 ///<  100*realtive saturation red
 
 /// Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C *** 393: These will  need to be split for each subchannel
-#define P_VIGNET_AX     56
-#define P_VIGNET_AY     57
-#define P_VIGNET_BX     58
-#define P_VIGNET_BY     59
-#define P_VIGNET_C      60 /// nominal 0x8000
-#define P_VIGNET_SHL    61 /// shift left color_coeff*vign_correction. 0..7, default=1 (up to 4x color correction* vignetting correction)
-#define P_SCALE_ZERO_IN  62 /// signed 16 bit - subtract from pixel 16-bit data before multiplication
-#define P_SCALE_ZERO_OUT 63 /// signed 16 bit - add after correction
+#define P_VIGNET_AX      56 ///< AX in Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C. 393: These will  need to be split for each subchannel
+#define P_VIGNET_AY      57 ///< AY in Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C. 393: These will  need to be split for each subchannel
+#define P_VIGNET_BX      58 ///< BX in Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C. 393: These will  need to be split for each subchannel
+#define P_VIGNET_BY      59 ///< BY in Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C. 393: These will  need to be split for each subchannel
+#define P_VIGNET_C       60 ///< C (nominal 0x8000) in Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C. 393: These will  need to be split for each subchannel
+#define P_VIGNET_SHL     61 ///< shift left color_coeff*vign_correction. 0..7, default=1 (up to 4x color correction* vignetting correction)
+#define P_SCALE_ZERO_IN  62 ///< signed 16 bit - subtract from pixel 16-bit data before multiplication
+#define P_SCALE_ZERO_OUT 63 ///< signed 16 bit - add after correction
 
 
 /// "digital gains" for color correction, 17-bit unsigned data (default 0x8000).
-#define P_DGAINR        64
-#define P_DGAING        65
-#define P_DGAINGB       66
-#define P_DGAINB        67
-
-#define P_RSCALE_ALL    68 /// bits 0..29: Ratio of [P_GAINR]/[P_GAING] or one of special, bit 30 - recalculate(self cleaning), bit 31 - ignore
-#define P_GSCALE_ALL    69
-#define P_BSCALE_ALL    70
-	#define CSCALES_WIDTH     28
-	#define CSCALES_CTL_BIT   28
-	#define CSCALES_CTL_WIDTH  2
+#define P_DGAINR        64 ///< R-channel of scale sensor data (fine steps) 17-bit (2.15)  unsigned data, default 0x8000 == 1.0
+#define P_DGAING        65 ///< G-channel (R-row) of scale sensor data (fine steps) 17-bit (2.15)  unsigned data, default 0x8000 == 1.0
+#define P_DGAINGB       66 ///< G-channel (B-row) of scale sensor data (fine steps) 17-bit (2.15)  unsigned data, default 0x8000 == 1.0
+#define P_DGAINB        67 ///< B-channel of scale sensor data (fine steps) 17-bit (2.15)  unsigned data, default 0x8000 == 1.0
+#define P_RSCALE_ALL    68 ///< bits 0..29: Ratio of [P_GAINR]/[P_GAING] or one of special, bit 30 - recalculate(self cleaning), bit 31 - ignore
+#define P_GSCALE_ALL    69 ///< bits 0..29: Ratio of [P_GAINGB]/[P_GAING] or one of special, bit 30 - recalculate(self cleaning), bit 31 - ignore
+#define P_BSCALE_ALL    70 ///< bits 0..29: Ratio of [P_GAINB]/[P_GAING] or one of special, bit 30 - recalculate(self cleaning), bit 31 - ignore
+	#define CSCALES_WIDTH     28 ///< color scales ratio number of bits
+	#define CSCALES_CTL_BIT   28 ///< color scales ratio control bit number
+	#define CSCALES_CTL_WIDTH  2 ///< color scales ratio number of control bits
 	/// commands to be written to P_*SCALE_CTL
-	#define CSCALES_CTL_NORMAL  0 /// USE P_*SCALE as is
-	#define CSCALES_CTL_RECALC  1 /// Recalculate P_*SCALE from P_GAIN*, P_GAING, then use it (will change to CSCALES_CTL_NORMAL when applied)
-	#define CSCALES_CTL_FOLLOW  2 /// Don't apply P_*SCALE to P_GAIN*, but update it from the current P_*SCALE from P_GAIN*/P_GAING
-	#define CSCALES_CTL_DISABLE 3 /// Disable P_*SCALE - don't apply P_*SCALE to P_GAIN*, don't update P_*SCALE from P_GAIN*, P_GAING
+	#define CSCALES_CTL_NORMAL  0 ///< P_*SCALE_CTL command: USE P_*SCALE as is
+	#define CSCALES_CTL_RECALC  1 ///< P_*SCALE_CTL command: Recalculate P_*SCALE from P_GAIN*, P_GAING, then use it
+	                              ///< (will change to CSCALES_CTL_NORMAL when applied)
+	#define CSCALES_CTL_FOLLOW  2 ///< P_*SCALE_CTL command: Don't apply P_*SCALE to P_GAIN*, but update it
+	                              ///< from the current P_*SCALE from P_GAIN*/P_GAING
+	#define CSCALES_CTL_DISABLE 3 ///< P_*SCALE_CTL command: Disable P_*SCALE - don't apply P_*SCALE to P_GAIN*,
+	                              ///< don't update P_*SCALE from P_GAIN*, P_GAING
+#define P_CORING_PAGE   71       ///< zero bin + ((rounding add) << 8) 8-bit JPEG quantizer zero bin size, fractional addition to absolute value before truncating
+#define P_HISTRQ        72       ///< per-frame enabling of histogram calculation - bit 0 - Y (G), bit 2 - C (R,G2,B)
+#define P_TILES         73       ///< Number of 16x16 (20x20) tiles in a compressed frame // 393: Still needed?
+#define P_SENSOR_PHASE  74       ///< packed, low 16 bit - signed fine phase, bits [18:17] - 90-degrees shift
+#define P_TEMPERATURE_PERIOD  75 ///< period of temperature measurements, ms (normally - multiple seconds)
+#define P_AUTOEXP_ON    76       ///< Autoexposure control (unsigned long on)
+// relative histogram (autoexposure) window (changed from % to 1/0x10000)
+// TODO: For 393 - split per multiplexed channel
+#define P_HISTWND_RWIDTH  77 ///< Histogram window relative width 16.16 (0x10000 - 1.0);
+#define P_HISTWND_RHEIGHT 78 ///< Histogram window relative height 16.16 (0x10000 - 1.0);
+#define P_HISTWND_RLEFT   79 ///< Histogram window relative left margin 16.16 (0x10000 - 1.0);
+#define P_HISTWND_RTOP    80 ///< Histogram window relative top margin 16.16 (0x10000 - 1.0);
 
+// Are these used anywhere now? ...P_AUTOEXP_SKIP_T
+#define P_AUTOEXP_EXP_MAX     81 ///< unsigned long exp_max;		/* 100 usec == 1 etc... */
+#define P_AUTOEXP_OVEREXP_MAX 82 ///<  unsigned long overexp_max;	/* percentages for overexposured pixels - 1% == 100, 5% == 500, 0.02% == 2 etc... */
+#define P_AUTOEXP_S_PERCENT   83 ///<  unsigned long s_percent;(controlling that % of pixels that should have value greater than S_INDEX - below)
+#define P_AUTOEXP_S_INDEX     84 ///<  unsigned long s_index; Specified number of pixels (S_PERCENT) should have value above S_INDEX
+#define P_AUTOEXP_EXP         85 ///<  unsigned long exp; Current exposure time
+#define P_AUTOEXP_SKIP_PMIN   86 ///<  unsigned long skip_pmin;	/* percent of delta for skip changes: 1% == 100 */ - no exposure corrections if the desired change is less than that
+#define P_AUTOEXP_SKIP_PMAX   87 ///<  unsigned long skip_pmax;	/* percent of changes for wait one frame before apply changes: 1% == 100 */ - do not apply chnanges if they are to big - wait for the next frame
+#define P_AUTOEXP_SKIP_T      88 //v	unsigned long skip_t;		/* time for skip changes: 100 usec == 1 */ Not quite sure what it is
 
-#define P_CORING_PAGE   71 // zero bin + ((rounding add) << 8) 8-bit JPEG quantizer zero bin size, fractional addition to absolute value before truncating
-#define P_HISTRQ        72 // per-frame enabling of histogram calculation - bit 0 - Y (G), bit 2 - C (R,G2,B)
-#define P_TILES         73 // Number of 16x16 (20x20) tiles in a compressed frame // 393: Still needed?
-#define P_SENSOR_PHASE  74 // packed, low 16 bit - signed fine phase, bits [18:17] - 90-degrees shift
+// same as written to the FPGA for the histogram window // 393: Need to split to sub-channels (hist and focus parameters)
+#define P_HISTWND_WIDTH  89 ///<  autoexposure window width  (pixels) - same as written to FPGA
+#define P_HISTWND_HEIGHT 90 ///<  autoexposure window height (pixels) - same as written to FPGA
+#define P_HISTWND_TOP    91 ///<  autoexposure window top    (pixels) - same as written to FPGA
+#define P_HISTWND_LEFT   92 ///<  autoexposure window left   (pixels) - same as written to FPGA
 
-#define P_TEMPERATURE_PERIOD  75 // period of temperature measurements, ms (normally - multiple seconds)
+#define P_FOCUS_SHOW     93 ///< show focus information instead of/combined with the image:
+                            ///< 0 - regular image, 1 - block focus instead of Y DC (AC=0), 2 - image Y DC combined all frame, 3 combined in WOI
+#define P_FOCUS_SHOW1    94 ///< Additional parameter that modifies visualization mode. Currently just a single bit (how much to add)
 
-#define P_AUTOEXP_ON    76 // unsigned long on;
-
-/// relative histogram (autoexposure) window (changed from % to 1/0x10000)
-#define P_HISTWND_RWIDTH  77 // unsigned long width (%)->relative (0x10000 - 1.0);
-#define P_HISTWND_RHEIGHT 78 //unsigned long height (%);
-#define P_HISTWND_RLEFT   79 // unsigned long left (%);
-#define P_HISTWND_RTOP    80 // unsigned long top (%);
-
-/// Are these used anywhere now? ...P_AUTOEXP_SKIP_T
-#define P_AUTOEXP_EXP_MAX     81 //unsigned long exp_max;		/* 100 usec == 1 etc... */
-#define P_AUTOEXP_OVEREXP_MAX 82 // unsigned long overexp_max;	/* percentages for overexposured pixels - 1% == 100, 5% == 500, 0.02% == 2 etc... */
-#define P_AUTOEXP_S_PERCENT   83 // unsigned long s_percent;(controlling that % of pixels that should have value greater than S_INDEX - below)
-#define P_AUTOEXP_S_INDEX     84 // unsigned long s_index; Specified number of pixels (S_PERCENT) should have value above S_INDEX
-#define P_AUTOEXP_EXP         85 // unsigned long exp; Current exposure time
-#define P_AUTOEXP_SKIP_PMIN   86 // unsigned long skip_pmin;	/* percent of delta for skip changes: 1% == 100 */ - no exposure corrections if the desired change is less than that
-#define P_AUTOEXP_SKIP_PMAX   87 // unsigned long skip_pmax;	/* percent of changes for wait one frame before apply changes: 1% == 100 */ - do not apply chnanges if they are to big - wait for the next frame
-#define P_AUTOEXP_SKIP_T      88 //	unsigned long skip_t;		/* time for skip changes: 100 usec == 1 */ Not quite sure what it is
-
-///same as written to the FPGA for the histogram window // 393: Need to split to sub-channels (hist and focus parameters)
-#define P_HISTWND_WIDTH  89 // autoexposure window width  (pixels)
-#define P_HISTWND_HEIGHT 90 // autoexposure window height (pixels)
-#define P_HISTWND_TOP    91 // autoexposure window top    (pixels)
-#define P_HISTWND_LEFT   92 // autoexposure window left   (pixels)
-
-#define P_FOCUS_SHOW     93 // show focus information instead of/combined with the image:
-                            // 0 - regular image, 1 - block focus instead of Y DC (AC=0), 2 - image Y DC combined all frame, 3 combined in WOI
-#define P_FOCUS_SHOW1    94 // Additional parameter that modifies visualization mode. Currently just a single bit (how much to add)
-
-#define P_FOCUS_LEFT     96 // focus WOI left margin, inclusive (3 LSB will be zeroed as it should be multiple of 8x8 block width) 
-#define P_FOCUS_WIDTH    97 // focus WOI width (3 LSB will be zeroed as it should be multiple of 8x8 block width) 
-#define P_FOCUS_TOP      98 // focus WOI top margin, inclusive (3 LSB will be zeroed as it should be multiple of 8x8 block height) 
-#define P_FOCUS_HEIGHT   99 // focus WOI height (3 LSB will be zeroed as it should be multiple of 8x8 block height) 
-#define P_FOCUS_TOTWIDTH 100 // (readonly) - total width of the image frame in pixels
-#define P_FOCUS_FILTER   101 // select 8x8 filter used for the focus calculation (same order as quantization coefficients), 0..14
+#define P_FOCUS_LEFT     96 ///< focus WOI left margin, inclusive (3 LSB will be zeroed as it should be multiple of 8x8 block width)
+#define P_FOCUS_WIDTH    97 ///< focus WOI width (3 LSB will be zeroed as it should be multiple of 8x8 block width)
+#define P_FOCUS_TOP      98 ///< focus WOI top margin, inclusive (3 LSB will be zeroed as it should be multiple of 8x8 block height)
+#define P_FOCUS_HEIGHT   99 ///< focus WOI height (3 LSB will be zeroed as it should be multiple of 8x8 block height)
+#define P_FOCUS_TOTWIDTH 100 ///< (readonly) - total width of the image frame in pixels
+#define P_FOCUS_FILTER   101 ///< select 8x8 filter used for the focus calculation (same order as quantization coefficients), 0..14
 
 //!timing generator/trigger delay/external trigger control
+#define P_TRIG_CONDITION 102 ///< trigger condition, 0 - internal, else dibits ((use<<1) | level) for each GPIO[11:0] pin
+#define P_TRIG_DELAY     103 ///< trigger delay, 32 bits in pixel clocks
+#define P_TRIG_OUT       104 ///< trigger output to GPIO, dibits ((use << 1) | level_when_active). Bit 24 - test mode, when GPIO[11:10] are controlled by other internal signals
+#define P_TRIG_PERIOD    105 ///< output sync period (32 bits, in pixel clocks). 0- stop. 1..256 - single, >=256 repetitive with specified period.
+#define P_TRIG_BITLENGTH 106 ///< bit length minus 1 (in pixel clock cycles) when transmitting/receiving timestamps. Legal values 2..255
 
-#define P_TRIG_CONDITION 102 // trigger condition, 0 - internal, else dibits ((use<<1) | level) for each GPIO[11:0] pin
-#define P_TRIG_DELAY     103 // trigger delay, 32 bits in pixel clocks
-#define P_TRIG_OUT       104 // trigger output to GPIO, dibits ((use << 1) | level_when_active). Bit 24 - test mode, when GPIO[11:10] are controlled by other internal signals
-#define P_TRIG_PERIOD    105 // output sync period (32 bits, in pixel clocks). 0- stop. 1..256 - single, >=256 repetitive with specified period.
-#define P_TRIG_BITLENGTH 106 // bit length minus 1 (in pixel clock cycles) when transmitting/receiving timestamps. Legal values 2..255
+#define P_TRIG_BITLENGTH_DEFAULT 31 ///< P_TRIG_BITLENGTH default value
 
-#define P_TRIG_BITLENGTH_DEFAULT 31 // P_TRIG_BITLENGTH default value
+#define P_SKIP_FRAMES    107 ///< number of frames to skip after restarting sensor+compressor - now zero/nonzero?
+#define P_I2C_QPERIOD    108 ///< number of system clock periods in 1/4 of i2c SCL period to the sensor/sensor board // 393: Moved to DT
+#define P_I2C_BYTES      109 ///< number of bytes in hardware i2c write (after slave addr) -0/1/2
+#define P_IRQ_SMART      110 ///< TODO: Obsolete for 393, update"smart" IRQ modes: +1 - wait for VACT in early compressor_done,
+                             ///< +2 - wait for dma fifo ready // 393: Combine IRQ? 353: bit 0 will be always 1 (needs fix in FPGA)
+#define P_EXTERN_TIMESTAMP 111 ///< Use external timestamp (received with sync) when availabele, 0 - always use local timestamp
+#define P_OVERSIZE       112 ///< ignore sensor dimensions, use absolute WOI_LEFT, WOI_TOP
+#define P_XMIT_TIMESTAMP 113 ///< 0 - transmit just sync pulse, 1 - pulse+timestamp over the sync line
 
+#define P_CORING_INDEX   114 ///< MSW - color coring index (if 0 - use LSW), LSW - Y coring index. Currently 1 step is 1/10 of the pre-quantized DCT
+                             ///< coefficient, maximum of 10. For the same filtering effect it should be higher for higher JPEG quality
 
-#define P_SKIP_FRAMES    107 // number of frames to skip after restarting sensor+compressor - now zero/nonzero?
-#define P_I2C_QPERIOD    108 // number of system clock periods in 1/4 of i2c SCL period to the sensor/sensor board // 393: Moved to DT
-#define P_I2C_BYTES      109 // number of bytes in hardware i2c write (after slave addr) -0/1/2
-#define P_IRQ_SMART      110 // "smart" IRQ modes: +1 - wait for VACT in early compressor_done, +2 - wait for dma fifo ready // 393: Combine IRQ?
-                             /// Currently bit 0 will be always 1 (needs fix in FPGA)
-#define P_EXTERN_TIMESTAMP 111 // Use external timestamp (received with sync) when availabele, 0 - always use local timestamp
-#define P_OVERSIZE       112 // ignore sensor dimensions, use absolute WOI_LEFT, WOI_TOP
-#define P_XMIT_TIMESTAMP 113 // 0 - transmit just sync pulse, 1 - pulse+timestamp over the sync line
-
-#define P_CORING_INDEX   114 // MSW - color coring index (if 0 - use LSW), LSW - Y coring index. Currently 1 step is 1/10 of the pre-quantized DCT
-                             // coefficient, maximum of 10. For the same filtering effect it should be higher for higher JPEG quality
-
-
-
-#define P_RFOCUS_LEFT    115 // relative (0x10000 - 1.0) focus WOI left margin, inclusive (3 LSB will be zeroed as it should be multiple of 8x8 block width) 
-#define P_RFOCUS_WIDTH   116 // relative (0x10000 - 1.0)focus WOI width (3 LSB will be zeroed as it should be multiple of 8x8 block width) 
-#define P_RFOCUS_TOP     117 // relative (0x10000 - 1.0)focus WOI top margin, inclusive (3 LSB will be zeroed as it should be multiple of 8x8 block height) 
-#define P_RFOCUS_HEIGHT  118 // relative (0x10000 - 1.0)focus WOI height (3 LSB will be zeroed as it should be multiple of 8x8 block height) 
+#define P_RFOCUS_LEFT    115 ///< relative (0x10000 - 1.0) focus WOI left margin, inclusive (3 LSB will be zeroed as it should be multiple of 8x8 block width)
+#define P_RFOCUS_WIDTH   116 ///< relative (0x10000 - 1.0)focus WOI width (3 LSB will be zeroed as it should be multiple of 8x8 block width)
+#define P_RFOCUS_TOP     117 ///< relative (0x10000 - 1.0)focus WOI top margin, inclusive (3 LSB will be zeroed as it should be multiple of 8x8 block height)
+#define P_RFOCUS_HEIGHT  118 ///< relative (0x10000 - 1.0)focus WOI height (3 LSB will be zeroed as it should be multiple of 8x8 block height)
 
 // Obsolete in x393, may need something different
-#define P_SDRAM_CHN20    125 // data to be written to the SDRAM CH2 REG 0  (last moment)
-#define P_SDRAM_CHN21    126 // data to be written to the SDRAM CH2 REG 1 
-#define P_SDRAM_CHN22    127 // data to be written to the SDRAM CH2 REG 2 
+#define P_SDRAM_CHN20    125 ///< data to be written to the SDRAM CH2 REG 0  (last moment) TODO: Obsolete in x393, may need something different
+#define P_SDRAM_CHN21    126 ///< data to be written to the SDRAM CH2 REG 1 TODO: Obsolete in x393, may need something different
+#define P_SDRAM_CHN22    127 ///< data to be written to the SDRAM CH2 REG 2 TODO: Obsolete in x393, may need something different
 
+// The following 4 parameters should have consecutive indexes
+// see  FRAMEPAIR_MASK_BYTES  to modify just part of the word (i.e. scale, not hash16
+//
+#define P_GTAB_R         128 ///< combines (P_PIXEL_LOW<<24) | (P_GAMMA <<16) and 16-bit (6.10) scale for gamma tables, individually for each color.
+                             ///<  16Msbs are also "hash16" and do not need to be black level/gamma, just uniquely identify the table for applications
+#define P_GTAB_G         129 ///< same for the first green (red line)
+#define P_GTAB_GB        130 ///< same for the second green (blue line)
+#define P_GTAB_B         131 ///< same for the blue
 
-/// The following 4 parameters should have consecutive indexes
-/// see  FRAMEPAIR_MASK_BYTES  to modify just part of the word (i.e. scale, not hash16
-///
-#define P_GTAB_R         128 // combines (P_PIXEL_LOW<<24) | (P_GAMMA <<16) and 16-bit (6.10) scale for gamma tables, individually for each color.
-                             //  16Msbs are also "hash16" and do not need to be black level/gamma, just uniquely identify the table for applications
-#define P_GTAB_G         129 // same for the first green (red line)
-#define P_GTAB_GB        130 // same for the second green (blue line)
-#define P_GTAB_B         131 // same for the blue
-
-#define P_QUALITY        132 //JPEG IMAGE QUALITY (now uses 2 bytes)
-#define P_ACTUAL_WIDTH   133 // RD P_RO_WIDTH  1  pixels/row
-#define P_ACTUAL_HEIGHT  134 // RD P_RO_HEIGHT 2  pixels/column
+#define P_QUALITY        132 ///< JPEG IMAGE QUALITY (uses 2 bytes to control color/intensity separately)
+#define P_ACTUAL_WIDTH   133 ///< RD P_RO_WIDTH  1  pixels/row
+#define P_ACTUAL_HEIGHT  134 ///< RD P_RO_HEIGHT 2  pixels/column
 
 // 393: Are they the same?
-#define P_COLOR          135 /// mono - 0, color mode - 1, +0 - normal, 256 - sensor test, 512 - FPGA test
-  #define COLORMODE_MONO6     0 // monochrome, (4:2:0),
-  #define COLORMODE_COLOR     1 // color, 4:2:0, 18x18(old)
-  #define COLORMODE_JP46      2 // jp4, original (4:2:0)
-  #define COLORMODE_JP46DC    3 // jp4, dc -improved (4:2:0)
-  #define COLORMODE_COLOR20   4 //  color, 4:2:0, 20x20, middle of the tile (not yet implemented)
-  #define COLORMODE_JP4       5 // jp4, 4 blocks, (legacy)
-  #define COLORMODE_JP4DC     6 // jp4, 4 blocks, dc -improved
-  #define COLORMODE_JP4DIFF   7 // jp4, 4 blocks, differential red := (R-G1), blue:=(B-G1), green=G1, green2 (G2-G1). G1 is defined by Bayer shift, any pixel can be used
-  #define COLORMODE_JP4HDR    8 // jp4, 4 blocks, differential HDR: red := (R-G1), blue:=(B-G1), green=G1, green2 (high gain)=G2) (G1 and G2 - diagonally opposite)
-  #define COLORMODE_JP4DIFF2  9 // jp4, 4 blocks, differential, divide differences by 2: red := (R-G1)/2, blue:=(B-G1)/2, green=G1, green2 (G2-G1)/2
-  #define COLORMODE_JP4HDR2  10 // jp4, 4 blocks, differential HDR: red := (R-G1)/2, blue:=(B-G1)/2, green=G1, green2 (high gain)=G2), 
-  #define COLORMODE_MONO4    14 // monochrome, 4 blocks (but still with 2x2 macroblocks)
-/// the following 8 values should go in the same sequence as fields in the histogram page
-/// 393: per sub-channel
-#define P_FRAME          136 // Frame number (reset with JPEG pointers) -(read only)
-#define P_GAINR          137 // R channel gain  8.16 (0x10000 - 1.0). Combines both analog gain and digital scaling
-#define P_GAING          138 // G channel gain ("red line")
-#define P_GAINGB         139 // G channel gain ("blue line")
-#define P_GAINB          140 // B channel gain
-#define P_EXPOS          141 //P_RW_EXPOS  1   exposure time      - now in microseconds?
-#define P_VEXPOS         142 // video exposure (if 0 - use P_RW_EXPOS in ms)
-#define P_FOCUS_VALUE    143 // (readonly) - sum of all blocks focus values inside focus WOI
+#define P_COLOR          135 ///< mono - 0, color mode - 1, +0 - normal, 256 - sensor test, 512 - FPGA test
+  #define COLORMODE_MONO6     0 ///< monochrome, (4:2:0),
+  #define COLORMODE_COLOR     1 ///< color, 4:2:0, 18x18(old)
+  #define COLORMODE_JP46      2 ///< jp4, original (4:2:0)
+  #define COLORMODE_JP46DC    3 ///< jp4, dc -improved (4:2:0)
+  #define COLORMODE_COLOR20   4 ///<  color, 4:2:0, 20x20, middle of the tile (not yet implemented)
+  #define COLORMODE_JP4       5 ///< jp4, 4 blocks, (legacy)
+  #define COLORMODE_JP4DC     6 ///< jp4, 4 blocks, dc -improved
+  #define COLORMODE_JP4DIFF   7 ///< jp4, 4 blocks, differential red := (R-G1), blue:=(B-G1), green=G1, green2 (G2-G1). G1 is defined by Bayer shift, any pixel can be used
+  #define COLORMODE_JP4HDR    8 ///< jp4, 4 blocks, differential HDR: red := (R-G1), blue:=(B-G1), green=G1, green2 (high gain)=G2) (G1 and G2 - diagonally opposite)
+  #define COLORMODE_JP4DIFF2  9 ///< jp4, 4 blocks, differential, divide differences by 2: red := (R-G1)/2, blue:=(B-G1)/2, green=G1, green2 (G2-G1)/2
+  #define COLORMODE_JP4HDR2  10 ///< jp4, 4 blocks, differential HDR: red := (R-G1)/2, blue:=(B-G1)/2, green=G1, green2 (high gain)=G2),
+  #define COLORMODE_MONO4    14 ///< monochrome, 4 blocks (but still with 2x2 macroblocks)
+// the following 8 values should go in the same sequence as fields in the histogram page
+// 393: per sub-channel
+#define P_FRAME          136 ///< Frame number (reset with JPEG pointers) -(read only)
+#define P_GAINR          137 ///< R channel gain  8.16 (0x10000 - 1.0). Combines both analog gain and digital scaling
+#define P_GAING          138 ///< G channel gain ("red line")
+#define P_GAINGB         139 ///< G channel gain ("blue line")
+#define P_GAINB          140 ///< B channel gain
+#define P_EXPOS          141 ///< P_RW_EXPOS  1   exposure time      - now in microseconds?
+#define P_VEXPOS         142 ///< video exposure (if 0 - use P_RW_EXPOS in ms)
+#define P_FOCUS_VALUE    143 ///< (readonly) - sum of all blocks focus values inside focus WOI
 
 /// 143 - last to copy ============
 
-#define P_COMPMOD_BYRSH  160 // Bayer shift in compressor
-#define P_PORTRAIT       161 // Quantization coefficients optimized for verical scan lines
+#define P_COMPMOD_BYRSH  160 ///< Bayer shift in compressor
+#define P_PORTRAIT       161 ///< Quantization coefficients optimized for vertical scan lines
 
 
-///TODO: rearrange, combine with other AUTOEXP
-/// if  [G_HIST_DIM_01] is set to 0xffffffff that will force re-calibration (1 dark frame)
-/// The following is a daemons control so the sleeping daemons can be awaken by the drivers when the corresponding bit is set and
-/// one of the following events happen (depending on driver and lseek (SEEK_END) offset:
-/// frame interrupt (any - compressed or not) - through "/dev/frameparsall"
-/// frame compressed interrupt - through "/dev/circbuf"
-/// histogram Y (G1) is ready - through "/dev/histogram_cache"
-/// histogram C (R,G1,G2,B) are ready - through "/dev/histogram_cache"
+//TODO: rearrange, combine with other AUTOEXP
+// if  [G_HIST_DIM_01] is set to 0xffffffff that will force re-calibration (1 dark frame)
+// The following is a daemons control so the sleeping daemons can be awaken by the drivers when the corresponding bit is set and
+// one of the following events happen (depending on driver and lseek (SEEK_END) offset:
+// frame interrupt (any - compressed or not) - through "/dev/frameparsall"
+// frame compressed interrupt - through "/dev/circbuf"
+// histogram Y (G1) is ready - through "/dev/histogram_cache"
+// histogram C (R,G1,G2,B) are ready - through "/dev/histogram_cache"
 
-#define P_DAEMON_EN      165 /// disable all autoexp features AEXP, WB, HDR- make extra sleep for AUTOEXP_EN to become non-zero (normal frame rules)
-#define P_AEXP_FRACPIX   166 /// Fraction of all pixels that should be below P_AEXP_LEVEL (16.16 - 0x10000 - all pixels)
-#define P_AEXP_LEVEL     167 /// Target output level:  [P_AEXP_FRACPIX]/0x10000 of all pixels should have value below it (also 16.16 - 0x10000 - full output scale)
+#define P_DAEMON_EN      165 ///< disable all autoexp features AEXP, WB, HDR- make extra sleep for AUTOEXP_EN to become non-zero (normal frame rules)
+#define P_AEXP_FRACPIX   166 ///< Fraction of all pixels that should be below P_AEXP_LEVEL (16.16 - 0x10000 - all pixels)
+#define P_AEXP_LEVEL     167 ///< Target output level:  [P_AEXP_FRACPIX]/0x10000 of all pixels should have value below it (also 16.16 - 0x10000 - full output scale)
 
-#define P_HDR_DUR        168 /// 0 - HDR 0ff, >1 - duration of same exposure (currently 1 or 2 - for free running)
-#define P_HDR_VEXPOS     169 /// if less than 0x10000 - number of lines of exposure, >=10000 - relative to "normal" exposure
+#define P_HDR_DUR        168 ///< 0 - HDR 0ff, >1 - duration of same exposure (currently 1 or 2 - for free running)
+#define P_HDR_VEXPOS     169 ///< if less than 0x10000 - number of lines of exposure, >=10000 - relative to "normal" exposure
 
-#define P_AE_PERIOD      170 /// Autoexposure period (will be increased if below the latency)
-#define P_WB_PERIOD      171 /// White balance period (will be increased if below the latency)
-#define P_WB_CTRL        172 /// bitmask - which colors to correct (1 - correct, 0 - ignore)
-#define P_WB_WHITELEV    173 /// White balance level of white (16.16 - 0x10000 is full scale, 0xfae1 - 98%, default)
-#define P_WB_WHITEFRAC   174 /// White balance fraction (16.16) of all pixels that have level above [P_WB_WHITELEV] for the brightest color
-                             /// locally [P_WB_WHITELEV] will be decreased if needed to satisfy [P_WB_WHITELEV]. default is 1% (0x028f)
-#define P_WB_MAXWHITE    175 /// Maximal allowed "white" pixels fraction (16.16) to have level above [P_WB_WHITELEV] for the darkest color
-                             /// if this limit is exceeded there will be no correction (waiting for autoexposure to decrease overall brightness)
+#define P_AE_PERIOD      170 ///< Autoexposure period (will be increased if below the latency)
+#define P_WB_PERIOD      171 ///< White balance period (will be increased if below the latency)
+#define P_WB_CTRL        172 ///< bitmask - which colors to correct (1 - correct, 0 - ignore)
+#define P_WB_WHITELEV    173 ///< White balance level of white (16.16 - 0x10000 is full scale, 0xfae1 - 98%, default)
+#define P_WB_WHITEFRAC   174 ///< White balance fraction (16.16) of all pixels that have level above [P_WB_WHITELEV] for the brightest color
+                             ///< locally [P_WB_WHITELEV] will be decreased if needed to satisfy [P_WB_WHITELEV]. default is 1% (0x028f)
+#define P_WB_MAXWHITE    175 ///< Maximal allowed "white" pixels fraction (16.16) to have level above [P_WB_WHITELEV] for the darkest color
+                             ///< if this limit is exceeded there will be no correction (waiting for autoexposure to decrease overall brightness)
 
-#define P_WB_SCALE_R     176 /// additional correction for R from calulated by white balance (16.16)
-#define P_WB_SCALE_GB    177 /// additional correction for G2(GB) from calulated by white balance (16.16)
-#define P_WB_SCALE_B     178 /// additional correction for B from calulated by white balance (16.16)
+#define P_WB_SCALE_R     176 ///< additional correction for R from calulated by white balance (16.16)
+#define P_WB_SCALE_GB    177 ///< additional correction for G2(GB) from calulated by white balance (16.16)
+#define P_WB_SCALE_B     178 ///< additional correction for B from calulated by white balance (16.16)
 
-#define P_EXP_AHEAD      179 /// How many frames ahead of the current frame write exposure to the sensor
-#define P_AE_THRESH      180 /// AE error (logariphmic exposures) is integrated between frame and corrections are scaled when error is below thershold (500)
-#define P_WB_THRESH      181 /// same for WB
+#define P_EXP_AHEAD      179 ///< How many frames ahead of the current frame write exposure to the sensor
+#define P_AE_THRESH      180 ///< AE error (logariphmic exposures) is integrated between frame and corrections are scaled when error is below thershold (500)
+#define P_WB_THRESH      181 ///< same for WB
 
 /// Used by white balancing to control analog gains in addition to gamma tables. Can be limited to narrower range than
-#define P_GAIN_MIN       182 /// minimal sensor analog gain  0x10000 ~1.0
-#define P_GAIN_MAX       183 /// maximal sensor analog gain  0x10000 ~1.0
-#define P_GAIN_CTRL      184 /// minimal correction to be applied to the analog gain (should be set larger that sensor actual gain step to prevent oscillations (0x100 - 1.0, 0x20 - 1/8)
-#define GAIN_BIT_STEP      0 /// start bit of gain step control in P_GAIN_CTRL
-#define GAIN_BIT_ENABLE   16 /// start bit of enabling analog gain controls in white balancing
+#define P_GAIN_MIN       182 ///< minimal sensor analog gain  0x10000 ~1.0
+#define P_GAIN_MAX       183 ///< maximal sensor analog gain  0x10000 ~1.0
+#define P_GAIN_CTRL      184 ///< minimal correction to be applied to the analog gain (should be set larger that sensor actual gain step to prevent oscillations (0x100 - 1.0, 0x20 - 1/8)
+#define GAIN_BIT_STEP      0 ///< start bit of gain step control in P_GAIN_CTRL
+#define GAIN_BIT_ENABLE   16 ///< start bit of enabling analog gain controls in white balancing
 
 /// Requests for autocampars daemon
-#define P_AUTOCAMPARS_CTRL 185 /// bits 0..24 - groups to restore, bits 24..27 - page number to save bits 28..30: 1 - restore, 2 - save, 3 - set default 4 save as default 5 - init
+#define P_AUTOCAMPARS_CTRL 185 ///< bits 0..24 - groups to restore, bits 24..27 - page number to save bits 28..30: 1 - restore, 2 - save, 3 - set default 4 save as default 5 - init
 
 /// Parameters for ccamftp.php daemon
 /// (server, account, password, directories,script names are sepaarte)
-#define P_FTP_PERIOD     190 /// FTP image upload period
-#define P_FTP_TIMEOUT    191 /// Maximal time allowed for image uploading
-#define P_FTP_UPDATE     192 /// Maximal time between updates (camera wil re-read remote configuration file)
+#define P_FTP_PERIOD     190 ///< FTP image upload period
+#define P_FTP_TIMEOUT    191 ///< Maximal time allowed for image uploading
+#define P_FTP_UPDATE     192 ///< Maximal time between updates (camera wil re-read remote configuration file)
 
-// streamer parameters
-#define _P_STROP_OFFSET      193
+
+#define _P_STROP_OFFSET      193 ///< streamer parameters
 // multicast/unicast transport
-#define P_STROP_MCAST_EN        (_P_STROP_OFFSET + 0)	// != 0 for multicast, 0 for unicast
-#define P_STROP_MCAST_IP        (_P_STROP_OFFSET + 1)	// 0 for camera IP based multicast, other value - for custom IP
-#define P_STROP_MCAST_PORT      (_P_STROP_OFFSET + 2)	// >= 1024 && <= 65532
-#define P_STROP_MCAST_TTL       (_P_STROP_OFFSET + 3)	// >= 1 && <= 15
+#define P_STROP_MCAST_EN        (_P_STROP_OFFSET + 0)	///< != 0 for multicast, 0 for unicast
+#define P_STROP_MCAST_IP        (_P_STROP_OFFSET + 1)	///< 0 for camera IP based multicast, other value - for custom IP
+#define P_STROP_MCAST_PORT      (_P_STROP_OFFSET + 2)	///< >= 1024 && <= 65532
+#define P_STROP_MCAST_TTL       (_P_STROP_OFFSET + 3)	///< >= 1 && <= 15
 // audio - support only one ("default") soundcard, if present
-#define P_STROP_AUDIO_EN        (_P_STROP_OFFSET + 4)	// 0 - disable audio, else - try if soundcard is present
-#define P_STROP_AUDIO_RATE      (_P_STROP_OFFSET + 5)	// >= 11250 && <= 48000
-#define P_STROP_AUDIO_CHANNEL   (_P_STROP_OFFSET + 6)	// 1 - mono, 2 - stereo
-#define P_STROP_FRAMES_SKIP     (_P_STROP_OFFSET + 7)	// 0 - output each frame, 1 - output/skip == 1/1 fomr 2 frames, 2 - output/skip == 1/2 from 3 frames etc
-#define P_AUDIO_CAPTURE_VOLUME  (_P_STROP_OFFSET + 8)	// for streamer and camogm2: 0 == 0%; 65535 == 100% capture volume, by default 90% == 58981
+#define P_STROP_AUDIO_EN        (_P_STROP_OFFSET + 4)	///< 0 - disable audio, else - try if soundcard is present
+#define P_STROP_AUDIO_RATE      (_P_STROP_OFFSET + 5)	///< >= 11250 && <= 48000
+#define P_STROP_AUDIO_CHANNEL   (_P_STROP_OFFSET + 6)	///< 1 - mono, 2 - stereo
+#define P_STROP_FRAMES_SKIP     (_P_STROP_OFFSET + 7)	///< 0 - output each frame, 1 - output/skip == 1/1 fomr 2 frames, 2 - output/skip == 1/2 from 3 frames etc
+#define P_AUDIO_CAPTURE_VOLUME  (_P_STROP_OFFSET + 8)	///< for streamer and camogm2: 0 == 0%; 65535 == 100% capture volume, by default 90% == 58981
 
 ///parameters related to multi-sensor operation
 #define _P_MULTISENS_OFFSET      208
-#define P_MULTISENS_EN         (_P_MULTISENS_OFFSET + 0)  // 0 - single sensor, no 10359A, otherwise - bitmask of the sensors enabled (obeys G_SENS_AVAIL that should not be modified at runtime)
-#define P_MULTI_PHASE_SDRAM    (_P_MULTISENS_OFFSET + 1)  // similar to P_SENSOR_PHASE, but for sensor1, connected to 10359
-#define P_MULTI_PHASE1         (_P_MULTISENS_OFFSET + 2)  // similar to P_SENSOR_PHASE, but for sensor1, connected to 10359
-#define P_MULTI_PHASE2         (_P_MULTISENS_OFFSET + 3)  // similar to P_SENSOR_PHASE, but for sensor2, connected to 10359
-#define P_MULTI_PHASE3         (_P_MULTISENS_OFFSET + 4)  // similar to P_SENSOR_PHASE, but for sensor3, connected to 10359
-#define P_MULTI_SEQUENCE       (_P_MULTISENS_OFFSET + 5)  // sensor sequence (bits 0,1 - first, 2,3 - second, 4,5 - third). 0 - disable. Will obey G_SENS_AVAIL & P_MULTISENS_EN
-#define P_MULTI_FLIPH          (_P_MULTISENS_OFFSET + 6)  // additional per-sensor horizontal flip to global P_FLIPH, same bits as in G_SENS_AVAIL
-#define P_MULTI_FLIPV          (_P_MULTISENS_OFFSET + 7)  // additional per-sensor vertical flip to global P_FLIPV, same bits as in G_SENS_AVAIL
-#define P_MULTI_MODE           (_P_MULTISENS_OFFSET + 8)  // Mode 0 - single sensor (first in sequence), 1 - composite (only enabled in triggered mode)
-#define P_MULTI_HBLANK         (_P_MULTISENS_OFFSET + 9)  // Horizontal blanking for buffered frames (2,3) - not needed?
+#define P_MULTISENS_EN         (_P_MULTISENS_OFFSET + 0)  ///< 0 - single sensor, no 10359A, otherwise - bitmask of the sensors enabled (obeys G_SENS_AVAIL that should not be modified at runtime)
+#define P_MULTI_PHASE_SDRAM    (_P_MULTISENS_OFFSET + 1)  ///< similar to P_SENSOR_PHASE, but for sensor1, connected to 10359
+#define P_MULTI_PHASE1         (_P_MULTISENS_OFFSET + 2)  ///< similar to P_SENSOR_PHASE, but for sensor1, connected to 10359
+#define P_MULTI_PHASE2         (_P_MULTISENS_OFFSET + 3)  ///< similar to P_SENSOR_PHASE, but for sensor2, connected to 10359
+#define P_MULTI_PHASE3         (_P_MULTISENS_OFFSET + 4)  ///< similar to P_SENSOR_PHASE, but for sensor3, connected to 10359
+#define P_MULTI_SEQUENCE       (_P_MULTISENS_OFFSET + 5)  ///< sensor sequence (bits 0,1 - first, 2,3 - second, 4,5 - third). 0 - disable. Will obey G_SENS_AVAIL & P_MULTISENS_EN
+#define P_MULTI_FLIPH          (_P_MULTISENS_OFFSET + 6)  ///< additional per-sensor horizontal flip to global P_FLIPH, same bits as in G_SENS_AVAIL
+#define P_MULTI_FLIPV          (_P_MULTISENS_OFFSET + 7)  ///< additional per-sensor vertical flip to global P_FLIPV, same bits as in G_SENS_AVAIL
+#define P_MULTI_MODE           (_P_MULTISENS_OFFSET + 8)  ///< Mode 0 - single sensor (first in sequence), 1 - composite (only enabled in triggered mode)
+#define P_MULTI_HBLANK         (_P_MULTISENS_OFFSET + 9)  ///< Horizontal blanking for buffered frames (2,3) - not needed?
 
 ///parameters for adjusting physical sensors WOI inside the composite frame
-#define P_MULTI_CWIDTH         (_P_MULTISENS_OFFSET + 10)  // Composite frame width  (stored while in single-sensor mode, copied to P_WOI_WIDTH)
-#define P_MULTI_CHEIGHT        (_P_MULTISENS_OFFSET + 11)  // Composite frame height (stored while in single-sensor mode)
-#define P_MULTI_CLEFT          (_P_MULTISENS_OFFSET + 12)  // Composite frame left margin  (stored while in single-sensor mode, copied to P_WOI_LEFT)
-#define P_MULTI_CTOP           (_P_MULTISENS_OFFSET + 13)  // Composite frame top margin (stored while in single-sensor mode)
-#define P_MULTI_CFLIPH         (_P_MULTISENS_OFFSET + 14)  // Horizontal flip for composite image (stored while in single-sensor mode)
-#define P_MULTI_CFLIPV         (_P_MULTISENS_OFFSET + 15)  // Vertical flip for composite image (stored while in single-sensor mode)
-#define P_MULTI_VBLANK         (_P_MULTISENS_OFFSET + 16)  // Vertical blanking for buffered frames (2,3) BEFORE FRAME, not after
+#define P_MULTI_CWIDTH         (_P_MULTISENS_OFFSET + 10)  ///< Composite frame width  (stored while in single-sensor mode, copied to P_WOI_WIDTH)
+#define P_MULTI_CHEIGHT        (_P_MULTISENS_OFFSET + 11)  ///< Composite frame height (stored while in single-sensor mode)
+#define P_MULTI_CLEFT          (_P_MULTISENS_OFFSET + 12)  ///< Composite frame left margin  (stored while in single-sensor mode, copied to P_WOI_LEFT)
+#define P_MULTI_CTOP           (_P_MULTISENS_OFFSET + 13)  ///< Composite frame top margin (stored while in single-sensor mode)
+#define P_MULTI_CFLIPH         (_P_MULTISENS_OFFSET + 14)  ///< Horizontal flip for composite image (stored while in single-sensor mode)
+#define P_MULTI_CFLIPV         (_P_MULTISENS_OFFSET + 15)  ///< Vertical flip for composite image (stored while in single-sensor mode)
+#define P_MULTI_VBLANK         (_P_MULTISENS_OFFSET + 16)  ///< Vertical blanking for buffered frames (2,3) BEFORE FRAME, not after
 
 /// should go in that sequence *1,*2,*3 (will be indexed)
-#define P_MULTI_WOI            (_P_MULTISENS_OFFSET + 17) // Width of frame 1 (direct)  // Same as next
-#define P_MULTI_WIDTH1         ( P_MULTI_WOI+          0) // Width of frame 1 (direct) // same as P_MULTI_WOI !!!!
-#define P_MULTI_WIDTH2         ( P_MULTI_WOI+          1) // Width of frame 2 (first buffered)
-#define P_MULTI_WIDTH3         ( P_MULTI_WOI+          2) // Width of frame 3 (second buffered)
-#define P_MULTI_HEIGHT1        ( P_MULTI_WOI+          3) // Height of frame 1 (direct) 
-#define P_MULTI_HEIGHT2        ( P_MULTI_WOI+          4) // Height of frame 2 (first buffered)
-#define P_MULTI_HEIGHT3        ( P_MULTI_WOI+          5) // Height of frame 3 (second buffered)
-#define P_MULTI_LEFT1          ( P_MULTI_WOI+          6) // Left margin of frame 1 (direct)
-#define P_MULTI_LEFT2          ( P_MULTI_WOI+          7) // Left margin of frame 2 (first buffered)
-#define P_MULTI_LEFT3          ( P_MULTI_WOI+          8) // Left margin of frame 3 (second buffered)
-#define P_MULTI_TOP1           ( P_MULTI_WOI+          9) // Top margin of frame 1 (direct)
-#define P_MULTI_TOP2           ( P_MULTI_WOI+         10) // Top margin of frame 2 (first buffered)
-#define P_MULTI_TOP3           ( P_MULTI_WOI+         11) // Top margin of frame 3 (second buffered)
-#define P_MULTI_TOPSENSOR      (_P_MULTISENS_OFFSET + 29) // number of sensor channel used in first (direct) frame: 0..2, internal parameter (window->sensorin)
-#define P_MULTI_SELECTED       (_P_MULTISENS_OFFSET + 30) // number of sensor channel (1..3, not 0..2) used when composite mode is disabled
+#define P_MULTI_WOI            (_P_MULTISENS_OFFSET + 17) ///< Width of frame 1 (direct)  // Same as next
+#define P_MULTI_WIDTH1         ( P_MULTI_WOI+          0) ///< Width of frame 1 (direct) // same as P_MULTI_WOI !!!!
+#define P_MULTI_WIDTH2         ( P_MULTI_WOI+          1) ///< Width of frame 2 (first buffered)
+#define P_MULTI_WIDTH3         ( P_MULTI_WOI+          2) ///< Width of frame 3 (second buffered)
+#define P_MULTI_HEIGHT1        ( P_MULTI_WOI+          3) ///< Height of frame 1 (direct)
+#define P_MULTI_HEIGHT2        ( P_MULTI_WOI+          4) ///< Height of frame 2 (first buffered)
+#define P_MULTI_HEIGHT3        ( P_MULTI_WOI+          5) ///< Height of frame 3 (second buffered)
+#define P_MULTI_LEFT1          ( P_MULTI_WOI+          6) ///< Left margin of frame 1 (direct)
+#define P_MULTI_LEFT2          ( P_MULTI_WOI+          7) ///< Left margin of frame 2 (first buffered)
+#define P_MULTI_LEFT3          ( P_MULTI_WOI+          8) ///< Left margin of frame 3 (second buffered)
+#define P_MULTI_TOP1           ( P_MULTI_WOI+          9) ///< Top margin of frame 1 (direct)
+#define P_MULTI_TOP2           ( P_MULTI_WOI+         10) ///< Top margin of frame 2 (first buffered)
+#define P_MULTI_TOP3           ( P_MULTI_WOI+         11) ///< Top margin of frame 3 (second buffered)
+#define P_MULTI_TOPSENSOR      (_P_MULTISENS_OFFSET + 29) ///< number of sensor channel used in first (direct) frame: 0..2, internal parameter (window->sensorin)
+#define P_MULTI_SELECTED       (_P_MULTISENS_OFFSET + 30) ///< number of sensor channel (1..3, not 0..2) used when composite mode is disabled
 /// parameters for MakerNote, internal
-#define P_MULTI_MODE_FLIPS     (_P_MULTISENS_OFFSET + 31) // bit 7 - 0, bit 6 - composite mode, bits 4,5 - flips for frame 3, 2,3 - frame 2, 0,1 - frame 1 (top)
-#define P_MULTI_HEIGHT_BLANK1  (_P_MULTISENS_OFFSET + 32) // height of the first sub-frame plus (vertical blank after the first sub-frame) << 16 (output lines, decimated)
-#define P_MULTI_HEIGHT_BLANK2  (_P_MULTISENS_OFFSET + 33) // height of the second sub-frame plus (vertical blank after the second sub-frame) << 16 (output lines, decimated)
+#define P_MULTI_MODE_FLIPS     (_P_MULTISENS_OFFSET + 31) ///< bit 7 - 0, bit 6 - composite mode, bits 4,5 - flips for frame 3, 2,3 - frame 2, 0,1 - frame 1 (top)
+#define P_MULTI_HEIGHT_BLANK1  (_P_MULTISENS_OFFSET + 32) ///< height of the first sub-frame plus (vertical blank after the first sub-frame) << 16 (output lines, decimated)
+#define P_MULTI_HEIGHT_BLANK2  (_P_MULTISENS_OFFSET + 33) ///< height of the second sub-frame plus (vertical blank after the second sub-frame) << 16 (output lines, decimated)
 
 // up to _P_MULTISENS_OFFSET + 256-208-1=47
+/// In 393 these registers go through a static lookup table, that maps them to sensor channel/register (or broadcast/common).
+/// Same entries may be dynamically added (sysfs) for "active registers"
+#define P_SENSOR_REGS    256 ///< shadows of the sensor registers (should be multiple of 32)
+#define P_SENSOR_NUMREGS 256 ///< number of the sensor registers (should be multiple of 32)
 
-#define P_SENSOR_REGS    256 /// shadows of the sensor registers (should be multiple of 32)
-#define P_SENSOR_NUMREGS 256 /// number of the sensor registers (should be multiple of 32)
-
-#define P_M10359_REGS       (P_SENSOR_REGS + P_SENSOR_NUMREGS) /// shadows of the 10359 registers (should be multiple of 32)
-#define P_M10359_NUMREGS    96 /// shadows of the 10359  registers (should be multiple of 32)
-#define P_M10359_REGS32BIT  0x40 // 10359 registers above 0x40 are 32-bit ones
+#define P_M10359_REGS       (P_SENSOR_REGS + P_SENSOR_NUMREGS) ///< shadows of the 10359 registers (should be multiple of 32)
+#define P_M10359_NUMREGS    96 ///< shadows of the 10359  registers (should be multiple of 32)
+#define P_M10359_REGS32BIT  0x40 //< 10359 registers above 0x40 are 32-bit ones
 
 
-#define P_MULTI_NUMREGS  32  /// up to 32 sensor register may have individual values
-#define P_MULTI_REGS          (P_M10359_REGS + P_M10359_NUMREGS) /// 32-words aligned
+#define P_MULTI_NUMREGS  32  ///< up to 32 sensor register may have individual values
+#define P_MULTI_REGS          (P_M10359_REGS + P_M10359_NUMREGS) ///< 32-words aligned
 
-#define P_MAX_PAR         (P_MULTI_REGS + (MAX_SENSORS * P_MULTI_NUMREGS )) /// maximal # of used parameter+1
+#define P_MAX_PAR         (P_MULTI_REGS + (MAX_SENSORS * P_MULTI_NUMREGS )) ///< maximal # of used parameter+1
 /* 393: Making P_MAX_PAR multiple of PAGE_SIZE/2, so framepars_all_t will be multiple of PAGE_SIZE*/
 #ifndef PAGE_SIZE
-	#define PAGE_SIZE 4096 // not using <asm/page.h> as this file may be used outside of kernel
+	#define PAGE_SIZE 4096 ///< not using <asm/page.h> as this file may be used outside of kernel
 #endif
-#define P_MAX_PAR_ROUNDUP ROUND_UP (P_MAX_PAR , (PAGE_SIZE/8)) // half page in DWORDs
+#define P_MAX_PAR_ROUNDUP ROUND_UP (P_MAX_PAR , (PAGE_SIZE/8)) ///< half page in DWORDs
 
 
 #ifdef SAFE_CHECK
@@ -613,126 +605,123 @@
 //#define P_MAX_PAR        511 /// maximal # of used parameter
 //#define P_MAX_GPAR      1023 // maximal # of global parameter
 //#define P_MAX_GPAR      2047 /// maximal # of global parameter - TODO: change name to NUM_GPAR and make it 2048
-#define NUM_GPAR        2048           /// maximal # of global parameter - TODO: change name to NUM_GPAR and make it 2048
-#define P_MAX_GPAR      (NUM_GPAR - 1) /// maximal # of global parameter - TODO: change name to NUM_GPAR and make it 2048
+#define NUM_GPAR        2048           ///< maximal # of global parameter - TODO: change name to NUM_GPAR and make it 2048
+#define P_MAX_GPAR      (NUM_GPAR - 1) ///< maximal # of global parameter - TODO: change name to NUM_GPAR and make it 2048
 
-#define PARS_SAVE_FROM   128 /// PARS_SAVE_NUM parameters starting from PARS_SAVE_FROM from "this" frame will be saved in circular buffer, PASTPARS_SAVE_ENTRIES entries
-#define PARS_SAVE_COPY    16 /// number of parameters copied from future (framepars) to the past (pastpars)
-#define PARS_SAVE_NUM     32 /// total size of previous parameter save page
-#define PP_PROFILE_START  16 /// index of the first profile timestamp in pastpars
-#define P_PROFILE        (PARS_SAVE_FROM + PP_PROFILE_START) //index to access profiles as pastpars (i.e. from PHP ELPHEL_PROFILE1,PHP ELPHEL_PROFILE2)
+#define PARS_SAVE_FROM   128 ///< PARS_SAVE_NUM parameters starting from PARS_SAVE_FROM from "this" frame will be saved in circular buffer, PASTPARS_SAVE_ENTRIES entries
+#define PARS_SAVE_COPY    16 ///< number of parameters copied from future (framepars) to the past (pastpars)
+#define PARS_SAVE_NUM     32 ///< total size of previous parameter save page
+#define PP_PROFILE_START  16 ///< index of the first profile timestamp in pastpars
+#define P_PROFILE        (PARS_SAVE_FROM + PP_PROFILE_START) ///< index to access profiles as pastpars (i.e. from PHP ELPHEL_PROFILE1,PHP ELPHEL_PROFILE2)
 
-
-#define FRAMEPAR_GLOBALS   0x01000  /// start of global (not frame-related) parameters
+#define FRAMEPAR_GLOBALS   0x01000  ///< start of global (not frame-related) parameters
 
 #define GLOBALS_PRESERVE   0x20     /// number of parameters that are not erased during initGlobalPars
 
-/// First 32 parameter values are not erased with initGlobalPars
-#define GLOBALPARS(p, x) (aglobalPars[p][(x)-FRAMEPAR_GLOBALS]) // should work in drivers and applications
+#define GLOBALPARS(p, x) (aglobalPars[p][(x)-FRAMEPAR_GLOBALS]) ///< should work in drivers and applications, First 32 parameter values are not erased with initGlobalPars
 
-#define G_DEBUG         (FRAMEPAR_GLOBALS + 2) /// Each bit turns on/off some debug outputs
-#define G_TEST_CTL_BITS (FRAMEPAR_GLOBALS + 3) /// turn some features on/off in the drivers for debugging purposes
-#define   G_TEST_CTL_BITS_RESET_DMA_COMPRESSOR 0 /// reset compressor and DMA when detecting sensor, bit number in G_TEST_CTL_BITS
+#define G_DEBUG         (FRAMEPAR_GLOBALS + 2) ///< Each bit turns on/off some debug outputs
+#define G_TEST_CTL_BITS (FRAMEPAR_GLOBALS + 3) ///< turn some features on/off in the drivers for debugging purposes
+#define   G_TEST_CTL_BITS_RESET_DMA_COMPRESSOR 0 ///< reset compressor and DMA when detecting sensor, bit number in G_TEST_CTL_BITS
 
-#define G_CABLE_TIM     (FRAMEPAR_GLOBALS + 7) /// Extra cable delay, signed ps)
-#define G_FPGA_TIM0     (FRAMEPAR_GLOBALS + 8) /// FPGA timing parameter 0 - difference between DCLK pad and DCM input, signed (ps)
-#define G_FPGA_TIM1     (FRAMEPAR_GLOBALS + 9) /// FPGA timing parameter 1
+#define G_CABLE_TIM     (FRAMEPAR_GLOBALS + 7) ///< Extra cable delay, signed ps)
+#define G_FPGA_TIM0     (FRAMEPAR_GLOBALS + 8) ///< FPGA timing parameter 0 - difference between DCLK pad and DCM input, signed (ps)
+#define G_FPGA_TIM1     (FRAMEPAR_GLOBALS + 9) ///< FPGA timing parameter 1
 
-#define G_SENS_AVAIL    (FRAMEPAR_GLOBALS + 10) /// bitmask of the sensor attached to 10359A (0 - no 10359A brd)
-#define G_DLY359_OUT    (FRAMEPAR_GLOBALS + 11) /// output delay in 10359 board (clock to out) in ps, signed
-#define G_DLY359_P1     (FRAMEPAR_GLOBALS + 12) /// delay in 10359 board sensor port 1 (clock to sensor - clock to DCM) in ps, signed
-#define G_DLY359_P2     (FRAMEPAR_GLOBALS + 13) /// delay in 10359 board sensor port 2 (clock to sensor - clock to DCM) in ps, signed
-#define G_DLY359_P3     (FRAMEPAR_GLOBALS + 14) /// delay in 10359 board sensor port 3 (clock to sensor - clock to DCM) in ps, signed
-#define G_DLY359_C1     (FRAMEPAR_GLOBALS + 15) /// cable delay in sensor port 1 in ps, signed
-#define G_DLY359_C2     (FRAMEPAR_GLOBALS + 16) /// cable delay in sensor port 2 in ps, signed
-#define G_DLY359_C3     (FRAMEPAR_GLOBALS + 17) /// cable delay in sensor port 3 in ps, signed
-///gap
-#define G_MULTI_CFG     (FRAMEPAR_GLOBALS + 23) /// Additional configuration options for 10359 board.
-  #define G_MULTI_CFG_SYSCLK 0 /// Bit 0 - use 10353 system clock, not the local one (as on 10359 rev 0)
-  #define G_MULTI_CFG_DLYI2C 1 /// Bit 1 - delay 10359 i2c commands with respect to sensor ones (in multi_pgm_window)
-  #define G_MULTI_CFG_BEFORE 2 /// Bit 2 - send 10359 i2c commands first (to be sent after frame sync, 0 - sesnor commands first)
-#define G_MULTI_REGSM   (FRAMEPAR_GLOBALS + 24) /// 8 words of bitmasks of individual sensor registers, used only at init. Later will be initialized (OR-ed?) by driver
-/// used up to FRAMEPAR_GLOBALS + 31 
+#define G_SENS_AVAIL    (FRAMEPAR_GLOBALS + 10) ///< bitmask of the sensor attached to 10359A (0 - no 10359A brd)
+#define G_DLY359_OUT    (FRAMEPAR_GLOBALS + 11) ///< output delay in 10359 board (clock to out) in ps, signed
+#define G_DLY359_P1     (FRAMEPAR_GLOBALS + 12) ///< delay in 10359 board sensor port 1 (clock to sensor - clock to DCM) in ps, signed
+#define G_DLY359_P2     (FRAMEPAR_GLOBALS + 13) ///< delay in 10359 board sensor port 2 (clock to sensor - clock to DCM) in ps, signed
+#define G_DLY359_P3     (FRAMEPAR_GLOBALS + 14) ///< delay in 10359 board sensor port 3 (clock to sensor - clock to DCM) in ps, signed
+#define G_DLY359_C1     (FRAMEPAR_GLOBALS + 15) ///< cable delay in sensor port 1 in ps, signed
+#define G_DLY359_C2     (FRAMEPAR_GLOBALS + 16) ///< cable delay in sensor port 2 in ps, signed
+#define G_DLY359_C3     (FRAMEPAR_GLOBALS + 17) ///< cable delay in sensor port 3 in ps, signed
+//gap
+#define G_MULTI_CFG     (FRAMEPAR_GLOBALS + 23) ///< Additional configuration options for 10359 board.
+  #define G_MULTI_CFG_SYSCLK 0 ///< Bit 0 - use 10353 system clock, not the local one (as on 10359 rev 0)
+  #define G_MULTI_CFG_DLYI2C 1 ///< Bit 1 - delay 10359 i2c commands with respect to sensor ones (in multi_pgm_window)
+  #define G_MULTI_CFG_BEFORE 2 ///< Bit 2 - send 10359 i2c commands first (to be sent after frame sync, 0 - sesnor commands first)
+#define G_MULTI_REGSM   (FRAMEPAR_GLOBALS + 24) ///< 8 words of bitmasks of individual sensor registers, used only at init. Later will be initialized (OR-ed?) by driver
 
-///First 32 entries will not be erased when sensor init, Move some here
-#define G_FRAME_SIZE    (FRAMEPAR_GLOBALS + 33) /// Last compressed frame size in bytes (w/o headers)
+// used up to FRAMEPAR_GLOBALS + 31
+#define G_FRAME_SIZE    (FRAMEPAR_GLOBALS + 33) ///< Last compressed frame size in bytes (w/o headers). First 32 entries will not be erased when sensor init, Move some here
 
-#define G_MULTI_NUM     (FRAMEPAR_GLOBALS + 34) /// Actual number of parameters that are individual for different channels (limited by P_MULTI_NUMREGS)
+#define G_MULTI_NUM     (FRAMEPAR_GLOBALS + 34) ///< Actual number of parameters that are individual for different channels (limited by P_MULTI_NUMREGS)
 
-#define G_MAXAHEAD      (FRAMEPAR_GLOBALS + 35) /// Maximal number of frames ahead of current to be programmed to hardware
-#define G_THIS_FRAME    (FRAMEPAR_GLOBALS + 36) /// Current frame number (may lag from the hardwaere)
-#define G_CIRCBUFSIZE   (FRAMEPAR_GLOBALS + 37) /// Size of the circular buffer (in bytes)
-//!the following 3 locations should be in the same 32-byte (8 long) cache line
-#define G_FREECIRCBUF   (FRAMEPAR_GLOBALS + 38) /// Free space in circbuf (uses global read pointer, in bytes)
-#define G_CIRCBUFWP     (FRAMEPAR_GLOBALS + 39) /// circbuf write pointer (in bytes - similar P_JPEG_WP is in long words)
-#define G_CIRCBUFRP     (FRAMEPAR_GLOBALS + 40) /// circbuf global read pointer (in bytes )
+#define G_MAXAHEAD      (FRAMEPAR_GLOBALS + 35) ///< Maximal number of frames ahead of current to be programmed to hardware
+#define G_THIS_FRAME    (FRAMEPAR_GLOBALS + 36) ///< Current frame number (may lag from the hardwaere)
+#define G_CIRCBUFSIZE   (FRAMEPAR_GLOBALS + 37) ///< Size of the circular buffer (in bytes)
+// the following 3 locations should be in the same 32-byte (8 long) cache line
+#define G_FREECIRCBUF   (FRAMEPAR_GLOBALS + 38) ///< Free space in circbuf (uses global read pointer, in bytes)
+#define G_CIRCBUFWP     (FRAMEPAR_GLOBALS + 39) ///< circbuf write pointer (in bytes - similar P_JPEG_WP is in long words)
+#define G_CIRCBUFRP     (FRAMEPAR_GLOBALS + 40) ///< circbuf global read pointer (in bytes )
 
-#define G_SECONDS       (FRAMEPAR_GLOBALS + 41)  /// seconds (R/W to FPGA timer)
-#define G_MICROSECONDS  (FRAMEPAR_GLOBALS + 42) /// microseconds (R/W to FPGA timer)
+#define G_SECONDS       (FRAMEPAR_GLOBALS + 41) ///< seconds (R/W to FPGA timer)
+#define G_MICROSECONDS  (FRAMEPAR_GLOBALS + 42) ///< microseconds (R/W to FPGA timer)
 
 /// Next 5 should go in that sequence
-#define G_CALLNASAP     (FRAMEPAR_GLOBALS + 43) /// bitmask - what functions can be used not only in the current frame (ASAP) mode
-#define G_CALLNEXT      (FRAMEPAR_GLOBALS + 43) /// (same as G_CALLNASAP) bitmask of actions to be one   or more frames ahead of the programmed one (OR-ed with G_CALLNEXT2..G_CALLNEXT4)
-///Leave 4 locations after for (G_CALLNEXT+1)...(G_CALLNEXT+4)
+#define G_CALLNASAP     (FRAMEPAR_GLOBALS + 43) ///< bitmask - what functions can be used not only in the current frame (ASAP) mode
+#define G_CALLNEXT      (FRAMEPAR_GLOBALS + 43) ///< (same as G_CALLNASAP) bitmask of actions to be one   or more frames ahead of the programmed one (OR-ed with G_CALLNEXT2..G_CALLNEXT4)
+//Leave 4 locations after for (G_CALLNEXT+1)...(G_CALLNEXT+4)
 //#define G_CALLNEXT1     (FRAMEPAR_GLOBALS + 44) /// bitmask of actions to be one   or more frames ahead of the programmed one (OR-ed with G_CALLNEXT2..G_CALLNEXT4)
 //#define G_CALLNEXT2     (FRAMEPAR_GLOBALS + 45) /// bitmask of actions to be two   or more frames ahead of the programmed one (OR-ed with G_CALLNEXT3..G_CALLNEXT4)
 //#define G_CALLNEXT3     (FRAMEPAR_GLOBALS + 46) // bitmask of actions to be three or more frames ahead of the programmed one (OR-ed with G_CALLNEXT4)
 //#define G_CALLNEXT4     (FRAMEPAR_GLOBALS + 47) // bitmask of actions to be four  or more frames ahead of the programmed one
 
-#define G_NEXT_AE_FRAME  (FRAMEPAR_GLOBALS + 48) // Next frame to be processed by autoexposure - written directly from daemon through mmap
-#define G_NEXT_WB_FRAME  (FRAMEPAR_GLOBALS + 49) // Next frame to be processed by white balance - written directly from daemon through mmap
-#define G_HIST_DIM_01    (FRAMEPAR_GLOBALS + 50) // Percentile measured for colors 0 (lower 16 bits) and 1 (high 16 bits) for  VEXPOS=1
-#define G_HIST_DIM_23    (FRAMEPAR_GLOBALS + 51) // Percentile measured for colors 2 (lower 16 bits) and 3 (high 16 bits) for  VEXPOS=1
+#define G_NEXT_AE_FRAME  (FRAMEPAR_GLOBALS + 48) ///< Next frame to be processed by autoexposure - written directly from daemon through mmap
+#define G_NEXT_WB_FRAME  (FRAMEPAR_GLOBALS + 49) ///< Next frame to be processed by white balance - written directly from daemon through mmap
+#define G_HIST_DIM_01    (FRAMEPAR_GLOBALS + 50) ///< Percentile measured for colors 0 (lower 16 bits) and 1 (high 16 bits) for  VEXPOS=1
+#define G_HIST_DIM_23    (FRAMEPAR_GLOBALS + 51) ///< Percentile measured for colors 2 (lower 16 bits) and 3 (high 16 bits) for  VEXPOS=1
 /// if  [G_HIST_DIM_01] is set to 0xffffffff that will force re-calibration (1 dark frame)
 //#define G_EW_HYSTCNTR    (FRAMEPAR_GLOBALS + 52) // autoexposure/white balance hysteresis counters , 1 byte each, (sign and count, Y,R,G2,B)
-#define G_AE_INTEGERR    (FRAMEPAR_GLOBALS + 52) // current integrated error in the AE loop
-#define G_WB_INTEGERR    (FRAMEPAR_GLOBALS + 53) // current integrated error in WB loop
+#define G_AE_INTEGERR    (FRAMEPAR_GLOBALS + 52) ///< current integrated error in the AE loop
+#define G_WB_INTEGERR    (FRAMEPAR_GLOBALS + 53) ///< current integrated error in WB loop
 
-#define G_TASKLET_CTL    (FRAMEPAR_GLOBALS + 54) /// disable individual tasklets  (TODO:rename to DEBUG_CTL?)
-#define G_GFOCUS_VALUE   (FRAMEPAR_GLOBALS + 55) // (readonly) - sum of all blocks focus values inside focus WOI (global)
+#define G_TASKLET_CTL    (FRAMEPAR_GLOBALS + 54) ///< disable individual tasklets  (TODO:rename to DEBUG_CTL?)
+#define G_GFOCUS_VALUE   (FRAMEPAR_GLOBALS + 55) //< (readonly) - sum of all blocks focus values inside focus WOI (global)
 
-  #define TASKLET_CTL_PGM      0 /// disable programming parameters (should not be)
-  #define TASKLET_CTL_IGNPAST  1 /// "ignore overdue" control bit
-  #define TASKLET_CTL_NOSAME   2 /// don't try to process parameters immediately after written. If 0, only non-ASAP will be processed to prevent
-  #define TASKLET_CTL_ENPROF   3 /// enable profiling (saving timing of the interrupts/tasklets in pastpars)
-                                   /// effects of uncertainty of when was it called relative to frame sync
-  #define TASKLET_HIST_ALL     0   /// calculate each frame
-  #define TASKLET_HIST_HALF    1   /// calculate each even (0,2,4,6 frme of 8)
-  #define TASKLET_HIST_QUATER  2   /// calculate twice per 8 (0, 4)
-/// NOTE: It is safer to allow all histograms at least once in 8 frames so applications will not be locked up waiting for the missed histogram
-/// TODO: detect missing histograms and wakeup queue
-  #define TASKLET_HIST_ONCE    3   /// calculate once  per 8 (0) 
-  #define TASKLET_HIST_RQONLY  4   /// calculate only when specifically requested
-  #define TASKLET_HIST_NEVER   7   /// never calculate
+  #define TASKLET_CTL_PGM      0 ///< disable programming parameters (should not be)
+  #define TASKLET_CTL_IGNPAST  1 ///< "ignore overdue" control bit
+  #define TASKLET_CTL_NOSAME   2 ///< don't try to process parameters immediately after written. If 0, only non-ASAP will be processed to prevent
+  #define TASKLET_CTL_ENPROF   3 ///< enable profiling (saving timing of the interrupts/tasklets in pastpars)
+                                 ///< effects of uncertainty of when was it called relative to frame sync
+  #define TASKLET_HIST_ALL     0   ///< calculate each frame
+  #define TASKLET_HIST_HALF    1   ///< calculate each even (0,2,4,6 frme of 8)
+  #define TASKLET_HIST_QUATER  2   ///< calculate twice per 8 (0, 4)
+// NOTE: It is safer to allow all histograms at least once in 8 frames so applications will not be locked up waiting for the missed histogram
+// TODO: detect missing histograms and wakeup queue
+  #define TASKLET_HIST_ONCE    3   ///< calculate once  per 8 (0)
+  #define TASKLET_HIST_RQONLY  4   ///< calculate only when specifically requested
+  #define TASKLET_HIST_NEVER   7   ///< never calculate
 
-  #define TASKLET_CTL_HISTY_BIT  4 /// shift of histogram calculation for Y in G_TASKLET_CTL (bits 4,5,6)
-  #define TASKLET_CTL_HISTC_BIT  8 /// shift of histogram calculation for C in G_TASKLET_CTL (bits 8,9,10)
+  #define TASKLET_CTL_HISTY_BIT  4 ///< shift of histogram calculation for Y in G_TASKLET_CTL (bits 4,5,6)
+  #define TASKLET_CTL_HISTC_BIT  8 ///< shift of histogram calculation for C in G_TASKLET_CTL (bits 8,9,10)
 
-#define G_HIST_LAST_INDEX (FRAMEPAR_GLOBALS + 56) // last used index in histogram cache
-#define G_HIST_Y_FRAME    (FRAMEPAR_GLOBALS + 57) // last frame for which Y histogram was calcualted
-#define G_HIST_C_FRAME    (FRAMEPAR_GLOBALS + 58) // last frame for which C histograms were calcualted
-#define G_SKIP_DIFF_FRAME (FRAMEPAR_GLOBALS + 59) // number of frames with different size to tolerate before producing POLLHUP in poll(circbuf)
-#define G_FTP_NEXT_TIME   (FRAMEPAR_GLOBALS + 60) // time of the next FTP upload (seconds from epoch)
+#define G_HIST_LAST_INDEX (FRAMEPAR_GLOBALS + 56) ///< last used index in histogram cache
+#define G_HIST_Y_FRAME    (FRAMEPAR_GLOBALS + 57) ///< last frame for which Y histogram was calcualted
+#define G_HIST_C_FRAME    (FRAMEPAR_GLOBALS + 58) ///< last frame for which C histograms were calcualted
+#define G_SKIP_DIFF_FRAME (FRAMEPAR_GLOBALS + 59) ///< number of frames with different size to tolerate before producing POLLHUP in poll(circbuf)
+#define G_FTP_NEXT_TIME   (FRAMEPAR_GLOBALS + 60) ///< time of the next FTP upload (seconds from epoch)
 
-#define G_DAEMON_ERR      (FRAMEPAR_GLOBALS + 63) // 1 bit per daemon error that needs attention (daemon would put itself to sleep through P_DAEMON_EN)
-#define G_DAEMON_RETCODE  (FRAMEPAR_GLOBALS + 64) // return codes (32 32-bit words) for daemons, provided with a corresponding bit in G_DAEMON_ERR set
-///next will be (FRAMEPAR_GLOBALS + 96) 
-/// temperature is provided by the daemon, embedded in MakerNote by the driver
-#define G_TEMPERATURE01   (FRAMEPAR_GLOBALS + 96) // temperature on the sensors 0 and 1 (0x1000 - sign, rest 8.4 C) no 10359 - only chn0, with 10359 - only 1,2,3 (no 0)
-#define G_TEMPERATURE23   (FRAMEPAR_GLOBALS + 97) // temperature on the sensors 2 and 3
+#define G_DAEMON_ERR      (FRAMEPAR_GLOBALS + 63) ///< 1 bit per daemon error that needs attention (daemon would put itself to sleep through P_DAEMON_EN)
+#define G_DAEMON_RETCODE  (FRAMEPAR_GLOBALS + 64) ///< return codes (32 32-bit words) for daemons, provided with a corresponding bit in G_DAEMON_ERR set
+//next will be (FRAMEPAR_GLOBALS + 96)
+// temperature is provided by the daemon, embedded in MakerNote by the driver
+#define G_TEMPERATURE01   (FRAMEPAR_GLOBALS + 96) ///< temperature on the sensors 0 and 1 (0x1000 - sign, rest 8.4 C) no 10359 - only chn0, with 10359 - only 1,2,3 (no 0)
+#define G_TEMPERATURE23   (FRAMEPAR_GLOBALS + 97) ///< temperature on the sensors 2 and 3
 
-#define G_SENSOR_CALIB   (FRAMEPAR_GLOBALS + 1024) /// 1024 Array of sensor calibration data, sensor dependent.For Micron it is 256*4 actual gains in 8.16 format 
-                                                   /// Only first 96 for each color are used
+#define G_SENSOR_CALIB   (FRAMEPAR_GLOBALS + 1024) ///< 1024 Array of sensor calibration data, sensor dependent.For Micron it is 256*4 actual gains in 8.16 format
+                                                   ///< Only first 96 for each color are used
 
 
 
 ///Modifiers to the parameter numbers/addresses
-#define FRAMEPAIR_FORCE_NEW     0x040000000 // will mark parameter as "modified" even the new==old
-#define FRAMEPAIR_FORCE_PROC    0x080000000 // will mark schedule functions for that parameter even if called from setFramePars/setFramePar (normally it is not)
-#define FRAMEPAIR_FORCE_NEWPROC 0x0c0000000 // combines both
-#define FRAMEPAIR_JUST_THIS     0x10000000 // write only to this frame, don't propagate
-                                           // (like "single frame" - compressor, sensor) first write "stop", then - "single" with FRAMEPAIR_JUST_THIS
-#define FRAMEPAIR_FRAME_FUNC    0x20000000 // write to func2call instead of the frame parameters
+#define FRAMEPAIR_FORCE_NEW     0x040000000 ///< will mark parameter as "modified" even the new==old
+#define FRAMEPAIR_FORCE_PROC    0x080000000 ///< will mark schedule functions for that parameter even if called from setFramePars/setFramePar (normally it is not)
+#define FRAMEPAIR_FORCE_NEWPROC 0x0c0000000 ///< combines both
+#define FRAMEPAIR_JUST_THIS     0x10000000  ///< write only to this frame, don't propagate
+                                            ///< (like "single frame" - compressor, sensor) first write "stop", then - "single" with FRAMEPAIR_JUST_THIS
+#define FRAMEPAIR_FRAME_FUNC    0x20000000  //v write to func2call instead of the frame parameters
 /// compose bit fields to be OR-ed to the parameter number bit 16..25: b - start bit (0..31), w - width 1..32
 #define FRAMEPAIR_FRAME_BITS(w,b) ((((w) & 0x1f)<<21) | (((b) & 0x1f)<<16))
 /// Shift new data (nd), apply mask and combine with old data (od), taking shift/width information from bits 16..25 of (a)
@@ -741,51 +730,51 @@
 /// read bit field from the data (d), use bit information encoded in bits 16..25 of the parameter address (a)
 #define FRAMEPAIR_FRAME_FIELD(a,d) (((d) >> (((a)>>16) & 0x1f)) &  ((1 << (((a) >> 21) & 0x1f))-1))
 
-#define FRAMEPAIR_MASK_BYTES   (FRAMEPAIR_FRAME_BITS(31,31)) /// 0x03ff0000 - if parameter address & FRAMEPAIR_FRAME_MASK is nonzero, change only some bits
+#define FRAMEPAIR_MASK_BYTES   (FRAMEPAIR_FRAME_BITS(31,31)) ///< 0x03ff0000 - if parameter address & FRAMEPAIR_FRAME_MASK is nonzero, change only some bits
 
-///NOTE: byte/word masks not to be OR-ed!
-#define FRAMEPAIR_BYTE0        (FRAMEPAIR_FRAME_BITS( 8,  0)) // overwrite only byte0 (LSB) in the parameter
-#define FRAMEPAIR_BYTE1        (FRAMEPAIR_FRAME_BITS( 8,  8)) // overwrite only byte1 in the parameter
-#define FRAMEPAIR_BYTE2        (FRAMEPAIR_FRAME_BITS( 8, 16)) // overwrite only byte2 in the parameter
-#define FRAMEPAIR_BYTE3        (FRAMEPAIR_FRAME_BITS( 8, 24)) // overwrite only byte3 (MSB) in the parameter
-#define FRAMEPAIR_WORD0        (FRAMEPAIR_FRAME_BITS(16,  0)) // overwrite only word0 (LSW) in the parameter (i.e. gamma scale)
-#define FRAMEPAIR_WORD1        (FRAMEPAIR_FRAME_BITS(16, 16)) // overwrite only word1 (MSW) in the parameter (i.e. gamma hash16)
+//NOTE: byte/word masks not to be OR-ed!
+#define FRAMEPAIR_BYTE0        (FRAMEPAIR_FRAME_BITS( 8,  0)) ///< overwrite only byte0 (LSB) in the parameter
+#define FRAMEPAIR_BYTE1        (FRAMEPAIR_FRAME_BITS( 8,  8)) ///< overwrite only byte1 in the parameter
+#define FRAMEPAIR_BYTE2        (FRAMEPAIR_FRAME_BITS( 8, 16)) ///< overwrite only byte2 in the parameter
+#define FRAMEPAIR_BYTE3        (FRAMEPAIR_FRAME_BITS( 8, 24)) ///< overwrite only byte3 (MSB) in the parameter
+#define FRAMEPAIR_WORD0        (FRAMEPAIR_FRAME_BITS(16,  0)) ///< overwrite only word0 (LSW) in the parameter (i.e. gamma scale)
+#define FRAMEPAIR_WORD1        (FRAMEPAIR_FRAME_BITS(16, 16)) ///< overwrite only word1 (MSW) in the parameter (i.e. gamma hash16)
 
 //#define P_DAEMON_EN      165 // disable all autoexp features AEXP, WB, HDR- make extra sleep for AUTOEXP_EN to become non-zero (normal frame rules)
-#define DAEMON_BIT_AUTOEXPOSURE 0
-#define DAEMON_BIT_STREAMER     1
-#define DAEMON_BIT_CCAMFTP      2
-#define DAEMON_BIT_CAMOGM       3
-#define DAEMON_BIT_AUTOCAMPARS  4
-#define DAEMON_BIT_TEMPERATURE  5
+#define DAEMON_BIT_AUTOEXPOSURE 0 ///< Daemon bit to control autoexposure
+#define DAEMON_BIT_STREAMER     1 ///< Daemon bit to control streamer
+#define DAEMON_BIT_CCAMFTP      2 ///< Daemon bit to control ftp
+#define DAEMON_BIT_CAMOGM       3 ///< Daemon bit to control camogm
+#define DAEMON_BIT_AUTOCAMPARS  4 ///< Daemon bit to control autocampars
+#define DAEMON_BIT_TEMPERATURE  5 ///< Daemon bit to control temperature
 // add up to 31
 
-#define P_DAEMON_EN_AUTOEXPOSURE (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_AUTOEXPOSURE))
-#define P_DAEMON_EN_STREAMER     (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_STREAMER))
-#define P_DAEMON_EN_CCAMFTP      (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_CCAMFTP))
-#define P_DAEMON_EN_CAMOGM       (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_CAMOGM))
-#define P_DAEMON_EN_AUTOCAMPARS  (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_AUTOCAMPARS))
-#define P_DAEMON_EN_TEMPERATURE  (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_TEMPERATURE))
+#define P_DAEMON_EN_AUTOEXPOSURE (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_AUTOEXPOSURE)) ///< Enable autoexposure
+#define P_DAEMON_EN_STREAMER     (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_STREAMER))     ///< Enable streamer
+#define P_DAEMON_EN_CCAMFTP      (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_CCAMFTP))      ///< Enable ftp
+#define P_DAEMON_EN_CAMOGM       (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_CAMOGM))       ///< Enable camogm
+#define P_DAEMON_EN_AUTOCAMPARS  (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_AUTOCAMPARS))  ///< Enable autocampars
+#define P_DAEMON_EN_TEMPERATURE  (P_DAEMON_EN | FRAMEPAIR_FRAME_BITS(1, DAEMON_BIT_TEMPERATURE))  ///< Enable temperature monitgoring
 
 //#define P_GAIN_CTRL       184 // combines GAIN_STEP and ANA_GAIN_ENABLE
-#define P_GAIN_STEP      (P_GAIN_CTRL |  FRAMEPAIR_FRAME_BITS(16, GAIN_BIT_STEP))   // minimal correction to be applied to the analog gain
-                                                                                    // (should be set larger that sensor actual gain step to prevent oscillations (0x100 - 1.0, 0x20 - 1/8)
-#define P_ANA_GAIN_ENABLE    (P_GAIN_CTRL |  FRAMEPAIR_FRAME_BITS(1,  GAIN_BIT_ENABLE)) // enable analog gain adjustment in white balance procedure
+#define P_GAIN_STEP      (P_GAIN_CTRL |  FRAMEPAIR_FRAME_BITS(16, GAIN_BIT_STEP))   ///< minimal correction to be applied to the analog gain
+                                                                                    ///< (should be set larger that sensor actual gain step to prevent oscillations (0x100 - 1.0, 0x20 - 1/8)
+#define P_ANA_GAIN_ENABLE    (P_GAIN_CTRL |  FRAMEPAIR_FRAME_BITS(1,  GAIN_BIT_ENABLE)) ///< enable analog gain adjustment in white balance procedure
 
-#define WB_CTRL_BIT_EN   4
-#define P_WB_MASK        (P_WB_CTRL |  FRAMEPAIR_FRAME_BITS(4,               0)) // Colors adjusted in automatic white balance
-#define P_WB_EN          (P_WB_CTRL |  FRAMEPAIR_FRAME_BITS(1,  WB_CTRL_BIT_EN)) // Enabling/disabling automatic white balance adjustment
+#define WB_CTRL_BIT_EN   4 ///< White balance control bit
+#define P_WB_MASK        (P_WB_CTRL |  FRAMEPAIR_FRAME_BITS(4,               0)) ///< Colors adjusted in automatic white balance
+#define P_WB_EN          (P_WB_CTRL |  FRAMEPAIR_FRAME_BITS(1,  WB_CTRL_BIT_EN)) ///< Enabling/disabling automatic white balance adjustment
 
-#define P_RSCALE         (P_RSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_WIDTH, 0)) // Red-to-Green ratio, 0x10000 ~ 1.0
-#define P_GSCALE         (P_GSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_WIDTH, 0)) // Green2-to-Green ratio, 0x10000 ~ 1.0
-#define P_BSCALE         (P_BSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_WIDTH, 0)) // Blue-to-Green ratio, 0x10000 ~ 1.0
+#define P_RSCALE         (P_RSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_WIDTH, 0)) ///< Red-to-Green ratio, 0x10000 ~ 1.0
+#define P_GSCALE         (P_GSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_WIDTH, 0)) ///<Green2-to-Green ratio, 0x10000 ~ 1.0
+#define P_BSCALE         (P_BSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_WIDTH, 0)) ///< Blue-to-Green ratio, 0x10000 ~ 1.0
 
-#define P_RSCALE_CTL     (P_RSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_CTL_WIDTH, CSCALES_CTL_BIT)) // Red-to-Green ratio control
-#define P_GSCALE_CTL     (P_GSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_CTL_WIDTH, CSCALES_CTL_BIT)) // Green2-to-Green ratio control
-#define P_BSCALE_CTL     (P_BSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_CTL_WIDTH, CSCALES_CTL_BIT)) // Blue-to-Green ratio control
+#define P_RSCALE_CTL     (P_RSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_CTL_WIDTH, CSCALES_CTL_BIT)) ///< Red-to-Green ratio control
+#define P_GSCALE_CTL     (P_GSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_CTL_WIDTH, CSCALES_CTL_BIT)) ///< Green2-to-Green ratio control
+#define P_BSCALE_CTL     (P_BSCALE_ALL |  FRAMEPAIR_FRAME_BITS(CSCALES_CTL_WIDTH, CSCALES_CTL_BIT)) ///< Blue-to-Green ratio control
 
-#define P_SENSOR_SINGLE      (P_SENSOR_RUN | FRAMEPAIR_JUST_THIS)       // is only good to write SENSOR_RUN_SINGLE there!
-#define P_COMPRESSOR_SINGLE  (P_COMPRESSOR_RUN | FRAMEPAIR_JUST_THIS)   // is only good to write COMPRESSOR_RUN_SINGLE there!
+#define P_SENSOR_SINGLE      (P_SENSOR_RUN | FRAMEPAIR_JUST_THIS)       ///< is only good to write SENSOR_RUN_SINGLE there!
+#define P_COMPRESSOR_SINGLE  (P_COMPRESSOR_RUN | FRAMEPAIR_JUST_THIS)   ///< is only good to write COMPRESSOR_RUN_SINGLE there!
 
 
 //#define P_HISTRQ        67 // per-frame enabling of histogram calculation - bit 0 - Y (G), bit 2 - C (R,G2,B)
@@ -794,133 +783,138 @@
 #define   HISTRQ_BIT_Y    0
 #define   HISTRQ_BIT_C    1 
 
-#define P_HISTRQ_Y  (P_HISTRQ | FRAMEPAIR_FRAME_BITS(1, HISTRQ_BIT_Y) | FRAMEPAIR_JUST_THIS) /// request calculation of the Y-histogram for just this frame
-#define P_HISTRQ_C  (P_HISTRQ | FRAMEPAIR_FRAME_BITS(1, HISTRQ_BIT_C) | FRAMEPAIR_JUST_THIS) /// request calculation of the C-histogram for just this frame
-#define P_HISTRQ_YC (P_HISTRQ | FRAMEPAIR_FRAME_BITS(2, HISTRQ_BIT_Y) | FRAMEPAIR_JUST_THIS) /// request calculation of both the Y-histogram and C-histogrames for just this frame
+#define P_HISTRQ_Y  (P_HISTRQ | FRAMEPAIR_FRAME_BITS(1, HISTRQ_BIT_Y) | FRAMEPAIR_JUST_THIS) ///< request calculation of the Y-histogram for just this frame
+#define P_HISTRQ_C  (P_HISTRQ | FRAMEPAIR_FRAME_BITS(1, HISTRQ_BIT_C) | FRAMEPAIR_JUST_THIS) ///< request calculation of the C-histogram for just this frame
+#define P_HISTRQ_YC (P_HISTRQ | FRAMEPAIR_FRAME_BITS(2, HISTRQ_BIT_Y) | FRAMEPAIR_JUST_THIS) ///< request calculation of both the Y-histogram and C-histogrames for just this frame
 
-#define G_HISTMODE_Y   (G_TASKLET_CTL | FRAMEPAIR_FRAME_BITS(3, TASKLET_CTL_HISTY_BIT)) /// control for histogram calculation Y (see TASKLET_HIST_*)
-#define G_HISTMODE_C   (G_TASKLET_CTL | FRAMEPAIR_FRAME_BITS(3, TASKLET_CTL_HISTC_BIT)) /// control for histogram calculation Y (see TASKLET_HIST_*)
+#define G_HISTMODE_Y   (G_TASKLET_CTL | FRAMEPAIR_FRAME_BITS(3, TASKLET_CTL_HISTY_BIT)) ///< control for histogram calculation Y (see TASKLET_HIST_*)
+#define G_HISTMODE_C   (G_TASKLET_CTL | FRAMEPAIR_FRAME_BITS(3, TASKLET_CTL_HISTC_BIT)) ///< control for histogram calculation Y (see TASKLET_HIST_*)
 
-#define G_PROFILING_EN (G_TASKLET_CTL | FRAMEPAIR_FRAME_BITS(1, TASKLET_CTL_ENPROF)) /// enable profiling (saving timing of the interrupts/tasklets in pastpars)
+#define G_PROFILING_EN (G_TASKLET_CTL | FRAMEPAIR_FRAME_BITS(1, TASKLET_CTL_ENPROF)) ///< enable profiling (saving timing of the interrupts/tasklets in pastpars)
 
 
 //#define P_AUTOCAMPARS_CTRL 184 // bits 0..24 - groups to restore, bits 24..27 - page number to save bits 28..30: 1 - restore, 2 - save, 3 - set default 4 save as default 5 - init
-#define P_AUTOCAMPARS_GROUPS (P_AUTOCAMPARS_CTRL | FRAMEPAIR_FRAME_BITS(24, 0)) 
-#define P_AUTOCAMPARS_PAGE   (P_AUTOCAMPARS_CTRL | FRAMEPAIR_FRAME_BITS(4, 24))
-#define P_AUTOCAMPARS_CMD    (P_AUTOCAMPARS_CTRL | FRAMEPAIR_FRAME_BITS(3, 28))
+#define P_AUTOCAMPARS_GROUPS (P_AUTOCAMPARS_CTRL | FRAMEPAIR_FRAME_BITS(24, 0)) ///< Autocampars groups (24 bits)
+#define P_AUTOCAMPARS_PAGE   (P_AUTOCAMPARS_CTRL | FRAMEPAIR_FRAME_BITS(4, 24)) ///< Autocampars page number (4 bits)
+#define P_AUTOCAMPARS_CMD    (P_AUTOCAMPARS_CTRL | FRAMEPAIR_FRAME_BITS(3, 28)) ///< Autocampars command (3 bits)
 
 ///NOTE page 0 is write protected, page 15 (0x0f) is "default" page
-#define AUTOCAMPARS_CMD_RESTORE  1  /// restore specified groups of parameters from the specified page
-#define AUTOCAMPARS_CMD_SAVE     2  /// save all current parameters to the specified group (page 0 is write-protected)
-#define AUTOCAMPARS_CMD_DFLT     3  /// make selected page the default one (used at startup), page 0 OK 
-#define AUTOCAMPARS_CMD_SAVEDFLT 4  /// save all current parameters to the specified group (page 0 is write-protected) and make it default (used at startup)
-#define AUTOCAMPARS_CMD_INIT     5  /// reset sensor/sequencers, restore all parameters from the specified page
+#define AUTOCAMPARS_CMD_RESTORE  1  ///< Autocampars command: restore specified groups of parameters from the specified page
+#define AUTOCAMPARS_CMD_SAVE     2  ///< Autocampars command: save all current parameters to the specified group (page 0 is write-protected)
+#define AUTOCAMPARS_CMD_DFLT     3  ///< Autocampars command: make selected page the default one (used at startup), page 0 OK
+#define AUTOCAMPARS_CMD_SAVEDFLT 4  ///< Autocampars command: save all current parameters to the specified group (page 0 is write-protected) and make it default (used at startup)
+#define AUTOCAMPARS_CMD_INIT     5  ///< Autocampars command: reset sensor/sequencers, restore all parameters from the specified page
 
 
 
 /// if defined 1 - will wakeup each frame, regardless of the availability of the histograms
 #define HISTOGRAMS_WAKEUP_ALWAYS 0
 
+/// Number of frames handled in the buffer (increased to 16 for NC393).
+///
+/// Making use of FPGA queues of i2c and sequencer commands (up to 14 frames ahead).<br/>
+/// The P_* parameters will now be stored in 16 pages (previous frame, this frame (+0), next(+1),...(+14)<br/>
+/// Top index (0..15) corresponds to hardware frame counter, parameters are copied after the frame sync/compressor done interrupts.<br/>
+/// when the 4-bit counter is combined with the software variable to get the full 32-bit frame number.<br/>
+/// Each parameter page includes 927 parameter registers, as well as 97 bit mask ones to speed up updates between frames.<br/>
+/// So if no parameters are changed - nothing to be copied from page to page.
+#define PARS_FRAMES                                  16
+#define PARS_FRAMES_MASK     (PARS_FRAMES-1)         ///< Maximal frame number (15 for NC393)
+/// Keeping the same size of past frames storage as in 353:<br/>
+///#define PASTPARS_SAVE_ENTRIES       (PARS_FRAMES << 8)     // 2048<br/>
+///#define PASTPARS_SAVE_ENTRIES_MASK ((PARS_FRAMES << 8)-1)  // 0x7ff
+#define PASTPARS_SAVE_ENTRIES       (PARS_FRAMES << 7)
+#define PASTPARS_SAVE_ENTRIES_MASK ((PARS_FRAMES << 7)-1)  ///< Mask for save entry numbers 0x7ff
 
-/// Making use of FPGA queues of i2c and sequencer commands (up to 6 frames ahead)
-/// The P_* parameters will now be stored in 8 pages (previous frame, this frame (+0), next(+1),...(+6)
-/// Top index (0..7) corresponds to hardware frame counter, parameters are copied after the frame sync/compressor done interrupts.
-/// when the 3-bit counter is combined with the software variable to get the full 32-bit frame number
-/// Each parameter page includes 927 parameter registers, as well as 97 bitmasks to speed up updates between frames
-/// So if no parameters are changed - nothing to be copied from page to page
-/* Modified for 393 : 16 hardware frames, aligning framepars_all_t to PAGE_SIZE*/
-#define PARS_FRAMES                                  16 //    8      // number of frames handled in buffer
-#define PARS_FRAMES_MASK     (PARS_FRAMES-1)               // currently 15t // 7
-// Keeping the same size of past frames storage as in 353:
-//#define PASTPARS_SAVE_ENTRIES       (PARS_FRAMES << 8)     // 2048
-//#define PASTPARS_SAVE_ENTRIES_MASK ((PARS_FRAMES << 8)-1)  // 0x7ff
-#define PASTPARS_SAVE_ENTRIES       (PARS_FRAMES << 7)     // 2048
-#define PASTPARS_SAVE_ENTRIES_MASK ((PARS_FRAMES << 7)-1)  // 0x7ff
+/** @brief Parameters block, maintained for each frame (0..15 in 393) of each sensor channel
+ */
 struct framepars_t {
-        unsigned long pars[927];      // parameter values (indexed by P_* constants)
-        unsigned long functions;      // each bit specifies function to be executed (triggered by some parameters change)
-        unsigned long modsince[31];   // parameters modified after this frame - each bit corresponds to one element in in par[960] (bit 31 is not used) 
-        unsigned long modsince32;     // parameters modified after this frame super index - non-zero elements in in mod[31]  (bit 31 is not used) 
-        unsigned long mod[31];        // modified parameters - each bit corresponds to one element in in par[960] (bit 31 is not used) 
-        unsigned long mod32;          // super index - non-zero elements in in mod[31]  (bit 31 is not used) 
-        unsigned long needproc[31];   /// FIXME: REMOVE parameters "modified and not yet processed" (some do not need any processing)
-        unsigned long needproc32;     /// FIXME: REMOVE parameters "modified and not yet processed" frame super index - non-zero elements in in mod[31]  (bit 31 is not used) 
+        unsigned long pars[927];      ///< parameter values (indexed by P_* constants)
+        unsigned long functions;      ///< each bit specifies function to be executed (triggered by some parameters change)
+        unsigned long modsince[31];   ///< parameters modified after this frame - each bit corresponds to one element in in par[960] (bit 31 is not used)
+        unsigned long modsince32;     ///< parameters modified after this frame super index - non-zero elements in in mod[31]  (bit 31 is not used)
+        unsigned long mod[31];        ///< modified parameters - each bit corresponds to one element in in par[960] (bit 31 is not used)
+        unsigned long mod32;          ///< super index - non-zero elements in in mod[31]  (bit 31 is not used)
+        unsigned long needproc[31];   ///< FIXME: REMOVE parameters "modified and not yet processed" (some do not need any processing)
+        unsigned long needproc32;     ///< FIXME: REMOVE parameters "modified and not yet processed" frame super index - non-zero elements in in mod[31]  (bit 31 is not used)
 };
-///TODO: rearrange onchage_* - functions will be executed in this sequence (from 0 to 31)
 
-/// pgm_memcompressor             uses pgm_memsensor
-/// pgm_compctl,pgm_comprestart   use pgm_memcompressor
-/// pgm_limitfps                  uses pgm_memcompressor
+//TODO: rearrange onchage_* - functions will be executed in this sequence (from 0 to 31)
+// pgm_memcompressor             uses pgm_memsensor
+// pgm_compctl,pgm_comprestart   use pgm_memcompressor
+// pgm_limitfps                  uses pgm_memcompressor
+// pgm_memcompressor             uses pgm_memsensor
+// pgm_compctl,pgm_comprestart   use  pgm_memcompressor
+// pgm_limitfps                  uses pgm_memcompressor
+// pgm_limitfps                  uses pgm_compmode
+// pgm_trigseq                   uses pgm_limitfps
+// pgm_sensorin (bayer)          uses pgm_window (flip)
+//                               onchange_i2c should be the first after init sensor (even before onchange_sensorphase)
+// phase (common part conditionally triggers init) -> init -> i2c -> sensorregs -> afterinit
+// reset i2c - only once, when the sensor is reset, it is stopped, by frame numbers go on (and parameters are not erased)
+//TODO: onchange_exposure should be after onchange_limitfps
 
-/// pgm_memcompressor             uses pgm_memsensor
-/// pgm_compctl,pgm_comprestart   use  pgm_memcompressor
-/// pgm_limitfps                  uses pgm_memcompressor
-/// pgm_limitfps                  uses pgm_compmode
-/// pgm_trigseq                   uses pgm_limitfps
-/// pgm_sensorin (bayer)          uses pgm_window (flip)
-///                               onchange_i2c should be the first after init sensor (even before onchange_sensorphase)
-
-
-/// phase (common part conditionally triggers init) -> init -> i2c -> sensorregs -> afterinit
-/// reset i2c - only once, when the sensor is reset, it is stopped, by frame numbers go on (and parameters are not erased)
-
-///TODO: onchange_exposure should be after onchange_limitfps
+/** @brief Image acquisition functions to be executed on parameter changes, should fit in 32.
+ *  Functions are executed starting from LSB.
+ *  TODO: Try to make room for some new ones.
+ */
 enum onchange_functions_t {
-  onchange_recalcseq=0,    /// recalculate sequences/latencies, according to P_SKIP, P_TRIG
-  onchange_detectsensor,   /// detect sensor type, sets sensor structure (capabilities), function pointers
-  onchange_sensorphase,    /// program sensor clock/phase (needs to know maximal clock frequency)
-  onchange_i2c,            /// program i2c
-  onchange_sensorregs,     /// write sensor registers (only changed from outside the driver as they may have different latencies)?
-  onchange_initsensor,     /// resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers (stops/re-enables hardware i2c)
-  onchange_afterinit,      /// restore image size, decimation,... after sensor reset or set them according to sensor capabilities if none were specified
-  onchange_multisens,      /// chnages related to multiplexed sensors
-  onchange_window,         /// program sensor WOI and mirroring (flipping)
-  onchange_window_safe,    /// program sensor WOI and mirroring (flipping) - lower latency, no bad frames
-//  onchange_exposure,       /// program exposure
-  onchange_gains,          /// program analog gains
-  onchange_triggermode,    /// program sensor trigger mode
-  onchange_sensorin,       /// program sensor input in FPGA (Bayer, 8/16 bits, ??)
-  onchange_sensorstop,     /// Stop acquisition from the sensor to the FPGA (start has latency of 2)
-  onchange_sensorrun,      /// Start/single acquisition from the sensor to the FPGA (stop has latency of 1)
-  onchange_gamma,          /// program gamma table
-  onchange_hist,           /// program histogram window
-  onchange_aexp,           /// program autoexposure mode
-  onchange_quality,        /// program quantization table(s)
-  onchange_memsensor,      /// program memory channels 0 (sensor->memory) and 1 (memory->FPN)
-  onchange_memcompressor,  /// program memory channel 2 (memory->compressor)
-  onchange_limitfps,       /// check compressor will keep up, limit sensor FPS if needed
-  onchange_exposure,       /// program exposure - NOTE: was just after onchange_window
+  onchange_recalcseq=0,    ///< recalculate sequences/latencies, according to P_SKIP, P_TRIG
+  onchange_detectsensor,   ///< detect sensor type, sets sensor structure (capabilities), function pointers
+  onchange_sensorphase,    ///<  program sensor clock/phase (needs to know maximal clock frequency)
+  onchange_i2c,            ///<  program i2c
+  onchange_sensorregs,     ///<  write sensor registers (only changed from outside the driver as they may have different latencies)?
+  onchange_initsensor,     ///<  resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers (stops/re-enables hardware i2c)
+  onchange_afterinit,      ///<  restore image size, decimation,... after sensor reset or set them according to sensor capabilities if none were specified
+  onchange_multisens,      ///<  chnages related to multiplexed sensors
+  onchange_window,         ///<  program sensor WOI and mirroring (flipping)
+  onchange_window_safe,    ///<  program sensor WOI and mirroring (flipping) - lower latency, no bad frames
+//  onchange_exposure,       ///<  program exposure
+  onchange_gains,          ///<  program analog gains
+  onchange_triggermode,    ///<  program sensor trigger mode
+  onchange_sensorin,       ///<  program sensor input in FPGA (Bayer, 8/16 bits, ??)
+  onchange_sensorstop,     ///<  Stop acquisition from the sensor to the FPGA (start has latency of 2)
+  onchange_sensorrun,      ///<  Start/single acquisition from the sensor to the FPGA (stop has latency of 1)
+  onchange_gamma,          ///<  program gamma table
+  onchange_hist,           ///<  program histogram window
+  onchange_aexp,           ///<  program autoexposure mode
+  onchange_quality,        ///<  program quantization table(s)
+  onchange_memsensor,      ///<  program memory channels 0 (sensor->memory) and 1 (memory->FPN)
+  onchange_memcompressor,  ///<  program memory channel 2 (memory->compressor)
+  onchange_limitfps,       ///<  check compressor will keep up, limit sensor FPS if needed
+  onchange_exposure,       ///<  program exposure - NOTE: was just after onchange_window
 
-  onchange_compmode,       /// program compressor modes (excluding start/stop/single)
-  onchange_focusmode,      /// program focus modes
-  onchange_trigseq,        /// program sequencer (int/ext)
-  onchange_irq,            /// program smart IRQ mode (needs to be on)
-  onchange_comprestart,    /// restart after changing geometry  (recognizes ASAP and programs memory channel 2 then)
-  onchange_compstop,       /// stop compressor when changing geometry
-  onchange_compctl,        /// only start/stop/single (after explicitly changed, not when geometry was changed)
-  onchange_gammaload,      /// write gamma tables (should be prepared). Maybe - just last byte, to activate?
-  onchange_prescal         /// change scales for per-color digital gains, apply vignetting correction
+  onchange_compmode,       ///<  program compressor modes (excluding start/stop/single)
+  onchange_focusmode,      ///<  program focus modes
+  onchange_trigseq,        ///<  program sequencer (int/ext)
+  onchange_irq,            ///<  program smart IRQ mode (needs to be on)
+  onchange_comprestart,    ///<  restart after changing geometry  (recognizes ASAP and programs memory channel 2 then)
+  onchange_compstop,       ///<  stop compressor when changing geometry
+  onchange_compctl,        ///<  only start/stop/single (after explicitly changed, not when geometry was changed)
+  onchange_gammaload,      ///<  write gamma tables (should be prepared). Maybe - just last byte, to activate?
+  onchange_prescal         ///<  change scales for per-color digital gains, apply vignetting correction
 //  onchange_sensorregs      /// write sensor registers (only changed from outside the driver as they may have different latencies)?
-/// add others  - noe left, all 32 bits used
+// add others  - none left, all 32 bits used
 };
-
+/// Parameters of the previously acquired frame (subset of)
 struct framepars_past_t {
-    unsigned long past_pars[PARS_SAVE_NUM];
+    unsigned long past_pars[PARS_SAVE_NUM]; ///< Array of frame parameters preserved for the future
 };
 
-// size should be PAGE_SIZE aligned
+/// All parameter data for a sensor port, including future ones and past. Size should be PAGE_SIZE aligned
 struct framepars_all_t {
-    struct framepars_t      framePars[PARS_FRAMES];
-    struct framepars_t      func2call;        /// func2call.pars[] - each parameter has a 32-bit mask of what pgm_function to call - other fields not used
-     unsigned long          globalPars[NUM_GPAR];                  /// parameters that are not frame-related, their changes do not initiate any actions so they can be mmaped for both R/W
-    struct framepars_past_t pastPars [PASTPARS_SAVE_ENTRIES];
-     unsigned long          multiSensIndex[P_MAX_PAR_ROUNDUP];     /// indexes of individual sensor register shadows (first of 3) - now for all parameters, not just sensor ones
-     unsigned long          multiSensRvrsIndex[P_MAX_PAR_ROUNDUP]; /// reverse index (to parent) for the multiSensIndex in lower 16 bits, high 16 bits - sensor number
+    struct framepars_t      framePars[PARS_FRAMES];                ///< Future frame parameters
+    struct framepars_t      func2call;                             ///< func2call.pars[] - each parameter has a 32-bit mask of what pgm_function to call - other fields not used
+     unsigned long          globalPars[NUM_GPAR];                  ///< parameters that are not frame-related, their changes do not initiate any actions so they can be mmaped for both R/W
+    struct framepars_past_t pastPars [PASTPARS_SAVE_ENTRIES];      ///< parameters of previously acquired frames
+     unsigned long          multiSensIndex[P_MAX_PAR_ROUNDUP];     ///< indexes of individual sensor register shadows (first of 3) - now for all parameters, not just sensor ones
+     unsigned long          multiSensRvrsIndex[P_MAX_PAR_ROUNDUP]; ///< reverse index (to parent) for the multiSensIndex in lower 16 bits, high 16 bits - sensor number
 };
 
+/// Key/value pair of parameters
 struct frameparspair_t {
-        unsigned long num;           // parameter index ( as defined by P_* constants) ored with "force new" (0x10000) - parameter value will be considered a new one
-        unsigned long val;           // parameter value
+        unsigned long num;           ///< parameter index ( as defined by P_* constants) ORed with "force new" (0x10000) - parameter value will be considered a new one
+        unsigned long val;           ///< parameter value
 };
 
 
