@@ -75,7 +75,6 @@ typedef struct {
 int calc_pll_params (unsigned int f, t_pll_params * pars); // f -in Hz
 
 int setCYField (int sensor_port, int addr, int mask, int value); /// bus==1 - FPGA (sensor bus through 10359), 0 - CPU bus
-int setClockFreq(int nclock, int freq); // freq now in Hz
 
 int calc_pll_params (unsigned int f, t_pll_params * pars) { // f -in Hz
 //   t_pll_params pars;
@@ -176,6 +175,7 @@ int setCYField (int sensor_port, int reg_addr, int mask, int value) {
 				sensor_port, reg_addr, mask, value,reg_data);
 		return error;
 	}
+	return 0;
 }
 
 int x393_getClockFreq(int sensor_port, int nclock) {

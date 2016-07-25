@@ -34,6 +34,7 @@
 #include <asm/uaccess.h>
 #include "x393.h"
 #include "sensor_i2c.h"
+#include <elphel/c313a.h> // PARS_FRAMES_MASK
 
 //------------------
 
@@ -85,8 +86,10 @@ void i2c_page_alloc_init(void)
 	for (i = 0; i < sizeof(sysfs_page)/sizeof(sysfs_page[0]); i++) sysfs_page[i] = -1;
 }
 
+
 /** Reserve i2c page (1 of 256) for a sensor port
  * @param chn sensor port number (0..3)
+ * @return allocated page number or -ENOMEM if all pages are already used
  */
 int i2c_page_alloc(int chn)
 {
@@ -108,6 +111,31 @@ int i2c_page_alloc(int chn)
 	return (g << 5) + b;
 }
 EXPORT_SYMBOL_GPL(i2c_page_alloc);
+
+/** Register specific page, can be used with legacy software to register page equal to slave address,
+ * and use 0xff for reading. Works with 1byhte addresses and 16-bit data */
+int i2c_page_register(int chn,   ///< Sensor port
+		              int page)  ///< page to register (for legacy software, use 7-bit slave address
+		                         ///< @return 0 on success, -ENOMEM if page is already registered
+{
+	int g =    page >> 5;
+	int b =    page & 0x1f;
+	u32 * fb = free_i2c_pages + ((chn << 3) + g);
+	spin_lock(&lock);
+	if (unlikely(!(*fb & (1 << (31-b))))) {
+		spin_unlock(&lock);
+		return -ENOMEM; // page is already registered
+	}
+	*fb &= (1 << (31-b));
+	if (unlikely(*fb == 0)){
+		free_i2c_groups[chn] &= ~(1 << (31 - g));
+	}
+	spin_unlock(&lock);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(i2c_page_register);
+
+
 
 /** Free i2c page
  * @param chn sensor port number (0..3)
@@ -354,6 +382,45 @@ void  write_xi2c_reg16  (int chn,  ///< sensor port
 	x393_sensi2c_rel (dw, chn, 0);
 }
 EXPORT_SYMBOL_GPL(write_xi2c_reg16);
+
+/** Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
+void  write_xi2c_reg16_rel (int chn,  ///< sensor port
+	 	                    int page, ///< index in the table (8 bits)
+	 	                    int frame, ///< relative frame number modulo PARS_FRAMES
+                            int addr, ///< low byte of the register address (high is in the table), 8 bits
+	      				    u32 data) ///< 16 or 8-bit data (LSB aligned)
+{
+    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+	x393_sensi2c_rel (dw, chn, frame & PARS_FRAMES_MASK);
+}
+EXPORT_SYMBOL_GPL(write_xi2c_reg16_rel);
+
+/** Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
+void  write_xi2c_reg16_abs (int chn,  ///< sensor port
+	 	                    int page, ///< index in the table (8 bits)
+	 	                    int frame, ///< absolute frame number modulo PARS_FRAMES
+                            int addr, ///< low byte of the register address (high is in the table), 8 bits
+	      				    u32 data) ///< 16 or 8-bit data (LSB aligned)
+{
+    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+	x393_sensi2c_abs (dw, chn, frame & PARS_FRAMES_MASK);
+}
+EXPORT_SYMBOL_GPL(write_xi2c_reg16_abs);
+
+/** Compatibility with the legacy code: frame <0 - ASAP, >=0 - absolute
+ * Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
+void  write_xi2c_reg16_abs_asap (int chn,  ///< sensor port
+	 	                         int page, ///< index in the table (8 bits)
+	 	                         int frame, ///< absolute frame number modulo PARS_FRAMES
+                                 int addr, ///< low byte of the register address (high is in the table), 8 bits
+	      				         u32 data) ///< 16 or 8-bit data (LSB aligned)
+{
+    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+    if (frame<0) x393_sensi2c_abs (dw, chn, 0);
+    else x393_sensi2c_abs (dw, chn, frame & PARS_FRAMES_MASK);
+}
+EXPORT_SYMBOL_GPL(write_xi2c_reg16_abs);
+
 
 /** Initiate sensor i2c read in immediate mode (data itself has to be read from FIFO with read_xi2c_fifo)
  *  Use slave address from provided class structure.

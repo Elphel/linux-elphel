@@ -115,7 +115,7 @@
 #endif
 
 /**
- * \def FRAMEPARS_DRIVER_NAME driver name to display
+ * driver name to display
  */
 #define  FRAMEPARS_DRIVER_NAME "Elphel (R) Model 393 Frame Parameters device driver"
 

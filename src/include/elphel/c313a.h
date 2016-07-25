@@ -71,8 +71,6 @@
 //xi2craw_aux        c 134   6
 //xi2cenable         c 134   7
 
-#define FPGA_DCM_STEP   22 // ps/step
-#define FPGA_DCM_RANGE 250 // maximal phase correction (+/-) ?
 /* camera sequencer states */
 //Obsolete
 #define CAMSEQ_OFF       0 // off, not programmed (Video mode off on Zoran sensors)
@@ -121,6 +119,10 @@
 #define MCPwrsynctb	0x100
 #define MCPwrseq	0x200
 #endif
+
+
+#define FPGA_DCM_STEP   22 // ps/step
+#define FPGA_DCM_RANGE 250 // maximal phase correction (+/-) ?
 
 
 /* supported ioctl _IOC_NR's */
@@ -593,15 +595,22 @@
 #endif
 #define P_MAX_PAR_ROUNDUP ROUND_UP (P_MAX_PAR , (PAGE_SIZE/8)) ///< half page in DWORDs
 
-
+#ifdef NC353 // to hide old code
 #ifdef SAFE_CHECK
   #define MULTIREG(x,n) ((((n)>=0) && ((n)<MAX_SENSORS) && ((x) >0) && ((x) < P_MAX_PAR) && (multiSensIndex[x] > 0))? (multiSensIndex[x]+(n)) : 0)
 #else
   #define MULTIREG(x,n) ((multiSensIndex[x] > 0)? (multiSensIndex[x]+(n)) : 0) // unsafe
 #endif
 #define MULTIRVRSREG(x) (multiSensRvrsIndex[x])
-
-
+#else
+#ifdef SAFE_CHECK
+  #define MULTIREG(p,x,n) ((((n)>=0) && ((n)<MAX_SENSORS) && ((x) >0) && ((x) < P_MAX_PAR) && (amultiSensIndex[p][x] > 0))? (amultiSensIndex[p][x]+(n)) : 0)
+#else
+  #define MULTIREG(p,x,n) ((amultiSensIndex[p][x] > 0)? (amultiSensIndex[p][x]+(n)) : 0) // unsafe
+#endif
+#define MULTIRVRSREG(p,x) (amultiSensRvrsIndex[p][x])
+#endif
+///amultiSensRvrsIndex
 //#define P_MAX_PAR        511 /// maximal # of used parameter
 //#define P_MAX_GPAR      1023 // maximal # of global parameter
 //#define P_MAX_GPAR      2047 /// maximal # of global parameter - TODO: change name to NUM_GPAR and make it 2048
@@ -1603,10 +1612,11 @@ struct sensorproc_t {
 /// functions return <0 on error (and do nothing)
 /// first 32 functions are called directly when appropriate bit is set, next 32 - sensor specific that are called
 /// by corresponding one with (number-32) if not NULL. Sensor initilaization should set up those functions
-     int (*pgm_func[64]) (struct sensor_t    * sensor,     /// pointer to sensor parameters
-                          struct framepars_t * framepars,  /// pointer to structure with array of current frame parameters
-                          struct framepars_t * prevpars,   /// pointer to structure with array of previous frame parameters
-                          int                  frame8);    /// frame to program (latency applied), -1 - ASAP
+     int (*pgm_func[64]) (int                  sensor_port, ///< sensor port number (0..3)
+    		              struct sensor_t    * sensor,      ///< pointer to sensor parameters
+                          struct framepars_t * framepars,   ///< pointer to structure with array of current frame parameters
+                          struct framepars_t * prevpars,    ///< pointer to structure with array of previous frame parameters
+                          int                  frame16);    ///< frame to program (latency applied), -1 - ASAP
 };
 
 

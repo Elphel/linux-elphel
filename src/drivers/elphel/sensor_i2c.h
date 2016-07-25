@@ -14,7 +14,8 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
-
+#ifndef SENSOR_I2C.H
+#define SENSOR_I2C.H
 /** I2C device description to be used with i2c sequencer*/
 typedef struct{
 	      char                         name[32];      ///< Device class name (up to 31 characters)
@@ -29,13 +30,29 @@ typedef struct{
  * @param chn sensor port number (0..3) */
 int i2c_page_alloc(int chn);
 
+/* Register specific page, can be used with legacy software to register page equal to slave address,
+ * and use 0xff for reading. Works with 1byhte addresses and 16-bit data */
+int i2c_page_register(int chn,   // Sensor port
+		              int page);  // page to register (for legacy software, use 7-bit slave address
+		                         // @return 0 on success, -ENOMEM if page is already registered
+
 /* Free i2c page */
 void i2c_page_free(int chn, int page);
+/* Find device list entry by device class name */
+x393_i2c_device_t * xi2c_dev_get(const char * name); // Device class name as string
 
 /* Set i2c table entry to raw data (will just overwrite tbl_mode = 2)*/
 void set_xi2c_raw(int chn,
 	             int page,   // index in lookup table
 				 u32 data);  // Bit delay - number of mclk periods in 1/4 of the SCL period
+
+/* Set i2c table entry for write operation */
+void set_xi2c_wr(int chn,         // sensor port
+		         int page,        // index in lookup table
+				 int sa7,         // slave address (7 bit)
+				 int rah,         // High byte of the i2c register address
+				 int num_bytes,   // Number of bytes to write (1..10)
+				 int bit_delay);  // Bit delay - number of mclk periods in 1/4 of the SCL period
 
 /*
  *  Set i2c table entry for write operation using known devices
@@ -78,6 +95,28 @@ void  write_xi2c_reg16  (int chn,
                          int addr,  // low 8 bits
 	      				 u32 data); // 16 or 8-bit data (LSB aligned)
 
+/* Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
+void  write_xi2c_reg16_rel (int chn,  // sensor port
+	 	                    int page, // index in the table (8 bits)
+	 	                    int frame, // relative frame number modulo PARS_FRAMES
+                            int addr, // low byte of the register address (high is in the table), 8 bits
+	      				    u32 data); ///< 16 or 8-bit data (LSB aligned)
+
+/* Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
+void  write_xi2c_reg16_abs (int chn,  // sensor port
+	 	                    int page, // index in the table (8 bits)
+	 	                    int frame, // absolute frame number modulo PARS_FRAMES
+                            int addr, // low byte of the register address (high is in the table), 8 bits
+	      				    u32 data); //16 or 8-bit data (LSB aligned)
+
+/* Compatibility with the legacy code: frame <0 - ASAP, >=0 - absolute
+ * Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
+void  write_xi2c_reg16_abs_asap (int chn,   // sensor port
+	 	                         int page,  // index in the table (8 bits)
+	 	                         int frame, // absolute frame number modulo PARS_FRAMES
+                                 int addr,  // low byte of the register address (high is in the table), 8 bits
+	      				         u32 data);  // 16 or 8-bit data (LSB aligned)
+
 /* Initiate sensor i2c read in immediate mode (data itself has to be read from FIFO with read_xi2c_fifo)
  * Use slave address from provided class structure. */
 void  read_xi2c (x393_i2c_device_t * dc,     // device class
@@ -110,3 +149,4 @@ int x393_xi2c_read_reg( const char * cname,    // device class name
 				        int          sa7_offs, // slave address (7-bit) offset from the class defined slave address
 				        int          reg_addr, // register address (width is defined by class)
 				        int *        datap);   // pointer to a data receiver (read data width is defined by class)
+#endif
