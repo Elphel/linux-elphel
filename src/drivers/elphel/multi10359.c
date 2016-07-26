@@ -115,7 +115,6 @@
 #include "pgm_functions.h"
 //#include "x3x3.h"           // hardware definitions
 #include "legacy_defines.h" // temporarily
-
 #include "sensor_i2c.h"
 
 /**
