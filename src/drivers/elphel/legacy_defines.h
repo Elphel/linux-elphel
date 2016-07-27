@@ -74,7 +74,53 @@
  void x313_dma_init(){}
  void reset_compressor(){}
 
+// if ((gtable= get_gamma_fpga(color))) fpga_table_write_nice (CX313_FPGA_TABLES_GAMMA + (color * 256), 256, gtable);
 
 
 
 // X3X3_SEQ_SEND1(frame16,  X313_WA_DCR0, X353_DCR0(SENSTRIGEN,async));
+
+#ifdef NC353
+ /// IRQ-safe "nice" FPGA table write and histogram read functions - they split the data in chunks of fixed size,
+ /// disable IRQ, transfer a chunk, then reenable interrupt before proceedg to the next chunk
+ #define FPGA_TABLE_CHUNK 64 // up to 64 words to send to the table/from histogram on a single IRQ-off transfer
+ void fpga_table_write_nice (int addr, int len, unsigned long * data) {
+   unsigned long flags;
+   int l,i;
+   MDF12(printk("addr=0x%x, len=0x%x, data=0x%08lx 0x%08lx 0x%08lx 0x%08lx...\n", addr, len, data[0], data[1], data[2], data[3]));
+   while (len>0) {
+     l=(len < FPGA_TABLE_CHUNK)?len:FPGA_TABLE_CHUNK;
+     local_irq_save(flags);
+     port_csp0_addr[X313_WA_COMP_TA]=addr; // open fpga for writing table(s)
+     for (i=0; i<l; i++) port_csp0_addr[X313_WA_COMP_TD]=data[i]; /// will autoincrement FPGA table address
+     local_irq_restore(flags);
+     len  -=l;
+     addr +=l;
+     data +=l;
+   }
+ }
+
+ ///
+ /// reading histograms really does not need disabling IRQs - they only could interfere with other process, reading histograms
+ ///
+ void fpga_hist_read_nice (int addr, int len, unsigned long * data) {
+   unsigned long flags;
+   int l,i;
+   MDF13(printk("addr=0x%x, len=0x%x, ",addr, len));
+   while (len>0) {
+     l=(len < FPGA_TABLE_CHUNK)?len:FPGA_TABLE_CHUNK;
+     local_irq_save(flags);
+ //  #define   X313_WA_HIST_ADDR   0x44
+ //  #define   X313_RA_HIST_DATA   0x45  /// use CSP4 with wait cycles to have a pulse
+     port_csp0_addr[X313_WA_HIST_ADDR]=addr; /// Write start address, read first word from the memory to the output buffer (will be read out during next read)
+     X3X3_AFTERWRITE ; //! needed before reading from FPGA after writing to it (for the writes that influence reads only)
+     for (i=0; i<l; i++) data[i]=port_csp4_addr[X313_RA_HIST_DATA]; /// will autoincrement FPGA table address)
+     local_irq_restore(flags);
+     len  -=l;
+     addr +=l;
+     data +=l;
+   }
+   D13(printk("data=0x%08lx 0x%08lx 0x%08lx 0x%08lx...\n", data[0], data[1], data[2], data[3]));
+ }
+
+#endif

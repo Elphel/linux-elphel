@@ -25,46 +25,18 @@
  */
 
 //copied from cxi2c.c - TODO:remove unneeded
-//#include <linux/module.h>
 #include <linux/sched.h>
-//#include <linux/slab.h>
-//#include <linux/errno.h>
 #include <linux/kernel.h>
-//#include <linux/fs.h>
-//#include <linux/string.h>
 #include <linux/init.h>
-//#include <linux/autoconf.h>
 #include <linux/interrupt.h>
 #include <linux/time.h>
-//#include <linux/vmalloc.h>
 #include <linux/platform_device.h>
-//#include <linux/of.h>
-//#include <linux/of_device.h>
-
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
 
-//#include <asm/system.h>
-//#include <asm/byteorder.h> // endians
-//#include <asm/io.h>
-
-//#include <asm/arch/hwregs/intr_vect_defs.h> /// ETRAX interrupt registers
-
-//#include <asm/irq.h>
-
-//#include <asm/delay.h>
-//#include <asm/uaccess.h>
 #include <elphel/driver_numbers.h>
 #include <elphel/c313a.h>
-//#include <asm/elphel/fpgaconfa.h>
 #include <elphel/exifa.h>
-//#include <elphel/x393_types.h>
-//#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
-//#include "fpga_sdram.h" // use a single fpga_initSDRAM(void)
-
-//#include "x3x3.h"
-//#include "cc3x3.h"
-//#include "cxdma.h"
 
 #include "framepars.h"
 #include "sensor_common.h"
@@ -173,6 +145,32 @@ void camseq_set_jpeg_rp(unsigned int chn, int ptr)
 		image_acq_priv.jpeg_ptr[chn].jpeg_rp = ptr;
 	}
 }
+/** Return current frame number, if it was from the compressor interrupt
+ * get the compressed frame number (updated when compression is over,
+ * can happen even later than start of the next frame.
+ * Otherwise use command sequencer (switching at frame sync (start of frame)
+ * TODO: at each frame interrupt check how far is compressor behind,
+ * take over if >=2 ? */
+int getHardFrameNumber(int sensor_port,     ///< Sensor port number
+		               int use_compressor)  ///< 1 - use compressor frame number, 0 - use sequencer frame number
+		                                    ///< @return hardware frame number (4 bit currently, mod PARS_FRAMES )
+{
+	x393_cmprs_status_t cmprs_status;
+	x393_cmdseqmux_status_t cmdseqmux_status;
+	if (use_compressor) {
+		cmprs_status = x393_cmprs_status(sensor_port);
+		return cmprs_status.frame;
+	} else {
+		cmdseqmux_status = x393_cmdseqmux_status();
+		switch(sensor_port){
+		case 0:  return cmdseqmux_status.frame_num0;
+		case 1:  return cmdseqmux_status.frame_num1;
+		case 2:  return cmdseqmux_status.frame_num2;
+		default: return cmdseqmux_status.frame_num3;
+		}
+	}
+
+}
 
 /*!
    End of compressor-related code - TODO: move to a separate file?
@@ -182,7 +180,7 @@ static const struct of_device_id elphel393_sensor_of_match[];
 static struct sensorproc_t as_sensorproc[SENSOR_PORTS]; // sensor parameters and functions to call
 struct sensorproc_t * asensorproc = NULL;
 //EXPORT_SYMBOL_GPL(sensorproc);
-//wait_queue_head_t image_acq_wait_queue;  /// queue for the sensor frame interrupts
+//wait_queue_head_t image_acq_wait_queue;  // queue for the sensor frame interrupts
 
 
 void tasklet_fpga_function(unsigned long arg);
@@ -205,23 +203,23 @@ struct sensorproc_t * copy_sensorproc (int sensor_port, struct sensorproc_t * co
 
 
 ///
-/// initializes structures for the image acquisition parameter
-/// initializes hardware i2c controller and the command sequencer (leaves them stopped to ignore any frame syncs)
-/// sets some default acquisition parameters
-/// Maybe - set up DMA also?
-/// TODO: Take care while turning off reset on i2c and cmd_sequencer so there will be no sensor vsync lost
-/// (easier to do in FPGA)
-/// Done:
+// initializes structures for the image acquisition parameter
+// initializes hardware i2c controller and the command sequencer (leaves them stopped to ignore any frame syncs)
+// sets some default acquisition parameters
+// Maybe - set up DMA also?
+// TODO: Take care while turning off reset on i2c and cmd_sequencer so there will be no sensor vsync lost
+// (easier to do in FPGA)
+// Done:
 ///#define CCAM_VSYNC_ON  port_csp0_addr[X313_WA_DCR1]=X353_DCR1(BLOCKVSYNC,0)
 ///#define CCAM_VSYNC_OFF port_csp0_addr[X313_WA_DCR1]=X353_DCR1(BLOCKVSYNC,1)
 ///
 int init_acq_sensor(void); // Never used?
 
-//DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); /// 0 - no arguments for now
-DECLARE_TASKLET(tasklet_fpga_0, tasklet_fpga_function, 0); /// 0 - no arguments for now
-DECLARE_TASKLET(tasklet_fpga_1, tasklet_fpga_function, 1); /// 0 - no arguments for now
-DECLARE_TASKLET(tasklet_fpga_2, tasklet_fpga_function, 2); /// 0 - no arguments for now
-DECLARE_TASKLET(tasklet_fpga_3, tasklet_fpga_function, 3); /// 0 - no arguments for now
+//DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); // 0 - no arguments for now
+DECLARE_TASKLET(tasklet_fpga_0, tasklet_fpga_function, 0); // 0 - no arguments for now
+DECLARE_TASKLET(tasklet_fpga_1, tasklet_fpga_function, 1); // 0 - no arguments for now
+DECLARE_TASKLET(tasklet_fpga_2, tasklet_fpga_function, 2); // 0 - no arguments for now
+DECLARE_TASKLET(tasklet_fpga_3, tasklet_fpga_function, 3); // 0 - no arguments for now
 static struct tasklet_struct *tasklets[SENSOR_PORTS] = {&tasklet_fpga_0, &tasklet_fpga_1, &tasklet_fpga_2, &tasklet_fpga_3};
 
 
@@ -239,12 +237,12 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 	phys_addr_t phys_addr;
 	void *virt_addr;
 	//	int prev_dword;
-	int xferred;                                           /// number of 32-byte chunks transferred since compressor was reset
+	int xferred;                                           // number of 32-byte chunks transferred since compressor was reset
 	x393_afimux_status_t stat = x393_afimux0_status(jptr->chn_num);
 
 	xferred = stat.offset256 - (jptr->fpga_cntr_prev >> 3);
 	if (xferred == 0)
-		return 0;                                          /// no advance (compressor was off?)
+		return 0;                                          // no advance (compressor was off?)
 
 	jptr->flags |= SENS_FLAG_IRQ;
 	jptr->fpga_cntr_prev = jptr->jpeg_wp;
@@ -414,10 +412,10 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr, struct interframe_params_t* 
 	unsigned int sensor_port = jptr->chn_num;
 	int  index_time = jptr->jpeg_wp - 11; if (index_time<0) index_time+=get_globalParam (sensor_port, G_CIRCBUFSIZE)>>2;
 	//   struct exif_datetime_t
-	/// calculates datetime([20] and subsec[7], returns  pointer to char[27]
+	// calculates datetime([20] and subsec[7], returns  pointer to char[27]
 	char time_buff[27];
 	char * exif_meta_time_string=encode_time(time_buff, ccam_dma_buf_ptr[sensor_port][index_time], ccam_dma_buf_ptr[sensor_port][index_time+1]);
-	/// may be split in datetime/subsec - now it will not notice missing subseq field in template
+	// may be split in datetime/subsec - now it will not notice missing subseq field in template
 	write_meta_irq(sensor_port, exif_meta_time_string, &meta_offsets.Photo_DateTimeOriginal,  Exif_Photo_DateTimeOriginal, 27);
 	write_meta_irq(sensor_port, exif_meta_time_string, &meta_offsets.Image_DateTime,  Exif_Image_DateTime, 20); // may use 27 if room is provided
 	putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_EXPOS), &meta_offsets.Photo_ExposureTime,  Exif_Photo_ExposureTime);
@@ -490,24 +488,24 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr, struct interframe_params_t* 
    irq_state = X313_IRQSTATE; //!making dummy read - see c353.h
    DIS_INTERRUPTS;
    PROFILE_NEXT(0);
-/// read hardware write pointer (will only advance if compression was on)
+// read hardware write pointer (will only advance if compression was on)
 ///find out if compressor was running and update pointers, exif, ...?
    if (updateIRQJPEG_wp()) { ///also fills P_FRAME ahead
       updateIRQCircbuf();
       updateIRQFocus(); ///NOTE: currently global (latest), not per-frame
-      struct interframe_params_t* interframe= updateIRQ_interframe(); /// fills jpeg_len, signffff
-/// should we use memcpy as before here?
+      struct interframe_params_t* interframe= updateIRQ_interframe(); // fills jpeg_len, signffff
+// should we use memcpy as before here?
 //      interframe->frame_length=jpeg_len;
 //      interframe->signffff=0xffff;
       updateIRQ_Exif(interframe);
       updateFramePars(X3X3_I2C_FRAME, interframe);
-      wake_up_interruptible(&circbuf_wait_queue); /// only when frame is acquired
+      wake_up_interruptible(&circbuf_wait_queue); // only when frame is acquired
    } else {
       updateFramePars(X3X3_I2C_FRAME, NULL); 
    }
    PROFILE_NOW(1);
-   wake_up_interruptible(&framepars_wait_queue); /// all interrupts, not just frames acquired
-   tasklet_schedule(&tasklet_fpga); /// trigger software interrupt
+   wake_up_interruptible(&framepars_wait_queue); // all interrupts, not just frames acquired
+   tasklet_schedule(&tasklet_fpga); // trigger software interrupt
 
    EN_INTERRUPT(SMART);
 
@@ -590,21 +588,23 @@ For displaying histograms - try use latest available - not waiting fro a particu
 
  */
 
-/// HISTOGRAMS_WAKEUP_ALWAYS if 0 will only wakeup processes waiting for histograms when they become available, maybe never if they are disabled
-/// if defined 1 - will wakeup each frame, regardless of the availability of the histograms
+// HISTOGRAMS_WAKEUP_ALWAYS if 0 will only wakeup processes waiting for histograms when they become available, maybe never if they are disabled
+// if defined 1 - will wakeup each frame, regardless of the availability of the histograms
 //#define HISTOGRAMS_WAKEUP_ALWAYS 0
 void tasklet_fpga_function(unsigned long arg) {
+	int is_compressor_irq = 1; // TODO: add interrupts from frame sync if compressor is off
 	int hist_en;
 	int sensor_port = image_acq_priv.jpeg_ptr[arg].chn_num;
 	int tasklet_disable=get_globalParam(sensor_port, G_TASKLET_CTL);
 	unsigned long thisFrameNumber=getThisFrameNumber(sensor_port);
 	unsigned long prevFrameNumber=thisFrameNumber-1;
-	unsigned long * hash32p=&(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]);
+	unsigned long * hash32p=&(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]); // same gamma for all sub-channels
 	unsigned long * framep= &(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
 	const struct jpeg_ptr_t *jptr = &image_acq_priv.jpeg_ptr[arg];
 	dma_addr_t phys_addr_start, phys_addr_end;
 	void *virt_addr_start;
 	unsigned int sz;
+	int subchn,hist_indx;
 
 	/* invalidate L2 cache lines in the beginning of current frame */
 	phys_addr_start = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->fpga_cntr_prev);
@@ -626,78 +626,85 @@ void tasklet_fpga_function(unsigned long arg) {
 		__cpuc_flush_dcache_area(virt_addr_start, sz - CCAM_DMA_SIZE);
 	}
 
-
-#ifdef TEST_DISABLE_CODE
-	/// Time is out?
-	if ((getThisFrameNumber() ^ X3X3_I2C_FRAME)  & PARS_FRAMES_MASK) return; /// already next frame
-#endif /* TEST_DISABLE_CODE */
-	/// Histograms are available for the previous frame (that is already in circbuf if compressor was running)
-	/// Is Y histogram needed?
+	// Time is out?
+	if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
+	// Histograms are available for the previous frame (that is already in circbuf if compressor was running)
+	// Is Y histogram needed?
 	PROFILE_NOW(2);
 	switch ((tasklet_disable >> TASKLET_CTL_HISTY_BIT) & 7) {
-	case TASKLET_HIST_NEVER:   /// never calculate
+	case TASKLET_HIST_NEVER:   // never calculate
 		hist_en=0;
 		break;
-	case TASKLET_HIST_HALF:    /// calculate each even (0,2,4,6 frme of 8)
+	case TASKLET_HIST_HALF:    // calculate each even (0,2,4,6 frme of 8)
 		hist_en= ((thisFrameNumber & 1) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
 		break;
-	case TASKLET_HIST_QUATER:  /// calculate twice per 8 (0, 4)
+	case TASKLET_HIST_QUATER:  // calculate twice per 8 (0, 4)
 		hist_en= ((thisFrameNumber & 3) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
 		break;
-	case TASKLET_HIST_ONCE:    /// calculate once  per 8 (0)
+	case TASKLET_HIST_ONCE:    // calculate once  per 8 (0)
 		hist_en= ((thisFrameNumber & 7) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
 		break;
-	case TASKLET_HIST_RQONLY:  /// calculate only when specifically requested
+	case TASKLET_HIST_RQONLY:  // calculate only when specifically requested
 		hist_en= (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
 		break;
-	case TASKLET_HIST_ALL:     /// calculate each frame
-	default:                   /// calculate always (safer)
+	case TASKLET_HIST_ALL:     // calculate each frame
+	default:                   // calculate always (safer)
 		hist_en=1;
 	}
-#ifdef TEST_DISABLE_CODE
+//#ifdef TEST_DISABLE_CODE
 	if (hist_en) {
-		/// after updateFramePars gammaHash are from framepars[this-1]
-		set_histograms (prevFrameNumber, (1 << COLOR_Y_NUMBER), hash32p, framep); /// 0x2 Green1
-		GLOBALPARS(G_HIST_Y_FRAME)=prevFrameNumber;           /// histogram corresponds to previous frame
+		// after updateFramePars gammaHash are from framepars[this-1]
+		for (subchn=0;subchn<MAX_SENSORS;subchn++) if (((hist_indx=get_hist_index(sensor_port,subchn)))>=0){
+			if (PER_CHANNEL393) {
+				set_histograms (sensor_port,
+						        subchn,
+								prevFrameNumber,
+								(1 << COLOR_Y_NUMBER),
+								hash32p+hist_indx*16*(sizeof u32),
+								framep+hist_indx*32*(sizeof u32)); // 0x2 Green1
+			} else {
+				set_histograms (sensor_port, subchn, prevFrameNumber, (1 << COLOR_Y_NUMBER), hash32p, framep); // 0x2 Green1
+			}
+			GLOBALPARS(sensor_port, G_HIST_Y_FRAME + subchn) = prevFrameNumber;           // histogram corresponds to previous frame
+		}
 		PROFILE_NOW(3);
-		/// Time is out?
-		if ((getThisFrameNumber() ^ X3X3_I2C_FRAME)  & PARS_FRAMES_MASK) return; /// already next frame
+		// Time is out?
+// Old 353		if ((getThisFrameNumber(sensor_port) ^ X3X3_I2C_FRAME)  & PARS_FRAMES_MASK) return; // already next frame
+		if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
 #if HISTOGRAMS_WAKEUP_ALWAYS
 	}
-	wake_up_interruptible(&hist_y_wait_queue);    /// wait queue for the G1 histogram (used as Y)
+	wake_up_interruptible(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
 #else
-	wake_up_interruptible(&hist_y_wait_queue);    /// wait queue for the G1 histogram (used as Y)
+	wake_up_interruptible(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
 }
 #endif
-#endif /* TEST_DISABLE_CODE */
-/// Process parameters 
+//#endif /* TEST_DISABLE_CODE */
+// Process parameters
 if ((tasklet_disable & (1 << TASKLET_CTL_PGM))   == 0) {
-	processPars (sensor_port, sensorproc, getThisFrameNumber(sensor_port), get_globalParam(sensor_port, G_MAXAHEAD)); /// program parameters
+	processPars (sensor_port, sensorproc, getThisFrameNumber(sensor_port), get_globalParam(sensor_port, G_MAXAHEAD)); // program parameters
 	PROFILE_NOW(4);
 }
-#ifdef TEST_DISABLE_CODE
-/// Time is out?
-if ((getThisFrameNumber() ^ X3X3_I2C_FRAME)  & PARS_FRAMES_MASK) return; /// already next frame
-/// Are C histograms needed?
-#endif /* TEST_DISABLE_CODE */
+// Time is out?
+if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
+// Are C histograms needed?
 switch ((tasklet_disable >> TASKLET_CTL_HISTC_BIT) & 7) {
-case TASKLET_HIST_NEVER:   /// never calculate
+case TASKLET_HIST_NEVER:   // never calculate
 	hist_en=0;
 	break;
-case TASKLET_HIST_HALF:    /// calculate each even (0,2,4,6 frme of 8)
+case TASKLET_HIST_HALF:    // calculate each even (0,2,4,6 frme of 8)
 	hist_en= ((thisFrameNumber & 1) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
 	break;
-case TASKLET_HIST_QUATER:  /// calculate twice per 8 (0, 4)
+case TASKLET_HIST_QUATER:  // calculate twice per 8 (0, 4)
 	hist_en= ((thisFrameNumber & 3) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
 	break;
-case TASKLET_HIST_ONCE:    /// calculate once  per 8 (0)
+case TASKLET_HIST_ONCE:    // calculate once  per 8 (0)
 	hist_en= ((thisFrameNumber & 7) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
 	break;
-case TASKLET_HIST_RQONLY:  /// calculate only when specifically requested
+case TASKLET_HIST_RQONLY:  // calculate only when specifically requested
 	hist_en= (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
 	break;
-case TASKLET_HIST_ALL:     /// calculate each frame
-default:                   /// calculate always (safer)
+case TASKLET_HIST_ALL:     // calculate each frame
+default:                   // calculate always (safer)
 	hist_en=1;
 }
 /*
@@ -707,22 +714,35 @@ GLOBALPARS(0x1042)=((thisFrameNumber & 7) ==0);
 GLOBALPARS(0x1043)=hist_en;
 GLOBALPARS(0x1044)=thisFrameNumber;
  */
-#ifdef TEST_DISABLE_CODE
 if (hist_en) {
-	/// after updateFramePars gammaHash are from framepars[this-1]
-	set_histograms (prevFrameNumber, 0xf, hash32p, framep); /// all 4 colors, including Y (it will be skipped)
-	GLOBALPARS(G_HIST_C_FRAME)=prevFrameNumber;           /// histogram corresponds to previous frame
+	// after updateFramePars gammaHash are from framepars[this-1]
+	// after updateFramePars gammaHash are from framepars[this-1]
+	for (subchn=0;subchn<MAX_SENSORS;subchn++) if (((hist_indx=get_hist_index(sensor_port,subchn)))>=0){
+		if (PER_CHANNEL393) {
+			set_histograms (sensor_port,
+					        subchn,
+							prevFrameNumber,
+							0xf, // all colors
+							hash32p+hist_indx*16*(sizeof u32),
+							framep+hist_indx*32*(sizeof u32)); // 0x2 Green1
+		} else {
+			set_histograms (sensor_port, subchn, prevFrameNumber, 0xf, hash32p, framep); // 0x2 Green1
+		}
+		GLOBALPARS(sensor_port, G_HIST_C_FRAME + subchn) = prevFrameNumber;           // histogram corresponds to previous frame
+	}
 	PROFILE_NOW(5);
-	/// Time is out?
-	if ((getThisFrameNumber() ^ X3X3_I2C_FRAME)  & PARS_FRAMES_MASK) return; /// already next frame
+	// Time is out?
+	if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
+
+
+
 #if HISTOGRAMS_WAKEUP_ALWAYS
 }
-wake_up_interruptible(&hist_c_wait_queue);     /// wait queue for all the other (R,G2,B) histograms (color)
+wake_up_interruptible(&hist_c_wait_queue);     // wait queue for all the other (R,G2,B) histograms (color)
 #else
-wake_up_interruptible(&hist_c_wait_queue);   /// wait queue for all the other (R,G2,B) histograms (color)
+wake_up_interruptible(&hist_c_wait_queue);   // wait queue for all the other (R,G2,B) histograms (color)
 }
 #endif
-#endif /* TEST_DISABLE_CODE */
 }
 
 //#endif /* TEST_DISABLE_CODE */
@@ -736,10 +756,10 @@ void reset_compressor(unsigned int chn)
 
 	local_irq_save(flags);
 #ifdef TEST_DISABLE_CODE
-	port_csp0_addr[X313_WA_COMP_CMD]= COMPCMD_RESET; /// bypasses command sequencer
+	port_csp0_addr[X313_WA_COMP_CMD]= COMPCMD_RESET; // bypasses command sequencer
 	if (framepars) set_imageParamsR_all( P_COMPRESSOR_RUN, COMPRESSOR_RUN_STOP );
 	else printk ("framepars is not initialized\n");
-	/// TODO: There still is a possibility, that there are compressor commands in the hardware que. Should we stop the hardware sequencer here (and restart it later)?
+	// TODO: There still is a possibility, that there are compressor commands in the hardware que. Should we stop the hardware sequencer here (and restart it later)?
 #endif /* TEST_DISABLE_CODE */
 	image_acq_priv.jpeg_ptr[chn].jpeg_wp = 0;
 	image_acq_priv.jpeg_ptr[chn].jpeg_rp = 0;
@@ -765,7 +785,7 @@ void camera_interrupts (int on) {
 	}  else {
 		DIS_INTERRUPTS;
 	}
-	/// clear smart interrupt circuitry in any case
+	// clear smart interrupt circuitry in any case
 	port_csp0_addr[X313_WA_SMART_IRQ]=0x8000;
 
 	reg_intr_vect_rw_mask intr_mask;
@@ -856,11 +876,11 @@ int image_acq_init(struct platform_device *pdev)
 	for (i = 0; i < SENSOR_PORTS; i++) {
 		reset_compressor(i);
 	}
-	//reset_compressor(); /// reset compressor and buffer pointers
+	//reset_compressor(); // reset compressor and buffer pointers
 	//MDD1(printk("x313_dma_init()\n"));
-	//x313_dma_init();    /// initialize ETRAX FS DMA
+	//x313_dma_init();    // initialize ETRAX FS DMA
 	//MDD1(printk("init_pgm_proc ()\n"));
-	//init_pgm_proc ();   /// setup pointers to functions (not sensor-specific)
+	//init_pgm_proc ();   // setup pointers to functions (not sensor-specific)
 	//MDD1(printk("reset_qtables()\n"));
 
 	framepars_init(pdev);

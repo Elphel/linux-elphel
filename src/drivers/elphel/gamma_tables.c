@@ -1,94 +1,93 @@
-/*!********************************************************************************
-*! FILE NAME  : gamma_tables.c
-*! DESCRIPTION: Handles "gamma"tables storage and scaling
-*!              exposes device driver to manipulate custom "gamma" tables
-*!              "Gamma" tables are calculated in several steps, leaving the
-*!              exponent calculation to the application, but handling scaling inside.
-*!              Scaling (with saturation if >1.0)is used for color balancing.
-*!              Gamma table calulation involves several intermediate tables:
-*!              - forward table
-*!              - reverse table (for histogram corrections)
-*!              - FPGA format
-*!              And the driver caches intermediate tables when possible, calculates
-*!              them when needed.
-*! Copyright (C) 2008 Elphel, Inc.
-*! -----------------------------------------------------------------------------**
-*!
-*!  This program is free software: you can redistribute it and/or modify
-*!  it under the terms of the GNU General Public License as published by
-*!  the Free Software Foundation, either version 3 of the License, or
-*!  (at your option) any later version.
-*!
-*!  This program is distributed in the hope that it will be useful,
-*!  but WITHOUT ANY WARRANTY; without even the implied warranty of
-*!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*!  GNU General Public License for more details.
-*!
-*!  You should have received a copy of the GNU General Public License
-*!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*! -----------------------------------------------------------------------------**
-*!  $Log: gamma_tables.c,v $
-*!  Revision 1.1.1.1  2008/11/27 20:04:01  elphel
-*!
-*!
-*!  Revision 1.19  2008/11/13 05:40:45  elphel
-*!  8.0.alpha16 - modified histogram storage, profiling
-*!
-*!  Revision 1.18  2008/10/29 04:18:28  elphel
-*!  v.8.0.alpha10 made a separate structure for global parameters (not related to particular frames in a frame queue)
-*!
-*!  Revision 1.17  2008/10/25 19:51:06  elphel
-*!  Changed word order in writes to gamma tables driver
-*!
-*!  Revision 1.16  2008/10/23 08:04:19  elphel
-*!  reenabling IRQ in debug mode
-*!
-*!  Revision 1.15  2008/10/12 16:46:22  elphel
-*!  snapshot
-*!
-*!  Revision 1.14  2008/10/06 08:31:08  elphel
-*!  snapshot, first images
-*!
-*!  Revision 1.13  2008/10/05 05:13:33  elphel
-*!  snapshot003
-*!
-*!  Revision 1.12  2008/10/04 16:10:12  elphel
-*!  snapshot
-*!
-*!  Revision 1.11  2008/09/22 22:55:48  elphel
-*!  snapshot
-*!
-*!  Revision 1.10  2008/09/20 00:29:50  elphel
-*!  moved driver major/minor numbers to a single file - include/asm-cris/elphel/driver_numbers.h
-*!
-*!  Revision 1.9  2008/09/19 04:37:25  elphel
-*!  snapshot
-*!
-*!  Revision 1.8  2008/09/16 00:49:32  elphel
-*!  snapshot
-*!
-*!  Revision 1.7  2008/09/12 00:23:59  elphel
-*!  removed cc353.c, cc353.h
-*!
-*!  Revision 1.6  2008/09/11 01:05:32  elphel
-*!  snapshot
-*!
-*!  Revision 1.5  2008/09/05 23:20:26  elphel
-*!  just a snapshot
-*!
-*!  Revision 1.4  2008/07/27 04:27:49  elphel
-*!  next snapshot
-*!
-*!  Revision 1.3  2008/06/16 06:51:21  elphel
-*!  work in progress, intermediate commit
-*!
-*!  Revision 1.2  2008/06/10 00:02:42  elphel
-*!  fast calculation of 8-bit reverse functions for "gamma" tables and histograms
-*!
-*!  Revision 1.1  2008/06/08 23:46:45  elphel
-*!  added drivers files for handling quantization tables, gamma tables and the histograms
-*!
-*!
+/***************************************************************************//**
+* @file      gamma_tables.c
+* @brief     Handles "gamma"tables storage and scaling
+*              exposes device driver to manipulate custom "gamma" tables
+*              "Gamma" tables are calculated in several steps, leaving the
+*              exponent calculation to the application, but handling scaling inside.
+*              Scaling (with saturation if >1.0)is used for color balancing.
+*
+*              Gamma table calculation involves several intermediate tables:
+*              - forward table
+*              - reverse table (for histogram corrections)
+*              - FPGA format
+*              And the driver caches intermediate tables when possible, calculates
+*              them when needed.
+* @copyright Copyright 2008-2016 (C) Elphel, Inc.
+* @par <b>License</b>
+*  This program is free software: you can redistribute it and/or modify
+*  it under the terms of the GNU General Public License as published by
+*  the Free Software Foundation, either version 2 of the License, or
+*  (at your option) any later version.
+*  This program is distributed in the hope that it will be useful,
+*  but WITHOUT ANY WARRANTY; without even the implied warranty of
+*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*  GNU General Public License for more details.
+*  You should have received a copy of the GNU General Public License
+*  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*******************************************************************************/
+
+
+/*********************************************************************************
+*   $Log: gamma_tables.c,v $
+*   Revision 1.1.1.1  2008/11/27 20:04:01  elphel
+*
+*
+*   Revision 1.19  2008/11/13 05:40:45  elphel
+*   8.0.alpha16 - modified histogram storage, profiling
+*
+*   Revision 1.18  2008/10/29 04:18:28  elphel
+*   v.8.0.alpha10 made a separate structure for global parameters (not related to particular frames in a frame queue)
+*
+*   Revision 1.17  2008/10/25 19:51:06  elphel
+*   Changed word order in writes to gamma tables driver
+*
+*   Revision 1.16  2008/10/23 08:04:19  elphel
+*   reenabling IRQ in debug mode
+*
+*   Revision 1.15  2008/10/12 16:46:22  elphel
+*   snapshot
+*
+*   Revision 1.14  2008/10/06 08:31:08  elphel
+*   snapshot, first images
+*
+*   Revision 1.13  2008/10/05 05:13:33  elphel
+*   snapshot003
+*
+*   Revision 1.12  2008/10/04 16:10:12  elphel
+*   snapshot
+*
+*   Revision 1.11  2008/09/22 22:55:48  elphel
+*   snapshot
+*
+*   Revision 1.10  2008/09/20 00:29:50  elphel
+*   moved driver major/minor numbers to a single file - include/asm-cris/elphel/driver_numbers.h
+*
+*   Revision 1.9  2008/09/19 04:37:25  elphel
+*   snapshot
+*
+*   Revision 1.8  2008/09/16 00:49:32  elphel
+*   snapshot
+*
+*   Revision 1.7  2008/09/12 00:23:59  elphel
+*   removed cc353.c, cc353.h
+*
+*   Revision 1.6  2008/09/11 01:05:32  elphel
+*   snapshot
+*
+*   Revision 1.5  2008/09/05 23:20:26  elphel
+*   just a snapshot
+*
+*   Revision 1.4  2008/07/27 04:27:49  elphel
+*   next snapshot
+*
+*   Revision 1.3  2008/06/16 06:51:21  elphel
+*   work in progress, intermediate commit
+*
+*   Revision 1.2  2008/06/10 00:02:42  elphel
+*   fast calculation of 8-bit reverse functions for "gamma" tables and histograms
+*
+*   Revision 1.1  2008/06/08 23:46:45  elphel
+*   added drivers files for handling quantization tables, gamma tables and the histograms
 */
 
 //copied from cxi2c.c - TODO:remove unneeded 
@@ -149,7 +148,9 @@
 
 
 #endif
-
+/** Combine color, sensor port and sub-channel into a single index
+ * It is still possible to use "color" parameter in the range of 0..63 with port and channel set to 0  */
+#define PORT_CHN_COLOR(color,port,chn) (((color) & 0x3f) | ((((port) & 3 ) << 4)) | ((((chn) & 3 ) << 2)))
 #define  X3X3_GAMMAS_DRIVER_NAME "Elphel (R) Model 353 Gamma Tables device driver"
 /**
  * @brief number of different non-scaled tables in cache when it starts to overwrite non-scaled tables rather than scaled
@@ -158,15 +159,15 @@
 #define GAMMA_THRESH (GAMMA_CACHE_NUMBER/16)
 
 static struct gamma_stuct_t gammas[GAMMA_CACHE_NUMBER] __attribute__ ((aligned (PAGE_SIZE)));
-       struct gamma_stuct_t * gammas_p; /// to use with mmap
+       struct gamma_stuct_t * gammas_p; // to use with mmap
 
 struct gammas_pd {
     int                minor;
     unsigned short     scale;
     unsigned short     hash16;
     unsigned char      mode;
-    unsigned char      color;
-/// something else to be added here?
+    unsigned char      color; // Does it need port/sub-channel?
+// something else to be added here?
 };
 
 int        gammas_open   (struct inode *inode, struct file *file);
@@ -192,7 +193,7 @@ inline void remove_from_nonscaled(int index) {
  * @param index item index to remove
  */
 inline void remove_from_scaled   (int index) {
-    if (likely(gammas[index].newer_scaled)) { /// will skip first, untill the cache is all used
+    if (likely(gammas[index].newer_scaled)) { // will skip first, untill the cache is all used
      gammas[gammas[index].newer_scaled].older_scaled=gammas[index].older_scaled;
      gammas[gammas[index].older_scaled].newer_scaled=gammas[index].newer_scaled;
     }
@@ -202,7 +203,7 @@ inline void remove_from_scaled   (int index) {
  * @brief remove item from the all ("diagonal") chain
  * @param index item index to remove
  */
-inline void remove_from_all      (int index) { /// always - in that chain - after init
+inline void remove_from_all      (int index) { // always - in that chain - after init
     gammas[gammas[index].newer_all].older_all=gammas[index].older_all;
     gammas[gammas[index].older_all].newer_all=gammas[index].newer_all;
 }
@@ -219,8 +220,8 @@ inline void insert_first_nonscaled(int index) {
     gammas[index].newer_non_scaled=0; // 6
     gammas[0].non_scaled_length++;
     gammas[index].this_non_scaled=0; // none
-    gammas[index].newest_scaled=index; /// no scaled yet - point to itself
-    gammas[index].oldest_scaled=index; /// no scaled yet - point to itself
+    gammas[index].newest_scaled=index; // no scaled yet - point to itself
+    gammas[index].oldest_scaled=index; // no scaled yet - point to itself
 
 }
 
@@ -259,25 +260,25 @@ void init_gammas(void) {
   unsigned long flags;
   int i;
   gammas_p=gammas;
-/// empty 2-d chain
+// empty 2-d chain
   local_irq_save(flags);
   gammas[0].oldest_non_scaled=0;
   gammas[0].newest_non_scaled=0;
-/// all entries in a same 
+// all entries in a same
   gammas[0].oldest_all=GAMMA_CACHE_NUMBER-1;
   gammas[0].newest_all=1;
   MDF10(printk("\n"));
   for (i=1; i < GAMMA_CACHE_NUMBER;i++) {
-    gammas[i].this_non_scaled=-1; /// no parent.FIXME: Where is it used? -1 if never used
-/// something else?
+    gammas[i].this_non_scaled=-1; // no parent.FIXME: Where is it used? -1 if never used
+// something else?
     gammas[i].newer_all=i-1;
     gammas[i].older_all= (i==(GAMMA_CACHE_NUMBER-1))? 0: (i+1);
     gammas[i].locked=0;
     gammas[i].valid=0;
   }
   gammas[0].non_scaled_length=0;
-  for (i=1; i < 4;i++) {
-    gammas[0].locked_color[i]=0;
+  for (i=1; i < sizeof(gammas[0].locked_chn_color)/sizeof(gammas[0].locked_chn_color[0]);i++) {
+      gammas[0].locked_chn_color[i]=0;
   }
   local_irq_restore(flags);
 }
@@ -306,61 +307,68 @@ int is_gamma_valid (unsigned short hash16, unsigned short scale, int index) {
 }
 
 
-/**
- * @brief Looks for the hash32 last programmed to the FPGA for the particular color
+/** Looks for the hash32 last programmed to the FPGA for the particular color
  * @param color 
- * @return hash32 (combined gamma/black/scale) locked fro a specified color. If none - return 0
+ * @return hash32 (combined gamma/black/scale) locked for a specified color. If none - return 0
  */
-unsigned long get_locked_hash32(int color) {
-  int index=gammas[0].locked_color[color];
+unsigned long get_locked_hash32(int color,         ///< color channel 0..3
+								int sensor_port,   ///< sensor port number (0..3)
+								int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
+		                                           ///< @return hash32 (combined gamma/black/scale) locked for a specified color,
+		                                           ///< port, sub-channel
+{
+  int index=gammas[0].locked_chn_color[PORT_CHN_COLOR(color,sensor_port,sensor_subchn)];
   return index?gammas[index].hash32:0;
 }
 
 /**
- * @brief Lock gamma table for the specified color, save previous locks (if any) so new locks can be applied/canceled
- * NOTE: interrupts should be disabled ***
- * @param index gamma table index
- * @param color 
- */
-inline void lock_gamma_node (int index, int color) {
-  int tmp_p;
-  if (likely((color<4) && (color >=0))) { /// valid color
-    if (((tmp_p=gammas[0].locked_color[color]))!=0) { ///new gamma to the same color
-      gammas[tmp_p].locked &= ~(1 << color); /// remove any previous lock on the same color (if any)
-    }
-    gammas[0].locked_color[color]= index;
-    gammas[index].locked |= (1 << color);
-  }
+ * @brief Lock gamma table for the specified color/port/subchannel, save previous locks (if any) so new locks can be applied/canceled
+ * NOTE: interrupts should be disabled!  */
+inline void lock_gamma_node (int index,         ///< gamma table index
+		                     int color,         ///< color channel 0..3
+	                         int sensor_port,   ///< sensor port number (0..3)
+		                     int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
+
+{
+	int tmp_p;
+	int cps = PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
+	if (((tmp_p=gammas[0].locked_chn_color[cps]))!=0) { ///new gamma to the same color
+	  gammas[tmp_p].locked &= ~(1ULL << cps); // remove any previous lock on the same color (if any)
+	}
+	gammas[0].locked_chn_color[cps]= index;
+	gammas[index].locked |= (1ULL << cps);
 }
-/**
- * @brief Unlock gamma table for the specified color
- * NOTE: Not needed anymore
- * @param color  color index (0..3)
- * @return wrong data -1, nothing to unlock - 0, >0 - unlocked index
- */
-int unlock_gamma_node (int color) {
+/** Unlock gamma table for the specified color/port/subchannel
+ * NOTE: Not needed anymore */
+int unlock_gamma_node  (int color,         ///< color channel 0..3
+						int sensor_port,   ///< sensor port number (0..3)
+						int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
+						                   ///< @return wrong data -1, nothing to unlock - 0, >0 - unlocked index
+{
   unsigned long flags;
   int index;
+  int cps = PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
   MDF11(printk("color=0x%x\n",color));
-  if (unlikely((color>= 4) || (color<0))) return -1;
   local_irq_save(flags);
-  index =gammas[0].locked_color[color];
+  index =gammas[0].locked_chn_color[cps];
   if (index) {
-    gammas[index].locked &= ~(1 <<  color); /// clear appropriate "locked" bit for this table
-    gammas[0].locked_color[color]=0;
+    gammas[index].locked &= ~(1ULL <<  color); // clear appropriate "locked" bit for this table
+    gammas[0].locked_chn_color[color]=0;
   }
   local_irq_restore(flags);
   return index;
 }
-/**
- * @brief Find a gamma table in FPGA format to be programmed (table should already be locked for this color)
- * @param color color index (0..3) of the table
- * @return pointer to a gamma table (or NULL if table does not exist)
- */
-unsigned long * get_gamma_fpga(int color) { /// NOTE: Not needed anymore?
+/** Find a gamma table in FPGA format to be programmed (table should already be locked for this color) */
+unsigned long * get_gamma_fpga (int color,         ///< color channel 0..3
+								int sensor_port,   ///< sensor port number (0..3)
+								int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
+												   ///< @return pointer to a gamma table (or NULL if table does not exist)
+
+{ // NOTE: Not needed anymore?
   int index;
-  if (unlikely((color>=4) || (color<0))) return NULL; //
-  index =gammas[0].locked_color[color];
+  int cps = PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
+//  if (unlikely((color>=4) || (color<0))) return NULL; //
+  index =gammas[0].locked_chn_color[cps];
   MDF11(printk(" index=%d(0x%x)\n",index,index));
   if (index) return gammas[index].fpga;
   else return NULL;
@@ -376,18 +384,18 @@ unsigned long * get_gamma_fpga(int color) { /// NOTE: Not needed anymore?
  */
 int gamma_new_node(void) {
    int tmp_p;
-   if ((gammas[0].non_scaled_length > GAMMA_THRESH) && (gammas[gammas[0].oldest_non_scaled].newest_scaled == gammas[0].oldest_non_scaled)) { /// no scaled for the oldest hash 
-/// sacrifice oldest hash
+   if ((gammas[0].non_scaled_length > GAMMA_THRESH) && (gammas[gammas[0].oldest_non_scaled].newest_scaled == gammas[0].oldest_non_scaled)) { // no scaled for the oldest hash
+// sacrifice oldest hash
     tmp_p=gammas[0].oldest_non_scaled;
      remove_from_nonscaled(tmp_p);
-   } else { /// use oldest scaled
+   } else { // use oldest scaled
     tmp_p=gammas[0].oldest_all;
-/// skip locked if any (should be unlikely to get any locked)
+// skip locked if any (should be unlikely to get any locked)
     while ((tmp_p!=0) && gammas[tmp_p].locked) tmp_p=gammas[tmp_p].newer_all;
     if (tmp_p==0) return 0; // none (unlocked) nodes are found
-/// remove from "all" chain (should work for tmp_p being oldest or not
+// remove from "all" chain (should work for tmp_p being oldest or not
     remove_from_all   (tmp_p);
-/// remove from "scaled chain"
+// remove from "scaled chain"
     remove_from_scaled   (tmp_p);
    }
    gammas[tmp_p].valid=0;
@@ -442,9 +450,9 @@ void  gamma_calc_scaled (unsigned short scale,unsigned short * gamma_in, unsigne
  * @param gamma_out reversed gamma table (8 bit)
  */
 void  gamma_calc_reverse(unsigned short * gamma_in, unsigned char * gamma_out) {
-  unsigned long gcurr=0; /// running value to be compared against direct gamma
-  int r=0; /// current value of reverse gamma table
-  int x=0; /// current indedx of reverse gamma table
+  unsigned long gcurr=0; // running value to be compared against direct gamma
+  int r=0; // current value of reverse gamma table
+  int x=0; // current indedx of reverse gamma table
   MDF11(printk("\n"));
   while ((r<256) && (x<256)) {
     gamma_out[x]=r;
@@ -458,23 +466,25 @@ void  gamma_calc_reverse(unsigned short * gamma_in, unsigned char * gamma_out) {
   }
 }
 
-/**
- * @brief calculate gamma table (and requested derivatives), insert new node if needed.
- * @param hash16      16-bit unique (non-scaled) gamma table identifier. Can be 1-byte gamma and 1-byte black level shift TODO: make black level fine-grained?
- * @param scale       gamma table scale (currently 0x400 ~ 1.0)  GAMMA_SCLALE_1 = 0x400
- * @param gamma_proto 16-bit gamma table prototype (or NULL)
- * @param mode        bits specify calculation mode:
- *                    - 1 - if set, no interrupts will be enabled between steps, whole operation will be atomic
- *                    - 2 - calculate reverse gamma table
- *                    - 4 - calculate FPGA-format gamma table.
- *                    - 8 - Lock (FPGA) table for specified color
- * @param color       color index (0..3) to lock table for (if mode bit 4 is set), otherwise color is ignored
- * @return index for the specified table or 0 if none exists and prototype was not provided (gamma_proto==NULL)
- */
-//#define GAMMA_MODE_LOCK         8  // Lock the table for the specified color (used from irq/tasklet - it is needed because all 4 tables in FPGA have to be overwritten at once)
-int set_gamma_table (unsigned short hash16, unsigned short scale, unsigned short * gamma_proto,  unsigned char mode, int color) {
+/** Calculate gamma table (and requested derivatives), insert new node if needed. */
+int set_gamma_table (unsigned short hash16,        ///< 16-bit unique (non-scaled) gamma table identifier. Can be 1-byte gamma and 1-byte black level shift
+                                                   ///< TODO: make black level fine-grained?
+		             unsigned short scale,         ///< gamma table scale (currently 0x400 ~ 1.0)  GAMMA_SCLALE_1 = 0x400
+					 unsigned short * gamma_proto, ///< 16-bit gamma table prototype (or NULL)
+					 unsigned char mode,           ///< bits specify calculation mode:
+					                               ///< - 1 - if set, no interrupts will be enabled between steps, whole operation will be atomic
+					                               ///<- 2 - calculate reverse gamma table
+					                               ///<- 4 - calculate FPGA-format gamma table
+					                               ///<  - 8 - Lock (FPGA) table for specified color/port/subchannel
+					 int color,                    ///< index (0..63) combined with the next two parameters to lock
+					                               ///< table for (if mode bit 4 is set), otherwise color, sensor_port, sensor_subchn are ignored
+					 int sensor_port,              ///< sensor port number (0..3)
+					 int sensor_subchn)            ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
+					 		                       ///< @return index for the specified table or 0 if none exists and prototype was not provided (gamma_proto==NULL)
+{
   D1I(unsigned long flags);
   int tmp_p, tmp_p1; //,tmp_p0;
+  int cps=PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
   unsigned short gamma_linear[257]=
       {0x0000,0x0100,0x0200,0x0300,0x0400,0x0500,0x0600,0x0700,0x0800,0x0900,0x0a00,0x0b00,0x0c00,0x0d00,0x0e00,0x0f00,
        0x1000,0x1100,0x1200,0x1300,0x1400,0x1500,0x0600,0x1700,0x1800,0x1900,0x1a00,0x1b00,0x1c00,0x1d00,0x1e00,0x1f00,
@@ -493,7 +503,7 @@ int set_gamma_table (unsigned short hash16, unsigned short scale, unsigned short
        0xe000,0xe100,0xe200,0xe300,0xe400,0xe500,0x0600,0xe700,0xe800,0xe900,0xea00,0xeb00,0xec00,0xed00,0xee00,0xef00,
        0xf000,0xf100,0xf200,0xf300,0xf400,0xf500,0x0600,0xf700,0xf800,0xf900,0xfa00,0xfb00,0xfc00,0xfd00,0xfe00,0xff00,
        0xffff};
-  MDF10(printk("hash16=0x%x scale=0x%x gamma_proto=0x%x mode =0x%x color=%x\n", (int) hash16, (int) scale, (int) gamma_proto,  (int) mode,  color));
+  MDF10(printk("hash16=0x%x scale=0x%x gamma_proto=0x%x mode =0x%x port/channel/color=%x\n", (int) hash16, (int) scale, (int) gamma_proto,  (int) mode,  cps));
 
   if (!gamma_proto & (hash16==0)) {
     gamma_proto=gamma_linear;
@@ -503,10 +513,10 @@ int set_gamma_table (unsigned short hash16, unsigned short scale, unsigned short
   }
 ///disable interrupts here
   D1I(local_irq_save(flags));
-/// look for the matching hash
+// look for the matching hash
   tmp_p=gammas[0].newest_non_scaled;
-///  gammas[0].oldest_all=GAMMA_CACHE_NUMBER-1;
-///  gammas[0].newest_all=1;
+//  gammas[0].oldest_all=GAMMA_CACHE_NUMBER-1;
+//  gammas[0].newest_all=1;
 
   MDF10(printk("gammas[0].oldest_all=%d\n", gammas[0].oldest_all)); ///NOTE: 253
 
@@ -517,46 +527,46 @@ int set_gamma_table (unsigned short hash16, unsigned short scale, unsigned short
     tmp_p=gammas[tmp_p].older_non_scaled;
   }
   MDF10(printk("tmp_p=0x%x\n", tmp_p)); ///NOTE: 0xff
-/// Got right hash?
-  if (tmp_p == 0) { /// no luck
+// Got right hash?
+  if (tmp_p == 0) { // no luck
     MDF10(printk("Need new table\n")); ///NOTE: never
     if (!gamma_proto) { //
       D1I(local_irq_restore(flags));
       MDF10(printk("matching hash not found, new table is not provided\n")); ///NOTE: never
-      return 0;   /// matching hash not found, new table is not provided - return 0;
+      return 0;   // matching hash not found, new table is not provided - return 0;
     }
-/// Create new proto table
+// Create new proto table
     tmp_p=gamma_new_node();
     MDF10(printk("tmp_p=0x%x\n gamma_proto= 0x%x 0x%x 0x%x 0x%x\n", tmp_p, (int) gamma_proto[0], (int) gamma_proto[1], (int) gamma_proto[2], (int) gamma_proto[3]));
-    if (unlikely(!tmp_p)) { /// could not allocate node
+    if (unlikely(!tmp_p)) { // could not allocate node
       D1I(local_irq_restore(flags));
-      return 0;   /// failure: could not allocate node - return 0;
+      return 0;   // failure: could not allocate node - return 0;
     }
-/// fill it:
+// fill it:
     gammas[tmp_p].hash16=hash16;
     gammas[tmp_p].scale=0;
-    gammas[tmp_p].oldest_scaled=tmp_p;  /// points to itself - no scaled versions yet
-    gammas[tmp_p].newest_scaled=tmp_p;  /// points to itself - no scaled versions yet
+    gammas[tmp_p].oldest_scaled=tmp_p;  // points to itself - no scaled versions yet
+    gammas[tmp_p].newest_scaled=tmp_p;  // points to itself - no scaled versions yet
     if ((mode & GAMMA_MODE_NOT_NICE)==0) {
-/// let interrupts to take place, and disable again
+// let interrupts to take place, and disable again
       D1I(local_irq_restore(flags));
       MDF10(printk("Interrupts reenabled, tmp_p=0x%x\n", tmp_p));
       D1I(local_irq_save(flags));
-/// check if it is still there (likely so, but allow it to fail).
+// check if it is still there (likely so, but allow it to fail).
       if (unlikely(!is_gamma_current (hash16, 0, tmp_p))) {
         D1I(local_irq_restore(flags));
-        return 0;   /// failure: other code used this node - return 0; (try not_nice next time?)
+        return 0;   // failure: other code used this node - return 0; (try not_nice next time?)
       }
     }
 //    memcpy ((void *)...
     memcpy (gammas[tmp_p].direct, gamma_proto, 257*2) ; ///copy the provided table (full 16 bits)
     gammas[tmp_p].valid |= GAMMA_VALID_MASK;
-/// add it to the chain
+// add it to the chain
     MDF10(printk("insert_first_nonscaled(0x%x)\n", tmp_p));
     insert_first_nonscaled(tmp_p);
 
-/// matching hash found,make it newest (remove from the chain + add to the chain)
-  } else  if (gammas[tmp_p].newer_non_scaled !=0) { /// if 0 - it is already the newest
+// matching hash found,make it newest (remove from the chain + add to the chain)
+  } else  if (gammas[tmp_p].newer_non_scaled !=0) { // if 0 - it is already the newest
     MDF10(printk("remove_from_nonscaled (0x%x)\n", tmp_p)); ///NOTE: 0xff
     remove_from_nonscaled (tmp_p);
     MDF10(printk("insert_first_nonscaled (0x%x)\n", tmp_p));///NOTE: 0xff
@@ -565,10 +575,10 @@ int set_gamma_table (unsigned short hash16, unsigned short scale, unsigned short
   MDF10(printk("0x%x\n", tmp_p)); ///NOTE: 0xff
 
 
-/// now looking for the correct scale.
+// now looking for the correct scale.
   if (scale==0) {
     D1I(local_irq_restore(flags));
-    return tmp_p;   /// wanted non-scaled, got it ///NOTE: returns here
+    return tmp_p;   // wanted non-scaled, got it ///NOTE: returns here
   }
   tmp_p1=gammas[tmp_p].newest_scaled;
   MDF10(printk("tmp_p1=0x%x\n", tmp_p1));  ///FIXME: 0xff
@@ -577,74 +587,74 @@ int set_gamma_table (unsigned short hash16, unsigned short scale, unsigned short
     D10(printk(" >>tmp_p1=0x%x)\n", tmp_p1));
     tmp_p1=gammas[tmp_p1].older_scaled;
   }
-/// Got right scale?
-//  if (tmp_p1 == 0) { /// no luck
-  if (tmp_p1 == tmp_p) { /// no luck
+// Got right scale?
+//  if (tmp_p1 == 0) { // no luck
+  if (tmp_p1 == tmp_p) { // no luck
     MDF10(printk("create new scaled table\n"));
-/// create new scale
+// create new scale
     tmp_p1=gamma_new_node();
-    if (unlikely(!tmp_p1)) { /// could not allocate node
+    if (unlikely(!tmp_p1)) { // could not allocate node
       D1I(local_irq_restore(flags));
-      return 0;   /// failure: could not allocate node - return 0;
+      return 0;   // failure: could not allocate node - return 0;
     }
-/// fill it
+// fill it
     gammas[tmp_p1].hash16=hash16;
     gammas[tmp_p1].scale= scale;
-/// insert into 2-d
+// insert into 2-d
     insert_first_scaled   (tmp_p, tmp_p1);
-/// insert into 1-d (all)
+// insert into 1-d (all)
     insert_first_all (tmp_p1);
     if ((mode & GAMMA_MODE_NOT_NICE)==0) {
-/// let interrupts to take place, and disable again
+// let interrupts to take place, and disable again
       D1I(local_irq_restore(flags));
       D1I(local_irq_save(flags));
-/// check if it is still there (likely so, but allow it to fail).
+// check if it is still there (likely so, but allow it to fail).
       if (unlikely(!is_gamma_current (hash16, scale, tmp_p1))) {
         D1I(local_irq_restore(flags));
-        return 0;   /// failure: other code used this node - return 0; (try not_nice next time?)
+        return 0;   // failure: other code used this node - return 0; (try not_nice next time?)
       }
     }
-  } else { /// scaled table already exists, make it first in 2 chains:
+  } else { // scaled table already exists, make it first in 2 chains:
     MDF10(printk("reuse scaled table\n"));
-/// found right scale, make it newest in two chain (2d - hash/scale and 1-d - all scaled together, regardless of the hash
+// found right scale, make it newest in two chain (2d - hash/scale and 1-d - all scaled together, regardless of the hash
 ///2-d chain
-    if (gammas[tmp_p1].newer_scaled != tmp_p) { /// not already the newest of scales for the same hash
+    if (gammas[tmp_p1].newer_scaled != tmp_p) { // not already the newest of scales for the same hash
       remove_from_scaled    (tmp_p1);
       insert_first_scaled   (tmp_p, tmp_p1);
     }
 ///1-d chain
-    if (gammas[tmp_p1].newer_all != 0) { /// not already the newest from all scaled
+    if (gammas[tmp_p1].newer_all != 0) { // not already the newest from all scaled
       remove_from_all       (tmp_p1);
       insert_first_all      (tmp_p1);
     }
   }
-/// is the scaled version already calculated?
+// is the scaled version already calculated?
   if ((gammas[tmp_p1].valid & GAMMA_VALID_MASK) == 0) {
-/// calculate scaled version
+// calculate scaled version
     gamma_calc_scaled (scale, gammas[tmp_p].direct, gammas[tmp_p1].direct);
     gammas[tmp_p1].valid |= GAMMA_VALID_MASK;
   }
   if (mode & GAMMA_MODE_HARDWARE) {
-/// is hardware-encoded array already calculated (do it if not)?
+// is hardware-encoded array already calculated (do it if not)?
     if ((gammas[tmp_p1].valid & GAMMA_FPGA_MASK)==0) {
       gamma_encode_fpga(gammas[tmp_p1].direct, gammas[tmp_p1].fpga);
       gammas[tmp_p1].valid |= GAMMA_FPGA_MASK;
     }
   }
   if (mode & GAMMA_MODE_LOCK) {
-/// lock the node for the color
-    lock_gamma_node (tmp_p1, color);
+// lock the node for the color/port/channel
+    lock_gamma_node (tmp_p1, color, sensor_port,sensor_subchn);
   }
   if (mode & GAMMA_MODE_NEED_REVERSE) {
     if ((gammas[tmp_p1].valid & GAMMA_VALID_REVERSE)==0) {
       if ((mode & GAMMA_MODE_NOT_NICE)==0) {
-/// let interrupts to take place, and disable again
+// let interrupts to take place, and disable again
         D1I(local_irq_restore(flags));
         D1I(local_irq_save(flags));
-/// check if it is still there (likely so, but allow it to fail).
+// check if it is still there (likely so, but allow it to fail).
         if (unlikely(!is_gamma_current (hash16, 0, tmp_p))) {
           D1I(local_irq_restore(flags));
-          return 0;   /// failure: other code used this node - return 0; (try not_nice next time?)
+          return 0;   // failure: other code used this node - return 0; (try not_nice next time?)
         }
       }
       gamma_calc_reverse(gammas[tmp_p1].direct, gammas[tmp_p1].reverse);
@@ -658,26 +668,26 @@ int set_gamma_table (unsigned short hash16, unsigned short scale, unsigned short
 
 
 ///======================================
-/// File operations:
-/// open, release - nop
-/// read - none
-/// write should be a single call (with or without actual table), file pointer after write is result node index (0 - failure)
-/// returns - full length passed or 0 if failed
-/// write -> set_gamma_table: first 2 bytes [0.1] - table hash - (i.e. gamma | (black << 8)),
-///                           next 2 bytes  [2.3] - scale (0..0xffff),
-///                           next 1 byte   [4]   - mode (1 - not_nice, 2 - need reverse, 4 - hardware, 8 - lock)
-///                           next byte     [5]   - color only if lock bit in mode is set
-///                           next 514 bytes [6..519] - 16-bit gamma table
+// File operations:
+// open, release - nop
+// read - none
+// write should be a single call (with or without actual table), file pointer after write is result node index (0 - failure)
+// returns - full length passed or 0 if failed
+// write -> set_gamma_table: first 2 bytes [0.1] - table hash - (i.e. gamma | (black << 8)),
+//                           next 2 bytes  [2.3] - scale (0..0xffff),
+//                           next 1 byte   [4]   - mode (1 - not_nice, 2 - need reverse, 4 - hardware, 8 - lock)
+//                           next byte     [5]   - color only if lock bit in mode is set
+//                           next 514 bytes [6..519] - 16-bit gamma table
 
-/// can use current file pointer or special indexes (0x****ff01 - set frame number, 0x****ff02 - set latency) that should come before actual parameters
-/// file pointer - absolute frame number
-/// lseek (SEEK_SET, value) - do nothing, return 0
-/// lseek (SEEK_CUR, value) - ignore value, return last write result (and if it is still valid) - used by ftell
-/// lseek (SEEK_END, value <= 0) - do nothing?, do not modify file pointer
-/// lseek (SEEK_END, value >  0) - execute commands, do not modify file pointer
-/// lseek (SEEK_END, 1) -          initialize all the gamma data structures
-/// lseek (SEEK_END, 2) -          check that current hash/scale/index are still current
-/// mmap (should be used read only)
+// can use current file pointer or special indexes (0x****ff01 - set frame number, 0x****ff02 - set latency) that should come before actual parameters
+// file pointer - absolute frame number
+// lseek (SEEK_SET, value) - do nothing, return 0
+// lseek (SEEK_CUR, value) - ignore value, return last write result (and if it is still valid) - used by ftell
+// lseek (SEEK_END, value <= 0) - do nothing?, do not modify file pointer
+// lseek (SEEK_END, value >  0) - execute commands, do not modify file pointer
+// lseek (SEEK_END, 1) -          initialize all the gamma data structures
+// lseek (SEEK_END, 2) -          check that current hash/scale/index are still current
+// mmap (should be used read only)
 //#define LSEEK_GAMMA_INIT        1 // SEEK_END LSEEK_GAMMA_INIT to initialize all the gamma data structures
 //#define LSEEK_GAMMA_ISCURRENT   2 // SEEK_END to check if the selected node(pointed by file pointer) is current - returns 0 if not, otherwise - node index
 /**
@@ -716,7 +726,7 @@ int gammas_open(struct inode *inode, struct file *file) {
         privData-> mode= 0;
         return 0;
      default:
-       kfree(file->private_data); /// already allocated
+       kfree(file->private_data); // already allocated
        return -EINVAL;
    }
    file->f_pos = 0;
@@ -784,7 +794,7 @@ loff_t gammas_lseek (struct file * file, loff_t offset, int orig) {
                 file->f_pos=0;
                 break;
              case LSEEK_GAMMA_ISCURRENT:
-               if (file->f_pos==0) break; /// wrong index
+               if (file->f_pos==0) break; // wrong index
                if (!is_gamma_current (privData->hash16, privData->scale, (int) file->f_pos)) file->f_pos=0;
                break;
              default: ///other commands
@@ -792,44 +802,42 @@ loff_t gammas_lseek (struct file * file, loff_t offset, int orig) {
              }
            break;
            }
-         default:  /// not SEEK_SET/SEEK_CUR/SEEK_END 
+         default:  // not SEEK_SET/SEEK_CUR/SEEK_END
             return -EINVAL;
-         } /// switch (orig)
+         } // switch (orig)
    MDF10(printk("file->f_pos=0x%x\n",(int) file->f_pos));
          return  file->f_pos ;
-       default: /// other minors
+       default: // other minors
          return -EINVAL;
   }
 }
 
-/**
- * @brief Gammas driver WRITE method
+/** Gammas driver WRITE method
  * write should be a single call (with or without actual table), file pointer after write is result node index (0 - failure)
  * write method receives data and uses it with \b set_gamma_table()
  * - first 2 bytes  [0.1] - scale (0..0xffff),
  * - next  2 bytes [2.3] - table hash - (i.e. gamma | (black << 8)),
  * - next 1 byte   [4]   - mode (1 - not_nice, 2 - need reverse, 4 - hardware, 8 - lock)
- * - next 1 byte   [5]   - color only if lock bit in mode is set
+ * - next 1 byte   [5]   - color only if lock bit in mode is set. Note: could not find why it was >>3 - error?, seems never used. In 393 it holds {port[1:0],chn[1:0],color[1:0]}
  * - next 514 bytes [6..519] - 16-bit gamma table (if less than 514 bytes NULL will be passed to \b set_gamma_table()
- * sets file pointer to gamma cache index (0 - no table exist)
- * @param file 
- * @param buf 
- * @param count 
- * @param off 
- * @return full length passed or 0 if failed
- */
-ssize_t gammas_write(struct file * file, const char * buf, size_t count, loff_t *off) {
+ * sets file pointer to gamma cache index (0 - no table exist) */
+ssize_t gammas_write(struct file * file, ///< this file structure
+		             const char * buf,   ///< userland buffer
+					 size_t count,       ///< number of bytes to write
+					 loff_t *off)        ///< updated offset in the buffer
+					                     ///< @return full length passed or 0 if failed
+{
    struct gammas_pd * privData = (struct gammas_pd *) file->private_data;
    struct {
      unsigned short scale;
      unsigned short hash16;
      unsigned char  mode;
-     unsigned char  color;
+     unsigned char  color; // 393: it is now combination of color, port and channel. Could not find what are the 3 LSBs ((privData->color >> 3) &3) below
      unsigned short gamma[257];
    } data;
 
    int     head,   result;
-/// ************* NOTE: Never use file->f_pos in write() and read() !!!
+// ************* NOTE: Never use file->f_pos in write() and read() !!!
    unsigned short * gamma= data.gamma;
    MDF10(printk(" file->f_pos=0x%x, *off=0x%x\n", (int) file->f_pos, (int) *off));
    switch (privData->minor) {
@@ -838,12 +846,13 @@ ssize_t gammas_write(struct file * file, const char * buf, size_t count, loff_t 
          if(count) {
            if(copy_from_user((char *) &data, buf, count))  return -EFAULT;
            head=6;
-           if ((count-head) < (2 * 257)) gamma=NULL; /// complete gamma table is not available
+           if ((count-head) < (2 * 257)) gamma=NULL; // complete gamma table is not available
            if (head>count) head=count;
            memcpy (&(privData->scale),&(data.scale),head);
   MDF10(printk("count=%d, head=%d, hash16=0x%x scale=0x%x mode=0x%x color=%x\n", count, head, (int) data.hash16, (int) data.scale,  (int) data.mode,  (int) data.color));
   MDF10(printk("count=%d, head=%d, hash16=0x%x scale=0x%x mode=0x%x color=%x\n", count, head, (int) privData->hash16, (int) privData->scale,  (int) privData->mode,  (int) privData->color));
-           result=set_gamma_table (privData->hash16, privData->scale, gamma,  privData->mode, ( privData->color >> 3) & 3);
+//           result=set_gamma_table (privData->hash16, privData->scale, gamma,  privData->mode, ( privData->color >> 3) & 3);
+           result=set_gamma_table (privData->hash16, privData->scale, gamma,  privData->mode, ( privData->color >> 0) & 3, ( privData->color >> 4) & 3, ( privData->color >> 2) & 3);
            *off= (result>0)?result:0;
          } else *off=0;
    MDF10(printk("file->f_pos=0x%x\n", (int) *off));
@@ -885,8 +894,8 @@ static int __init gammas_init(void) {
    printk ("Starting "X3X3_GAMMAS_DRIVER_NAME" - %d \n",GAMMAS_MAJOR);
    init_gammas();
    MDF10(printk("set_gamma_table (0, GAMMA_SCLALE_1, NULL,  0, 0)\n"); udelay (ELPHEL_DEBUG_DELAY));
-   set_gamma_table (0, GAMMA_SCLALE_1, NULL,  0, 0); /// maybe not needed to put linear to cache - it can be calculated as soon FPGA will be tried to be programmed with
-                                                        /// hash16==0
+   set_gamma_table (0, GAMMA_SCLALE_1, NULL,  0, 0, 0, 0); // maybe not needed to put linear to cache - it can be calculated as soon FPGA will be tried to be programmed with
+                                                        // hash16==0
 
    res = register_chrdev(GAMMAS_MAJOR, "gamma_tables_operations", &gammas_fops);
    if(res < 0) {

@@ -240,6 +240,7 @@
 #define SENSORWIDTH_IBIS51300  1280 ///< FillFactory IBIS51300 width
 #define SENSORHEIGHT_IBIS51300 1024 ///< FillFactory IBIS51300 height
 
+//TODO: Update CONST_NAME_ENTRY_* to new P_vars
 /// Parameters related to multi-sensor (10359A) setup
 //#define MAX_SENSORS 3 // maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
 /* Modified for 393 - using up to 4 sub-sensors (even as 10359 only supports 3 */
@@ -427,6 +428,8 @@
 // The following 4 parameters should have consecutive indexes
 // see  FRAMEPAIR_MASK_BYTES  to modify just part of the word (i.e. scale, not hash16
 //
+// Will need to have them per-subchannel (4x)
+#define PER_CHANNEL393    0 ///< set to 1 when ready with per-channel for 393, meanwhile will overwrite each other in histograms.c
 #define P_GTAB_R         128 ///< combines (P_PIXEL_LOW<<24) | (P_GAMMA <<16) and 16-bit (6.10) scale for gamma tables, individually for each color.
                              ///<  16Msbs are also "hash16" and do not need to be black level/gamma, just uniquely identify the table for applications
 #define P_GTAB_G         129 ///< same for the first green (red line)
@@ -453,6 +456,8 @@
   #define COLORMODE_MONO4    14 ///< monochrome, 4 blocks (but still with 2x2 macroblocks)
 // the following 8 values should go in the same sequence as fields in the histogram page
 // 393: per sub-channel
+//// Will need to have them per-subchannel (4x)
+
 #define P_FRAME          136 ///< Frame number (reset with JPEG pointers) -(read only)
 #define P_GAINR          137 ///< R channel gain  8.16 (0x10000 - 1.0). Combines both analog gain and digital scaling
 #define P_GAING          138 ///< G channel gain ("red line")
@@ -706,9 +711,10 @@
   #define TASKLET_CTL_HISTY_BIT  4 ///< shift of histogram calculation for Y in G_TASKLET_CTL (bits 4,5,6)
   #define TASKLET_CTL_HISTC_BIT  8 ///< shift of histogram calculation for C in G_TASKLET_CTL (bits 8,9,10)
 
-#define G_HIST_LAST_INDEX (FRAMEPAR_GLOBALS + 56) ///< last used index in histogram cache
-#define G_HIST_Y_FRAME    (FRAMEPAR_GLOBALS + 57) ///< last frame for which Y histogram was calcualted
-#define G_HIST_C_FRAME    (FRAMEPAR_GLOBALS + 58) ///< last frame for which C histograms were calcualted
+//#define G_HIST_LAST_INDEX (FRAMEPAR_GLOBALS + 56) // /< last used index in histogram cache
+//#define G_HIST_Y_FRAME    (FRAMEPAR_GLOBALS + 57) // /< last frame for which Y histogram was calculated
+//#define G_HIST_C_FRAME    (FRAMEPAR_GLOBALS + 58) // /< last frame for which C histograms were calculated
+#define G_SUBCHANNELS     (FRAMEPAR_GLOBALS + 56) ///< subchannels used on this sensor port (bitmask)
 #define G_SKIP_DIFF_FRAME (FRAMEPAR_GLOBALS + 59) ///< number of frames with different size to tolerate before producing POLLHUP in poll(circbuf)
 #define G_FTP_NEXT_TIME   (FRAMEPAR_GLOBALS + 60) ///< time of the next FTP upload (seconds from epoch)
 
@@ -718,6 +724,12 @@
 // temperature is provided by the daemon, embedded in MakerNote by the driver
 #define G_TEMPERATURE01   (FRAMEPAR_GLOBALS + 96) ///< temperature on the sensors 0 and 1 (0x1000 - sign, rest 8.4 C) no 10359 - only chn0, with 10359 - only 1,2,3 (no 0)
 #define G_TEMPERATURE23   (FRAMEPAR_GLOBALS + 97) ///< temperature on the sensors 2 and 3
+
+// Moving here as there can be multiple histograms per port
+#define G_HIST_LAST_INDEX (FRAMEPAR_GLOBALS +  98) ///< last used index in histogram cache (uses 4 locations), set to !=0 to activate, 0 will skip
+#define G_HIST_Y_FRAME    (FRAMEPAR_GLOBALS + 102) ///< last frame for which Y histogram was calculated (uses 4 locations)
+#define G_HIST_C_FRAME    (FRAMEPAR_GLOBALS + 106) ///< last frame for which C histograms were calculated (uses 4 locations)
+
 
 #define G_SENSOR_CALIB   (FRAMEPAR_GLOBALS + 1024) ///< 1024 Array of sensor calibration data, sensor dependent.For Micron it is 256*4 actual gains in 8.16 format
                                                    ///< Only first 96 for each color are used
@@ -1266,6 +1278,7 @@ struct p_names_t {
           G_NAME_ENTRY(HIST_LAST_INDEX), \
           G_NAME_ENTRY(HIST_Y_FRAME), \
           G_NAME_ENTRY(HIST_C_FRAME), \
+          G_NAME_ENTRY(SUBCHANNELS), \
           G_NAME_ENTRY(SKIP_DIFF_FRAME), \
           G_NAME_ENTRY(FTP_NEXT_TIME), \
           G_NAME_ENTRY(DAEMON_ERR), \
@@ -1340,29 +1353,29 @@ struct p_names_t {
 //#define IO_CCAM_START_RAW	0x0a // Programs DMA descriptor list according to current frame size, FPGA registers and starts DMA
 
 /// MOST ARE OBSOLETE - WILL REMOVE WHEN UPDATING STREAMERS
-#define IO_CCAM_JPEG		0x08 /// JPEG-compressor related commands
+#define IO_CCAM_JPEG		0x08 ///< JPEG-compressor related commands
 
-#define      JPEG_CMD_RESET       0x00 ///	Resets pointers - both acquisition and readout
-//#define      JPEG_CMD_ARM       0x01 /// Prepare compressor to read next frame acquired
-#define      JPEG_CMD_GET         0x02 /// Read current page (will return empty (and length==0) if not ready
-#define      JPEG_CMD_FORGET      0x03 /// increment read frame pointer
-#define      JPEG_CMD_CATCHUP     0x04 /// set read pointer to the last acquired (or acquiring if none is acquired yet)
-#define      JPEG_CMD_ACQUIRE     0x05 /// acquire and compress one frame
-#define      JPEG_CMD_SAVE_RP     0x06 /// save read pointer
-#define      JPEG_CMD_RESTORE_RP  0x07 /// restore read pointer
-#define      JPEG_CMD_N_DONE      0x08 /// return 1 if no more frames to be acquired (frame number)
-#define      JPEG_CMD_L_DONE      0x09 /// return 1 if no more frames to be acquired (total length)
-#define      JPEG_CMD_START       0x0a /// start constant compression mode
-#define      JPEG_CMD_STOP        0x0b /// stop constant compression mode (may want to wait for CAMSEQ_DONE)
-#define      JPEG_CMD_FRAMES      0x0c /// returns number of frames in buffer, (re)uilds frames chain
-#define      JPEG_CMD_JUST_STOP   0x0d /// just stop - don't start cycle if was allready off!
-#define      JPEG_CMD_DUMP        0x0f /// printk all static data/tables
-#define      JPEG_CMD_RESET0      0x10 /// same as JPEG_CMD_RESET, but non-zero, to be used from lseek (SEEK_END)
+#define      JPEG_CMD_RESET       0x00 ///<	Resets pointers - both acquisition and readout
+//#define      JPEG_CMD_ARM       0x01 ///< Prepare compressor to read next frame acquired
+#define      JPEG_CMD_GET         0x02 ///< Read current page (will return empty (and length==0) if not ready
+#define      JPEG_CMD_FORGET      0x03 ///< increment read frame pointer
+#define      JPEG_CMD_CATCHUP     0x04 ///< set read pointer to the last acquired (or acquiring if none is acquired yet)
+#define      JPEG_CMD_ACQUIRE     0x05 ///< acquire and compress one frame
+#define      JPEG_CMD_SAVE_RP     0x06 ///< save read pointer
+#define      JPEG_CMD_RESTORE_RP  0x07 ///< restore read pointer
+#define      JPEG_CMD_N_DONE      0x08 ///< return 1 if no more frames to be acquired (frame number)
+#define      JPEG_CMD_L_DONE      0x09 ///< return 1 if no more frames to be acquired (total length)
+#define      JPEG_CMD_START       0x0a ///< start constant compression mode
+#define      JPEG_CMD_STOP        0x0b ///< stop constant compression mode (may want to wait for CAMSEQ_DONE)
+#define      JPEG_CMD_FRAMES      0x0c ///< returns number of frames in buffer, (re)uilds frames chain
+#define      JPEG_CMD_JUST_STOP   0x0d ///< just stop - don't start cycle if was allready off!
+#define      JPEG_CMD_DUMP        0x0f ///< printk all static data/tables
+#define      JPEG_CMD_RESET0      0x10 ///< same as JPEG_CMD_RESET, but non-zero, to be used from lseek (SEEK_END)
 
-//#define      PROGRAM_SENSOR_0     0x11 /// programSensor(0) - to be used from lseek (SEEK_END)
-//#define      PROGRAM_SENSOR_1     0x12 /// programSensor(1) - to be used from lseek (SEEK_END)
+//#define      PROGRAM_SENSOR_0     0x11 ///< programSensor(0) - to be used from lseek (SEEK_END)
+//#define      PROGRAM_SENSOR_1     0x12 ///< programSensor(1) - to be used from lseek (SEEK_END)
 /// Compressor state now applies only to particular frame
-//#define      LSEEK_CAMSEQSTATE    0x13 /// return camSeqState - to be used from lseek (SEEK_END)
+//#define      LSEEK_CAMSEQSTATE    0x13 ///< return camSeqState - to be used from lseek (SEEK_END)
 #define      LSEEK_GAMMA_INIT        1 // SEEK_END LSEEK_GAMMA_INIT to initialize all the gamma data structures
 #define      LSEEK_GAMMA_ISCURRENT   2 // SEEK_END to check if the selected node(pointed by file pointer) is current - returns 0 if not, otherwise - node index
 
@@ -1392,47 +1405,48 @@ struct p_names_t {
 #define      LSEEK_HUFFMAN_FPGACALC 7
 #define      LSEEK_HUFFMAN_FPGAPGM  8
 
-//#define      LSEEK_RESET_SENSOR   0x14 /// reset sensor and FPGA - next time will reprogram it
-//#define      LSEEK_INIT_SENSOR    0x15 /// initialise SDRAM and sensor if it is not programmed yet (or reset)
+//#define      LSEEK_RESET_SENSOR   0x14 ///< reset sensor and FPGA - next time will reprogram it
+//#define      LSEEK_INIT_SENSOR    0x15 ///< initialise SDRAM and sensor if it is not programmed yet (or reset)
 
-#define      LSEEK_GET_FPGA_TIME  0x16 /// get FPGA timer to G_SECONDS, G_MICROSECONDS
-#define      LSEEK_SET_FPGA_TIME  0x17 /// set FPGA timer to G_SECONDS, G_MICROSECONDS
+#define      LSEEK_GET_FPGA_TIME  0x16 ///< get FPGA timer to G_SECONDS, G_MICROSECONDS
+#define      LSEEK_SET_FPGA_TIME  0x17 ///< set FPGA timer to G_SECONDS, G_MICROSECONDS
 
 //#define      LSEEK_FLUSH_CACHE    0x18 // workaround for Axis mmap cache coherency problems - flush all cache (8KB)
-#define      LSEEK_AUTOEXP_SET    0x19 /// set autoexposure parameters
-#define      LSEEK_AUTOEXP_GET    0x1a /// copy window and exposure parameters to autoexp_state
-#define      LSEEK_TRIGGER_PGM    0x1b /// program trigger parameters
-#define      LSEEK_I2C_PGM        0x1c /// program hardware i2c speed/bytes
-#define      LSEEK_IRQ_SMART_PGM  0x1d /// program "smart" irq modes (+1 - wait VACT, +2 - wait dma fifo)
-#define      LSEEK_EXTERN_TIMESTAMP_PGM 0x1e /// 1 - use external timestamps if available
-#define      LSEEK_DMA_INIT       0x1f /// (re-) initialize ETRAX DMA for compressor 
-#define      LSEEK_DMA_STOP       0x20 /// STOP ETRAX DMA
-#define      LSEEK_DMA_START      0x21 /// STARTETRAX DMA
-#define      LSEEK_COMPRESSOR_RESET 0x22 /// reset compressor and pointers
-#define      LSEEK_INTERRUPT_OFF  0x23 /// disable camera interrupts
-#define      LSEEK_INTERRUPT_ON   0x24 /// enable camera interrupts
+#define      LSEEK_AUTOEXP_SET    0x19 ///< set autoexposure parameters
+#define      LSEEK_AUTOEXP_GET    0x1a ///< copy window and exposure parameters to autoexp_state
+#define      LSEEK_TRIGGER_PGM    0x1b ///< program trigger parameters
+#define      LSEEK_I2C_PGM        0x1c ///< program hardware i2c speed/bytes
+#define      LSEEK_IRQ_SMART_PGM  0x1d ///< program "smart" irq modes (+1 - wait VACT, +2 - wait dma fifo)
+#define      LSEEK_EXTERN_TIMESTAMP_PGM 0x1e ///< 1 - use external timestamps if available
+#define      LSEEK_DMA_INIT       0x1f ///< (re-) initialize ETRAX DMA for compressor
+#define      LSEEK_DMA_STOP       0x20 ///< STOP ETRAX DMA
+#define      LSEEK_DMA_START      0x21 ///< STARTETRAX DMA
+#define      LSEEK_COMPRESSOR_RESET 0x22 ///< reset compressor and pointers
+#define      LSEEK_INTERRUPT_OFF  0x23 ///< disable camera interrupts
+#define      LSEEK_INTERRUPT_ON   0x24 ///< enable camera interrupts
 
-#define      LSEEK_FRAMEPARS_INIT 0x25 /// reset hardware sequencers, init framepars structure
-#define      LSEEK_SENSORPROC     0x26 /// process modified parameters in frame 0 (to start sensor detection)
+#define      LSEEK_FRAMEPARS_INIT 0x25 ///< reset hardware sequencers, init framepars structure
+#define      LSEEK_SENSORPROC     0x26 ///< process modified parameters in frame 0 (to start sensor detection)
 
-#define      LSEEK_FRAME_RESET    0x27 /// reset absolute frame number to avoid integer overflow
+#define      LSEEK_FRAME_RESET    0x27 ///< reset absolute frame number to avoid integer overflow
 
-///Histograms related commands
-#define      LSEEK_HIST_WAIT_Y    0x28 /// set histogram waiting for the Y (actually G1) histogram (default after open)
-#define      LSEEK_HIST_WAIT_C    0x29 /// set histogram waiting for the C (actually R, G2, B) histograms to become available - implies G1 too
-#define      LSEEK_HIST_REQ_EN    0x2a /// enable histogram request when reading histogram (safer, but may be not desirable in HDR mode) - default after opening
-#define      LSEEK_HIST_REQ_DIS   0x2b /// disable histogram request when reading histogram - will read latest available relying it is available
-#define      LSEEK_HIST_NEEDED    0x10000 /// set histogram "needed" mask - 0x10000..0x1ffff
-//#define      LSEEK_HIST_WAIT_AE   0x2a /// wait for autoexposure enabled
+//Histograms related commands
+#define      LSEEK_HIST_WAIT_Y    0x28 ///< set histogram waiting for the Y (actually G1) histogram (default after open)
+#define      LSEEK_HIST_WAIT_C    0x29 ///< set histogram waiting for the C (actually R, G2, B) histograms to become available - implies G1 too
+#define      LSEEK_HIST_REQ_EN    0x2a ///< enable histogram request when reading histogram (safer, but may be not desirable in HDR mode) - default after opening
+#define      LSEEK_HIST_REQ_DIS   0x2b ///< disable histogram request when reading histogram - will read latest available relying it is available
+#define      LSEEK_HIST_SET_CHN   0x30 ///< ..2F Select channel to wait for (4*port+subchannel)
+#define      LSEEK_HIST_NEEDED    0x10000 ///< set histogram "needed" mask - 0x10000..0x1ffff
+//#define      LSEEK_HIST_WAIT_AE   0x2a ///< wait for autoexposure enabled
 
-#define      LSEEK_DAEMON_FRAME   0x80 ///  LSEEK_DAEMON_FRAME+B wait for frame interrupt and corresponding bit (B) in P_DAEMON_EN is set
-#define      LSEEK_DAEMON_CIRCBUF 0xa0 ///  LSEEK_DAEMON_FRAME+B wait for frame compressed interrupt and corresponding bit (B) in P_DAEMON_EN is set
-#define      LSEEK_DAEMON_HIST_Y  0xc0 ///  LSEEK_DAEMON_FRAME+B wait for histogram Y ready and corresponding bit (B) in P_DAEMON_EN is set
-#define      LSEEK_DAEMON_HIST_C  0xe0 ///  LSEEK_DAEMON_FRAME+B wait for all histograms ready and corresponding bit (B) in P_DAEMON_EN is set
+#define      LSEEK_DAEMON_FRAME   0x80 ///<  LSEEK_DAEMON_FRAME+B wait for frame interrupt and corresponding bit (B) in P_DAEMON_EN is set
+#define      LSEEK_DAEMON_CIRCBUF 0xa0 ///<  LSEEK_DAEMON_FRAME+B wait for frame compressed interrupt and corresponding bit (B) in P_DAEMON_EN is set
+#define      LSEEK_DAEMON_HIST_Y  0xc0 ///<  LSEEK_DAEMON_FRAME+B wait for histogram Y ready and corresponding bit (B) in P_DAEMON_EN is set
+#define      LSEEK_DAEMON_HIST_C  0xe0 ///<  LSEEK_DAEMON_FRAME+B wait for all histograms ready and corresponding bit (B) in P_DAEMON_EN is set
 
 
-#define      LSEEK_FRAME_WAIT_REL 0x100 /// LSEEK_WAIT_FRAME_REL+N - skip N frames (0<N<256)
-#define      LSEEK_FRAME_WAIT_ABS 0x200 /// LSEEK_WAIT_FRAME_ABS+N - wait absolute frame N
+#define      LSEEK_FRAME_WAIT_REL 0x100 ///< LSEEK_WAIT_FRAME_REL+N - skip N frames (0<N<256)
+#define      LSEEK_FRAME_WAIT_ABS 0x200 ///< LSEEK_WAIT_FRAME_ABS+N - wait absolute frame N
 
 #define      LSEEK_FSDRAM_RESET   0x01 // re-program FSDRAM (to be programmed again when accessed)
 
@@ -1569,49 +1583,49 @@ struct p_names_t {
 // make this structure common for sensors, add fields as needed
 struct sensor_t {
 // sensor constants
-   unsigned long  imageWidth;     /// nominal image width for final images
-   unsigned long  imageHeight;    /// nominal image height for final images
-   unsigned long  clearWidth;     /// maximal clear (useful) image width
-   unsigned long  clearHeight;    /// maximal clear (useful) image height;
-   unsigned long  clearTop;       /// top margin to the first clear pixel
-   unsigned long  clearLeft;      /// left margin to the first clear pixel
-   unsigned long  arrayWidth;     /// total image array width (including black and boundary)
-   unsigned long  arrayHeight;    /// total image array height (including black and boundary)
-   unsigned long  minWidth;       /// minimal WOI width
-   unsigned long  minHeight;      /// minimal WOI height
-   unsigned long  minHorBlank;    /// minimal horizontal blanking, in pixels in no-decimation, no-binning mode.
-   unsigned long  minLineDur;     /// minimal total line duration, in pixels in no-decimation, no-binning mode.
-   unsigned long  maxHorBlank;    /// maximal horizontal blanking/Virtual frame width (depends on sensor type)
-   unsigned long  minVertBlank;   /// minimal vertical blanking
-   unsigned long  maxVertBlank;   /// maximal vertical blanking/Virtual frame height (depends on sensor type)
-   unsigned long  maxShutter;     /// Maximal shutter duration (in lines)
-   unsigned long  flips;          /// capabilities: bit mask bit 0 - flipX, 1 - flipY
-   unsigned long  init_flips;     /// normal orientation flips bit mask bit 0 - flipX, 1 - flipY. will be XOR-ed with [P_FLIP] to get sensor flip
-   unsigned long  bayer;          /// bayer shift for flips==0
-   unsigned long  dcmHor;         /// bit mask bit 0 - 1:1, bit 31 - by 32
-   unsigned long  dcmVert;        /// bit mask bit 0 - 1:1, bit 31 - by 32
-   unsigned long  binHor;         /// bit mask bit 0 - 1:1, bit 31 - by 32
-   unsigned long  binVert;        /// bit mask bit 0 - 1:1, bit 31 - by 32
-   unsigned long  maxGain256;     /// maximal analog gain times 0x100
-   unsigned long  minClockFreq;   /// Minimal clock frequency
-   unsigned long  maxClockFreq;   /// Maximal clock frequency
-   unsigned long  nomClockFreq;   ///nominal clock frequency
-   unsigned long  sensorType;     /// sensor type (for Elphel cameras)
-   unsigned long  i2c_addr;       /// i2c address
-   unsigned long  i2c_period;     /// SCL period in ns, (standard i2c - 2500)
-   unsigned long  i2c_bytes;      /// number of bytes/ register
-            short hact_delay;     /// hact delay (in ps) from data
-            short sensorDelay;    /// Delay from sensor clock at FPGA output to pixel data transition (FPGA input), short cable (ps)
-   unsigned long  needReset;      /// bit 0 - need reset after clock frequency change, bit 1 - need reset after phase change
+   unsigned long  imageWidth;     ///< nominal image width for final images
+   unsigned long  imageHeight;    ///< nominal image height for final images
+   unsigned long  clearWidth;     ///< maximal clear (useful) image width
+   unsigned long  clearHeight;    ///< maximal clear (useful) image height;
+   unsigned long  clearTop;       ///< top margin to the first clear pixel
+   unsigned long  clearLeft;      ///< left margin to the first clear pixel
+   unsigned long  arrayWidth;     ///< total image array width (including black and boundary)
+   unsigned long  arrayHeight;    ///< total image array height (including black and boundary)
+   unsigned long  minWidth;       ///< minimal WOI width
+   unsigned long  minHeight;      ///< minimal WOI height
+   unsigned long  minHorBlank;    ///< minimal horizontal blanking, in pixels in no-decimation, no-binning mode.
+   unsigned long  minLineDur;     ///< minimal total line duration, in pixels in no-decimation, no-binning mode.
+   unsigned long  maxHorBlank;    ///< maximal horizontal blanking/Virtual frame width (depends on sensor type)
+   unsigned long  minVertBlank;   ///< minimal vertical blanking
+   unsigned long  maxVertBlank;   ///< maximal vertical blanking/Virtual frame height (depends on sensor type)
+   unsigned long  maxShutter;     ///< Maximal shutter duration (in lines)
+   unsigned long  flips;          ///< capabilities: bit mask bit 0 - flipX, 1 - flipY
+   unsigned long  init_flips;     ///< normal orientation flips bit mask bit 0 - flipX, 1 - flipY. will be XOR-ed with [P_FLIP] to get sensor flip
+   unsigned long  bayer;          ///< bayer shift for flips==0
+   unsigned long  dcmHor;         ///< bit mask bit 0 - 1:1, bit 31 - by 32
+   unsigned long  dcmVert;        ///< bit mask bit 0 - 1:1, bit 31 - by 32
+   unsigned long  binHor;         ///< bit mask bit 0 - 1:1, bit 31 - by 32
+   unsigned long  binVert;        ///< bit mask bit 0 - 1:1, bit 31 - by 32
+   unsigned long  maxGain256;     ///< maximal analog gain times 0x100
+   unsigned long  minClockFreq;   ///< Minimal clock frequency
+   unsigned long  maxClockFreq;   ///< Maximal clock frequency
+   unsigned long  nomClockFreq;   ///<nominal clock frequency
+   unsigned long  sensorType;     ///< sensor type (for Elphel cameras)
+   unsigned long  i2c_addr;       ///< i2c address
+   unsigned long  i2c_period;     ///< SCL period in ns, (standard i2c - 2500)
+   unsigned long  i2c_bytes;      ///< number of bytes/ register
+            short hact_delay;     ///< hact delay (in ps) from data
+            short sensorDelay;    ///< Delay from sensor clock at FPGA output to pixel data transition (FPGA input), short cable (ps)
+   unsigned long  needReset;      ///< bit 0 - need reset after clock frequency change, bit 1 - need reset after phase change
 };
 #define SENSOR_NEED_RESET_CLK   1
 #define SENSOR_NEED_RESET_PHASE 2
 
 struct sensorproc_t {
      struct sensor_t sensor;
-/// functions return <0 on error (and do nothing)
-/// first 32 functions are called directly when appropriate bit is set, next 32 - sensor specific that are called
-/// by corresponding one with (number-32) if not NULL. Sensor initilaization should set up those functions
+// functions return <0 on error (and do nothing)
+// first 32 functions are called directly when appropriate bit is set, next 32 - sensor specific that are called
+// by corresponding one with (number-32) if not NULL. Sensor initilaization should set up those functions
      int (*pgm_func[64]) (int                  sensor_port, ///< sensor port number (0..3)
     		              struct sensor_t    * sensor,      ///< pointer to sensor parameters
                           struct framepars_t * framepars,   ///< pointer to structure with array of current frame parameters
@@ -1620,7 +1634,7 @@ struct sensorproc_t {
 };
 
 
-/*!***************************************************************************************************
+/****************************************************************************************************
 *! This is essential data related to the last frame aquired to be stored in the circular buffer before
 *! each frame received from the FPGA - place where FPGA data is padded by 32 bytes of 0.
 *! 6 bytes are already used by next frame pointer signature, so only 26 bytes are left
@@ -1628,11 +1642,11 @@ struct sensorproc_t {
 *! that goes after the encoded frame, so total is 36 bytes (26+2+8)
 !****************************************************************************************************/
 // move fram x353.h 
-#define DEFAULT_COLOR_SATURATION_BLUE 0x90 // 100*realtive saturation blue
-#define DEFAULT_COLOR_SATURATION_RED  0xb6 // 100*realtive saturation red
+#define DEFAULT_COLOR_SATURATION_BLUE 0x90 ///< 100*realtive saturation blue
+#define DEFAULT_COLOR_SATURATION_RED  0xb6 ///< 100*realtive saturation red
 
 //#define EXPOSURE_UNIT 100 // to move to finer exposure settings - current unit in microseconds. TODO: Propagate it to drivers...
-#define EXPOSURE_UNIT 1 // to move to finer exposure settings - current unit in microseconds. TODO: Propagate it to drivers...
+#define EXPOSURE_UNIT 1 ///< to move to finer exposure settings - current unit in microseconds. TODO: Propagate it to drivers...
 /// width,height, quality are still needed even with new Exif - it is used to rebuild JPEG header
 
 // most parameters are moved out, but width, height, quality are needed for JPEG header, so currently the following are used:
@@ -1711,9 +1725,9 @@ struct gamma_stuct_t {
                 };
              };
           };
-          int valid;      /// 0 - table invalid, 1 - table valid +2 for table locked (until sent to FPGA)
+          u64 valid;      /// 0 - table invalid, 1 - table valid +2 for table locked (until sent to FPGA)
 //          int locked;     /// bit frame+ (color<<3) locked for color/frame
-          int locked;     /// NOTE: Changed to just color locked for color
+          u64 locked;     /// NOTE: Changed to just color locked for color
           int this_non_scaled;      // 0 for non-scaled, others - (for scaled) - pointer to the corresponding non-scaled 
           union { /// used in head (element 0) and non-scaled chain (not used in scaled)
             struct { /// element 0 - heads of the chains
@@ -1760,10 +1774,12 @@ struct gamma_stuct_t {
             };
             struct {
 //             int locked_col_frame[4 * PARS_FRAMES]; //index of the table to load to color/frame (should be locked, until unlocked)
-             int locked_color[4]; /// NOTE: Changed to just color (locked last written to FPGA - maybe needed again, as the FPGA needs all table to be overwritten - two pages)
+             int locked_chn_color[4*MAX_SENSORS*SENSOR_PORTS]; /// NOTE: Changed to just color (locked last written to FPGA - maybe needed again, as the FPGA needs all table to be overwritten - two pages)
+             // For NC393 - using 64 entries - individual for each channel/subchannel, color is in 2 lower bits
+
 //             int other [129+128+256 -(4 * PARS_FRAMES)];
 //             int other [129+64+256 -(4 * PARS_FRAMES)];
-             int other [129+64+256 -4];
+             int other [129+64+256 -4*MAX_SENSORS*SENSOR_PORTS];
             };
           };
 };

@@ -1250,7 +1250,12 @@ get_locked_hash32(0),get_locked_hash32(1),get_locked_hash32(2),get_locked_hash32
 
      if (get_locked_hash32(color)!=thispars->pars[P_GTAB_R+color]) { // modified for this color
        *pgamma32=thispars->pars[P_GTAB_R+color];
-       rslt=set_gamma_table (gamma32.hash16, gamma32.scale, NULL,  GAMMA_MODE_HARDWARE, color); // frame16 - one ahead of the current do not lock yet
+       rslt=set_gamma_table (gamma32.hash16,
+    		                 gamma32.scale, NULL,
+							 GAMMA_MODE_HARDWARE,
+							 color,
+							 sensor_port,
+							 0); // frame16 - one ahead of the current do not lock yet TODO 393 multisensor - split gamma tables to subchannels
        if (rslt<=0) SETFRAMEPARS_SET(P_GTAB_R+color, get_locked_hash32(color)); // increases nupdate
      }
   }
@@ -2011,7 +2016,13 @@ int pgm_gammaload  (int sensor_port,               ///< sensor port number (0..3
     for (color=0; color<4; color++) {
       *pgamma32=thispars->pars[P_GTAB_R+color];
 // Normally, nothing will be calculated in the next set_gamma_table() call
-      rslt=set_gamma_table (gamma32.hash16, gamma32.scale, NULL,  GAMMA_MODE_HARDWARE | GAMMA_MODE_LOCK, color); // frame16 - one ahead of the current
+      rslt=set_gamma_table (gamma32.hash16,
+    		                gamma32.scale,
+							NULL,
+							GAMMA_MODE_HARDWARE | GAMMA_MODE_LOCK,
+							color,
+							sensor_port,
+							0); // frame16 - one ahead of the current TODO 393 multisensor - split gamma tables to subchannels
 //   now gtable will be old one if result <=0 get_gamma_fpga(color) can return 0 only if nothing yet was programmed
       if ((gtable= get_gamma_fpga(color))) fpga_table_write_nice (CX313_FPGA_TABLES_GAMMA + (color * 256), 256, gtable);
       if (rslt <= 0) SETFRAMEPARS_SET(P_GTAB_R+color, get_locked_hash32(color)); // restore to the locked table
