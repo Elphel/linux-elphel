@@ -26,7 +26,7 @@
 
 
 //multisensor.h
-#define I2C359_INC                    2   ///< slave address increment between sensors in 10359A board (broadcast, 1,2,3) (7 bits SA)
+//#define I2C359_INC                    2   //< slave address increment between sensors in 10359A board (broadcast, 1,2,3) (7 bits SA) moved to sensor_common
 #define I2C359_SLAVEADDR           0x08   ///< slave address of the 10359A board (move?) - 393 - use el10359 device class (7 bits SA)
 #define I2C359_VERSION             0x00   ///< register address: 32-bit FPGA bitstream version
 #define I2C359_MINVERSION             0x0359104b ///< Minimal FPGA version compatible with this software
@@ -130,6 +130,7 @@ each dibit:
 //#define I2C359_CLK_NUMBER         4 // system clock number for the 10359A on-board clock generator
 
 int multisensor_pgm_detectsensor   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+//int legacy_i2c  (int ports);
 /*
   struct frameparspair_t  pars_to_update[8];
   int nupdate=0;

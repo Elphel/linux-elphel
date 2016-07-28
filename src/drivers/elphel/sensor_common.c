@@ -202,7 +202,7 @@ struct sensorproc_t * copy_sensorproc (int sensor_port, struct sensorproc_t * co
 //#ifdef TEST_DISABLE_CODE
 
 
-///
+//
 // initializes structures for the image acquisition parameter
 // initializes hardware i2c controller and the command sequencer (leaves them stopped to ignore any frame syncs)
 // sets some default acquisition parameters
@@ -210,9 +210,9 @@ struct sensorproc_t * copy_sensorproc (int sensor_port, struct sensorproc_t * co
 // TODO: Take care while turning off reset on i2c and cmd_sequencer so there will be no sensor vsync lost
 // (easier to do in FPGA)
 // Done:
-///#define CCAM_VSYNC_ON  port_csp0_addr[X313_WA_DCR1]=X353_DCR1(BLOCKVSYNC,0)
-///#define CCAM_VSYNC_OFF port_csp0_addr[X313_WA_DCR1]=X353_DCR1(BLOCKVSYNC,1)
-///
+// #define CCAM_VSYNC_ON  port_csp0_addr[X313_WA_DCR1]=X353_DCR1(BLOCKVSYNC,0)
+// #define CCAM_VSYNC_OFF port_csp0_addr[X313_WA_DCR1]=X353_DCR1(BLOCKVSYNC,1)
+//
 int init_acq_sensor(void); // Never used?
 
 //DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); // 0 - no arguments for now
@@ -892,6 +892,38 @@ int image_acq_stop(struct platform_device *pdev)
 {
 	return 0;
 }
+
+//#define I2C359_INC                    2   ///< slave address increment between sensors in 10359A board (broadcast, 1,2,3)
+/** Register i2c pages equal to slave address,
+ * Use to convert 353 code  */
+int legacy_i2c(int ports) ///< bitmask of the sensor ports to use
+                          ///< @return 0 (may add errors)
+{
+    int sensor_port, subchn;
+    x393_i2c_device_t *class_10359, *class_sensor, dev_sensor;
+    class_10359 = xi2c_dev_get(name_10359);
+    BUG_ON(!class_10359);
+    class_sensor= xi2c_dev_get(name_sensor);
+    BUG_ON(!class_sensor);
+    memcpy(&dev_sensor, class_sensor, sizeof(class_sensor));
+    for (sensor_port=1; sensor_port< SENSOR_PORTS; sensor_port++) if (ports & (1 << sensor_port)) {
+        i2c_page_register(sensor_port, class_10359->slave7);
+        set_xi2c_wrc(class_10359, sensor_port, class_10359->slave7, 0);
+        for (subchn = 0; subchn <4; subchn++){ // subchn == 0 - broadcast
+            dev_sensor.slave7 = class_sensor->slave7 + I2C359_INC * subchn;
+            i2c_page_register(sensor_port, dev_sensor.slave7);
+            set_xi2c_wrc(&dev_sensor, sensor_port, dev_sensor.slave7, 0);
+        }
+        // Now register one page for reading 10359 and the sensor using sensor speed data
+        memcpy(&dev_sensor, class_sensor, sizeof(class_sensor));
+        set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE2, 0);
+        dev_sensor->data_bytes=4; // for reading 10359 in 32-bit mode
+        set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE4, 0);
+    }
+    return 0;
+}
+
+
 
 //static const struct of_device_id elphel393_sensor_of_match[] = {
 //		{ .compatible = "elphel,elphel393-sensor-1.00" },

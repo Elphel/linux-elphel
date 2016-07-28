@@ -2,23 +2,10 @@
 ///extern struct sensorproc_t * sensorproc;
 
 #include "sensor_i2c.h"
-#define LEGACY_READ_PAGE 0xff
 
 int init_pgm_proc(void);
 int add_sensor_proc(int index, int (*sens_func)(int sensor_port, struct sensor_t * ,  struct framepars_t * , struct framepars_t *, int ));
 
-
-/** Perform I2C write (8  bits address, a6 bits data in "legacy" mode,
- * pages matching slave address should be registered.
- *
- * TODO: Add registering single sensors as in multi10359. Registering twice is OK.
- * Slave address is now 7-bit,old was 8-bit, change (10359 already done)
- * @param port - sensor port
- * @param frame Frame number to apply, <0 - ASAP
- * @param sa7 I2C slave address, 7 bit
- * @param reg sensor register address (8-bit)
- * @param data value to set (16 bits) */
-#define X3X3_I2C_SEND2(port,frame,sa7,reg,data) write_xi2c_reg16_abs_asap(port,sa7,frame,reg,data)
 
 
 /** Tells if parameter is modifies

@@ -14,8 +14,9 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
-#ifndef SENSOR_I2C.H
-#define SENSOR_I2C.H
+
+#ifndef SENSOR_I2C_H
+#define SENSOR_I2C_H
 /** I2C device description to be used with i2c sequencer*/
 typedef struct{
 	      char                         name[32];      ///< Device class name (up to 31 characters)
@@ -149,4 +150,13 @@ int x393_xi2c_read_reg( const char * cname,    // device class name
 				        int          sa7_offs, // slave address (7-bit) offset from the class defined slave address
 				        int          reg_addr, // register address (width is defined by class)
 				        int *        datap);   // pointer to a data receiver (read data width is defined by class)
+int legacy_read_i2c_reg(int          chn,      // sensor port number
+                        int          page,     // i2c table page registerd for read operation
+                        int          sa7,      // slave address (7-bit) of the device
+                                               // Offset is non-zero when multiple devices of the same class are present.
+                        int          reg_addr, // register address (width is defined by class)
+                        int          len,      // number of bytes to read.
+                        int *        datap);   // pointer to a data receiver (read data width is defined by class)
+                                               // @return 0 on success, < 0 - error (ETIMEDOUT)
+
 #endif

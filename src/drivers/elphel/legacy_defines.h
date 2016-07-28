@@ -17,8 +17,10 @@
 #define     CCAM_TRIG_INT
 #define     CCAM_MRST_OFF
 #define     CCAM_ARST_OFF
+#define     CCAM_ARST_ON
 #define     CCAM_RESET_MCONTR_ON  // Set mode that resets memory controller pointers after each frame sync. TODO: Later - make it work without?
 #define     CCAM_ENDFRAMES_EN     // Enable ending frame being compressed if no more data will be available (frame ended before specified number of blocks compressed)
+#define     CCAM_ARO_ON //set
 
 
 #define     CCAM_DCLK_ON
@@ -37,6 +39,7 @@
 #define     X3X3_SENSDCM_INC90
 #define     X3X3_SENSDCM_DEC90
 
+#define     X3X3_SEQ_RUN
 
  #define COMPCMD_DEMOS(x) ((1<<13) | (((x) & 0x0f) << 9))
  //  6 blocks output per macroblock:
@@ -70,9 +73,11 @@
 
 #define CONFIG_ETRAX_ELPHEL_MT9X001 1
 
- void x313_dma_stop(){}
- void x313_dma_init(){}
- void reset_compressor(){}
+ void x313_dma_stop()    {}
+ void x313_dma_init()    {}
+ void reset_compressor() {}
+ void i2c_run(void)      {}
+ void i2c_stop_wait(void){}
 
 // if ((gtable= get_gamma_fpga(color))) fpga_table_write_nice (CX313_FPGA_TABLES_GAMMA + (color * 256), 256, gtable);
 
@@ -81,6 +86,13 @@
 // X3X3_SEQ_SEND1(frame16,  X313_WA_DCR0, X353_DCR0(SENSTRIGEN,async));
 
 #ifdef NC353
+ void i2c_reset_wait(void) {X3X3_I2C_RESET_WAIT;i2c_hardware_on=0;}
+ void i2c_stop_wait(void) {X3X3_I2C_STOP_WAIT;  i2c_hardware_on=0;}
+ void i2c_run(void)       {X3X3_I2C_RUN;        i2c_hardware_on=1;}
+ int  i2s_running(void)   {return i2c_hardware_on;}
+
+
+
  /// IRQ-safe "nice" FPGA table write and histogram read functions - they split the data in chunks of fixed size,
  /// disable IRQ, transfer a chunk, then reenable interrupt before proceedg to the next chunk
  #define FPGA_TABLE_CHUNK 64 // up to 64 words to send to the table/from histogram on a single IRQ-off transfer

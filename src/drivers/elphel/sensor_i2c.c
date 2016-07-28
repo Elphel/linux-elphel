@@ -416,10 +416,10 @@ void  write_xi2c_reg16_abs_asap (int chn,  ///< sensor port
 	      				         u32 data) ///< 16 or 8-bit data (LSB aligned)
 {
     u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
-    if (frame<0) x393_sensi2c_abs (dw, chn, 0);
+    if (frame<0) x393_sensi2c_rel (dw, chn, 0);
     else x393_sensi2c_abs (dw, chn, frame & PARS_FRAMES_MASK);
 }
-EXPORT_SYMBOL_GPL(write_xi2c_reg16_abs);
+EXPORT_SYMBOL_GPL(write_xi2c_reg16_abs_asap);
 
 
 /** Initiate sensor i2c read in immediate mode (data itself has to be read from FIFO with read_xi2c_fifo)
@@ -603,6 +603,51 @@ int x393_xi2c_read_reg( const char * cname,    ///< device class name
 }
 EXPORT_SYMBOL_GPL(x393_xi2c_read_reg);
 
+/** Single-command i2c read register compatible with legacy code. Device class(es) should already be registered, len parameter should
+ * match pre-programmed length */
+int legacy_read_i2c_reg( int          chn,      ///< sensor port number
+                         int          page,     ///< i2c table page registerd for read operation
+                         int          sa7,      ///< slave address (7-bit) of the device
+                                                ///< Offset is non-zero when multiple devices of the same class are present.
+                         int          reg_addr, ///< register address (width is defined by class)
+                         int          len,      ///< number of bytes to read.
+                         int *        datap)    ///< pointer to a data receiver (read data width is defined by class)
+                                                ///< @return 0 on success, < 0 - error (ETIMEDOUT)
+{
+    int               i, db=-1;
+    unsigned long       timeout_end;
+    *datap = 0;
+    /* Initiate i2c read */
+    read_xi2c_sa7 (chn,
+                   page & 0xff,          // page (8 bits)
+                   sa7 & 0x7f,           // 7-bit i2c slave address
+                   reg_addr & 0xffff);   // 8/16 bit address
+
+    /* Now read required number of bytes with timeout     */
+    dev_dbg(sdev, "Trying to get FIFO data for channel %d\n",chn);
+    for (i = 0; i< len; i++) {
+        timeout_end = jiffies + tenth_sec;
+        while (jiffies < timeout_end){
+            db = read_xi2c_fifo(chn);
+            if (db >=0)
+                break;
+        }
+        if (db < 0) {
+            dev_dbg(sdev, "Timeout waiting for i2c fifo read data for channel %d, freeing page %d\n",chn,page);
+            return -ETIMEDOUT;
+        }
+        *datap = (*datap <<8) | (db & 0xff);
+    }
+    return 0;
+}
+EXPORT_SYMBOL_GPL(legacy_read_i2c_reg);
+
+
+
+
+
+
+
 /* Handling classes of i2c devices */
 /** Find device list entry by device class name */
 struct x393_i2c_device_list * i2c_dev_get(const char * name) ///< Device class name as string
@@ -720,6 +765,7 @@ static ssize_t i2c_class_store(struct device *dev,              ///< Linux kerne
 	int ni, sa7, num_addr, num_data, khz;
 	struct device_attribute *new_attr;
 	int rslt;
+	char * dname;
 	ni = sscanf(buf,"%31s %i %i %i %i", name, &sa7, &num_addr, &num_data, &khz);
     if (ni < 5) {
     	dev_err(dev, "Requires 5 parameters: name, slave addr (7 bit), address width (bytes), data  width (bytes), max SCL frequency (kHz)\n");
@@ -733,8 +779,12 @@ static ssize_t i2c_class_store(struct device *dev,              ///< Linux kerne
 		new_attr =  devm_kzalloc(dev, sizeof(new_attr[0]), GFP_KERNEL);
 		if (!new_attr)
 			return -ENOMEM;
-		new_attr->attr.name =  devm_kzalloc(dev, strlen(name)+1, GFP_KERNEL);
-		strcpy(new_attr->attr.name, (const char *) name);
+//		new_attr->attr.name =  devm_kzalloc(dev, strlen(name)+1, GFP_KERNEL);
+//		strcpy(new_attr->attr.name, (const char *) name);  // warning that it disqualifies const
+		dname = devm_kzalloc(dev, strlen(name)+1, GFP_KERNEL);
+        strcpy(dname, name);
+        new_attr->attr.name= (const char *) dname;
+
 		new_attr->attr.mode = SYSFS_PERMISSIONS;
 		new_attr->show =      i2c_member_show;
 		new_attr->store =     i2c_member_store;

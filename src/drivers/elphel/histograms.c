@@ -1,22 +1,20 @@
-/*!********************************************************************************
-*! FILE NAME  : histograms.c
-*! DESCRIPTION: Handles histograms storage, access and percentile calculation
-*! Copyright (C) 2008 Elphel, Inc.
-*! -----------------------------------------------------------------------------**
-*!
-*!  This program is free software: you can redistribute it and/or modify
-*!  it under the terms of the GNU General Public License as published by
-*!  the Free Software Foundation, either version 3 of the License, or
-*!  (at your option) any later version.
-*!
-*!  This program is distributed in the hope that it will be useful,
-*!  but WITHOUT ANY WARRANTY; without even the implied warranty of
-*!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*!  GNU General Public License for more details.
-*!
-*!  You should have received a copy of the GNU General Public License
-*!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*! -----------------------------------------------------------------------------**
+/***************************************************************************//**
+* @file      histograms.c
+* @brief     Handles histograms storage, access and percentile calculation
+* @copyright Copyright 2008-2016 (C) Elphel, Inc.
+* @par <b>License</b>
+*  This program is free software: you can redistribute it and/or modify
+*  it under the terms of the GNU General Public License as published by
+*  the Free Software Foundation, either version 2 of the License, or
+*  (at your option) any later version.
+*  This program is distributed in the hope that it will be useful,
+*  but WITHOUT ANY WARRANTY; without even the implied warranty of
+*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*  GNU General Public License for more details.
+*  You should have received a copy of the GNU General Public License
+*  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*******************************************************************************/
+/* -----------------------------------------------------------------------------**
 *!  $Log: histograms.c,v $
 *!  Revision 1.3  2009/02/18 06:25:59  elphel
 *!  typo in format
@@ -77,8 +75,6 @@
 *!
 *!  Revision 1.1  2008/06/08 23:46:45  elphel
 *!  added drivers files for handling quantization tables, gamma tables and the histograms
-*!
-*!
 */
 
 //copied from cxi2c.c - TODO:remove unneeded 
@@ -133,42 +129,44 @@
   #define MDF21(x)
   #define MDF22(x)
 #endif
-//[SENSOR_PORTS]
-u32         (*fpga_hist_data)[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256];
+
+u32         (*fpga_hist_data)[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]; ///< Array of histogram data, mapped to the memory wheer FPGA sends data
 dma_addr_t   fpga_hist_phys; // physical address of the start of the received histogram data
-//dma_buf_ptr = pElphel_buf->vaddr;
-//dma_handle = pElphel_buf->paddr;
+
 #define  X3X3_HISTOGRAMS_DRIVER_NAME "Elphel (R) Model 353 Histograms device driver"
 
-///* for each port and possible sensor subchannel provides index in combine histogram data
+/** for each port and possible sensor subchannel provides index in combine histogram data */
 int histograms_map[SENSOR_PORTS][MAX_SENSORS];
+
+/** total number of sensors (on all ports) used */
 static int numHistChn = 0;
 
 /** Variable-length array (length is the total number of active sensors <=16), each being the same as in 353:
  * consisting of SENSOR_PORTS histogram_stuct_t structures */
 struct  histogram_stuct_t (*histograms)[HISTOGRAM_CACHE_NUMBER];
-dma_addr_t histograms_phys; ///< likely not needed
-struct histogram_stuct_t * histograms_p; // to use with mmap
+
+dma_addr_t histograms_phys; ///< likely not needed, saved during allocation
+
+struct histogram_stuct_t * histograms_p; ///< alias of histogram_stuct_t
 
 
 
-/*
- static struct histogram_stuct_t histograms[HISTOGRAM_CACHE_NUMBER] __attribute__ ((aligned (PAGE_SIZE)));
 
-       struct histogram_stuct_t * histograms_p; // to use with mmap
+wait_queue_head_t hist_y_wait_queue;    ///< wait queue for the G1 histogram (used as Y)
+wait_queue_head_t hist_c_wait_queue;    ///< wait queue for all the other (R,G2,B) histograms (color)
 
- */
-
-
-wait_queue_head_t hist_y_wait_queue;    // wait queue for the G1 histogram (used as Y)
-wait_queue_head_t hist_c_wait_queue;    // wait queue for all the other (R,G2,B) histograms (color)
-
-
+/** File operations private data */
 struct histograms_pd {
     int                minor;
-    unsigned long      frame;
-    int                frame_index;       ///< -1 if invalid
-    int                needed;
+    unsigned long      frame;             ///< absolute frame number requested
+    int                frame_index;       ///< histogram fame index (in cache and when accessing through mmap), -1 if invalid,
+    int                needed;            ///< bits specify what histograms (color, type) are requested
+                                          ///<  each group of 4 bits covers 4 colors of the same type:
+                                          ///<  - bits 0..3 - read raw histograms from the FPGA - normally called from IRQ/tasklet (use just 1 color for autoexposure to speed up?)
+                                          ///<  - bits 4..7 - calculate cumulative histograms (sum of raw ones) - normally called from applications
+                                          ///<  - bits 8..11 - calculate percentiles (reverse cumulative histograms) - normally called from applications
+                                          ///<  "needed" for raw histograms should be specified explicitly (can not be read from FPGA later),
+                                          ///<  "needed" for cumul_hist will be added automatically if percentiles are requested
     int                wait_mode;         ///< 0 - wait just for G1 histogram, 1 - wait for all histograms
     int                request_en;        ///< enable requesting histogram for the specified frame (0 - rely on the available ones)
     int                port;              ///< selected sensor port (0..3)
@@ -177,6 +175,7 @@ struct histograms_pd {
     struct wait_queue *hist_c_wait_queue; ///< wait queue for all the other (R,G2,B) histograms (color)  ///NOTE: not used at all?
 // something else to be added here?
 };
+
 
 int        histograms_open   (struct inode *inode, struct file *file);
 int        histograms_release(struct inode *inode, struct file *file);
@@ -220,8 +219,7 @@ void histograms_dma_ctrl(int mode) ///< 0 - reset, 1 - disable, 2 - enable
 }
 
 
-/** Initialize histograms data structures, should be called when active subchannels are known (maybe use DT)?
- */
+/** Initialize histograms data structures, should be called when active subchannels are known (maybe use DT)? */
 void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask to global P-variable
 {
     unsigned long flags;
@@ -246,7 +244,7 @@ void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask
     // When device == NULL, dma_alloc_coherent just allocates notmal memory, page aligned, CMA if available
     histograms = (struct  histogram_stuct_t*[HISTOGRAM_CACHE_NUMBER]) dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL);
     BUG_ON(!histograms);
-    histograms_p=histograms;
+    histograms_p= (struct histogram_stuct_t *) histograms;
     MDF21(printk("\n"));
     local_irq_save(flags);
     for (s=0; s<numHistChn; s++) {
@@ -259,7 +257,7 @@ void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask
 }
 /** Get histogram index for sensor port/channel, skipping unused ones */
 int get_hist_index (int sensor_port,     ///< sensor port number (0..3)
-                    int sensor_chn)      ///< sensor subchannel (0 w/o multiplexer)
+                    int sensor_chn)      ///< sensor subchannel (0..3, 0 w/o multiplexer)
                                          ///< @return index of used (active) histogram set (just skipping unused ports/subchannels
 {
       return histograms_map[sensor_port][sensor_chn];
@@ -423,7 +421,7 @@ inline void  histogram_calc_percentiles (unsigned long * cumul_hist,  ///< [IN] 
 }
 
 
-///======================================
+//======================================
 // use G_SUBCHANNELS in userspace to re-calculate full histogram index
 // File operations:
 // open, release - nop
@@ -491,30 +489,30 @@ int histograms_release (struct inode *inode, ///< inode
     return res;
 }
 
-/**
- * @brief Histograms driver LSEEK  method (and execute commands)
- * lseek (SEEK_SET, value)   wait for histogram of the absolute frame 'value' (G1 or all depending on wait_mode
+/** Histograms driver LSEEK  method (and execute commands)<ul>
+ * <li>lseek <b>(SEEK_SET, value)</b> wait for histogram of the absolute frame 'value' (G1 or all depending on wait_mode
  *                           locate frame number value and set frame_index (and file pointer) to the result.
  *                           Return error if frame can not be found, otherwise - histogram index (to use with mmap)
  *                           Calculate missing tables according to "needed" variable
- * lseek (SEEK_CUR, value)   wait for histogram of the  frame 'value' from the current one (G1 or all depending on wait_mode
+ * <li>lseek <b>(SEEK_CUR, value)</b>   wait for histogram of the  frame 'value' from the current one (G1 or all depending on wait_mode
  *                           locate frame number value and set frame_index (and file pointer) to the result.
  *                           Return error if frame can not be found, otherwise - histogram index (to use with mmap)
  *                           Calculate missing tables according to "needed" variable
  *                           lseek (SEEK_CUR, 0) will wait for the histogram(s) for current frame
- * lseek (SEEK_CUR, value) - ignore value, return frame_index (may be negative if error)
- * lseek (SEEK_END, value < 0) - do nothing?, do not modify file pointer, return error
- * lseek (SEEK_END, value = 0) - return HISTOGRAMS_FILE_SIZE
- * lseek (SEEK_END, LSEEK_HIST_WAIT_Y) - set histogram waiting for the Y (actually G1) histogram (default after open)
- * lseek (SEEK_END, LSEEK_HIST_WAIT_C) - set histogram waiting for the C (actually R, G2, B) histograms to become available - implies G1 too
- * ENXIO
- * lseek (SEEK_END, LSEEK_HIST_NEEDED) // LSEEK_HIST_NEEDED | (0..0xffff) set histogram "needed" bits
- * lseek (SEEK_END, LSEEK_HIST_REQ_EN) - (default)enable histogram request when reading histogram (safer, but may be not desirable in HDR mode) - default after opening
- * lseek (SEEK_END, LSEEK_HIST_REQ_DIS) - disable histogram request when reading histogram - will read latest available relying it is available
+ * <li> lseek <b>(SEEK_CUR, value)</b> - ignore value, return frame_index (may be negative if error)
+ * <li> lseek <b>(SEEK_END, value < 0)</b> - do nothing?, do not modify file pointer, return error
+ * <li> lseek <b>(SEEK_END, value = 0)</b> - return HISTOGRAMS_FILE_SIZE
+ * <li> lseek <b>(SEEK_END, LSEEK_HIST_WAIT_Y)</b> - set histogram waiting for the Y (actually G1) histogram (default after open)
+ * <li> lseek <b>(SEEK_END, LSEEK_HIST_WAIT_C)</b> - set histogram waiting for the C (actually R, G2, B) histograms to become available - implies G1 too
+ * <li> lseek <b>(SEEK_END,  LSEEK_HIST_SET_CHN +4*port+ subchannel)</b> - select sensor port and subchannel. Returns -ENXIO if port/subchannel does not
+ *                           match any active sensor.
+ * <li> lseek <b>(SEEK_END, LSEEK_HIST_NEEDED)</b> set histogram "needed" bits
+ * <li> lseek <b>(SEEK_END, LSEEK_HIST_REQ_EN)</b> - (default)enable histogram request when reading histogram (safer, but may be not desirable in HDR mode) - default after opening
+ * <li> lseek <b>(SEEK_END, LSEEK_HIST_REQ_DIS</b>) - disable histogram request when reading histogram - will read latest available relying it is available </ul>
  * @param file 
  * @param offset 
  * @param orig SEEK_SET, SEEK_CUR or SEEK_SET END
- * @return file position (absolute frame number)
+ * @return file position (histogram frame index (combined frame index and channel))
  */
 // TODO: add flag that will allow driver to wakeup processes before the specified frame comes ?
 loff_t histograms_lseek (struct file * file,

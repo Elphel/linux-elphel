@@ -151,34 +151,9 @@
 
 // porting 10353, 10359 r/w does not use sequencer, so pages allocation is handled by sensor_i2c module
 
-const char * name_10359  = "el10359"; // Get name from DT (together with port mask)
-const char * name_sensor = "mt9p006"; // Get name from DT (together with port mask)
+//const char * name_10359  = "el10359"; // Get name from DT (together with port mask)
+//const char * name_sensor = "mt9p006"; // Get name from DT (together with port mask)
 //const char * name_clock =  "cy22393"; // Get name from DT (together with port mask)
-//#define I2C359_INC                    2   ///< slave address increment between sensors in 10359A board (broadcast, 1,2,3)
-/** Register i2c pages equal to slave address */
-int legacy_i2c(int ports) ///< bitmask of the sensor ports to use
-                          ///< @return 0 (may add errors)
-{
-	int sensor_port, subchn;
-	x393_i2c_device_t *class_10359, *class_sensor, dev_sensor;
-	class_10359 = xi2c_dev_get(name_10359);
-	BUG_ON(!class_10359);
-	class_sensor= xi2c_dev_get(name_sensor);
-	BUG_ON(!class_sensor);
-	memcpy(&dev_sensor, class_sensor, sizeof(class_sensor));
-	for (sensor_port=1; sensor_port< SENSOR_PORTS; sensor_port++) if (ports & (1 << sensor_port)) {
-		i2c_page_register(sensor_port, class_10359->slave7);
-		set_xi2c_wrc(class_10359, sensor_port, class_10359->slave7, 0);
-		for (subchn = 0; subchn <4; subchn++){ // subchn == 0 - broadcast
-			dev_sensor.slave7 = class_sensor->slave7 + I2C359_INC * subchn;
-			i2c_page_register(sensor_port, dev_sensor.slave7);
-			set_xi2c_wrc(&dev_sensor, sensor_port, dev_sensor.slave7, 0);
-		}
-		// Now register one page for reading 10359 and the sensor using sensor speed data
-		set_xi2c_rdc(class_sensor, sensor_port, LEGACY_READ_PAGE, 0);
-	}
-	return 0;
-}
 
 
 
@@ -246,6 +221,7 @@ int setup_i2c_pages(int ports) ///< bitmask of the sensor ports to use
      MDF1(printk(" multisensor_write_i2c(0x%x, 0x%x, 0x%x, %d) -> %d\n",(int)(I2C359_SLAVEADDR),(int)(ra),(int)(v)&0xffff,2,rslt)); \
 }
 #else
+// using new access in immediate mode by class name
 #define MULTISENSOR_WRITE_I2C(port,name,offs,ra,v) \
     {rslt |= multisensor_write_i2c((port),(name),(offs),(ra),(v)) ; \
      MDF1(printk(" multisensor_write_i2c(%d, %s, 0x%x, 0x%x, 0x%x) -> %d\n",(int)(port),name,int(offs),(int)(ra),(int)(v),rslt));}
@@ -971,7 +947,11 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   if (frame16 >= 0) return -1; // can only work in ASAP mode
   if (thispars->pars[P_SENSOR]) return 0; // Sensor is already detected - do not bother (to re-detect it P_SENSOR should be set to 0)
   MDF24(printk("Probing 10359 board, i2c bitdelays=0x%08x, hardware_i2c_running=%d\n",i2c_delays(0),i2s_running()));
+#ifdef NC353
   if (multisensor_read_i2c(I2C359_SLAVEADDR, I2C359_VERSION, &bitstream_version, 4)<0) return -1;
+#else
+  if (X3X3_I2C_RCV4(sensor_port, I2C359_SLAVEADDR, I2C359_VERSION, &bitstream_version)<0) return -1;
+#endif
 // Here we see that 10359A responds somehow. If next fails, no sense to try other sensor types.
   multi_phases_initialized=0;
   sensor->sensorType=SENSOR_NONE;
@@ -1026,7 +1006,18 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   GLOBALPARS(sensor_port,G_SENS_AVAIL) |= 1<< (GLOBALPARS(sensor_port,G_SENS_AVAIL)); // temporary to indicate sensor detection functions that they need to initialize multisensor registers
   for (i=0;i<MAX_SENSORS;i++) {
     MDF24(printk("Probing sensor port %d, i2c bitdelays=0x%08x\n",i,i2c_delays(0)));
-    rslt=  multisensor_read_i2c(MT9P001_I2C_ADDR + ((i+1) * I2C359_INC), P_MT9X001_CHIPVER, &sensor_id[i], 2);
+#ifdef NC353
+    rslt=  multisensor_read_i2c(sensor_port,
+                                MT9P001_I2C_ADDR + ((i+1) * I2C359_INC),
+                                P_MT9X001_CHIPVER,
+                                &sensor_id[i],
+                                2);
+#else
+    rslt=  X3X3_I2C_RCV2 (sensor_port,
+                          MT9P001_I2C_ADDR + ((i+1) * I2C359_INC),
+                          P_MT9X001_CHIPVER,
+                          &sensor_id[i]);
+#endif
     MDF24(printk("Probing sensor port %d, i2c bitdelays=0x%08x, rslt=0x%x\n",i,i2c_delays(0),rslt));
     if (rslt==0) {
        if (((sensor_id[i] ^ MT9P001_PARTID) & MT9X001_PARTIDMASK)==0) {
@@ -1551,22 +1542,26 @@ int multisensor_set_phase_verify (int           sensor_port, ///< sensor port nu
 														     ///< - -4 - not DONE (why?)
 														     ///< - -5 - not LOCKED
 {
-  int rslt=multisensor_set_phase (sensor_port, reg_addr, resetDCM, newPhase, oldPhase);
-  unsigned long status=0;
-  int channel=-1;
-  if (rslt <0) return rslt;
-  switch (reg_addr) {
-   case I2C359_DCM_SDRAM:  channel=0;break;
-   case I2C359_DCM_SENSOR1:channel=1;break;
-   case I2C359_DCM_SENSOR2:channel=2;break;
-   case I2C359_DCM_SENSOR3:channel=3;break;
-  }
-  if (channel<0)                    rslt= -I2C359_DCM_ERR_UNKNOWN;  // unknown DCM
-  multisensor_read_i2c(I2C359_SLAVEADDR, I2C359_DCM_STATUS, &status, 2);
-  if ( I2C359_DCM_OFL(0,status))    rslt= -I2C359_DCM_ERR_OVFL;     // overflow
-  if (!I2C359_DCM_DONE(0,status))   rslt= -I2C359_DCM_ERR_NODONE;   // not DONE - seems to bee too far - reset and put maximum (by abs value)
-  if (!I2C359_DCM_LOCKED(0,status)) rslt= -I2C359_DCM_ERR_NOLOCKED; // not LOCKED
-  return rslt;
+    int rslt=multisensor_set_phase (sensor_port, reg_addr, resetDCM, newPhase, oldPhase);
+    unsigned long status=0;
+    int channel=-1;
+    if (rslt <0) return rslt;
+    switch (reg_addr) {
+    case I2C359_DCM_SDRAM:  channel=0;break;
+    case I2C359_DCM_SENSOR1:channel=1;break;
+    case I2C359_DCM_SENSOR2:channel=2;break;
+    case I2C359_DCM_SENSOR3:channel=3;break;
+    }
+    if (channel<0)                    rslt= -I2C359_DCM_ERR_UNKNOWN;  // unknown DCM
+#ifdef NC353
+    multisensor_read_i2c(I2C359_SLAVEADDR, I2C359_DCM_STATUS, &status, 2);
+#else
+    X3X3_I2C_RCV2(sensor_port,I2C359_SLAVEADDR, I2C359_DCM_STATUS, &status);
+#endif
+    if ( I2C359_DCM_OFL(0,status))    rslt= -I2C359_DCM_ERR_OVFL;     // overflow
+    if (!I2C359_DCM_DONE(0,status))   rslt= -I2C359_DCM_ERR_NODONE;   // not DONE - seems to bee too far - reset and put maximum (by abs value)
+    if (!I2C359_DCM_LOCKED(0,status)) rslt= -I2C359_DCM_ERR_NOLOCKED; // not LOCKED
+    return rslt;
 }
 
 /** Set 10359A clock phase, try to recover from overflows */
@@ -1582,45 +1577,54 @@ int multisensor_set_phase_recover(int           sensor_port, ///< sensor port nu
 														     ///< - -4 - not DONE (why?)
 														     ///< - -5 - not LOCKED
 {
-  int rslt=multisensor_set_phase (sensor_port, reg_addr, resetDCM, newPhase, oldPhase);
-  unsigned long status=0;
-  int channel=-1;
-  if (rslt <0) return rslt;
-  switch (reg_addr) {
-   case I2C359_DCM_SDRAM:  channel=0;break;
-   case I2C359_DCM_SENSOR1:channel=1;break;
-   case I2C359_DCM_SENSOR2:channel=2;break;
-   case I2C359_DCM_SENSOR3:channel=3;break;
-  }
-  if (channel<0)                    rslt= -I2C359_DCM_ERR_UNKNOWN;  // unknown DCM
-  multisensor_read_i2c(I2C359_SLAVEADDR, I2C359_DCM_STATUS, &status, 2);
-  if ( I2C359_DCM_OFL(0,status))    rslt= -I2C359_DCM_ERR_OVFL;     // overflow
-  if (!I2C359_DCM_DONE(0,status))   rslt= -I2C359_DCM_ERR_NODONE;   // not DONE - seems to bee too far - reset and put maximum (by abs value)
-  if (!I2C359_DCM_LOCKED(0,status)) rslt= -I2C359_DCM_ERR_NOLOCKED; // not LOCKED
-  if ((rslt == -I2C359_DCM_ERR_NODONE) || (rslt== -I2C359_DCM_ERR_OVFL)) { // Not Done - DCM overflow, try reducing the phase (will need reset)
-    unsigned long goodPhase,badPhase;
-    short * newPhaseShort=  (short *) &newPhase;
-    short * goodPhaseShort= (short *) &goodPhase;
-    short * badPhaseShort=  (short *) &badPhase;
-    badPhase=newPhase;
-    goodPhase = badPhase & 0x30000; // only phase90 is preserved
-    while ((badPhaseShort[0]< (goodPhaseShort[0]-1)) || (badPhaseShort[0] > (goodPhaseShort[0]+1))) {
-      newPhaseShort[0]=(badPhaseShort[0]+goodPhaseShort[0])/2;
-      rslt=multisensor_set_phase (sensor_port, reg_addr, (rslt<0), newPhase, goodPhase);
-      if (rslt<0) return rslt;
-// check DCM status
-      multisensor_read_i2c(sensor_port, I2C359_SLAVEADDR, I2C359_DCM_STATUS, &status, 2);
-      if ( I2C359_DCM_OFL(0,status))    rslt= -I2C359_DCM_ERR_OVFL;     // overflow
-      if (!I2C359_DCM_DONE(0,status))   rslt= -I2C359_DCM_ERR_NODONE;   // not DONE - seems to bee too far - reset and put maximum (by abs value)
-      if (!I2C359_DCM_LOCKED(0,status)) rslt= -I2C359_DCM_ERR_NOLOCKED; // not LOCKED
-      if ((rslt<0) && (rslt != -I2C359_DCM_ERR_NODONE) && (rslt != -I2C359_DCM_ERR_OVFL)) return rslt; // Other errors - consider fatal;
-      if (rslt<0) badPhase=   newPhase;
-      else        goodPhase = newPhase;
+    int rslt=multisensor_set_phase (sensor_port, reg_addr, resetDCM, newPhase, oldPhase);
+    unsigned long status=0;
+    int channel=-1;
+    if (rslt <0) return rslt;
+    switch (reg_addr) {
+    case I2C359_DCM_SDRAM:  channel=0;break;
+    case I2C359_DCM_SENSOR1:channel=1;break;
+    case I2C359_DCM_SENSOR2:channel=2;break;
+    case I2C359_DCM_SENSOR3:channel=3;break;
     }
-    rslt=goodPhase;
-    MDF24(printk("Reduced NewPhase, goodPhase= 0x%lx oldPhase= 0x%lx\r\n", goodPhase, oldPhase ));
-  }
-  return rslt;
+    if (channel<0)                    rslt= -I2C359_DCM_ERR_UNKNOWN;  // unknown DCM
+#ifdef NC353
+    multisensor_read_i2c     (I2C359_SLAVEADDR, I2C359_DCM_STATUS, &status, 2);
+#else
+    X3X3_I2C_RCV2(sensor_port,I2C359_SLAVEADDR, I2C359_DCM_STATUS, &status);
+#endif
+
+    if ( I2C359_DCM_OFL(0,status))    rslt= -I2C359_DCM_ERR_OVFL;     // overflow
+    if (!I2C359_DCM_DONE(0,status))   rslt= -I2C359_DCM_ERR_NODONE;   // not DONE - seems to bee too far - reset and put maximum (by abs value)
+    if (!I2C359_DCM_LOCKED(0,status)) rslt= -I2C359_DCM_ERR_NOLOCKED; // not LOCKED
+    if ((rslt == -I2C359_DCM_ERR_NODONE) || (rslt== -I2C359_DCM_ERR_OVFL)) { // Not Done - DCM overflow, try reducing the phase (will need reset)
+        unsigned long goodPhase,badPhase;
+        short * newPhaseShort=  (short *) &newPhase;
+        short * goodPhaseShort= (short *) &goodPhase;
+        short * badPhaseShort=  (short *) &badPhase;
+        badPhase=newPhase;
+        goodPhase = badPhase & 0x30000; // only phase90 is preserved
+        while ((badPhaseShort[0]< (goodPhaseShort[0]-1)) || (badPhaseShort[0] > (goodPhaseShort[0]+1))) {
+            newPhaseShort[0]=(badPhaseShort[0]+goodPhaseShort[0])/2;
+            rslt=multisensor_set_phase (sensor_port, reg_addr, (rslt<0), newPhase, goodPhase);
+            if (rslt<0) return rslt;
+            // check DCM status
+#ifdef NC353
+            multisensor_read_i2c(sensor_port, I2C359_SLAVEADDR, I2C359_DCM_STATUS, &status, 2);
+#else
+            X3X3_I2C_RCV2       (sensor_port, I2C359_SLAVEADDR, I2C359_DCM_STATUS, &status);
+#endif
+            if ( I2C359_DCM_OFL(0,status))    rslt= -I2C359_DCM_ERR_OVFL;     // overflow
+            if (!I2C359_DCM_DONE(0,status))   rslt= -I2C359_DCM_ERR_NODONE;   // not DONE - seems to bee too far - reset and put maximum (by abs value)
+            if (!I2C359_DCM_LOCKED(0,status)) rslt= -I2C359_DCM_ERR_NOLOCKED; // not LOCKED
+            if ((rslt<0) && (rslt != -I2C359_DCM_ERR_NODONE) && (rslt != -I2C359_DCM_ERR_OVFL)) return rslt; // Other errors - consider fatal;
+            if (rslt<0) badPhase=   newPhase;
+            else        goodPhase = newPhase;
+        }
+        rslt=goodPhase;
+        MDF24(printk("Reduced NewPhase, goodPhase= 0x%lx oldPhase= 0x%lx\r\n", goodPhase, oldPhase ));
+    }
+    return rslt;
 }
 
 
@@ -1906,27 +1910,32 @@ int multisensor_memphase (int sensor_port,          ///< Sensor port
     MULTISENSOR_WRITE_I2C32(sensor_port, I2C359_SDRAM_CHEN,  I2C359_SDRAM_STOP(4) | I2C359_SDRAM_STOP(5)); // initialize write and read channels, reset SDRAM and buffer addresses
     MULTISENSOR_WRITE_I2C32(sensor_port, I2C359_SDRAM_CHEN,  I2C359_SDRAM_RUN(4)  | I2C359_SDRAM_RUN(5));  // enable write and read channels
     for (i=0; i<64;i++) {
-       MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_DATA, (((i&7)==3) || ((i&7)==4) || ((i&7)==5))?0xffff:0); // pattern of 5 zeores, 3 ffff-s
+        MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_DATA, (((i&7)==3) || ((i&7)==4) || ((i&7)==5))?0xffff:0); // pattern of 5 zeores, 3 ffff-s
     }
     MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_PAGE_WR, 0);                  // start page write
     MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_PAGE_RD, 0);                  // start page read (expecting i2c to be much slower than page wr/rd
     for (i=0; i<64;i++) {
-      multisensor_read_i2c(I2C359_SLAVEADDR, I2C359_SDRAM_DATA, &data[i], 2);
+#ifdef NC353
+        multisensor_read_i2c     (I2C359_SLAVEADDR, I2C359_SDRAM_DATA, &data[i], 2);
+#else
+        X3X3_I2C_RCV2(sensor_port,I2C359_SLAVEADDR, I2C359_SDRAM_DATA, &data[i]);
+#endif
+
     }
     for (i=0;i<8;i++) setbits[i]=0;
     for (n=0;n<64;n++) {
-      d=data[n];
-      for (i=0;i<16;i++) {
-       if (d & 1) {
-         setbits[n & 7]++;
-         sx+=(n & 7)-4;
-         s++;
-       }
-       d>>=1;
-      }
+        d=data[n];
+        for (i=0;i<16;i++) {
+            if (d & 1) {
+                setbits[n & 7]++;
+                sx+=(n & 7)-4;
+                s++;
+            }
+            d>>=1;
+        }
     }
     int OK=(setbits[0]==0) && (setbits[1]==0) && (setbits[2]==0) && (setbits[3]==0x80) && (setbits[4]==0x80) && (setbits[5]==0x80) && (setbits[6]==0) && (setbits[7]==0);
-//    for (i=0; i<8;i++)    printk (" %03x ",setbits[i]); printk("\n");
+    //    for (i=0; i<8;i++)    printk (" %03x ",setbits[i]); printk("\n");
     n=(0x10000*sx)/s;
     if (centroid0x10000) centroid0x10000[0]=n;
     MDF24 (printk("centroid=0x%x, OK=%d\n",n,OK));
@@ -1945,34 +1954,39 @@ int multisensor_memphase_debug (int sensor_port, ///< Sesnor port number (0..3)
     int sx=0;
     int rslt=0;
     if (write >=0) {
-      MULTISENSOR_WRITE_I2C32(sensor_port, I2C359_SDRAM_CHEN,  I2C359_SDRAM_STOP(4) | I2C359_SDRAM_STOP(5)); // initialize write and read channels, reset SDRAM and buffer addresses
-      MULTISENSOR_WRITE_I2C32(sensor_port, I2C359_SDRAM_CHEN,  I2C359_SDRAM_RUN(4)  | I2C359_SDRAM_RUN(5));  // enable write and read channels
-      if (write) {
-        for (i=0; i<64;i++) {
-          MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_DATA, (((i&7)==3) || ((i&7)==4) || ((i&7)==5))?0xffff:0); // pattern of 5 zeores, 3 ffff-s
+        MULTISENSOR_WRITE_I2C32(sensor_port, I2C359_SDRAM_CHEN,  I2C359_SDRAM_STOP(4) | I2C359_SDRAM_STOP(5)); // initialize write and read channels, reset SDRAM and buffer addresses
+        MULTISENSOR_WRITE_I2C32(sensor_port, I2C359_SDRAM_CHEN,  I2C359_SDRAM_RUN(4)  | I2C359_SDRAM_RUN(5));  // enable write and read channels
+        if (write) {
+            for (i=0; i<64;i++) {
+                MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_DATA, (((i&7)==3) || ((i&7)==4) || ((i&7)==5))?0xffff:0); // pattern of 5 zeores, 3 ffff-s
+            }
+            MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_PAGE_WR, 0);                  // start page write
         }
-        MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_PAGE_WR, 0);                  // start page write
-      }
     }
     MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_PAGE_RD, 0);                  // start page read (expecting i2c to be much slower than page wr/rd
     for (i=0; i<64;i++) {
-      multisensor_read_i2c(I2C359_SLAVEADDR, I2C359_SDRAM_DATA, &data[i], 2);
+#ifdef NC353
+        multisensor_read_i2c     (I2C359_SLAVEADDR, I2C359_SDRAM_DATA, &data[i], 2);
+#else
+        X3X3_I2C_RCV2(sensor_port,I2C359_SLAVEADDR, I2C359_SDRAM_DATA, &data[i]);
+#endif
+
     }
     for (i=0; i<8;i++)    printk (" %02x  ",i); printk("\n");
     for (n=0;n<64;n+=8) {
-      for (i=0; i<8;i++)  printk ("%04lx ", data[n+i]); printk("\n");
+        for (i=0; i<8;i++)  printk ("%04lx ", data[n+i]); printk("\n");
     }
     for (i=0;i<8;i++) setbits[i]=0;
     for (n=0;n<64;n++) {
-      d=data[n];
-      for (i=0;i<16;i++) {
-       if (d & 1) {
-         setbits[n & 7]++;
-         sx+=(n & 7)-4;
-         s++;
-       }
-       d>>=1;
-      }
+        d=data[n];
+        for (i=0;i<16;i++) {
+            if (d & 1) {
+                setbits[n & 7]++;
+                sx+=(n & 7)-4;
+                s++;
+            }
+            d>>=1;
+        }
     }
     int OK=(setbits[0]==0) && (setbits[1]==0) && (setbits[2]==0) && (setbits[3]==0x80) && (setbits[4]==0x80) && (setbits[5]==0x80) && (setbits[6]==0) && (setbits[7]==0);
     for (i=0; i<8;i++)    printk (" %03x ",setbits[i]); printk("\n");
