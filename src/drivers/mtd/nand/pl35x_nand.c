@@ -415,7 +415,8 @@ static int pl35x_nand_read_page_raw(struct mtd_info *mtd,
  */
 static int pl35x_nand_write_page_raw(struct mtd_info *mtd,
 				    struct nand_chip *chip,
-				    const uint8_t *buf, int oob_required)
+				    const uint8_t *buf, int oob_required,
+				    int page)
 {
 	unsigned long data_phase_addr;
 	uint8_t *p;
@@ -450,7 +451,7 @@ static int pl35x_nand_write_page_raw(struct mtd_info *mtd,
  */
 static int pl35x_nand_write_page_hwecc(struct mtd_info *mtd,
 				    struct nand_chip *chip, const uint8_t *buf,
-				    int oob_required)
+				    int oob_required, int page)
 {
 	int i, eccsize = chip->ecc.size;
 	int eccsteps = chip->ecc.steps;
@@ -511,7 +512,7 @@ static int pl35x_nand_write_page_hwecc(struct mtd_info *mtd,
  */
 static int pl35x_nand_write_page_swecc(struct mtd_info *mtd,
 				    struct nand_chip *chip, const uint8_t *buf,
-				    int oob_required)
+				    int oob_required, int page)
 {
 	int i, eccsize = chip->ecc.size;
 	int eccbytes = chip->ecc.bytes;
@@ -527,7 +528,7 @@ static int pl35x_nand_write_page_swecc(struct mtd_info *mtd,
 	for (i = 0; i < chip->ecc.total; i++)
 		chip->oob_poi[eccpos[i]] = ecc_calc[i];
 
-	chip->ecc.write_page_raw(mtd, chip, buf, 1);
+	chip->ecc.write_page_raw(mtd, chip, buf, 1, page);
 
 	return 0;
 }
@@ -679,11 +680,6 @@ static void pl35x_nand_select_chip(struct mtd_info *mtd, int chip)
 static void pl35x_nand_cmd_function(struct mtd_info *mtd, unsigned int command,
 				 int column, int page_addr)
 {
-
-	if (command == NAND_CMD_READ0) pr_debug("NAND READ\n");
-	if (command == NAND_CMD_UNLOCK1) pr_debug("NAND UNLOCK1\n");
-	if (command == NAND_CMD_SET_FEATURES) pr_debug("NAND NAND_CMD_SET_FEATURES\n");
-
 	struct nand_chip *chip = mtd->priv;
 	const struct pl35x_nand_command_format *curr_cmd = NULL;
 	struct pl35x_nand_info *xnand =
@@ -855,14 +851,11 @@ static void pl35x_nand_write_buf(struct mtd_info *mtd, const uint8_t *buf,
 	struct nand_chip *chip = mtd->priv;
 	unsigned long *ptr = (unsigned long *)buf;
 
-	pr_debug("pl35x_nand_write_buf: datasize=%d len=%d len>>2=%d\n",sizeof(ptr[0]),len,len>>2);
-
 	len >>= 2;
+
 	for (i = 0; i < len; i++)
 		writel(ptr[i], chip->IO_ADDR_W);
-		//writeb(byte, chip->IO_ADDR_W);
 }
-
 
 /**
  * pl35x_nand_device_ready - Check device ready/busy line
@@ -876,69 +869,6 @@ static int pl35x_nand_device_ready(struct mtd_info *mtd)
 		pl35x_smc_clr_nand_int();
 		return 1;
 	}
-	return 0;
-}
-
-/**
- * pl35x_nand_onfi_set_features- [REPLACEABLE] set features for ONFI nand
- * @mtd: MTD device structure
- * @chip: nand chip info structure
- * @addr: feature address.
- * @subfeature_param: the subfeature parameters, a four bytes array.
- */
-static int pl35x_nand_onfi_set_features(struct mtd_info *mtd, struct nand_chip *chip,
-			int addr, uint8_t *subfeature_param)
-{
-	int status;
-	int i;
-	uint8_t ondie_ecc_feature;
-
-	if (!chip->onfi_version ||
-	    !(le16_to_cpu(chip->onfi_params.opt_cmd)
-	      & ONFI_OPT_CMD_SET_GET_FEATURES))
-		return -EINVAL;
-
-	if (addr==ONDIE_ECC_FEATURE_ADDR){
-		//keep ondie ecc on;
-		chip->cmdfunc(mtd, NAND_CMD_GET_FEATURES, addr, -1);
-		ondie_ecc_feature = readb(chip->IO_ADDR_R);
-		subfeature_param[0] |= (ondie_ecc_feature&0x08);
-	}
-
-	chip->cmdfunc(mtd, NAND_CMD_SET_FEATURES, addr, -1);
-	for (i = 0; i < ONFI_SUBFEATURE_PARAM_LEN; ++i)
-		writeb(subfeature_param[i], chip->IO_ADDR_W);
-		//chip->write_byte(mtd, subfeature_param[i]);
-
-	status = chip->waitfunc(mtd, chip);
-	if (status & NAND_STATUS_FAIL)
-		return -EIO;
-	return 0;
-}
-
-/**
- * nand_onfi_get_features- [REPLACEABLE] get features for ONFI nand
- * @mtd: MTD device structure
- * @chip: nand chip info structure
- * @addr: feature address.
- * @subfeature_param: the subfeature parameters, a four bytes array.
- */
-static int pl35x_nand_onfi_get_features(struct mtd_info *mtd, struct nand_chip *chip,
-			int addr, uint8_t *subfeature_param)
-{
-	int i;
-
-	if (!chip->onfi_version ||
-	    !(le16_to_cpu(chip->onfi_params.opt_cmd)
-	      & ONFI_OPT_CMD_SET_GET_FEATURES))
-		return -EINVAL;
-
-	/* clear the sub feature parameters */
-	memset(subfeature_param, 0, ONFI_SUBFEATURE_PARAM_LEN);
-
-	chip->cmdfunc(mtd, NAND_CMD_GET_FEATURES, addr, -1);
-	for (i = 0; i < ONFI_SUBFEATURE_PARAM_LEN; ++i)
-		*subfeature_param++ = chip->read_byte(mtd);
 	return 0;
 }
 
@@ -1121,9 +1051,6 @@ static int pl35x_nand_probe(struct platform_device *pdev)
 	nand_chip->dev_ready = pl35x_nand_device_ready;
 	nand_chip->select_chip = pl35x_nand_select_chip;
 
-	nand_chip->onfi_set_features = pl35x_nand_onfi_set_features;
-	nand_chip->onfi_get_features = pl35x_nand_onfi_get_features;
-
 	/* If we don't set this delay driver sets 20us by default */
 	nand_chip->chip_delay = 30;
 
@@ -1164,7 +1091,7 @@ static int pl35x_nand_probe(struct platform_device *pdev)
 	//TODO: add Micron chip ID checking
 	mtd->_unlock = nand_unlock;
 	mtd->_lock = nand_lock;
-	
+
 	ppdata.of_node = pdev->dev.of_node;
 
 	mtd_device_parse_register(&xnand->mtd, NULL, &ppdata, NULL, 0);
