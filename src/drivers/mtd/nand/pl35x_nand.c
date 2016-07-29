@@ -873,6 +873,69 @@ static int pl35x_nand_device_ready(struct mtd_info *mtd)
 }
 
 /**
+ * pl35x_nand_onfi_set_features- [REPLACEABLE] set features for ONFI nand
+ * @mtd: MTD device structure
+ * @chip: nand chip info structure
+ * @addr: feature address.
+ * @subfeature_param: the subfeature parameters, a four bytes array.
+ */
+static int pl35x_nand_onfi_set_features(struct mtd_info *mtd, struct nand_chip *chip,
+			int addr, uint8_t *subfeature_param)
+{
+	int status;
+	int i;
+	uint8_t ondie_ecc_feature;
+
+	if (!chip->onfi_version ||
+	    !(le16_to_cpu(chip->onfi_params.opt_cmd)
+	      & ONFI_OPT_CMD_SET_GET_FEATURES))
+		return -EINVAL;
+
+	if (addr==ONDIE_ECC_FEATURE_ADDR){
+		//keep ondie ecc on;
+		chip->cmdfunc(mtd, NAND_CMD_GET_FEATURES, addr, -1);
+		ondie_ecc_feature = readb(chip->IO_ADDR_R);
+		subfeature_param[0] |= (ondie_ecc_feature&0x08);
+	}
+
+	chip->cmdfunc(mtd, NAND_CMD_SET_FEATURES, addr, -1);
+	for (i = 0; i < ONFI_SUBFEATURE_PARAM_LEN; ++i)
+		writeb(subfeature_param[i], chip->IO_ADDR_W);
+		//chip->write_byte(mtd, subfeature_param[i]);
+
+	status = chip->waitfunc(mtd, chip);
+	if (status & NAND_STATUS_FAIL)
+		return -EIO;
+	return 0;
+}
+
+/**
+ * nand_onfi_get_features- [REPLACEABLE] get features for ONFI nand
+ * @mtd: MTD device structure
+ * @chip: nand chip info structure
+ * @addr: feature address.
+ * @subfeature_param: the subfeature parameters, a four bytes array.
+ */
+static int pl35x_nand_onfi_get_features(struct mtd_info *mtd, struct nand_chip *chip,
+			int addr, uint8_t *subfeature_param)
+{
+	int i;
+
+	if (!chip->onfi_version ||
+	    !(le16_to_cpu(chip->onfi_params.opt_cmd)
+	      & ONFI_OPT_CMD_SET_GET_FEATURES))
+		return -EINVAL;
+
+	/* clear the sub feature parameters */
+	memset(subfeature_param, 0, ONFI_SUBFEATURE_PARAM_LEN);
+
+	chip->cmdfunc(mtd, NAND_CMD_GET_FEATURES, addr, -1);
+	for (i = 0; i < ONFI_SUBFEATURE_PARAM_LEN; ++i)
+		*subfeature_param++ = chip->read_byte(mtd);
+	return 0;
+}
+
+/**
  * pl35x_nand_detect_ondie_ecc - Get the flash ondie ecc state
  * @mtd:	Pointer to the mtd_info structure
  *
@@ -1050,6 +1113,9 @@ static int pl35x_nand_probe(struct platform_device *pdev)
 	nand_chip->cmdfunc = pl35x_nand_cmd_function;
 	nand_chip->dev_ready = pl35x_nand_device_ready;
 	nand_chip->select_chip = pl35x_nand_select_chip;
+
+	nand_chip->onfi_set_features = pl35x_nand_onfi_set_features;
+	nand_chip->onfi_get_features = pl35x_nand_onfi_get_features;
 
 	/* If we don't set this delay driver sets 20us by default */
 	nand_chip->chip_delay = 30;
