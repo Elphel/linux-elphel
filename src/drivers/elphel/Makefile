@@ -23,3 +23,9 @@ obj-$(CONFIG_ELPHEL393)           += quantization_tables.o
 obj-$(CONFIG_ELPHEL393)           += circbuf.o
 obj-$(CONFIG_ELPHEL393)           += jpeghead.o
 
+obj-$(CONFIG_ELPHEL393)           += gamma_tables.o
+obj-$(CONFIG_ELPHEL393)           += histograms.o
+obj-$(CONFIG_ELPHEL393)           += pgm_functions.o
+obj-$(CONFIG_ELPHEL393)           += mt9x001.o
+obj-$(CONFIG_ELPHEL393)           += multi10359.o
+

@@ -102,7 +102,9 @@
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
 
-
+#include <linux/dma-mapping.h>
+#include <linux/dma-direction.h>
+// ##include <asm/dma-mapping.h>
 
 #include <elphel/driver_numbers.h>
 #include <elphel/c313a.h>
@@ -130,7 +132,9 @@
   #define MDF22(x)
 #endif
 
-u32         (*fpga_hist_data)[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]; ///< Array of histogram data, mapped to the memory wheer FPGA sends data
+//u32         (*fpga_hist_data)[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]; ///< Array of histogram data, mapped to the memory wheer FPGA sends data
+//u32        *fpga_hist_data[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]; ///< Array of histogram data, mapped to the memory wheer FPGA sends data
+u32        (*fpga_hist_data)[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]; ///< Array of histogram data, mapped to the memory wheer FPGA sends data
 dma_addr_t   fpga_hist_phys; // physical address of the start of the received histogram data
 
 #define  X3X3_HISTOGRAMS_DRIVER_NAME "Elphel (R) Model 353 Histograms device driver"
@@ -144,6 +148,7 @@ static int numHistChn = 0;
 /** Variable-length array (length is the total number of active sensors <=16), each being the same as in 353:
  * consisting of SENSOR_PORTS histogram_stuct_t structures */
 struct  histogram_stuct_t (*histograms)[HISTOGRAM_CACHE_NUMBER];
+//struct  histogram_stuct_t *histograms;
 
 dma_addr_t histograms_phys; ///< likely not needed, saved during allocation
 
@@ -193,7 +198,8 @@ int histograms_init_hardware(void)
 {
     int port, chn;
     x393_hist_saxi_addr_t saxi_addr;
-    fpga_hist_data = (u32 [SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]) pElphel_buf->d2h_vaddr; // must be page-aligned!
+//    fpga_hist_data = (u32 [SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]) pElphel_buf->d2h_vaddr; // must be page-aligned!
+    fpga_hist_data = (u32 *) pElphel_buf->d2h_vaddr; // must be page-aligned!
     fpga_hist_phys = pElphel_buf->d2h_paddr;
     for (port=0; port<SENSOR_PORTS; port++) for (chn=0; chn < MAX_SENSORS; chn++) {
         saxi_addr.page=(fpga_hist_phys >> PAGE_SHIFT)+ PARS_FRAMES * (chn + MAX_SENSORS *port);// table for 4 colors is exactly 1 page;
@@ -225,24 +231,29 @@ void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask
     unsigned long flags;
     int p,s,i, sz,pages;
     numHistChn = 0; //__builtin_popcount (chn_mask & 0xffff);
-    if (sz & (PAGE_SIZE-1)) pages++;
     for (p=0; p< SENSOR_PORTS; p++) for (s=0;s <MAX_SENSORS;s++) {
         i = p * SENSOR_PORTS + s;
         if (chn_mask & (1 << i)){
-            histograms_map = numHistChn++;
+            histograms_map[p][s] = numHistChn++;
             GLOBALPARS(p, G_HIST_LAST_INDEX + s) =0; // mark as valid
             GLOBALPARS(p, G_SUBCHANNELS) |= 1 << s;
         } else {
-            histograms_map = -1;
+            histograms_map[p][s] = -1;
             GLOBALPARS(p, G_HIST_LAST_INDEX + s) =0xffffffff; // mark as invalid
             GLOBALPARS(p, G_SUBCHANNELS) &= ~(1 << s);
         }
     }
     //G_SUBCHANNELS
     sz = numHistChn * HISTOGRAM_CACHE_NUMBER * sizeof(struct histogram_stuct_t);
+    if (sz & (PAGE_SIZE-1)) pages++;
     pages = sz >> PAGE_SHIFT;
     // When device == NULL, dma_alloc_coherent just allocates notmal memory, page aligned, CMA if available
-    histograms = (struct  histogram_stuct_t*[HISTOGRAM_CACHE_NUMBER]) dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL);
+//    histograms = (struct  histogram_stuct_t* [HISTOGRAM_CACHE_NUMBER]) dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL);
+//    histograms = (struct  histogram_stuct_t[HISTOGRAM_CACHE_NUMBER] * ) dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL);
+//    histograms = (struct  histogram_stuct_t[HISTOGRAM_CACHE_NUMBER]) *  dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL);
+    histograms = dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL); // OK
+//    histograms = (struct  histogram_stuct_t * ) dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL); //<<<assignment from incompatible pointer type [-Wincompatible-pointer-types]>>>
+
     BUG_ON(!histograms);
     histograms_p= (struct histogram_stuct_t *) histograms;
     MDF21(printk("\n"));
@@ -284,12 +295,12 @@ int set_histograms  (int sensor_port,           ///< sensor port number (0..3)
     int i, color_start, hist_indx, hist_frame;
     hist_indx=get_hist_index(sensor_port,sensor_chn);
     if (hist_indx <0 ) return -EINVAL;
-    if (histograms[GLOBALPARS(sensor_port,G_HIST_LAST_INDEX+sensor_chn)].frame!=frame) {
+    if (histograms[hist_indx][GLOBALPARS(sensor_port,G_HIST_LAST_INDEX+sensor_chn)].frame!=frame) {
         GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn)=(GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn)+1) & (HISTOGRAM_CACHE_NUMBER-1);
         histograms[hist_indx][GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn)].valid=0;     // overwrite all
         histograms[hist_indx][GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn)].frame=frame; // add to existent
-        if (framep)    memcpy (&(histograms[GLOBALPARS(sensor_port,G_HIST_LAST_INDEX)].frame),  framep,    32); // copy provided frame, gains,expos,vexpos, focus
-        if (gammaHash) memcpy (&(histograms[GLOBALPARS(sensor_port,G_HIST_LAST_INDEX)].gtab_r), gammaHash, 16); // copy provided 4 hash32 values
+        if (framep)    memcpy (&(histograms[hist_indx][GLOBALPARS(sensor_port,G_HIST_LAST_INDEX)].frame),  framep,    32); // copy provided frame, gains,expos,vexpos, focus
+        if (gammaHash) memcpy (&(histograms[hist_indx][GLOBALPARS(sensor_port,G_HIST_LAST_INDEX)].gtab_r), gammaHash, 16); // copy provided 4 hash32 values
     } else {
         needed &= ~histograms[hist_indx][GLOBALPARS(sensor_port,G_HIST_LAST_INDEX)].valid; // remove those that are already available from the request
     }
@@ -337,9 +348,10 @@ int  get_histograms(int sensor_port,     ///< sensor port number (0..3)
 {
     int i, color_start, index;
     int hist_indx=get_hist_index(sensor_port,sensor_chn);
+    int raw_needed;
     if (hist_indx <0 ) return -EINVAL;
     index=GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn);
-    int raw_needed=(needed | (needed>>4) | needed>>8) & 0xf;
+    raw_needed=(needed | (needed>>4) | needed>>8) & 0xf;
     for (i=0;i<HISTOGRAM_CACHE_NUMBER;i++) {
         MDF21(printk("index=%d, needed=0x%x\n",index,needed));
         if ((histograms[hist_indx][index].frame <= frame) && ((histograms[hist_indx][index].valid & raw_needed)==raw_needed)) break;
@@ -403,12 +415,12 @@ inline void  histogram_calc_percentiles (unsigned long * cumul_hist,  ///< [IN] 
     unsigned long v256=0; // running value to be compared against cumulative histogram (it is 256 larger than cumul_hist)
     unsigned long inc_v256=cumul_hist[255];  // step of v256 increment
     int shiftl=8;
+    int p=0; // current value of percentile
+    int x=0; // current percentile index
     while (inc_v256>0xffffff) { // to protect from unlikely overflow at 16MPix - in the future)
         inc_v256 >>= 1;
         shiftl--;
     }
-    int p=0; // current value of percentile
-    int x=0; // current percentile index
     while ((p<256) && (x<256)) {
         percentile[x]=p;
         if ((p<255) && ( (cumul_hist[p] << shiftl) <= v256)) {
@@ -547,24 +559,24 @@ loff_t histograms_lseek (struct file * file,
                     else                       reqFrame=offset;
                 }
                 if ((offset < reqFrame) && // if the requested frame is in the past - try to get it first before requesting a new
-                        (((privData->frame_index = get_histograms (offset, privData->needed))) >=0)) {
+                        (((privData->frame_index = get_histograms (privData->port, privData->subchannel, offset, privData->needed))) >=0)) {
 //                    file->f_pos=privData->frame_index;
                     file->f_pos=privData->frame_index + HISTOGRAM_CACHE_NUMBER * get_hist_index(privData->port, privData->subchannel);
                     return file->f_pos;
                 }
                 // request histogram(s)
                 //             setFramePar(&framepars[reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
-                setFramePar(&aframepars[privData->port][reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
+                setFramePar(privData->port, &aframepars[privData->port][reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
                 // make sure (harmful) interrupt did not happen since getThisFrameNumber()
                 if (reqFrame < getThisFrameNumber(privData->port)) {
                     //               setFramePar(&framepars[getThisFrameNumber() & PARS_FRAMES_MASK], reqAddr, 1);
-                    setFramePar(&aframepars[privData->port][getThisFrameNumber(privData->port) & PARS_FRAMES_MASK], reqAddr, 1);
+                    setFramePar(privData->port, &aframepars[privData->port][getThisFrameNumber(privData->port) & PARS_FRAMES_MASK], reqAddr, 1);
 
                 }
             }
             if (privData-> wait_mode)  wait_event_interruptible (hist_c_wait_queue,GLOBALPARS(privData->port,G_HIST_C_FRAME + privData->subchannel)>=offset);
             else                       wait_event_interruptible (hist_y_wait_queue,GLOBALPARS(privData->port,G_HIST_Y_FRAME + privData->subchannel)>=offset);
-            privData->frame_index = get_histograms (offset, privData->needed);
+            privData->frame_index = get_histograms (privData->port, privData->subchannel, offset, privData->needed);
             if (privData->frame_index <0) {
                 return -EFAULT;
             } else {
@@ -605,12 +617,12 @@ loff_t histograms_lseek (struct file * file,
                     default:
                         switch (offset & ~0x1f) {
                         case  LSEEK_DAEMON_HIST_Y: // wait for daemon enabled and histograms Y ready
-                            MDF21(printk("wait_event_interruptible (hist_y_wait_queue,0x%x & 0x%x)\n",(int) get_imageParamsThis(P_DAEMON_EN), (int) (1<<(offset & 0x1f))));
-                            wait_event_interruptible (hist_y_wait_queue, get_imageParamsThis(P_DAEMON_EN) & (1<<(offset & 0x1f)));
+                            MDF21(printk("wait_event_interruptible (hist_y_wait_queue,0x%x & 0x%x)\n",(int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f))));
+                            wait_event_interruptible (hist_y_wait_queue, get_imageParamsThis(privData->port, P_DAEMON_EN) & (1<<(offset & 0x1f)));
                             break;
                         case  LSEEK_DAEMON_HIST_C: // wait for daemon enabled and histograms Y ready
-                            MDF21(printk("wait_event_interruptible (hist_c_wait_queue,0x%x & 0x%x)\n",(int) get_imageParamsThis(P_DAEMON_EN), (int) (1<<(offset & 0x1f))));
-                            wait_event_interruptible (hist_c_wait_queue, get_imageParamsThis(P_DAEMON_EN) & (1<<(offset & 0x1f)));
+                            MDF21(printk("wait_event_interruptible (hist_c_wait_queue,0x%x & 0x%x)\n",(int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f))));
+                            wait_event_interruptible (hist_c_wait_queue, get_imageParamsThis(privData->port, P_DAEMON_EN) & (1<<(offset & 0x1f)));
                             break;
                         default:
                             return -EINVAL;

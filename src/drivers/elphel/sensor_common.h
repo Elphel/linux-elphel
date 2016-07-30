@@ -121,6 +121,6 @@ long long get_frame_pos(unsigned int chn, unsigned int pos);
 #define X3X3_I2C_RCV4(port,sa7,reg,datap) legacy_read_i2c_reg((port),(LEGACY_READ_PAGE4),(sa7),(reg),4,(datap))
 
 int legacy_i2c  (int ports);
-
+void udelay1000(int ms);
 
 #endif

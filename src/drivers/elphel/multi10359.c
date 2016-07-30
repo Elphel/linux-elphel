@@ -99,7 +99,8 @@
 
 #include <asm/irq.h>
 
-#include <asm/delay.h>
+//#include <asm/delay.h>
+#include <linux/delay.h>
 #include <asm/uaccess.h>
 #include <elphel/c313a.h>
 
@@ -116,6 +117,7 @@
 //#include "x3x3.h"           // hardware definitions
 #include "legacy_defines.h" // temporarily
 #include "sensor_i2c.h"
+#include "clock10359.h"
 
 /**
  * \def D(x) optional debug output 
@@ -226,12 +228,12 @@ int setup_i2c_pages(int ports) ///< bitmask of the sensor ports to use
     {rslt |= multisensor_write_i2c((port),(name),(offs),(ra),(v)) ; \
      MDF1(printk(" multisensor_write_i2c(%d, %s, 0x%x, 0x%x, 0x%x) -> %d\n",(int)(port),name,int(offs),(int)(ra),(int)(v),rslt));}
 #define MULTISENSOR_WRITE_I2C16(port,ra,v) \
-    {rslt |= multisensor_write_i2c((port),(name_10359),(ra),(v)) ; \
+    {rslt |= multisensor_write_i2c((port),(name_10359),0,(ra),(v)) ; \
      MDF1(printk(" multisensor_write_i2c(%d, %s, 0x%x, 0x%x) -> %d\n",(int)(port),name_10359,(int)(ra),(int)(v),rslt));}
 #define MULTISENSOR_WRITE_I2C32(port,ra,v) \
-    {rslt |= multisensor_write_i2c((port),(name_10359),(I2C359_MSW),(v)>>16) ; \
+    {rslt |= multisensor_write_i2c((port),(name_10359),0,(I2C359_MSW),(v)>>16) ; \
      MDF1(printk(" multisensor_write_i2c(%d, %s, 0x%x, 0x%x) -> %d\n",(int)(port),name_10359,I2C359_MSW,(int)(v)>>16,rslt)); \
-     rslt |= multisensor_write_i2c((I2C359_SLAVEADDR),(ra),(v) & 0xffff,2) ; \
+     rslt |= multisensor_write_i2c((port),(name_10359),0,(ra),        (v) & 0xffff) ; \
      MDF1(printk(" multisensor_write_i2c(%d, %s, 0x%x, 0x%x) -> %d\n",(int)(port),name_10359,(int)(ra),(int)(v)&0xffff,2,rslt)); \
 }
 #endif
@@ -306,9 +308,9 @@ int setup_i2c_pages(int ports) ///< bitmask of the sensor ports to use
 
 
 //int multisensor_read_i2c(unsigned char theSlave, unsigned char theRegister, unsigned long *theData, int size);
-int multisensor_read_i2c(int sensor_port, const char * class_name, int sa7_offs, u32 reg_addr, u32 * reg_datap);
+int multisensor_read_i2c           (int sensor_port, const char * class_name, int sa7_offs, u32 reg_addr, u32 * reg_datap);
 //int multisensor_write_i2c(unsigned char theSlave, unsigned char theRegister, unsigned long theData, int size);
-int multisensor_write_i2c(int sensor_port, const char * class_name,int sa7_offs, u32 reg_addr, u32 reg_data);
+int multisensor_write_i2c          (int sensor_port, const char * class_name,int sa7_offs, u32 reg_addr, u32 reg_data);
 int multisensor_pgm_multisens      (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int multisensor_pgm_sensorphase    (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int multisensor_set_freq           (int sensor_port, int first, struct framepars_t * thispars);
@@ -960,37 +962,43 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
 
   if ((((bitstream_version ^ I2C359_MINVERSION) & 0xffff0000)!=0) || ((bitstream_version & 0xffff) < (I2C359_MINVERSION & 0xffff))) {
     printk ("invalid 10359 bitstream version, found 0x%08lx, required >= 0x%08x\n",bitstream_version, I2C359_MINVERSION );
-    setFramePar(thispars, P_SENSOR,  sensor->sensorType);
+    setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType);
     return -1;
   }
   printk("10359 bitstream version =0x%08lx\n",bitstream_version);
 // now set sensor clock in both system board and 10359A to 96MHz - currently we support only 5MPix in thias mode
-  setFramePar(thispars, P_CLK_FPGA,  getClockFreq(0)); // just in case - read the actual fpga clock frequency and store it (no actions)
-  setFramePar(thispars, P_CLK_SENSOR,  96000000);
-  setClockFreq(1, thispars->pars[P_CLK_SENSOR]);
+#ifdef NC353
+  setFramePar(sensor_port, thispars, P_CLK_FPGA,  getClockFreq(0)); // just in case - read the actual fpga clock frequency and store it (no actions)
+  setFramePar(sensor_port, thispars, P_CLK_SENSOR,  96000000);
+  setClockFreq(sensor_port, 1, thispars->pars[P_CLK_SENSOR]);
+#endif
   printk("10353 sensor clock set to %d\n",(int) thispars->pars[P_CLK_SENSOR]);
+
   udelay (100);// 0.0001 sec to stabilize clocks
   X3X3_RSTSENSDCM;  // FPGA DCM can fail after clock change, needs to be reset
   X3X3_SENSDCM_CLK2X_RESET; // reset pclk2x DCM also
 // reset system and SDRAM DCMs on 10359
   MULTISENSOR_WRITE_I2C16(sensor_port,I2C359_DCM_SYSTEM,  I2C359_DCM_RESET | I2C359_DCM_RESET90);
   MULTISENSOR_WRITE_I2C16(sensor_port,I2C359_DCM_SDRAM,   I2C359_DCM_RESET | I2C359_DCM_RESET90);
-  multisensor_initSDRAM(thispars); // init 10359 SDRAM
+  multisensor_initSDRAM(sensor_port, thispars); // init 10359 SDRAM
   rslt=0;
 // TODO: read other?
 //  MULTISENSOR_WRITE_I2C16_SHADOW(I2C359_I2CMUX, I2C359_I2CMUX_2MEM);
+
+//TODO: Is it needed for NC393?
+#ifdef NC353
   if (rslt!=0) { // select memory/clock i2c bus
     printk ("10359A did not respond after changing 10353 sensor clock frequency to 96MHz\n");
-    setFramePar(thispars, P_CLK_SENSOR,  20000000);
+    setFramePar(sensor_port, thispars, P_CLK_SENSOR,  20000000);
     setClockFreq(1, thispars->pars[P_CLK_SENSOR]);
     printk("10353 sensor clock set to %d\n",(int) thispars->pars[P_CLK_SENSOR]);
-    udelay (50000);// 0.05 sec to stabilize clocks
-    setFramePar(thispars, P_SENSOR,  sensor->sensorType);
+    mdelay (50);// 0.05 sec to stabilize clocks
+    setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType);
     if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
     return -1;
   }
-
-  rslt=multisensor_set_freq  (1, thispars); // first time (1)
+#endif
+  rslt=multisensor_set_freq  (sensor_port, 1, thispars); // first time (1)
   if (rslt>0)       printk("10359A sensor clock set to %d\n", rslt);
   else if (rslt==0) printk("10359A sensors are using 10353 system clock, as set in configuration\n");
   else              printk("10359  sensor clock failure, will use system clock from 10353 board\n");
@@ -1031,21 +1039,21 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   GLOBALPARS(sensor_port,G_SENS_AVAIL) &= (1<< (GLOBALPARS(sensor_port,G_SENS_AVAIL)))-1; // remove flag used to indicate sensor detection functions that they need to initialize multisesnor registers
   if (GLOBALPARS(sensor_port,G_SENS_AVAIL)==0) {
     printk ("No supported sensors connected to 10359A board\n");
-    setFramePar(thispars, P_SENSOR,  sensor->sensorType);
+    setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType);
     if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
     return 0;
   }
   printk ("Setting internal HACT generation\n");
   MULTISENSOR_WRITE_I2C16_SHADOW(sensor_port, I2C359_HACT_MODE, 7);
 // At least one MT9P0X1 sensor found, initializing them in broadcast mode (will still need to modify phases - both 10353 and 10359
-  this_sensor_type=mt9x001_pgm_detectsensor(sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
+  this_sensor_type=mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
 //  for (i=0;i<8;i++) {
 //    MDF(printk("i=%d, m=0x%lx\n",i,GLOBALPARS(G_MULTI_REGSM+i)));
 //  }
-  initMultiPars(); // this time the registors that need to have individual shadows are known, initialize the corresponding data structures
+  initMultiPars(sensor_port); // this time the registors that need to have individual shadows are known, initialize the corresponding data structures
 //  memcpy(psensor, sensor, sizeof(struct sensor_t)); // copy physical sensor definitions to the save area (so some can be replaced by modified ones)
 //  MDF24(printk(" before: sensorproc_phys->sensor.sensorDelay=0x%x\n", sensorproc_phys->sensor.sensorDelay));
-  copy_sensorproc(sensorproc_phys);                // save physical sensor functions
+  copy_sensorproc(sensor_port, sensorproc_phys);                // save physical sensor functions
 //  MDF24(printk(" after: sensorproc_phys->sensor.sensorDelay=0x%x\n", sensorproc_phys->sensor.sensorDelay));
 
   // Now calculate phases, swap ones from the sensor
@@ -1397,16 +1405,19 @@ int multisensor_pgm_sensorphase(int sensor_port,               ///< sensor port 
   int thisPhase1=    thispars->pars[P_MULTI_PHASE1];
   int thisPhase2=    thispars->pars[P_MULTI_PHASE2];
   int thisPhase3=    thispars->pars[P_MULTI_PHASE3];
+  uint64_t ull_result = 1000000000000LL;
   if (frame16 >= 0) return -1; // can only work in ASAP mode
  //changed (just set) clock frequency initiates calculation of phase settings
   if (!multi_phases_initialized || (thispars->pars[P_CLK_SENSOR] != prevpars->pars[P_CLK_SENSOR]))  { // system clock is already set to the new frequency
     if (thispars->pars[P_CLK_SENSOR] == prevpars->pars[P_CLK_SENSOR]) {
      printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__); printk ("WARNING: ((thispars->pars[P_CLK_SENSOR] == prevpars->pars[P_CLK_SENSOR])) but multi_phases_initialized is not yet set (re-init?)\n");
     }
-    multisensor_set_freq (0, thispars); // not the first time. Assuming no clock chip if clock4 is not set
+    multisensor_set_freq (sensor_port,  0, thispars); // not the first time. Assuming no clock chip if clock4 is not set
     reset=1;
     // TODO: put here calculation of the sensor phases in 10359 from bitstream data and clock rate
-    clk_period= 1000000000000.0/thispars->pars[P_CLK_SENSOR];  // period in ps
+//    clk_period= 1000000000000.0f/thispars->pars[P_CLK_SENSOR];  // period in ps
+    do_div(ull_result,thispars->pars[P_CLK_SENSOR]);
+    clk_period= ull_result;
 // Now for each of 3 sensor ports of the 10359
     cableDelay= (long *) &GLOBALPARS(sensor_port, G_DLY359_C1);
     FPGADelay=  (long *) &GLOBALPARS(sensor_port, G_DLY359_P1);
@@ -1431,7 +1442,7 @@ int multisensor_pgm_sensorphase(int sensor_port,               ///< sensor port 
   if (reset) {
     MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_DCM_SYSTEM,  I2C359_DCM_RESET | I2C359_DCM_RESET90);
     MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_DCM_SDRAM,   I2C359_DCM_RESET | I2C359_DCM_RESET90);
-    multisensor_initSDRAM(thispars); // init 10359 SDRAM
+    multisensor_initSDRAM(sensor_port, thispars); // init 10359 SDRAM
   }
   if ((thisPhaseSDRAM != prevpars->pars[P_MULTI_PHASE_SDRAM]) ||  adjustSDRAMNeed)  {
     if (adjustSDRAMNeed || (thisPhaseSDRAM & 0x200000)) { // at boot, after frequency change or manually requested (0x200000)
@@ -1508,15 +1519,15 @@ int multisensor_set_freq  (int sensor_port,                ///< sensor port numb
   int was_sensor_freq=0;
   if (!(GLOBALPARS(sensor_port, G_MULTI_CFG) && (1<<G_MULTI_CFG_SYSCLK))) { // skip local clock if disabled in configuration
 //    was_sensor_freq=getClockFreq(I2C359_CLK_NUMBER);
-    was_sensor_freq=x393_getClockFreq(I2C359_CLK_NUMBER & 3); // clock 0
+    was_sensor_freq=x393_getClockFreq(sensor_port, I2C359_CLK_NUMBER & 3); // clock 0
     if (first || (was_sensor_freq !=0)) { // Otherwise it is likely rev 0 - no clock
 //      was_sensor_freq=getClockFreq(1);
       was_sensor_freq=90000000; // TODO: Find out how to read actual clock frequency for sensor ports
 //      i=setClockFreq(I2C359_CLK_NUMBER, was_sensor_freq);
-      i=x393_setClockFreq(I2C359_CLK_NUMBER & 3, was_sensor_freq);
+      i=x393_setClockFreq(sensor_port, I2C359_CLK_NUMBER & 3, was_sensor_freq);
       if (i>0) {
         MULTISENSOR_WRITE_I2C16_SHADOW(sensor_port, I2C359_CLKSRC, I2C359_CLKSRC_LOCAL);
-        udelay (50000); // 0.05 sec to stabilize clocks - will miss multiple frames
+        mdelay (50); // 0.05 sec to stabilize clocks - will miss multiple frames
       } else {
         was_sensor_freq=-1; // error
       }
@@ -1713,7 +1724,7 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
   int results90 [4];
   int i;
   int oldPhase=0;
-  oldPhase=  multisensor_set_phase_verify (I2C359_DCM_SDRAM, 1, 0, oldPhase); // reset SDRAM phase
+  oldPhase=  multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, 1, 0, oldPhase); // reset SDRAM phase
   if (oldPhase<0) return oldPhase; // failed to reset
   int needReset=0;
   int ok90=0;
@@ -1722,7 +1733,7 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
   int high90=-1;
   int low_l, low_h, high_l,high_h;
   for (i=0; i<4; i++) {
-    oldPhase= multisensor_set_phase_verify (I2C359_DCM_SDRAM, needReset, i<<16, oldPhase); // do not reset SDRAM phase - no fine tuning
+    oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, i<<16, oldPhase); // do not reset SDRAM phase - no fine tuning
     if (oldPhase<0) return oldPhase; // any error is fatal here
     results90 [i]=multisensor_memphase (sensor_port,&centroids90[i]);
     if (results90 [i]==0) {
@@ -1777,12 +1788,12 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
   #define I2C359_DCM_ERR_OVFL     3
   #define I2C359_DCM_ERR_NODONE   4
   #define I2C359_DCM_ERR_NOLOCKED 5*/
-  oldPhase= multisensor_set_phase_verify (I2C359_DCM_SDRAM, 1, (low90<<16), oldPhase); // reset dcm, set 90-degree phase
+  oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, 1, (low90<<16), oldPhase); // reset dcm, set 90-degree phase
   if (oldPhase<0) return oldPhase;  // any error is fatal here - fine phase is 0
   needReset=0;
   while ((low_h-low_l)>1) {
     i=(low_l+low_h)/2;
-    oldPhase= multisensor_set_phase_verify (I2C359_DCM_SDRAM, needReset, (low90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
+    oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, (low90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
     if (oldPhase<0)  {
   MDF24 (printk(" DCM error=%d\n",-oldPhase));
       needReset=1;
@@ -1802,12 +1813,12 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
     high_l= 0;
     high_h= maxAdjust;
   }
-  oldPhase= multisensor_set_phase_verify (I2C359_DCM_SDRAM, 1, (high90<<16), oldPhase); // reset dcm, set 90-degree phase
+  oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, 1, (high90<<16), oldPhase); // reset dcm, set 90-degree phase
   if (oldPhase<0) return oldPhase;  // any error is fatal here - fine phase is 0
   needReset=0;
   while ((high_h-high_l)>1) {
     i=(high_h+high_l)/2;
-    oldPhase= multisensor_set_phase_verify (I2C359_DCM_SDRAM, needReset, (high90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
+    oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, (high90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
     if (oldPhase<0)  {
   MDF24 (printk(" DCM error=%d\n",-oldPhase));
       needReset=1;
@@ -1823,7 +1834,7 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
   if (high90==low90) { // 0,1 OK phases
     if (high_l>low_h) { // 0,1 OK phases
       i= (high90<<16) | (((high_l+low_h)>>1) & 0xffff);
-      oldPhase= multisensor_set_phase_verify (I2C359_DCM_SDRAM, needReset, i, oldPhase); // middle phase, same 90-degree
+      oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, i, oldPhase); // middle phase, same 90-degree
       if (oldPhase<0) return oldPhase;
 // Verify that final phase is OK
       if (multisensor_memphase (sensor_port,NULL)==0)      return i;
@@ -1844,12 +1855,12 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
     low90=high90;
     low_l= -maxAdjust;
     low_h= 0;
-    oldPhase= multisensor_set_phase_verify (I2C359_DCM_SDRAM, 1, (low90<<16), oldPhase); // reset dcm, set 90-degree phase
+    oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, 1, (low90<<16), oldPhase); // reset dcm, set 90-degree phase
     if (oldPhase<0) return oldPhase;  // any error is fatal here - fine phase is 0
     needReset=0;
     while ((low_h-low_l)>1) {
       i=(low_l+low_h)/2;
-      oldPhase= multisensor_set_phase_verify (I2C359_DCM_SDRAM, needReset, (low90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
+      oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, (low90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
       if (oldPhase<0)  {
   MDF24 (printk(" DCM error=%d\n",-oldPhase));
         needReset=1;
@@ -1865,12 +1876,12 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
     high90=low90;
     high_l= 0;
     high_h= maxAdjust;
-    oldPhase= multisensor_set_phase_verify (I2C359_DCM_SDRAM, 1, (high90<<16), oldPhase); // reset dcm, set 90-degree phase
+    oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, 1, (high90<<16), oldPhase); // reset dcm, set 90-degree phase
     if (oldPhase<0) return oldPhase;  // any error is fatal here - fine phase is 0
     needReset=0;
     while ((high_h-high_l)>1) {
       i=(high_h+high_l)/2;
-      oldPhase= multisensor_set_phase_verify (I2C359_DCM_SDRAM, needReset, (high90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
+      oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, (high90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
       if (oldPhase<0)  {
   MDF24 (printk(" DCM error=%d\n",-oldPhase));
         needReset=1;
@@ -1886,7 +1897,7 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
   MDF24 (printk("Re-measured to the same 90-degree phase low90=%d, low=%d, high90=%d, high=%d\n",low90,low_h,high90,high_l));
   if (high_l>low_h) { // 0,1 OK phases
       i= (high90<<16) | (((high_l+low_h)>>1) & 0xffff);
-      oldPhase= multisensor_set_phase_verify (I2C359_DCM_SDRAM, needReset, i, oldPhase); // middle phase, same 90-degree
+      oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, i, oldPhase); // middle phase, same 90-degree
       return oldPhase; // (both >=0 or error (<0)
   } else { // something strange - should not get here
        printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);
@@ -2041,7 +2052,7 @@ int multisensor_pgm_sensorregs (int sensor_port,               ///< sensor port 
     thispars->mod32=0;
   }
 // Now proceed with physical sensor(s) i2c registers - both broadcast and individual
-  if (sensorproc_phys->pgm_func[onchange_sensorregs+32]) return sensorproc_phys->pgm_func[onchange_sensorregs+32] (sensor, thispars, prevpars, frame16);
+  if (sensorproc_phys->pgm_func[onchange_sensorregs+32]) return sensorproc_phys->pgm_func[onchange_sensorregs+32] (sensor_port, sensor, thispars, prevpars, frame16);
   return 0; // physical sensor function does not exist
 } 
 

@@ -7,11 +7,11 @@ int is_gamma_current (unsigned short hash16, unsigned short scale, int index);
 int is_gamma_valid  (unsigned short hash16, unsigned short scale, int index);
 //             int prev_locked_color[4];
 
-int unlock_gamma_node (int color); /// NOTE: Not needed anymore
+int unlock_gamma_node (int color, int sensor_port, int sensor_subchn); /// NOTE: Not needed anymore
 ///
 /// return a pointer to the gamma table (single color) encoded in FPGA format (NULL if there is to table ready)
 ///
-unsigned long * get_gamma_fpga(int color);
+unsigned long * get_gamma_fpga(int color, int sensor_port, int sensor_subchn);
 
 int gamma_new_node(void);
 void gamma_encode_fpga(unsigned short * gamma_in, unsigned long * gamma_out);///Hardware-dependent encoding of the FPGA "gamma" table. Converts unsigned short array of 257 16-bit values (only 10 msb-s are used) to 256 unsigned long words to be written to FPGA
@@ -27,5 +27,6 @@ void  gamma_calc_reverse(unsigned short * gamma_in, unsigned char * gamma_out);/
 // #define GAMMA_MODE_HARDWARE     4  // the table is needed to program FPGA: fpga-encoded table will be calculated (if not yet), node will be locked for specified
                                    // color/frame pair
 int set_gamma_table (unsigned short hash16, unsigned short scale, unsigned short * gamma_proto,  unsigned char mode, int color, int sensor_port, int sensor_subchn);
-unsigned long get_locked_hash32(int color);
+unsigned long get_locked_hash32(int color, int sensor_port,int sensor_subchn);
+
 #endif

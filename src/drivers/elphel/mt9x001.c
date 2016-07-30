@@ -682,12 +682,12 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
                                                                ///< @return 0 - OK, negative - error
 
 {
-    unsigned long flags;               // this function uses software i2c operations - they need to have interrupts (and hardware i2c off)
+//    unsigned long flags;               // this function uses software i2c operations - they need to have interrupts (and hardware i2c off)
     //    unsigned char    i2c_read_data[2]; // each two bytes - one short word, big endian
     u32  i2c_read_dataw;
-    u8 * i2c_read_data =  (u8*)& i2c_read_dataw; // each two bytes - one short word, big endian
+//    u8 * i2c_read_data =  (u8*)& i2c_read_dataw; // each two bytes - one short word, big endian
     //    unsigned char chipver_reg=P_MT9X001_CHIPVER;
-    u32 chipver_reg=P_MT9X001_CHIPVER;
+//    u32 chipver_reg=P_MT9X001_CHIPVER;
     int sensor_subtype=0;
     int i;
     struct sensor_t * psensor; // current sensor
@@ -753,15 +753,15 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
 #else
         X3X3_I2C_RCV2(sensor_port, psensor->i2c_addr, P_MT9X001_CHIPVER, &i2c_read_dataw);
         if (((i2c_read_dataw ^MT9M001_PARTID) & MT9X001_PARTIDMASK)==0) {
-            printk("Found MT9M001 1280x1024 sensor, chip ID=%x\r\n",I2C_READ_DATA16(0));
+            printk("Found MT9M001 1280x1024 sensor, chip ID=%x\r\n",i2c_read_dataw);
             psensor= &mt9m001;
             sensor_subtype=MT9M_TYP; //1;
         } else if (((i2c_read_dataw ^ MT9D001_PARTID) & MT9X001_PARTIDMASK)==0) {
-            printk("Found MT9D001 1600x1200 sensor, chip ID=%x\r\n",I2C_READ_DATA16(0));
+            printk("Found MT9D001 1600x1200 sensor, chip ID=%x\r\n",i2c_read_dataw);
             psensor= &mt9d001;
             sensor_subtype=MT9D_TYP; //2;
         } else if (((i2c_read_dataw ^ MT9T001_PARTID) & MT9X001_PARTIDMASK)==0) {
-            printk("Found MT9T001 2048x1536 sensor, chip ID=%x\r\n",I2C_READ_DATA16(0));
+            printk("Found MT9T001 2048x1536 sensor, chip ID=%x\r\n",i2c_read_dataw);
             psensor= &mt9t001;
             sensor_subtype=MT9T_TYP; //3;
             //      if(d[2] == 0x01) - MT9T001 chip rev 01 - color gains had a bug
@@ -785,7 +785,7 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     add_sensor_proc(onchange_triggermode, &mt9x001_pgm_triggermode);  // program sensor trigger mode
     add_sensor_proc(onchange_sensorregs,  &mt9x001_pgm_sensorregs);   // write sensor registers (only changed from outside the driver as they may have different latencies)?
     //  MDD1(printk("sensor->sensorType=0x%lx\n", sensor->sensorType));
-    setFramePar(thispars, P_SENSOR,  sensor->sensorType); // was so
+    setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType); // was so
     //  setFramePar(thispars, P_SENSOR  | FRAMEPAIR_FORCE_NEWPROC,  sensor->sensorType); // force actions
     //  MDD1(printk("\n"));
     ///TODO: Fill G_MULTI_REGSM+i - which registers need individual values in multi-sensor applications
@@ -840,11 +840,13 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
                                                                ///< be applied to,  negative - ASAP
                                                                ///< @return 0 - OK, negative - error
 {
+//    unsigned long flags; // this function uses software i2c operations - they need to have interrupts (and hardware i2c off)
+    struct frameparspair_t pars_to_update[258+(MAX_SENSORS * P_MULTI_NUMREGS )]; // for all the sensor registers. Other P_* values will reuse the same ones
+    int first_sensor_i2c;
+    unsigned short * sensor_register_overwrites;
     MDF4(printk(" frame8=%d\n",frame8));
     if (frame16 >= 0) return -1; // should be ASAP
 //    int fpga_addr=(frame8 <0) ? X313_I2C_ASAP : (X313_I2C_FRAME0+frame8);
-    unsigned long flags; // this function uses software i2c operations - they need to have interrupts (and hardware i2c off)
-    struct frameparspair_t pars_to_update[258+(MAX_SENSORS * P_MULTI_NUMREGS )]; // for all the sensor registers. Other P_* values will reuse the same ones
 //    unsigned char    i2c_read_data[512]; // each two bytes - one short word, big endian
     u32 i2c_read_data_dw[256];
     int nupdate=0;
@@ -857,7 +859,7 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     CCAM_MRST_OFF;
     udelay (100);
     printk("Reading sensor registers to the shadows:\r\n");
-    int first_sensor_i2c=sensor->i2c_addr;
+    first_sensor_i2c=sensor->i2c_addr;
     if (GLOBALPARS(sensor_port, G_SENS_AVAIL)) {
         first_sensor_i2c+= I2C359_INC * ((GLOBALPARS(sensor_port, G_SENS_AVAIL) & 1)?1:((GLOBALPARS(sensor_port, G_SENS_AVAIL) & 2)?2:3));
     }
@@ -895,9 +897,7 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     }
 #endif
     if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
-
     printk("Initializing MT9X001 registers with default values:\r\n");
-    unsigned short * sensor_register_overwrites;
     int              sensor_register_overwrites_number;
     int              sensor_subtype=sensor->sensorType  - SENSOR_MT9X001;
     switch (sensor_subtype) {
@@ -933,7 +933,11 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     nupdate=0;  // Second pass over the registers to set
 //#define SET_SENSOR_MBPAR(p,f,s,r,v)
     for (i=0; i<sensor_register_overwrites_number;i++ ) { // unconditionally set those registers NOTE: Should be < 63 of them!
-        SET_SENSOR_MBPAR(sensor_port,frame16,sensor->i2c_addr, sensor_register_overwrites[2*i], sensor_register_overwrites[2*i+1]);
+        SET_SENSOR_MBPAR(sensor_port,
+                         frame16,
+                         sensor->i2c_addr,
+                         sensor_register_overwrites[2*i],\
+                         sensor_register_overwrites[2*i+1]);
         MDF4(printk("  SET_SENSOR_MBPAR(0x%x,0x%x,0x%x, 0x%x, 0x%x)\n", sensor_port, frame16,  (int) sensor->i2c_addr, (int) sensor_register_overwrites[2*i], (int) sensor_register_overwrites[2*i+1]));
 
     }
@@ -979,7 +983,7 @@ int mt9x001_pgm_window_safe (int sensor_port,               ///< sensor port num
                                        ///< @return 0 - OK, negative - error
 {
     MDF4(printk(" frame16=%d\n",frame16));
-    return mt9x001_pgm_window_common (sensor,  thispars, prevpars, frame16);
+    return mt9x001_pgm_window_common (sensor_port, sensor,  thispars, prevpars, frame16);
 }
 
 /** PCommon part of programming sensor WOI */
@@ -991,11 +995,11 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
                                                                ///< be applied to,  negative - ASAP
                                                                ///< @return 0 - OK, negative - error
 {
+    int i,dv,dh,bv,bh,ww,wh,wl,wt,flip,flipX,flipY,d, v;
     struct frameparspair_t  pars_to_update[29];
     int nupdate=0;
     MDF4(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-    int i,dv,dh,bv,bh,ww,wh,wl,wt,flip,flipX,flipY,d, v;
     int styp = sensor->sensorType & 7;
     dh=  thispars->pars[P_DCM_HOR];
     dv=  thispars->pars[P_DCM_VERT];
@@ -1143,8 +1147,6 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
 {
     struct frameparspair_t pars_to_update[16]; // maximum 7 registers updated (need to recount)
     int nupdate=0;
-    MDF4(printk(" frame8=%d\n",frame8));
-    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     int dh=  thispars->pars[P_DCM_HOR];
     int ww=  thispars->pars[P_SENSOR_PIXH] * dh;
     int binning_cost = 0;
@@ -1158,6 +1160,8 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     uint64_t ull_fp1000s;
 #endif
     int target_virt_width=(thispars->pars[P_VIRT_KEEP])?(thispars->pars[P_VIRT_WIDTH]):0;
+    MDF4(printk(" frame8=%d\n",frame8));
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     switch(styp)  {
     case MT9P_TYP: //page 16
         width = 2 * ww / (2 * dh);
@@ -1310,7 +1314,12 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     sclk=thispars->pars[P_CLK_SENSOR] ; ///pixel clock, in Hz
 #if USELONGLONG
     ull_fp1000s=((long long) 1000)* ((long long) sclk);
+#ifdef __div64_32
     __div64_32(&ull_fp1000s,pix_period);
+#else
+    do_div(ull_fp1000s,pix_period);
+//    ull_fp1000s /= pix_period;
+#endif
     fp1000s= ull_fp1000s;
     //  fp1000s= ((long long) 1000)* ((long long)sclk) /pix_period;
 #else
@@ -1367,7 +1376,12 @@ int mt9x001_pgm_exposure       (int sensor_port,               ///< sensor port 
         MDF1(printk(" exposure=%d (0x%x), video_exposure=%d (0x%x)\n", (int) thispars->pars[P_VEXPOS], (int) thispars->pars[P_VEXPOS], (int) video_exposure, (int) video_exposure));
 #if USELONGLONG
         ull_exposure= ((long long)(video_exposure * row_time_in_pixels)) * ((long long) 1000000);
+#ifdef __div64_32
         __div64_32(&ull_exposure, sclk);
+#else
+        do_div(ull_exposure, sclk);
+//        ull_exposure /= sclk;
+#endif
         exposure= ull_exposure;
 #else
         exposure = (100*video_exposure * row_time_in_pixels) / (sclk/10000); // in microseconds
@@ -1377,8 +1391,15 @@ int mt9x001_pgm_exposure       (int sensor_port,               ///< sensor port 
         exposure = thispars->pars[P_EXPOS];
 #if USELONGLONG
         ull_video_exposure= (long long) exposure  * (long long) sclk;
+#ifdef __div64_32
         __div64_32(&ull_video_exposure, row_time_in_pixels);
         __div64_32(&ull_video_exposure, 1000000);
+#else
+        do_div(ull_video_exposure, row_time_in_pixels);
+        do_div(ull_video_exposure, 1000000);
+//        ull_video_exposure /= row_time_in_pixels;
+//        ull_video_exposure /= 1000000;
+#endif
         video_exposure= ull_video_exposure;
 #else
         ///TODO - use shifts, not division where possible?
@@ -1401,7 +1422,12 @@ int mt9x001_pgm_exposure       (int sensor_port,               ///< sensor port 
         video_exposure=sensor->maxShutter;
 #if USELONGLONG
         ull_exposure= ((long long)(video_exposure * row_time_in_pixels)) *((long long) 1000000);
+#ifdef __div64_32
         __div64_32(&ull_exposure, sclk);
+#else
+        do_div(ull_exposure, sclk);
+//        ull_exposure /= sclk;
+#endif
         exposure= ull_exposure;
 #else
         exposure = (100*video_exposure * row_time_in_pixels) / (sclk/10000); // in microseconds
@@ -1415,7 +1441,12 @@ int mt9x001_pgm_exposure       (int sensor_port,               ///< sensor port 
             video_exposure=thispars->pars[P_PERIOD_MAX]/row_time_in_pixels;
 #if USELONGLONG
             ull_exposure= (((long long) thispars->pars[P_PERIOD_MAX]) *((long long)  1000000));
+#ifdef __div64_32
             __div64_32(&ull_exposure, sclk);
+#else
+            do_div(ull_exposure, sclk);
+//            ull_exposure /= sclk;
+#endif
             exposure= ull_exposure;
 #else
             exposure = (thispars->pars[P_PERIOD_MAX] * 100) / (sclk/10000); // in microseconds
@@ -1431,7 +1462,12 @@ int mt9x001_pgm_exposure       (int sensor_port,               ///< sensor port 
             // schedule updating P_FP1000S if it changed
 #if USELONGLONG
             ull_fp1000s=((long long) 1000)* ((long long) sclk);
+#ifdef __div64_32
             __div64_32(&ull_fp1000s,pix_period);
+#else
+            do_div(ull_fp1000s,pix_period);
+//            ull_fp1000s /= pix_period;
+#endif
             fp1000s= ull_fp1000s;
 #else
             fp1000s= 10*sclk/(pix_period/100);
@@ -1517,14 +1553,19 @@ unsigned long gain_ajust_mt9x001(
     MDF4(printk("*newRegGain=0x%lx\n",*newRegGain));
     // now divide gains
     ull_gain =((long long) gain) << 16;
+#ifdef __div64_32
     __div64_32(&ull_gain, gainTab[gainIndex]);
+#else
+    do_div(ull_gain, gainTab[gainIndex]);
+//    ull_gain /= gainTab[gainIndex];
+#endif
     MDF4(printk("((unsigned long) ull_gain)=0x%lx\n",((unsigned long) ull_gain)));
     return ((unsigned long) ull_gain) >> SHIFT_DGAIN;
 }
 
 
 /** Calculates hardware specific analog gains.
- * Changed to rounding (was truncaiting)*/
+ * Changed to rounding (was truncating)*/
 inline int gain_mt9x001(int g,          ///< gain value (integer, 256 for unity gain)
                         int maxGain256) ///< maximal supported gain (integer, 256 for unity gain)
                                         ///<  @return hardware gain value
@@ -1567,7 +1608,12 @@ inline unsigned long getScale16 (unsigned long nominator,   ///< 32-bit nominato
     unsigned long * l_result= (unsigned long *) &ull_result;
 #endif
     MDF4(printk("l_result[1]=0x%lx, l_result[0]=0x%lx\n",l_result[1],l_result[0]));
+#ifdef __div64_32
     __div64_32(&ull_result, denominator);
+#else
+    do_div(ull_result, denominator);
+//    ull_result /= denominator;
+#endif
     MDF4(printk("l_result[1]=0x%lx, l_result[0]=0x%lx\n",l_result[1],l_result[0]));
     return (unsigned long) ull_result;
 }
@@ -1594,8 +1640,6 @@ int mt9x001_pgm_gains      (int sensor_port,               ///< sensor port numb
 {
     struct frameparspair_t pars_to_update[38]; // 22+12 needed
     int nupdate=0;
-    MDF4(printk(" frame16=%d\n",frame16));
-    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     unsigned long newRegGain,digitalGain, testmode;
     unsigned long anaGainEn= (thispars->pars[P_GAIN_CTRL]>> GAIN_BIT_ENABLE) & 1;
     unsigned long minAnaGain=thispars->pars[P_GAIN_MIN];
@@ -1603,6 +1647,8 @@ int mt9x001_pgm_gains      (int sensor_port,               ///< sensor port numb
     unsigned long maxGain;
     int limitsModified=0;
     int gaingModified=FRAMEPAR_MODIFIED(P_GAING);
+    MDF4(printk(" frame16=%d\n",frame16));
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     ///make sure limits are OK
     if (FRAMEPAR_MODIFIED(P_GAIN_MIN)) {
         limitsModified=1;

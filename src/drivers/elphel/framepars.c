@@ -550,10 +550,10 @@ inline void processParsASAP(int sensor_port, struct sensorproc_t * sensorproc, i
 					framepars[4].functions, framepars[5].functions, framepars[6].functions, framepars[7].functions));
 
 			if (sensorproc->pgm_func[i]) {
-				rslt = sensorproc->pgm_func[i]    ( &(sensorproc->sensor), procpars, prevpars, -1);
+				rslt = sensorproc->pgm_func[i]    (sensor_port, &(sensorproc->sensor), procpars, prevpars, -1);
 			} else rslt = 0;                                        // only sensor-specific function, nothing to do common to all sensors
 			if ((rslt >= 0) && (sensorproc->pgm_func[i + 32])) {    // sensor - specific functions, called after the main ones
-				rslt = sensorproc->pgm_func[i + 32] ( &(sensorproc->sensor), procpars, prevpars, -1);
+				rslt = sensorproc->pgm_func[i + 32] (sensor_port, &(sensorproc->sensor), procpars, prevpars, -1);
 			}
 // Nothing to do with errors here - just report?
 			if (rslt < 0) printk("%s:%d:%s - error=%d", __FILE__, __LINE__, __FUNCTION__, rslt);
@@ -627,10 +627,10 @@ inline void processParsSeq(int sensor_port, struct sensorproc_t * sensorproc, in
 
 					if (sensorproc->pgm_func[i]) {
 						// NOTE: Was (frame8+job_ahead +1) & PARS_FRAMES_MASK
-						rslt = sensorproc->pgm_func[i]    ( &(sensorproc->sensor), procpars, prevpars, seq_frame);
+						rslt = sensorproc->pgm_func[i]    (sensor_port, &(sensorproc->sensor), procpars, prevpars, seq_frame);
 					} else rslt = 0;                                        // only sensor-specific function, nothing to do common to all sensors
 					if ((rslt >= 0) && (sensorproc->pgm_func[i + 32])) {    // sensor - specific functions, called after the main ones
-						rslt = sensorproc->pgm_func[i + 32] ( &(sensorproc->sensor), procpars, prevpars, seq_frame);
+						rslt = sensorproc->pgm_func[i + 32] (sensor_port, &(sensorproc->sensor), procpars, prevpars, seq_frame);
 					}
 					if (rslt >= 0) {
 						procpars->functions &= ~mask; // mark it done
@@ -1113,7 +1113,7 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 	unsigned long target_frame;
 	struct framepars_pd * privData = (struct framepars_pd*) file -> private_data;
 	int sensor_port = privData -> minor - CMOSCAM_MINOR_FRAMEPARS_CHN_0;
-	struct framepars_t *framepars = aframepars[sensor_port];
+//	struct framepars_t *framepars = aframepars[sensor_port];
 	MDF1(printk(" offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port));
 	switch (orig) {
 	case SEEK_SET:

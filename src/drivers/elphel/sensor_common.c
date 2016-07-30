@@ -40,15 +40,17 @@
 
 #include "framepars.h"
 #include "sensor_common.h"
-//#include "pgm_functions.h"
+#include "pgm_functions.h"
 #include "circbuf.h"
 #include "exif393.h"
-//#include "histograms.h"
-//#include "gamma_tables.h"
+#include "histograms.h"
+#include "gamma_tables.h"
 #include "quantization_tables.h"
 #include "x393_macro.h"
-//#include "x393.h"
+#include "x393.h"
 #include "x393_helpers.h"
+
+#include <asm/delay.h> // just for usleep1000()
 
 /** @brief Driver name to display in log messages.*/
 #define IMAGEACQ_DRIVER_NAME      "Elphel (R) Model 393 Image Acquisition device driver"
@@ -66,6 +68,18 @@ struct jpeg_ptr_t {
 	unsigned int chn_num;        ///< Current channel number
 	volatile unsigned int flags;
 };
+
+// just temporarily
+ void i2c_run(void)      {}
+ void i2c_stop_wait(void){}
+ void udelay1000(int ms)
+ {
+     int i;
+     for (i=0;i<ms;i++) udelay(1000);
+ }
+
+
+
 
 /** @brief Contains private data for the image acquisition driver */
 struct image_acq_pd_t {
@@ -410,26 +424,31 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr, struct interframe_params_t* interframe) {
 	unsigned char short_buff[2];
 	unsigned int sensor_port = jptr->chn_num;
-	int  index_time = jptr->jpeg_wp - 11; if (index_time<0) index_time+=get_globalParam (sensor_port, G_CIRCBUFSIZE)>>2;
+	int  index_time = jptr->jpeg_wp - 11;
+    char time_buff[27];
+    char * exif_meta_time_string;
+    int global_flips, extra_flips;
+    unsigned char orientations[]="1638274545273816";
+    unsigned char orientation_short[2];
+    int maker_offset;
+
+    if (index_time<0) index_time+=get_globalParam (sensor_port, G_CIRCBUFSIZE)>>2;
 	//   struct exif_datetime_t
 	// calculates datetime([20] and subsec[7], returns  pointer to char[27]
-	char time_buff[27];
-	char * exif_meta_time_string=encode_time(time_buff, ccam_dma_buf_ptr[sensor_port][index_time], ccam_dma_buf_ptr[sensor_port][index_time+1]);
+	exif_meta_time_string=encode_time(time_buff, ccam_dma_buf_ptr[sensor_port][index_time], ccam_dma_buf_ptr[sensor_port][index_time+1]);
 	// may be split in datetime/subsec - now it will not notice missing subseq field in template
 	write_meta_irq(sensor_port, exif_meta_time_string, &meta_offsets.Photo_DateTimeOriginal,  Exif_Photo_DateTimeOriginal, 27);
 	write_meta_irq(sensor_port, exif_meta_time_string, &meta_offsets.Image_DateTime,  Exif_Image_DateTime, 20); // may use 27 if room is provided
 	putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_EXPOS), &meta_offsets.Photo_ExposureTime,  Exif_Photo_ExposureTime);
 	putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_FRAME), &meta_offsets.Image_ImageNumber,   Exif_Image_ImageNumber);
 	//Exif_Photo_MakerNote
-	int global_flips=(get_imageParamsThis(sensor_port, P_FLIPH) & 1) | ((get_imageParamsThis(sensor_port, P_FLIPV)<<1)  & 2);
-	int extra_flips=0;
+	global_flips=(get_imageParamsThis(sensor_port, P_FLIPH) & 1) | ((get_imageParamsThis(sensor_port, P_FLIPV)<<1)  & 2);
+	extra_flips=0;
 	if (get_imageParamsThis(sensor_port, P_MULTI_MODE)!=0) {
 		extra_flips=get_imageParamsThis(sensor_port, P_MULTI_MODE_FLIPS);
 		global_flips=extra_flips & 3;
 	}
 
-	unsigned char orientations[]="1638274545273816";
-	unsigned char orientation_short[2];
 	orientation_short[0]=0;
 	orientation_short[1]=0xf & orientations[(get_imageParamsThis(sensor_port, P_PORTRAIT)&3) | (global_flips<<2)];
 	write_meta_irq(sensor_port, orientation_short, &meta_offsets.Image_Orientation,   Exif_Image_Orientation, 2);
@@ -441,7 +460,6 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr, struct interframe_params_t* 
 	write_meta_irq(sensor_port, short_buff, &meta_offsets.PageNumber, Exif_Image_PageNumber, 2);
 
 	//TODO - use memcpy
-	int maker_offset;
 	maker_offset=putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_GAINR),   &meta_offsets.Photo_MakerNote, Exif_Photo_MakerNote);
 	if (maker_offset>0) {
 		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GAING),   maker_offset+4);
@@ -660,8 +678,8 @@ void tasklet_fpga_function(unsigned long arg) {
 						        subchn,
 								prevFrameNumber,
 								(1 << COLOR_Y_NUMBER),
-								hash32p+hist_indx*16*(sizeof u32),
-								framep+hist_indx*32*(sizeof u32)); // 0x2 Green1
+								hash32p+hist_indx*16*sizeof (u32),
+								framep+hist_indx*32*sizeof (u32)); // 0x2 Green1
 			} else {
 				set_histograms (sensor_port, subchn, prevFrameNumber, (1 << COLOR_Y_NUMBER), hash32p, framep); // 0x2 Green1
 			}
@@ -723,8 +741,8 @@ if (hist_en) {
 					        subchn,
 							prevFrameNumber,
 							0xf, // all colors
-							hash32p+hist_indx*16*(sizeof u32),
-							framep+hist_indx*32*(sizeof u32)); // 0x2 Green1
+							hash32p+hist_indx*16*sizeof (u32),
+							framep+hist_indx*32*sizeof (u32)); // 0x2 Green1
 		} else {
 			set_histograms (sensor_port, subchn, prevFrameNumber, 0xf, hash32p, framep); // 0x2 Green1
 		}
@@ -809,10 +827,10 @@ void camera_interrupts (int on) {
 int image_acq_init(struct platform_device *pdev)
 {
 	int i;
-	int res;
+//	int res;
 	unsigned int irq;
 	struct device *dev = &pdev->dev;
-	const struct of_device_id *match;
+//	const struct of_device_id *match;
 	const char *frame_sync_irq_names[4] = {"frame_sync_irq_0", "frame_sync_irq_1",
 			"frame_sync_irq_2", "frame_sync_irq_3"};
 	const char *compressor_irq_names[4] = {"compr_irq_0", "compr_irq_1",
@@ -915,10 +933,10 @@ int legacy_i2c(int ports) ///< bitmask of the sensor ports to use
             set_xi2c_wrc(&dev_sensor, sensor_port, dev_sensor.slave7, 0);
         }
         // Now register one page for reading 10359 and the sensor using sensor speed data
-        memcpy(&dev_sensor, class_sensor, sizeof(class_sensor));
-        set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE2, 0);
-        dev_sensor->data_bytes=4; // for reading 10359 in 32-bit mode
-        set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE4, 0);
+        memcpy(&dev_sensor, class_sensor, sizeof(dev_sensor));
+        set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE2);
+        dev_sensor.data_bytes=4; // for reading 10359 in 32-bit mode
+        set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE4);
     }
     return 0;
 }

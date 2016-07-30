@@ -72,12 +72,12 @@
 
 
 #define CONFIG_ETRAX_ELPHEL_MT9X001 1
-
- void x313_dma_stop()    {}
- void x313_dma_init()    {}
- void reset_compressor() {}
- void i2c_run(void)      {}
- void i2c_stop_wait(void){}
+//pgm_functions:pgm_detect_sensor
+// void x313_dma_stop()    {}
+// void x313_dma_init()    {}
+// void reset_compressor() {} // available in sensor_common (make sure it does it all
+ void i2c_run(void);
+ void i2c_stop_wait(void);
 
 // if ((gtable= get_gamma_fpga(color))) fpga_table_write_nice (CX313_FPGA_TABLES_GAMMA + (color * 256), 256, gtable);
 

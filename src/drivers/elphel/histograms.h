@@ -26,7 +26,7 @@ int get_hist_index (int sensor_port, int sensor_chn);
 
 int set_histograms (int sensor_port, int sensor_chn, unsigned long frame, int needed, unsigned long * gammaHash, unsigned long * framep);
 
-int get_histograms (unsigned long frame, int needed);
+int get_histograms (int sensor_port, int sensor_chn, unsigned long frame, int needed);
 
 int histograms_init_hardware(void);
 void histograms_dma_ctrl(int mode); // 0 - reset, 1 - disable, 2 - enable
