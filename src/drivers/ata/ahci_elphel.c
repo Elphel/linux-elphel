@@ -66,7 +66,7 @@ static ssize_t elphel_test_write(struct device *dev, struct device_attribute *at
 		const char *buff, size_t buff_sz);
 static irqreturn_t elphel_irq_handler(int irq, void * dev_instance);
 static int elphel_write_dma(struct ata_port *ap, u64 start, u16 count, struct scatterlist *sg, unsigned int elem);
-static int elphel_read_dma(struct ata_port *ap, u64 start, u16 count, u8 *buff, unsigned int elem);
+static int elphel_read_dma(struct ata_port *ap, u64 start, u16 count, struct scatterlist *sgl, unsigned int elem);
 void prep_cfis(u8 *cmd_tbl, u8 cmd, u64 start_addr, u16 count);
 
 static ssize_t set_load_flag(struct device *dev, struct device_attribute *attr,
@@ -390,13 +390,15 @@ static ssize_t elphel_test_write(struct device *dev, struct device_attribute *at
 		const char *buff, size_t buff_sz)
 {
 	int i, n_elem;
+	int sg_elems;
 	struct ata_host *host;
 	struct ata_port *port;
 	struct ahci_host_priv *hpriv;
 	struct elphel_ahci_priv *dpriv;
 	struct scatterlist sg;
 	struct scatterlist *sg_ptr;
-	u8 *test_buff = pElphel_buf->d2h_vaddr;
+//	u8 *test_buff = pElphel_buf->d2h_vaddr;
+	u8 *test_buff;
 	unsigned int lba_addr;
 
 	if (sscanf(buff, "%u", &lba_addr) == 1) {
@@ -410,25 +412,31 @@ static ssize_t elphel_test_write(struct device *dev, struct device_attribute *at
 	hpriv = port->host->private_data;
 	dpriv = hpriv->plat_data;
 
-	/* read test */
-//	printk(KERN_DEBUG ">>> dump test buffer before reading: %d bytes, addr = 0x%p\n", TEST_BUFF_SZ, test_buff);
-//	dma_sync_single_for_cpu(dev, pElphel_buf->d2h_paddr, pElphel_buf->d2h_size, DMA_FROM_DEVICE);
-//	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, test_buff, TEST_BUFF_SZ);
-////	sg_init_one(&sg, (const void *)test_buff, TEST_BUFF_SZ);
-	dma_sync_single_for_device(dev, pElphel_buf->d2h_paddr, pElphel_buf->d2h_size, DMA_FROM_DEVICE);
-//	printk(KERN_DEBUG ">>> buffer has been mapped for device\n");
+	/* prepare buffer and fill it with markers */
+	test_buff = kmalloc(TEST_BUFF_SZ, GFP_KERNEL);
+	if (!test_buff)
+		return ENOMEM;
+	for (i = 0; i < TEST_BUFF_SZ; i++) {
+		test_buff[i] = 0xa5;
+	}
 
-//	printk(KERN_DEBUG ">>> dump the content of SG list:\n");
-//	n_elem = 0;
-//	for_each_sg(&sg, sg_ptr, 1, n_elem) {
-//		dma_addr_t addr = sg_dma_address(sg_ptr);
-//		u32 sg_len = sg_dma_len(sg_ptr);
-//		printk(KERN_DEBUG ">>>\t# %d, addr = 0x%x, %d\n", n_elem, addr, sg_len);
-//	}
-//	printk(KERN_DEBUG ">>>\n");
+	/* read test */
+	sg_init_one(&sg, test_buff, TEST_BUFF_SZ);
+	sg_elems = 1;
+
+	printk(KERN_DEBUG ">>> dump the content of SG list:\n");
+	n_elem = 0;
+	for_each_sg(&sg, sg_ptr, sg_elems, n_elem) {
+		dma_addr_t addr = sg_dma_address(sg_ptr);
+		u32 sg_len = sg_dma_len(sg_ptr);
+		printk(KERN_DEBUG ">>>\t# %d, addr = 0x%x, %d\n", n_elem, addr, sg_len);
+	}
+	printk(KERN_DEBUG ">>>\n");
+
+	dma_map_sg(dev, &sg, sg_elems, DMA_FROM_DEVICE);
 
 	printk(KERN_DEBUG ">>> trying to read data to sg list\n");
-	elphel_read_dma(port, lba_addr, 1, test_buff, TEST_BUFF_SZ);
+	elphel_read_dma(port, lba_addr, sg_elems, &sg, 1);
 	printk(KERN_DEBUG ">>> command has been issued\n");
 
 	while (dpriv->flags & IRQ_SIMPLE) {
@@ -436,11 +444,16 @@ static ssize_t elphel_test_write(struct device *dev, struct device_attribute *at
 		msleep(1);
 	}
 
+//	printk(KERN_DEBUG ">>> dump test buffer after reading: %d bytes\n", TEST_BUFF_SZ);
+//	dma_sync_single_for_cpu(dev, pElphel_buf->d2h_paddr, pElphel_buf->d2h_size, DMA_FROM_DEVICE);
+//	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, test_buff, TEST_BUFF_SZ);
+//	dma_sync_single_for_device(dev, pElphel_buf->d2h_paddr, pElphel_buf->d2h_size, DMA_FROM_DEVICE);
+//	printk(KERN_DEBUG ">>> buffer has been mapped for device\n");
+
 	printk(KERN_DEBUG ">>> dump test buffer after reading: %d bytes\n", TEST_BUFF_SZ);
-	dma_sync_single_for_cpu(dev, pElphel_buf->d2h_paddr, pElphel_buf->d2h_size, DMA_FROM_DEVICE);
+	dma_unmap_sg(dev, &sg, sg_elems, DMA_FROM_DEVICE);
 	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, test_buff, TEST_BUFF_SZ);
-	dma_sync_single_for_device(dev, pElphel_buf->d2h_paddr, pElphel_buf->d2h_size, DMA_FROM_DEVICE);
-	printk(KERN_DEBUG ">>> buffer has been mapped for device\n");
+
 	/* end of read test */
 
 //	printk(KERN_DEBUG ">>> interrupt flag has been cleared\n");
@@ -596,7 +609,7 @@ static int elphel_write_dma(struct ata_port *ap, u64 start, u16 count, struct sc
 	return 0;
 }
 
-static int elphel_read_dma(struct ata_port *ap, u64 start, u16 count, u8 *buff, unsigned int elem)
+static int elphel_read_dma(struct ata_port *ap, u64 start, u16 count, struct scatterlist *sgl, unsigned int elem)
 {
 	u32 opts;
 	const u32 cmd_fis_len = 5;
@@ -623,21 +636,16 @@ static int elphel_read_dma(struct ata_port *ap, u64 start, u16 count, u8 *buff, 
 	prep_cfis(cmd_tbl, cmd, start, count);
 
 	/* prepare physical region descriptor table */
-//	n_elem = 0;
-//	ahci_sg = pp->cmd_tbl + slot_num * AHCI_CMD_TBL_SZ + AHCI_CMD_TBL_HDR_SZ;
-//	for_each_sg(sg, sg_ptr, elem, n_elem) {
-//		dma_addr_t addr = sg_dma_address(sg_ptr);
-//		u32 sg_len = sg_dma_len(sg_ptr);
-//
-//		ahci_sg[n_elem].addr = cpu_to_le32(addr & 0xffffffff);
-//		ahci_sg[n_elem].addr_hi = cpu_to_le32((addr >> 16) >> 16);
-//		ahci_sg[n_elem].flags_size = cpu_to_le32(sg_len - 1);
-//	}
+	n_elem = 0;
 	ahci_sg = pp->cmd_tbl + slot_num * AHCI_CMD_TBL_SZ + AHCI_CMD_TBL_HDR_SZ;
-	ahci_sg->addr = cpu_to_le32(pElphel_buf->d2h_paddr & 0xffffffff);
-	ahci_sg->addr_hi = cpu_to_le32((pElphel_buf->d2h_paddr >> 16) >> 16);
-	ahci_sg->flags_size = cpu_to_le32((elem - 1) | (1 << 31));
-	n_elem = 1;
+	for_each_sg(sgl, sg_ptr, elem, n_elem) {
+		dma_addr_t addr = sg_dma_address(sg_ptr);
+		u32 sg_len = sg_dma_len(sg_ptr);
+
+		ahci_sg[n_elem].addr = cpu_to_le32(addr & 0xffffffff);
+		ahci_sg[n_elem].addr_hi = cpu_to_le32((addr >> 16) >> 16);
+		ahci_sg[n_elem].flags_size = cpu_to_le32(sg_len - 1);
+	}
 
 	/* prepare command header */
 	opts = CMD_FIS_LEN | (n_elem << 16) | AHCI_CMD_PREFETCH | AHCI_CMD_CLR_BUSY;
