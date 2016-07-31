@@ -199,8 +199,8 @@ int histograms_init_hardware(void)
     int port, chn;
     x393_hist_saxi_addr_t saxi_addr;
 //    fpga_hist_data = (u32 [SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]) pElphel_buf->d2h_vaddr; // must be page-aligned!
-    fpga_hist_data = (u32 *) pElphel_buf->d2h_vaddr; // must be page-aligned!
-    fpga_hist_phys = pElphel_buf->d2h_paddr;
+    fpga_hist_data = (u32 *) pElphel_buf->histograms_vaddr; // d2h_vaddr; // must be page-aligned!
+    fpga_hist_phys = pElphel_buf->histograms_paddr; //d2h_paddr;
     for (port=0; port<SENSOR_PORTS; port++) for (chn=0; chn < MAX_SENSORS; chn++) {
         saxi_addr.page=(fpga_hist_phys >> PAGE_SHIFT)+ PARS_FRAMES * (chn + MAX_SENSORS *port);// table for 4 colors is exactly 1 page;
         set_x393_hist_saxi_addr (saxi_addr, chn);       // Histogram DMA addresses (in 4096 byte pages)

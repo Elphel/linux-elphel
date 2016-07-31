@@ -109,60 +109,63 @@
 #define bytePtrMask  ((CCAM_DMA1_SIZE << 2)-1) // and byte pointer in the dma buffer to get index in the array
 
 #ifdef NC353
-    #define XCLK_RATE 80000000 // 80MHz clock in NC353
+    #define XCLK_RATE 80000000 ///< 80MHz clock in NC353
 #else
-    #define XCLK_RATE 100000000 // 100MHz clock in NC393
+    #define XCLK_RATE 100000000 ///< 100MHz clock in NC393
 #endif
-#define RS232_RATE 19200
+#define RS232_RATE 19200   ///< RS232 bps
 #define IMU_MODULE_DESCRIPTION "IMU logger for 10365 ext. board"
 #define	IMU_DRIVER_NAME "imu_logger"
 #define IMU_MAXMINOR 10
 
-#define   X313_WA_IOPINS    0x70  // bits [31:24] - enable channels (channel 0 -software, enabled at FPGA init)
-#define   X313_WA_IOPINS_EN_IMU  0xc0000000
-#define   X313_WA_IOPINS_DIS_IMU 0x80000000
-#define   X313_WA_IMU_DATA  0x7e
-#define   X313_WA_IMU_CTRL  0x7f
+#ifdef NC353
+    #define   X313_WA_IOPINS    0x70  // bits [31:24] - enable channels (channel 0 -software, enabled at FPGA init)
+    #define   X313_WA_IOPINS_EN_IMU  0xc0000000
+    #define   X313_WA_IOPINS_DIS_IMU 0x80000000
+    #define   X313_WA_IMU_DATA  0x7e
+    #define   X313_WA_IMU_CTRL  0x7f
+    #define   X313_RA_IMU_COUNT   0x7e // number of 64-byte samples recorded (24 bit counter)
+#endif
 //  #define   X313_RA_IMU_DATA   0x7e // use csp4
 //  #define   X313_RA_IMU_STATUS 0x7f // use csp4
 
-#define   IMU_COUNT_OVERFLOW 0x1000000 // number of records written is modulo IMU_COUNT_OVERFLOW
-#define   X313_RA_IMU_COUNT   0x7e // number of 64-byte samples recorded (24 bit counter)
+// Is it the same for 393?
+#define   IMU_COUNT_OVERFLOW 0x1000000 ///< number of records written is modulo IMU_COUNT_OVERFLOW
 
-#define   X313_IMU_PERIOD_ADDR     0x0  // request period for IMU (in SPI bit periods)
-#define   X313_IMU_DIVISOR_ADDR    0x1  // xclk (80MHz) clock divisor for half SPI bit period 393: clock is Now clock is logger_clk=100MHz (200 MHz?)
-#define   X313_IMU_RS232DIV_ADDR   0x2  // serial gps bit duration in xclk (80MHz) periods - 16 bits
-#define   X313_IMU_CONFIGURE_ADDR  0x3  // IMU logger configuration
+#define   X313_IMU_PERIOD_ADDR     0x0  ///< request period for IMU (in SPI bit periods)
+#define   X313_IMU_DIVISOR_ADDR    0x1  ///< xclk (80MHz) clock divisor for half SPI bit period 393: clock is Now clock is logger_clk=100MHz (200 MHz?)
+#define   X313_IMU_RS232DIV_ADDR   0x2  ///< serial gps bit duration in xclk (80MHz) periods - 16 bits
+#define   X313_IMU_CONFIGURE_ADDR  0x3  ///< IMU logger configuration
 
 
 #define IMU_CONF(x,y)  (((((y) & ((1 << IMUCR__##x##__WIDTH)-1))) | (1 << IMUCR__##x##__WIDTH) ) << IMUCR__##x##__BITNM)
-#define  IMUCR__IMU_SLOT__BITNM 0    // slot, where 103695 (imu) board is connected: 0 - none, 1 - J9, 2 - J10, 3 - J11)
+#define  IMUCR__IMU_SLOT__BITNM 0    ///< slot, where 103695 (imu) board is connected: 0 - none, 1 - J9, 2 - J10, 3 - J11)
 #define  IMUCR__IMU_SLOT__WIDTH 2
 
-#define  IMUCR__GPS_CONF__BITNM 3    // slot, where 103695 (imu) bnoard is connected: 0 - none, 1 - J9, 2 - J10, 3 - J11)
-#define  IMUCR__GPS_CONF__WIDTH 4    // bits 0,1 - slot #, same as for IMU_SLOT, bits 2,3:
+#define  IMUCR__GPS_CONF__BITNM 3    ///< slot, where 103695 (imu) bnoard is connected: 0 - none, 1 - J9, 2 - J10, 3 - J11)
+#define  IMUCR__GPS_CONF__WIDTH 4    ///< bits 0,1 - slot #, same as for IMU_SLOT, bits 2,3:
 // 0 - ext pulse, leading edge,
 // 1 - ext pulse, trailing edge
 // 2 - start of the first rs232 character after pause
 // 3 - start of the last "$" character (start of each NMEA sentence)
-#define  IMUCR__MSG_CONF__BITNM 8    // source of external pulses to log:
-#define  IMUCR__MSG_CONF__WIDTH 5    // bits 0-3 - number of fpga GPIO input 0..11 (i.e. 0x0a - external optoisolated sync input (J15)
+#define  IMUCR__MSG_CONF__BITNM 8    ///< source of external pulses to log:
+#define  IMUCR__MSG_CONF__WIDTH 5    ///< bits 0-3 - number of fpga GPIO input 0..11 (i.e. 0x0a - external optoisolated sync input (J15)
 // 0x0f - disable MSG module
 // bit 4 - invert polarity: 0 - timestamp leading edge, log at trailing edge, 1 - opposite
 // software may set (up to 56 bytes) log message before trailing end of the pulse
-#define  IMUCR__SYN_CONF__BITNM 14   // logging frame time stamps (may be synchronized by another camera and have timestamp of that camera)
-#define  IMUCR__SYN_CONF__WIDTH 1    // 0 - disable, 1 - enable
+#define  IMUCR__SYN_CONF__BITNM 14   ///< logging frame time stamps (may be synchronized by another camera and have timestamp of that camera)
+#define  IMUCR__SYN_CONF__WIDTH 1    ///< 0 - disable, 1 - enable
 
-#define  IMUCR__RST_CONF__BITNM 16   // reset module
-#define  IMUCR__RST_CONF__WIDTH 1    // 0 - enable, 1 -reset (needs resettimng DMA address in ETRAX also)
+#define  IMUCR__RST_CONF__BITNM 16   ///< reset module
+#define  IMUCR__RST_CONF__WIDTH 1    ///< 0 - enable, 1 -reset (needs resettimng DMA address in ETRAX also)
 
-#define  IMUCR__DBG_CONF__BITNM 18   // several axtra IMU configuration bits
-#define  IMUCR__DBG_CONF__WIDTH 4    // 0 - config_long_sda_en, 1 -config_late_clk, 2 - config_single_wire, should be set for 103695 rev "A"
+#define  IMUCR__DBG_CONF__BITNM 18   ///< several axtra IMU configuration bits
+#define  IMUCR__DBG_CONF__WIDTH 4    ///< 0 - config_long_sda_en, 1 -config_late_clk, 2 - config_single_wire, should be set for 103695 rev "A"
 
 
 #define   X313_IMU_REGISTERS_ADDR    0x4
 #define   X313_IMU_NMEA_FORMAT_ADDR  0x20
-#define   X313_IMU_MESSAGE_ADDR    0x40 // 40..4f, only first 0xe visible
+#define   X313_IMU_MESSAGE_ADDR    0x40  ///< 40..4f, only first 0xe visible
 
 // offsets in the file (during write)
 #define   X313_IMU_PERIOD_OFFS     0x0
@@ -177,18 +180,18 @@
 #define   X313_IMU_NMEA_FORMAT_OFFS  0x30
 #define   X313_IMU_MESSAGE_OFFS      0xB0 // 0xB0..0xE7
 
-#define   PCA9500_PP_ADDR            0x40 // PCA9500 i2c slave addr for the parallel port (read will be 0x41)
+#define   PCA9500_PP_ADDR            0x40 ///< PCA9500 i2c slave addr for the parallel port (read will be 0x41)
 
-#define DFLT_SLAVE_ADDR 3 // i2c slave addr modifier (0..7) for the IMU (103695) board
-#define DFLT_SCLK_FREQ 5000000 // SCLK frequency
+#define DFLT_SLAVE_ADDR 3           ///< i2c slave addr modifier (0..7) for the IMU (103695) board
+#define DFLT_SCLK_FREQ 5000000      ///< SCLK frequency
 #define DFLT_DIVISOR ( XCLK_RATE / DFLT_SCLK_FREQ /2 ) 
-#define DFLT_STALL_USEC 2   // stall time in usec 
-#define DFLT_STALL  (( DFLT_STALL_USEC * ( XCLK_RATE / DFLT_DIVISOR )) / 1000000 )    // stall time in usec 
+#define DFLT_STALL_USEC 2           ///< stall time in usec
+#define DFLT_STALL  (( DFLT_STALL_USEC * ( XCLK_RATE / DFLT_DIVISOR )) / 1000000 )    ///< stall time in usec
 
-#define DFLT_SLEEP   30000 // usec, sleep if not ready
+#define DFLT_SLEEP   30000 ///< usec, sleep if not ready
 //#define DFLT_FEQ 300
 //#define DFLT_PERIOD ( XCLK_RATE / DFLT_DIVISOR / DFLT_FEQ ) // fixed scan period
-#define DFLT_PERIOD 0xFFFFFFFF // read IMU when it is ready
+#define DFLT_PERIOD 0xFFFFFFFF ///< read IMU when it is ready
 #define DFLT_RS232DIV ( XCLK_RATE / 2 / RS232_RATE )
 
 #if IS_103695_REV_A
@@ -196,7 +199,7 @@
 #else
 #define EXTRA_CONF 0x0
 #endif
-#define SLOW_SPI 0 // set to 1 for slower SPI (not ADIS-16375), it will increase SCLK period that does not end CS active
+#define SLOW_SPI 0 ///< set to 1 for slower SPI (not ADIS-16375), it will increase SCLK period that does not end CS active
 
 #define DFLT_CONFIG ( IMU_CONF(IMU_SLOT,1) | \
         IMU_CONF(GPS_CONF, ( 2 | 8) ) | \
@@ -219,9 +222,9 @@
 #define  WHICH_EN_DMA    1024
 #define  WHICH_EN_LOGGER 2048
 
-#define LSEEK_IMU_NEW       1 // start from the new data, discard buffer
-#define LSEEK_IMU_STOP      2 // stop DMA1 and IMU
-#define LSEEK_IMU_START     3 // start IMU and DMA1 (do not modify parameters)
+#define LSEEK_IMU_NEW       1 ///< start from the new data, discard buffer
+#define LSEEK_IMU_STOP      2 ///< stop DMA1 and IMU
+#define LSEEK_IMU_START     3 ///< start IMU and DMA1 (do not modify parameters)
 static unsigned char dflt_wbuf[]=
 { DFLT_PERIOD & 0xff, ( DFLT_PERIOD >> 8 ) & 0xff, ( DFLT_PERIOD >> 16) & 0xff, ( DFLT_PERIOD >> 24 ) & 0xff,
         //   {0,0,0,0,            // period - off
@@ -261,9 +264,9 @@ static unsigned char dflt_wbuf[]=
         0x70, // time m/s
         0x72, // time d/h
         0x74,// time y/m
-        /// NMEA sentences
-        /// first three letters - sentence to log (letters after "$GP"). next "n"/"b" (up to 24 total) - "n" number (will be encoded 4 digits/byte, follwed by "0xF"
-        /// "b" - byte - all but last will have MSB 0 (& 0x7f), the last one - with MSB set (| 0x80). If there are no characters in the field 0xff will be output
+        // NMEA sentences
+        // first three letters - sentence to log (letters after "$GP"). next "n"/"b" (up to 24 total) - "n" number (will be encoded 4 digits/byte, follwed by "0xF"
+        // "b" - byte - all but last will have MSB 0 (& 0x7f), the last one - with MSB set (| 0x80). If there are no characters in the field 0xff will be output
         'R','M','C','n','b','n','b','n','b','n','n','n','n','b', 0,  0,  0,  0,  0,  0,  0,0,0,0,  0,0,0,0,  0,0,0,0,
         'G','G','A','n','n','b','n','b','n','n','n','n','b','n','b','b','b', 0,  0,  0,  0,0,0,0,  0,0,0,0,  0,0,0,0,
         'G','S','A','b','n','n','n','n','n','n','n','n','n','n','n','n','n','n','n','n', 0,0,0,0,  0,0,0,0,  0,0,0,0,
@@ -274,37 +277,22 @@ static unsigned char dflt_wbuf[]=
         0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
 };
 static unsigned char wbuf[sizeof(dflt_wbuf)];
-//static unsigned char brbuf[8192]; /// twice the FPGA FIFO size
-//static unsigned long * rbuf= (unsigned long *) brbuf;
 
-/*
-#define IMU_MAJOR        141
-#define IMU_MINOR               1
-
- */
 static const char fpga_name[] = "imu_control";
 static int     imu_open   (struct inode *inode, struct file *filp);
 static int     imu_release(struct inode *inode, struct file *filp);
-//static int     imu_ioctl  (struct inode *inode, struct file *filp, unsigned int cmd, unsigned long arg);
 static ssize_t imu_write  (struct file * file, const char * buf, size_t count, loff_t *off);
 static loff_t  imu_lseek  (struct file * file, loff_t offset, int orig);
 static ssize_t imu_read   (struct file * file, char * buf, size_t count, loff_t *off);
 
-//static loff_t fpga_lseek(struct file * file, loff_t offset, int orig);
-//static ssize_t fpga_read(struct file * file, char * buf, size_t count, loff_t *off);
-
-//static int __init fpga_init(void);
 #define IMU_MAXMINOR 10
 
-//static int minors[IMU_MAXMINOR+1];	// each minor can be opened only once
-//static int num_reads;	// number of fifo reads (does not advance file position)
-//static int numRecordsRead=0; // number of 64-byte log records read (24 bit, same format as FPGA write counter)
-static loff_t numBytesRead=0;    // totalnumber of bytes read from the imu - global pointer (modified when open in write mode)
-static loff_t numBytesWritten=0; // totalnumber of bytes writtent to the IMU buffer since it was started/restarted
-static int lastFPGABytes=0;      // last read FPGA counter (24 bits) << 6
+static loff_t numBytesRead=0;    ///< totalnumber of bytes read from the imu - global pointer (modified when open in write mode)
+static loff_t numBytesWritten=0; ///< totalnumber of bytes writtent to the IMU buffer since it was started/restarted
+static int lastFPGABytes=0;      ///< last read FPGA counter (24 bits) << 6
 
 
-
+//TODO 393: Use allocated 4MB
 static unsigned long ccam_dma1_buf[CCAM_DMA1_SIZE + (PAGE_SIZE>>2)] __attribute__ ((aligned (PAGE_SIZE)));
 //!Without "static" system hangs after "Uncompressing Linux...
 unsigned long  * ccam_dma1_buf_ptr = NULL;
@@ -318,8 +306,11 @@ void init_ccam_dma1_buf_ptr(void) {
 
 void updateNumBytesWritten(void){
     x393_logger_status_t logger_status = x393_logger_status();
-//     int thisFPGABytes=(int) port_csp0_addr[X313_RA_IMU_COUNT]<<6;
+#ifdef NC353
+    int thisFPGABytes=(int) port_csp0_addr[X313_RA_IMU_COUNT]<<6;
+#else
     int thisFPGABytes = logger_status.sample << 6;
+#endif
     int delta=(thisFPGABytes-lastFPGABytes);
     lastFPGABytes=thisFPGABytes;
     if (delta<0) delta+=(IMU_COUNT_OVERFLOW<<6);

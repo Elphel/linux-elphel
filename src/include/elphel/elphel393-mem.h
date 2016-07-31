@@ -38,6 +38,17 @@ struct elphel_buf_t
 	void      *bidir_vaddr;
 	dma_addr_t bidir_paddr;
 	ssize_t    bidir_size;
+
+    // Device to host stream DMA buffer for histograms
+    void      *histograms_vaddr;
+    dma_addr_t histograms_paddr;
+    ssize_t    histograms_size;
+
+    // Device to host stream DMA buffer for the logger
+    void      *logger_vaddr;
+    dma_addr_t logger_paddr;
+    ssize_t    logger_size;
+
 };
 extern struct elphel_buf_t *pElphel_buf;
 
