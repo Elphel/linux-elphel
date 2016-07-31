@@ -1,22 +1,22 @@
-/*!***************************************************************************
- *! FILE NAME  : imu_log353.c
- *! DESCRIPTION: reading IMU log fifo
- *! Copyright (C) 2011 Elphel, Inc.
- *! -----------------------------------------------------------------------------**
- *!
- *!  This program is free software: you can redistribute it and/or modify
- *!  it under the terms of the GNU General Public License as published by
- *!  the Free Software Foundation, either version 3 of the License, or
- *!  (at your option) any later version.
- *!
- *!  This program is distributed in the hope that it will be useful,
- *!  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *!  GNU General Public License for more details.
- *!
- *!  You should have received a copy of the GNU General Public License
- *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *! -----------------------------------------------------------------------------**
+/** @file imu_log393.c
+ *
+ * @brief reading logger data
+ *
+ * @copyright Copyright (C) 2011-2016 Elphel, Inc
+ *
+ * @par <b>License</b>
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+ /*-----------------------------------------------------------------------------**
  *!  $Log: imu_log353.c,v $
  *!  Revision 1.5  2012/04/14 03:53:48  elphel
  *!  bug fix in the driver (was producing errors in 3-4 hours)
@@ -380,7 +380,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 #else
         gpio_set_pins.d32 =   0;
         gpio_set_pins.chn_c = 3; // enable
-        x393_gpio_set_pins(gpio_set_pins.chn_c);
+        x393_gpio_set_pins(gpio_set_pins);
 
 #endif
         ///TODO: add enabling via i2c (bus=1&raw=0x2300&data=0xfe)
@@ -829,7 +829,12 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
         /// should we wait for data?
         idbg=0;
         while ((sleep[0]!=0) && ((numBytesWritten-thisNumBytesRead)<= 64)) { /// last 32 bytes can get stuck in ETRAX dma channel
-            schedule_usleep(*sleep);
+
+#ifdef NC353
+            schedule_usleep(*sleep); // ETRAX-specific wait, replace!
+#else
+            BUG();
+#endif
             updateNumBytesWritten();
             //          numBytesWritten= (int) port_csp0_addr[X313_RA_IMU_COUNT]<<6;
             //          if ( thisNumBytesRead > numBytesWritten)  thisNumBytesRead-= (IMU_COUNT_OVERFLOW<<6); // may become negative here
