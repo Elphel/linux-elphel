@@ -386,23 +386,24 @@ module_platform_driver(ahci_elphel_driver);
 #define TEST_BUFF_SZ              512
 //#define SDA2_LBA_ADDR             124963848
 #define SDA2_LBA_ADDR             1
+#define SG_TBL_SZ                 3
 static ssize_t elphel_test_write(struct device *dev, struct device_attribute *attr,
 		const char *buff, size_t buff_sz)
 {
 	int i, n_elem;
-	int sg_elems;
+	int sg_elems = 0;
 	struct ata_host *host;
 	struct ata_port *port;
 	struct ahci_host_priv *hpriv;
 	struct elphel_ahci_priv *dpriv;
-	struct scatterlist sg;
+	struct scatterlist *sgl;
 	struct scatterlist *sg_ptr;
 //	u8 *test_buff = pElphel_buf->d2h_vaddr;
 	u8 *test_buff;
 	unsigned int lba_addr;
 
 	if (sscanf(buff, "%u", &lba_addr) == 1) {
-		printk(KERN_DEBUG ">>> got LBA address: %d", lba_addr);
+		printk(KERN_DEBUG ">>> got LBA address: %d\n", lba_addr);
 	} else {
 		lba_addr = SDA2_LBA_ADDR;
 	}
@@ -413,30 +414,27 @@ static ssize_t elphel_test_write(struct device *dev, struct device_attribute *at
 	dpriv = hpriv->plat_data;
 
 	/* prepare buffer and fill it with markers */
-	test_buff = kmalloc(TEST_BUFF_SZ, GFP_KERNEL);
-	if (!test_buff)
+	sgl = kmalloc(sizeof(struct scatterlist) * SG_TBL_SZ, GFP_KERNEL);
+	if (!sgl)
 		return ENOMEM;
-	for (i = 0; i < TEST_BUFF_SZ; i++) {
-		test_buff[i] = 0xa5;
+	sg_init_table(sgl, SG_TBL_SZ);
+	for_each_sg(sgl, sg_ptr, SG_TBL_SZ, n_elem) {
+		test_buff = kmalloc(TEST_BUFF_SZ, GFP_KERNEL);
+		if (!test_buff)
+			return ENOMEM;
+		memset(test_buff, 0xa5, TEST_BUFF_SZ);
+		sg_set_buf(sg_ptr, (void *)test_buff, TEST_BUFF_SZ);
+		sg_elems++;
 	}
 
-	/* read test */
-	sg_init_one(&sg, test_buff, TEST_BUFF_SZ);
-	sg_elems = 1;
-
-	printk(KERN_DEBUG ">>> dump the content of SG list:\n");
-	n_elem = 0;
-	for_each_sg(&sg, sg_ptr, sg_elems, n_elem) {
-		dma_addr_t addr = sg_dma_address(sg_ptr);
-		u32 sg_len = sg_dma_len(sg_ptr);
-		printk(KERN_DEBUG ">>>\t# %d, addr = 0x%x, %d\n", n_elem, addr, sg_len);
-	}
+	printk(KERN_DEBUG ">>> mapped %d SG elemets\n", sg_elems);
 	printk(KERN_DEBUG ">>>\n");
 
-	dma_map_sg(dev, &sg, sg_elems, DMA_FROM_DEVICE);
+	/* read test */
+	dma_map_sg(dev, sgl, sg_elems, DMA_FROM_DEVICE);
 
 	printk(KERN_DEBUG ">>> trying to read data to sg list\n");
-	elphel_read_dma(port, lba_addr, sg_elems, &sg, 1);
+	elphel_read_dma(port, lba_addr, sg_elems, sgl, sg_elems);
 	printk(KERN_DEBUG ">>> command has been issued\n");
 
 	while (dpriv->flags & IRQ_SIMPLE) {
@@ -451,8 +449,13 @@ static ssize_t elphel_test_write(struct device *dev, struct device_attribute *at
 //	printk(KERN_DEBUG ">>> buffer has been mapped for device\n");
 
 	printk(KERN_DEBUG ">>> dump test buffer after reading: %d bytes\n", TEST_BUFF_SZ);
-	dma_unmap_sg(dev, &sg, sg_elems, DMA_FROM_DEVICE);
-	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, test_buff, TEST_BUFF_SZ);
+	dma_unmap_sg(dev, sgl, sg_elems, DMA_FROM_DEVICE);
+	for (i = 0; i < sg_elems; i++) {
+		dev_dbg(dev, ">>> sector %i\n", i);
+		u8 buff[TEST_BUFF_SZ];
+		sg_copy_to_buffer(&sgl[i], 1, buff, TEST_BUFF_SZ);
+		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buff, TEST_BUFF_SZ);
+	}
 
 	/* end of read test */
 
@@ -496,11 +499,11 @@ static ssize_t elphel_test_write(struct device *dev, struct device_attribute *at
 /** Prepare software constructed command FIS in command table area. The structure of the
  * command FIS is described in Transport Layer chapter of Serial ATA revision 3.1 documentation.
  */
-inline void prep_cfis(u8 *cmd_tbl,           ///< pointer to the beginning of command table
-		u8 cmd,                              ///< ATA command as described in ATA/ATAPI command set
-		u64 start_addr,                      ///< LBA start address
-		u16 count)                           ///< sector count, the number of 512 byte sectors to read or write
-		                                     ///< @return None
+inline void prep_cfis(u8 *cmd_tbl,               ///< pointer to the beginning of command table
+		u8 cmd,                                  ///< ATA command as described in ATA/ATAPI command set
+		u64 start_addr,                          ///< LBA start address
+		u16 count)                               ///< sector count, the number of 512 byte sectors to read or write
+		                                         ///< @return None
 {
 	u8 device, ctrl;
 
@@ -549,6 +552,26 @@ inline void prep_cfis(u8 *cmd_tbl,           ///< pointer to the beginning of co
 	cmd_tbl[15] = ctrl;                      // control
 }
 
+/** Map S/G list to physical region descriptor table in AHCI controller command table */
+inline void prep_prdt(struct scatterlist *sgl,   ///< pointer to S/G list which should be mapped to physical
+		                                         ///< region description table
+		unsigned int n_elem,                     ///< the number of elements in @e sgl
+		struct ahci_sg *ahci_sgl)                ///< pointer to physical region description table
+		                                         ///< @return None
+{
+	unsigned int num = 0;
+	struct scatterlist *sg_ptr;
+
+	for_each_sg(sgl, sg_ptr, n_elem, num) {
+		dma_addr_t addr = sg_dma_address(sg_ptr);
+		u32 sg_len = sg_dma_len(sg_ptr);
+
+		ahci_sgl[num].addr = cpu_to_le32(addr & 0xffffffff);
+		ahci_sgl[num].addr_hi = cpu_to_le32((addr >> 16) >> 16);
+		ahci_sgl[num].flags_size = cpu_to_le32(sg_len - 1);
+	}
+}
+
 static int elphel_write_dma(struct ata_port *ap, u64 start, u16 count, struct scatterlist *sg, unsigned int elem)
 {
 	u32 opts;
@@ -589,14 +612,15 @@ static int elphel_write_dma(struct ata_port *ap, u64 start, u16 count, struct sc
 	/* prepare physical region descriptor table */
 	n_elem = 0;
 	ahci_sg = pp->cmd_tbl + slot_num * AHCI_CMD_TBL_SZ + AHCI_CMD_TBL_HDR_SZ;
-	for_each_sg(sg, sg_ptr, elem, n_elem) {
-		dma_addr_t addr = sg_dma_address(sg_ptr);
-		u32 sg_len = sg_dma_len(sg_ptr);
-
-		ahci_sg[n_elem].addr = cpu_to_le32(addr & 0xffffffff);
-		ahci_sg[n_elem].addr_hi = cpu_to_le32((addr >> 16) >> 16);
-		ahci_sg[n_elem].flags_size = cpu_to_le32(sg_len - 1);
-	}
+	prep_prdt(sg, elem, ahci_sg);
+//	for_each_sg(sg, sg_ptr, elem, n_elem) {
+//		dma_addr_t addr = sg_dma_address(sg_ptr);
+//		u32 sg_len = sg_dma_len(sg_ptr);
+//
+//		ahci_sg[n_elem].addr = cpu_to_le32(addr & 0xffffffff);
+//		ahci_sg[n_elem].addr_hi = cpu_to_le32((addr >> 16) >> 16);
+//		ahci_sg[n_elem].flags_size = cpu_to_le32(sg_len - 1);
+//	}
 
 	/* prepare command header */
 	opts = cmd_fis_len | (n_elem << 16) | AHCI_CMD_WRITE | AHCI_CMD_PREFETCH | AHCI_CMD_CLR_BUSY;
@@ -612,15 +636,12 @@ static int elphel_write_dma(struct ata_port *ap, u64 start, u16 count, struct sc
 static int elphel_read_dma(struct ata_port *ap, u64 start, u16 count, struct scatterlist *sgl, unsigned int elem)
 {
 	u32 opts;
-	const u32 cmd_fis_len = 5;
-	unsigned int n_elem;
 	u8 *cmd_tbl;
 	u8 cmd;
 	unsigned int slot_num = 0;
 	struct ahci_port_priv *pp = ap->private_data;
 	struct ahci_host_priv *hpriv = ap->host->private_data;
 	struct elphel_ahci_priv *dpriv = hpriv->plat_data;
-	struct scatterlist *sg_ptr;
 	struct ahci_sg *ahci_sg;
 	void __iomem *port_mmio = ahci_port_base(ap);
 
@@ -636,20 +657,11 @@ static int elphel_read_dma(struct ata_port *ap, u64 start, u16 count, struct sca
 	prep_cfis(cmd_tbl, cmd, start, count);
 
 	/* prepare physical region descriptor table */
-	n_elem = 0;
 	ahci_sg = pp->cmd_tbl + slot_num * AHCI_CMD_TBL_SZ + AHCI_CMD_TBL_HDR_SZ;
-	for_each_sg(sgl, sg_ptr, elem, n_elem) {
-		dma_addr_t addr = sg_dma_address(sg_ptr);
-		u32 sg_len = sg_dma_len(sg_ptr);
-
-		ahci_sg[n_elem].addr = cpu_to_le32(addr & 0xffffffff);
-		ahci_sg[n_elem].addr_hi = cpu_to_le32((addr >> 16) >> 16);
-		ahci_sg[n_elem].flags_size = cpu_to_le32(sg_len - 1);
-	}
+	prep_prdt(sgl, elem, ahci_sg);
 
 	/* prepare command header */
-	opts = CMD_FIS_LEN | (n_elem << 16) | AHCI_CMD_PREFETCH | AHCI_CMD_CLR_BUSY;
-//	opts = sizeof(struct ahci_cmd_hdr) | (n_elem << 16) | AHCI_CMD_PREFETCH | AHCI_CMD_CLR_BUSY;
+	opts = CMD_FIS_LEN | (elem << 16) | AHCI_CMD_PREFETCH | AHCI_CMD_CLR_BUSY;
 	ahci_fill_cmd_slot(pp, slot_num, opts);
 
 	printk(KERN_DEBUG ">>> dump command table content, first %d bytes, phys addr = 0x%x:\n", TEST_BUFF_SZ, pp->cmd_tbl_dma);
