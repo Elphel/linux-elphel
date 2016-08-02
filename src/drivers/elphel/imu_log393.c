@@ -38,43 +38,25 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
-//#include <linux/time.h> //?
 #include <linux/platform_device.h>
-//#include <linux/of.h>
 #include <linux/of_device.h>
-
-
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
-
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
 #include <linux/string.h>
-//#include <asm/io.h>
-
-
-//#include <asm/irq.h>
-//#include <asm/atomic.h>
-
 #include <asm/delay.h>
 #include <asm/uaccess.h> // copy_*_user
-
-
 #include <elphel/driver_numbers.h>
 #include <elphel/c313a.h>
 #include <elphel/elphel393-mem.h>
 #include "imu_log393.h"
 #include "x393.h"
-#include "legacy_defines.h" // temporarily
+#include "cci2c.h"
+//#include "legacy_defines.h" // temporarily
 
-//#include "x393_macro.h"
-//#include "x393_helpers.h"
-
-
-//#include "x3x3.h"
-//#include "cci2c.h" // i2c to enable CS for the IMU
 
 #if 0
 #define D(x) x
@@ -413,14 +395,11 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         enable_IMU=0xfe; // maybe we need to reset it here? bit [1]
 #endif
 
-//TODO: Implement bus 1 i2c for 393
-#ifdef NC353
-        i2c_writeData(1,           // int n - bus (0 - to the sensor)
+        i2c_writeData(1,     // int n - bus (0 - to the sensor)
                 i2c_sa,      // unsigned char theSlave,
                 &enable_IMU, //unsigned char *theData,
                 1,           // int size,
                 1);          // int stop (send stop in the end)
-#endif
         D(printk("Sent i2c command in raw mode - address=0x%x, data=0x%x, result=0x%x\n",(int)i2c_sa, (int) enable_IMU, i2c_err));
     }
     if (which & WHICH_RESET_SPI) {
@@ -1289,21 +1268,3 @@ static struct platform_driver elphel393_logger = {
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(IMU_MODULE_DESCRIPTION);
-/*
- DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); /// 0 - no arguments for now
-in irq:
-   wake_up_interruptible(&framepars_wait_queue); /// all interrupts, not just frames acquired
-   tasklet_schedule(&tasklet_fpga); /// trigger software interrupt
-void tasklet_fpga_function(unsigned long arg);
-
-void tasklet_fpga_function(unsigned long arg){
-...
-  wake_up_interruptible(&hist_c_wait_queue);     /// wait queue for all the other (R,G2,B) histograms (color)
----
-wait_queue_head_t hist_y_wait_queue;    /// wait queue for the G1 histogram (used as Y)
-wait_event_interruptible (hist_c_wait_queue,GLOBALPARS(G_HIST_C_FRAME)>=offset);
-   init_waitqueue_head(&hist_c_wait_queue);    /// wait queue for all the other (R,G2,B) histograms (color)
-  wake_up_interruptible(&hist_c_wait_queue);     /// wait queue for all the other (R,G2,B) histograms (color)
-
-}
- */

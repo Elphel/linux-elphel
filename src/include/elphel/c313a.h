@@ -118,6 +118,23 @@
 #define MCPwshared	0x80
 #define MCPwrsynctb	0x100
 #define MCPwrseq	0x200
+#else
+    // Temporarily porting, to use only bus = 1 (GPS, IMU)
+    #define X3X3_I2C_CTRL        0  ///< control/reset i2c
+    #define X3X3_I2C_8_AINC      1  ///< 8bit  registers, autoincement while read/write
+    #define X3X3_I2C_16_AINC     2  ///< 16bit registers, autoincement while read/write
+    #define X3X3_I2C1_8_AINC     3  ///< 8bit  registers, autoincement while read/write (bus 1)
+    #define X3X3_I2C1_16_AINC    4  ///< 16bit registers, autoincement while read/write (bus 1)
+    #define X3X3_I2C_RAW         5  ///< 8bit  registers, no address byte (just slave, then read/write byte(s)
+    #define X3X3_I2C1_RAW        6  ///< 8bit  registers, no address byte (just slave, then read/write byte(s)
+    #define X3X3_I2C_ENABLE      7  ///< enable(/protect) different I2C devices for different types of I2C accesses
+    #define X3X3_I2C_ENABLE_RD   0  ///< bit 0 - enable i2c read
+    #define X3X3_I2C_ENABLE_WR   1  ///< bit 1 - enable i2c write
+    #define X3X3_I2C_ENABLE_RAW  2  ///< bit 2 - enable i2c raw (no address byte)
+    #define X3X3_I2C_ENABLE_8    3  ///< bit 3 - enable i2c 8-bit registers access
+    #define X3X3_I2C_ENABLE_16   4  ///< bit 4 - enable i2c 16-bit registers access
+    #define X3X3_I2C_MAXMINOR    7  ///<
+    #define X3X3_I2C_CHANNELS    2  ///< number of i2c channels (0 is not used in NC393)
 #endif
 
 
