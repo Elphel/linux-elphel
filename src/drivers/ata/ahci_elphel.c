@@ -442,12 +442,6 @@ static ssize_t elphel_test_write(struct device *dev, struct device_attribute *at
 		msleep(1);
 	}
 
-//	printk(KERN_DEBUG ">>> dump test buffer after reading: %d bytes\n", TEST_BUFF_SZ);
-//	dma_sync_single_for_cpu(dev, pElphel_buf->d2h_paddr, pElphel_buf->d2h_size, DMA_FROM_DEVICE);
-//	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, test_buff, TEST_BUFF_SZ);
-//	dma_sync_single_for_device(dev, pElphel_buf->d2h_paddr, pElphel_buf->d2h_size, DMA_FROM_DEVICE);
-//	printk(KERN_DEBUG ">>> buffer has been mapped for device\n");
-
 	printk(KERN_DEBUG ">>> dump test buffer after reading: %d bytes\n", TEST_BUFF_SZ);
 	dma_unmap_sg(dev, sgl, sg_elems, DMA_FROM_DEVICE);
 	for (i = 0; i < sg_elems; i++) {
@@ -456,42 +450,36 @@ static ssize_t elphel_test_write(struct device *dev, struct device_attribute *at
 		sg_copy_to_buffer(&sgl[i], 1, buff, TEST_BUFF_SZ);
 		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buff, TEST_BUFF_SZ);
 	}
-
 	/* end of read test */
 
-//	printk(KERN_DEBUG ">>> interrupt flag has been cleared\n");
-//	printk(KERN_DEBUG ">>> dump of SG list area\n");
-//	dma_sync_single_for_cpu(dev, pElphel_buf->h2d_paddr, pElphel_buf->h2d_size, DMA_TO_DEVICE);
-//	print_hex_dump_bytes("", DUMP_PREFIX_NONE, test_buff, TEST_BUFF_SZ);
-//	dma_sync_single_for_device(dev, pElphel_buf->h2d_paddr, pElphel_buf->h2d_size, DMA_TO_DEVICE);
-//	/* end of read test */
-//
-//	/* write test */
-//	printk(KERN_DEBUG ">>> filling test buffer: %d bytes\n", TEST_BUFF_SZ);
-//	dma_sync_single_for_cpu(dev, pElphel_buf->h2d_paddr, pElphel_buf->h2d_size, DMA_TO_DEVICE);
-//	for (i = 0; i < TEST_BUFF_SZ - 1; i += 2) {
-//		test_buff[i] = 0xaa;
-//		test_buff[i + 1] = 0x55;
-//	}
-//	print_hex_dump_bytes("", DUMP_PREFIX_NONE, test_buff, TEST_BUFF_SZ);
-//	dma_sync_single_for_device(dev, pElphel_buf->h2d_paddr, pElphel_buf->h2d_size, DMA_TO_DEVICE);
-//	printk(KERN_DEBUG ">>> buffer has been mapped\n");
-//
-//	sg_init_one(&sg, pElphel_buf->h2d_vaddr, TEST_BUFF_SZ);
-//
-//	printk(KERN_DEBUG ">>> trying to read data to sg list\n");
-//	elphel_read_dma(port, SDA2_LBA_ADDR, 1, &sg, 1);
-//	printk(KERN_DEBUG ">>> command has been issued\n");
-//	/* end of write test */
-//
-////	while (dpriv->flags & IRQ_SIMPLE) {
-////		msleep(1);
-////	}
-//	printk(KERN_DEBUG ">>> interrupt flag has been cleared\n");
-//	printk(KERN_DEBUG ">>> dump of SG list area\n");
-//	dma_sync_single_for_cpu(dev, pElphel_buf->h2d_paddr, pElphel_buf->h2d_size, DMA_TO_DEVICE);
-//	print_hex_dump_bytes("", DUMP_PREFIX_NONE, test_buff, TEST_BUFF_SZ);
-//	dma_sync_single_for_device(dev, pElphel_buf->h2d_paddr, pElphel_buf->h2d_size, DMA_TO_DEVICE);
+	printk(KERN_DEBUG ">>> *** proceeding to write test *** <<<\n");
+
+	/* write test */
+	for_each_sg(sgl, sg_ptr, SG_TBL_SZ, n_elem) {
+		u8 pattern_buff[TEST_BUFF_SZ];
+		memset(pattern_buff, 0x5a, TEST_BUFF_SZ);
+		sg_copy_from_buffer(sg_ptr, 1, pattern_buff, TEST_BUFF_SZ);
+	}
+	dma_map_sg(dev, sgl, sg_elems, DMA_TO_DEVICE);
+
+	printk(KERN_DEBUG ">>> trying to write data from sg list\n");
+	elphel_write_dma(port, lba_addr, sg_elems, sgl, sg_elems);
+	printk(KERN_DEBUG ">>> command has been issued\n");
+
+	while (dpriv->flags & IRQ_SIMPLE) {
+		printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
+		msleep(1);
+	}
+
+	printk(KERN_DEBUG ">>> dump test buffer after writing: %d bytes\n", TEST_BUFF_SZ);
+	dma_unmap_sg(dev, sgl, sg_elems, DMA_TO_DEVICE);
+	for (i = 0; i < sg_elems; i++) {
+		dev_dbg(dev, ">>> sector %i\n", i);
+		u8 buff[TEST_BUFF_SZ];
+		sg_copy_to_buffer(&sgl[i], 1, buff, TEST_BUFF_SZ);
+		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buff, TEST_BUFF_SZ);
+	}
+	/* end of write test */
 
 	return buff_sz;
 }
@@ -511,10 +499,19 @@ inline void prep_cfis(u8 *cmd_tbl,               ///< pointer to the beginning o
 	 * a command in ATA/ATAPI command set documentation
 	 */
 	switch (cmd) {
+	case ATA_CMD_WRITE:
+		device = 0xe0 | ((start_addr >> 24) & 0x0f);
+		ctrl = 0x08;
+		/* this is 28-bit command; 4 bits of the address have already been
+		 * placed to Device register, invalidate the remaining (if any) upper
+		 * bits of the address and leave only 24 significant bits (just in case)
+		 */
+		start_addr &= 0xffffff;
+		break;
 	case ATA_CMD_WRITE_EXT:
 		// not verified yet
 		device = 0x00;
-		ctrl = 0x00;
+		ctrl = 0x08;
 		break;
 	case ATA_CMD_READ:
 		device = 0xe0 | ((start_addr >> 24) & 0x0f);
@@ -572,18 +569,15 @@ inline void prep_prdt(struct scatterlist *sgl,   ///< pointer to S/G list which 
 	}
 }
 
-static int elphel_write_dma(struct ata_port *ap, u64 start, u16 count, struct scatterlist *sg, unsigned int elem)
+static int elphel_write_dma(struct ata_port *ap, u64 start, u16 count, struct scatterlist *sgl, unsigned int elem)
 {
 	u32 opts;
-	const u32 cmd_fis_len = 5;
-	unsigned int n_elem;
-//	void *cmd_tbl;
 	u8 *cmd_tbl;
+	u8 cmd;
 	unsigned int slot_num = 0;
 	struct ahci_port_priv *pp = ap->private_data;
 	struct ahci_host_priv *hpriv = ap->host->private_data;
 	struct elphel_ahci_priv *dpriv = hpriv->plat_data;
-	struct scatterlist *sg_ptr;
 	struct ahci_sg *ahci_sg;
 	void __iomem *port_mmio = ahci_port_base(ap);
 
@@ -592,42 +586,27 @@ static int elphel_write_dma(struct ata_port *ap, u64 start, u16 count, struct sc
 	/* prepare command FIS */
 	dma_sync_single_for_cpu(ap->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
 	cmd_tbl = pp->cmd_tbl + slot_num * AHCI_CMD_TBL_SZ;
-	cmd_tbl[0] = 0x27;                  // H2D register FIS
-	cmd_tbl[1] = 0x80;                  // set C = 1
-	cmd_tbl[2] = ATA_CMD_WRITE;         // ATA WRITE DMA command as described in ATA/ATAPI command set
-	cmd_tbl[3] = 0;                     // features(7:0)
-	cmd_tbl[4] = (start >> 0)  & 0xff;  // LBA(7:0)
-	cmd_tbl[5] = (start >> 8)  & 0xff;  // LBA(15:8)
-	cmd_tbl[6] = (start >> 16) & 0xff;  // LBA(23:16)
-	cmd_tbl[7] = 0;                     // device
-	cmd_tbl[8] = (start >> 24)  & 0xff; // LBA(31:24)
-	cmd_tbl[9] = (start >> 32)  & 0xff; // LBA(39:32)
-	cmd_tbl[10] = (start >> 40) & 0xff; // LBA(47:40)
-	cmd_tbl[11] = 0;                    // features(15:8)
-	cmd_tbl[12] = (count >> 0) & 0xff;  // count(7:0)
-	cmd_tbl[13] = (count >> 8) & 0xff;  // count(15:8)
-	cmd_tbl[14] = 0;                    // ICC (isochronous command completion)
-	cmd_tbl[15] = 0;                    // control
+	if (start & ~ADDR_MASK_28_BIT)
+		cmd = ATA_CMD_WRITE_EXT;
+	else
+		cmd = ATA_CMD_WRITE;
+	prep_cfis(cmd_tbl, cmd, start, count);
 
 	/* prepare physical region descriptor table */
-	n_elem = 0;
 	ahci_sg = pp->cmd_tbl + slot_num * AHCI_CMD_TBL_SZ + AHCI_CMD_TBL_HDR_SZ;
-	prep_prdt(sg, elem, ahci_sg);
-//	for_each_sg(sg, sg_ptr, elem, n_elem) {
-//		dma_addr_t addr = sg_dma_address(sg_ptr);
-//		u32 sg_len = sg_dma_len(sg_ptr);
-//
-//		ahci_sg[n_elem].addr = cpu_to_le32(addr & 0xffffffff);
-//		ahci_sg[n_elem].addr_hi = cpu_to_le32((addr >> 16) >> 16);
-//		ahci_sg[n_elem].flags_size = cpu_to_le32(sg_len - 1);
-//	}
+	prep_prdt(sgl, elem, ahci_sg);
 
 	/* prepare command header */
-	opts = cmd_fis_len | (n_elem << 16) | AHCI_CMD_WRITE | AHCI_CMD_PREFETCH | AHCI_CMD_CLR_BUSY;
+	opts = CMD_FIS_LEN | (elem << 16) | AHCI_CMD_PREFETCH | AHCI_CMD_CLR_BUSY | AHCI_CMD_WRITE;
 	ahci_fill_cmd_slot(pp, slot_num, opts);
+
+	printk(KERN_DEBUG ">>> dump command table content, first %d bytes, phys addr = 0x%x:\n", TEST_BUFF_SZ, pp->cmd_tbl_dma);
+	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, pp->cmd_tbl, TEST_BUFF_SZ);
+
 	dma_sync_single_for_device(ap->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
 
 	/* issue command */
+	writel(0x11, port_mmio + PORT_CMD);
 	writel(1 << slot_num, port_mmio + PORT_CMD_ISSUE);
 
 	return 0;
