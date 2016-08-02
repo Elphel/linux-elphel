@@ -609,157 +609,147 @@ For displaying histograms - try use latest available - not waiting fro a particu
 // HISTOGRAMS_WAKEUP_ALWAYS if 0 will only wakeup processes waiting for histograms when they become available, maybe never if they are disabled
 // if defined 1 - will wakeup each frame, regardless of the availability of the histograms
 //#define HISTOGRAMS_WAKEUP_ALWAYS 0
-void tasklet_fpga_function(unsigned long arg) {
-	int is_compressor_irq = 1; // TODO: add interrupts from frame sync if compressor is off
-	int hist_en;
-	int sensor_port = image_acq_priv.jpeg_ptr[arg].chn_num;
-	int tasklet_disable=get_globalParam(sensor_port, G_TASKLET_CTL);
-	unsigned long thisFrameNumber=getThisFrameNumber(sensor_port);
-	unsigned long prevFrameNumber=thisFrameNumber-1;
-	unsigned long * hash32p=&(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]); // same gamma for all sub-channels
-	unsigned long * framep= &(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
-	const struct jpeg_ptr_t *jptr = &image_acq_priv.jpeg_ptr[arg];
-	dma_addr_t phys_addr_start, phys_addr_end;
-	void *virt_addr_start;
-	unsigned int sz;
-	int subchn,hist_indx;
+void tasklet_fpga_function(unsigned long arg)
+{
+    int is_compressor_irq = 1; // TODO: add interrupts from frame sync if compressor is off
+    int hist_en;
+    int sensor_port = image_acq_priv.jpeg_ptr[arg].chn_num;
+    int tasklet_disable=get_globalParam(sensor_port, G_TASKLET_CTL);
+    unsigned long thisFrameNumber=getThisFrameNumber(sensor_port);
+    unsigned long prevFrameNumber=thisFrameNumber-1;
+    unsigned long * hash32p=&(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]); // same gamma for all sub-channels
+    unsigned long * framep= &(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
+    const struct jpeg_ptr_t *jptr = &image_acq_priv.jpeg_ptr[arg];
+    dma_addr_t phys_addr_start, phys_addr_end;
+    void *virt_addr_start;
+    unsigned int sz;
+    int subchn,hist_indx;
 
-	/* invalidate L2 cache lines in the beginning of current frame */
-	phys_addr_start = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->fpga_cntr_prev);
-	virt_addr_start = circbuf_priv_ptr[jptr->chn_num].buf_ptr + jptr->fpga_cntr_prev;
-	sz = DW2BYTE(jptr->fpga_cntr_prev) + L2_INVAL_SIZE;
-	if (sz < CCAM_DMA_SIZE) {
-		phys_addr_end = phys_addr_start + L2_INVAL_SIZE - 1;
-		outer_inv_range(phys_addr_start, phys_addr_end);
-		__cpuc_flush_dcache_area(virt_addr_start, L2_INVAL_SIZE);
-	} else {
-		phys_addr_end = phys_addr_start + (CCAM_DMA_SIZE - DW2BYTE(jptr->fpga_cntr_prev) - 1);
-		outer_inv_range(phys_addr_start, phys_addr_end);
-		__cpuc_flush_dcache_area(virt_addr_start, CCAM_DMA_SIZE - DW2BYTE(jptr->fpga_cntr_prev));
+    /* invalidate L2 cache lines in the beginning of current frame */
+    phys_addr_start = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->fpga_cntr_prev);
+    virt_addr_start = circbuf_priv_ptr[jptr->chn_num].buf_ptr + jptr->fpga_cntr_prev;
+    sz = DW2BYTE(jptr->fpga_cntr_prev) + L2_INVAL_SIZE;
+    if (sz < CCAM_DMA_SIZE) {
+        phys_addr_end = phys_addr_start + L2_INVAL_SIZE - 1;
+        outer_inv_range(phys_addr_start, phys_addr_end);
+        __cpuc_flush_dcache_area(virt_addr_start, L2_INVAL_SIZE);
+    } else {
+        phys_addr_end = phys_addr_start + (CCAM_DMA_SIZE - DW2BYTE(jptr->fpga_cntr_prev) - 1);
+        outer_inv_range(phys_addr_start, phys_addr_end);
+        __cpuc_flush_dcache_area(virt_addr_start, CCAM_DMA_SIZE - DW2BYTE(jptr->fpga_cntr_prev));
 
-		phys_addr_start = circbuf_priv_ptr[jptr->chn_num].phys_addr;
-		phys_addr_end = phys_addr_start + (sz - CCAM_DMA_SIZE - 1);
-		virt_addr_start = circbuf_priv_ptr[jptr->chn_num].buf_ptr;
-		outer_inv_range(phys_addr_start, phys_addr_end);
-		__cpuc_flush_dcache_area(virt_addr_start, sz - CCAM_DMA_SIZE);
-	}
+        phys_addr_start = circbuf_priv_ptr[jptr->chn_num].phys_addr;
+        phys_addr_end = phys_addr_start + (sz - CCAM_DMA_SIZE - 1);
+        virt_addr_start = circbuf_priv_ptr[jptr->chn_num].buf_ptr;
+        outer_inv_range(phys_addr_start, phys_addr_end);
+        __cpuc_flush_dcache_area(virt_addr_start, sz - CCAM_DMA_SIZE);
+    }
 
-	// Time is out?
-	if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
-	// Histograms are available for the previous frame (that is already in circbuf if compressor was running)
-	// Is Y histogram needed?
-	PROFILE_NOW(2);
-	switch ((tasklet_disable >> TASKLET_CTL_HISTY_BIT) & 7) {
-	case TASKLET_HIST_NEVER:   // never calculate
-		hist_en=0;
-		break;
-	case TASKLET_HIST_HALF:    // calculate each even (0,2,4,6 frme of 8)
-		hist_en= ((thisFrameNumber & 1) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
-		break;
-	case TASKLET_HIST_QUATER:  // calculate twice per 8 (0, 4)
-		hist_en= ((thisFrameNumber & 3) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
-		break;
-	case TASKLET_HIST_ONCE:    // calculate once  per 8 (0)
-		hist_en= ((thisFrameNumber & 7) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
-		break;
-	case TASKLET_HIST_RQONLY:  // calculate only when specifically requested
-		hist_en= (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
-		break;
-	case TASKLET_HIST_ALL:     // calculate each frame
-	default:                   // calculate always (safer)
-		hist_en=1;
-	}
-//#ifdef TEST_DISABLE_CODE
-	if (hist_en) {
-		// after updateFramePars gammaHash are from framepars[this-1]
-		for (subchn=0;subchn<MAX_SENSORS;subchn++) if (((hist_indx=get_hist_index(sensor_port,subchn)))>=0){
-			if (PER_CHANNEL393) {
-				set_histograms (sensor_port,
-						        subchn,
-								prevFrameNumber,
-								(1 << COLOR_Y_NUMBER),
-								hash32p+hist_indx*16*sizeof (u32),
-								framep+hist_indx*32*sizeof (u32)); // 0x2 Green1
-			} else {
-				set_histograms (sensor_port, subchn, prevFrameNumber, (1 << COLOR_Y_NUMBER), hash32p, framep); // 0x2 Green1
-			}
-			GLOBALPARS(sensor_port, G_HIST_Y_FRAME + subchn) = prevFrameNumber;           // histogram corresponds to previous frame
-		}
-		PROFILE_NOW(3);
-		// Time is out?
-// Old 353		if ((getThisFrameNumber(sensor_port) ^ X3X3_I2C_FRAME)  & PARS_FRAMES_MASK) return; // already next frame
-		if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
+    // Time is out?
+    if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
+    // Histograms are available for the previous frame (that is already in circbuf if compressor was running)
+    // Is Y histogram needed?
+    PROFILE_NOW(2);
+    switch ((tasklet_disable >> TASKLET_CTL_HISTY_BIT) & 7) {
+    case TASKLET_HIST_NEVER:   // never calculate
+        hist_en=0;
+        break;
+    case TASKLET_HIST_HALF:    // calculate each even (0,2,4,6 frme of 8)
+        hist_en= ((thisFrameNumber & 1) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
+        break;
+    case TASKLET_HIST_QUATER:  // calculate twice per 8 (0, 4)
+        hist_en= ((thisFrameNumber & 3) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
+        break;
+    case TASKLET_HIST_ONCE:    // calculate once  per 8 (0)
+        hist_en= ((thisFrameNumber & 7) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
+        break;
+    case TASKLET_HIST_RQONLY:  // calculate only when specifically requested
+        hist_en= (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_Y));
+        break;
+    case TASKLET_HIST_ALL:     // calculate each frame
+    default:                   // calculate always (safer)
+        hist_en=1;
+    }
+    //#ifdef TEST_DISABLE_CODE
+    if (hist_en) {
+        // after updateFramePars gammaHash are from framepars[this-1]
+        for (subchn=0;subchn<MAX_SENSORS;subchn++) if (((hist_indx=get_hist_index(sensor_port,subchn)))>=0){
+            if (PER_CHANNEL393) {
+                set_histograms (sensor_port,
+                        subchn,
+                        prevFrameNumber,
+                        (1 << COLOR_Y_NUMBER),
+                        hash32p+hist_indx*16*sizeof (u32),
+                        framep+hist_indx*32*sizeof (u32)); // 0x2 Green1
+            } else {
+                set_histograms (sensor_port, subchn, prevFrameNumber, (1 << COLOR_Y_NUMBER), hash32p, framep); // 0x2 Green1
+            }
+            GLOBALPARS(sensor_port, G_HIST_Y_FRAME + subchn) = prevFrameNumber;           // histogram corresponds to previous frame
+        }
+        PROFILE_NOW(3);
+        // Time is out?
+        // Old 353		if ((getThisFrameNumber(sensor_port) ^ X3X3_I2C_FRAME)  & PARS_FRAMES_MASK) return; // already next frame
+        if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
 #if HISTOGRAMS_WAKEUP_ALWAYS
-	}
-	wake_up_interruptible(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
+    }
+    wake_up_interruptible(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
 #else
-	wake_up_interruptible(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
-}
+        wake_up_interruptible(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
+    }
 #endif
-//#endif /* TEST_DISABLE_CODE */
-// Process parameters
-if ((tasklet_disable & (1 << TASKLET_CTL_PGM))   == 0) {
-	processPars (sensor_port, sensorproc, getThisFrameNumber(sensor_port), get_globalParam(sensor_port, G_MAXAHEAD)); // program parameters
-	PROFILE_NOW(4);
-}
-// Time is out?
-if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
-// Are C histograms needed?
-switch ((tasklet_disable >> TASKLET_CTL_HISTC_BIT) & 7) {
-case TASKLET_HIST_NEVER:   // never calculate
-	hist_en=0;
-	break;
-case TASKLET_HIST_HALF:    // calculate each even (0,2,4,6 frme of 8)
-	hist_en= ((thisFrameNumber & 1) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
-	break;
-case TASKLET_HIST_QUATER:  // calculate twice per 8 (0, 4)
-	hist_en= ((thisFrameNumber & 3) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
-	break;
-case TASKLET_HIST_ONCE:    // calculate once  per 8 (0)
-	hist_en= ((thisFrameNumber & 7) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
-	break;
-case TASKLET_HIST_RQONLY:  // calculate only when specifically requested
-	hist_en= (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
-	break;
-case TASKLET_HIST_ALL:     // calculate each frame
-default:                   // calculate always (safer)
-	hist_en=1;
-}
-/*
-GLOBALPARS(0x1040)=((thisFrameNumber & 1) ==0);
-GLOBALPARS(0x1041)=((thisFrameNumber & 3) ==0);
-GLOBALPARS(0x1042)=((thisFrameNumber & 7) ==0);
-GLOBALPARS(0x1043)=hist_en;
-GLOBALPARS(0x1044)=thisFrameNumber;
- */
-if (hist_en) {
-	// after updateFramePars gammaHash are from framepars[this-1]
-	// after updateFramePars gammaHash are from framepars[this-1]
-	for (subchn=0;subchn<MAX_SENSORS;subchn++) if (((hist_indx=get_hist_index(sensor_port,subchn)))>=0){
-		if (PER_CHANNEL393) {
-			set_histograms (sensor_port,
-					        subchn,
-							prevFrameNumber,
-							0xf, // all colors
-							hash32p+hist_indx*16*sizeof (u32),
-							framep+hist_indx*32*sizeof (u32)); // 0x2 Green1
-		} else {
-			set_histograms (sensor_port, subchn, prevFrameNumber, 0xf, hash32p, framep); // 0x2 Green1
-		}
-		GLOBALPARS(sensor_port, G_HIST_C_FRAME + subchn) = prevFrameNumber;           // histogram corresponds to previous frame
-	}
-	PROFILE_NOW(5);
-	// Time is out?
-	if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
-
-
-
+    // Process parameters
+    if ((tasklet_disable & (1 << TASKLET_CTL_PGM))   == 0) {
+        processPars (sensor_port, sensorproc, getThisFrameNumber(sensor_port), get_globalParam(sensor_port, G_MAXAHEAD)); // program parameters
+        PROFILE_NOW(4);
+    }
+    // Time is out?
+    if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
+    // Are C histograms needed?
+    switch ((tasklet_disable >> TASKLET_CTL_HISTC_BIT) & 7) {
+    case TASKLET_HIST_NEVER:   // never calculate
+        hist_en=0;
+        break;
+    case TASKLET_HIST_HALF:    // calculate each even (0,2,4,6 frme of 8)
+        hist_en= ((thisFrameNumber & 1) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
+        break;
+    case TASKLET_HIST_QUATER:  // calculate twice per 8 (0, 4)
+        hist_en= ((thisFrameNumber & 3) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
+        break;
+    case TASKLET_HIST_ONCE:    // calculate once  per 8 (0)
+        hist_en= ((thisFrameNumber & 7) ==0) || (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
+        break;
+    case TASKLET_HIST_RQONLY:  // calculate only when specifically requested
+        hist_en= (get_imageParamsPrev(sensor_port, P_HISTRQ) & (1<<HISTRQ_BIT_C));
+        break;
+    case TASKLET_HIST_ALL:     // calculate each frame
+    default:                   // calculate always (safer)
+        hist_en=1;
+    }
+    if (hist_en) {
+        // after updateFramePars gammaHash are from framepars[this-1]
+        // after updateFramePars gammaHash are from framepars[this-1]
+        for (subchn=0;subchn<MAX_SENSORS;subchn++) if (((hist_indx=get_hist_index(sensor_port,subchn)))>=0){
+            if (PER_CHANNEL393) {
+                set_histograms (sensor_port,
+                        subchn,
+                        prevFrameNumber,
+                        0xf, // all colors
+                        hash32p+hist_indx*16*sizeof (u32),
+                        framep+hist_indx*32*sizeof (u32)); // 0x2 Green1
+            } else {
+                set_histograms (sensor_port, subchn, prevFrameNumber, 0xf, hash32p, framep); // 0x2 Green1
+            }
+            GLOBALPARS(sensor_port, G_HIST_C_FRAME + subchn) = prevFrameNumber;           // histogram corresponds to previous frame
+        }
+        PROFILE_NOW(5);
+        // Time is out?
+        if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port,is_compressor_irq))  & PARS_FRAMES_MASK) return; // already next frame
 #if HISTOGRAMS_WAKEUP_ALWAYS
-}
-wake_up_interruptible(&hist_c_wait_queue);     // wait queue for all the other (R,G2,B) histograms (color)
+    }
+    wake_up_interruptible(&hist_c_wait_queue);     // wait queue for all the other (R,G2,B) histograms (color)
 #else
-wake_up_interruptible(&hist_c_wait_queue);   // wait queue for all the other (R,G2,B) histograms (color)
-}
+        wake_up_interruptible(&hist_c_wait_queue);   // wait queue for all the other (R,G2,B) histograms (color)
+    }
 #endif
 }
 
@@ -855,7 +845,7 @@ int image_acq_init(struct platform_device *pdev)
 			dev_err(dev, "can not allocate Elphel FPGA interrupts\n");
 			return -EBUSY;
 		}
-
+		image_acq_priv.jpeg_ptr[i].irq_num_sens = irq;
 		irq = platform_get_irq_byname(pdev, compressor_irq_names[i]);
 		if (request_irq(irq,
 				compressor_irq_handler,
@@ -865,7 +855,6 @@ int image_acq_init(struct platform_device *pdev)
 			dev_err(dev, "can not allocate Elphel FPGA interrupts\n");
 			return -EBUSY;
 		}
-		image_acq_priv.jpeg_ptr[i].irq_num_sens = irq;
 		image_acq_priv.jpeg_ptr[i].irq_num_comp = irq;
 		image_acq_priv.jpeg_ptr[i].chn_num = i;
 	}

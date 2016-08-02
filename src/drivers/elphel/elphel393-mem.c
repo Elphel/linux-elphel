@@ -69,7 +69,7 @@ static struct elphel_buf_t _elphel_buf = {
     // Device to host stream DMA buffer for the logger
     .logger_vaddr = NULL,
     .logger_paddr = 0,
-    .logger_size = 1024
+    .logger_size = 1024 // should be 2**n !
 
 };
 
@@ -523,23 +523,23 @@ static int elphel393_mem_probe(struct platform_device *pdev)
 
     printk("H2D stream buffer vaddr:            0x%08X\n",(u32) pElphel_buf -> h2d_vaddr);
     printk("H2D stream buffer paddr:            0x%08X\n",(u32) pElphel_buf -> h2d_paddr);
-    printk("H2D stream buffer length:           0x%08X\n",(u32) pElphel_buf -> h2d_size * PAGE_SIZE);
+    printk("H2D stream buffer length:           0x%08lX\n",(u32) pElphel_buf -> h2d_size * PAGE_SIZE);
 
     printk("D2H stream buffer vaddr:            0x%08X\n",(u32) pElphel_buf -> d2h_vaddr);
     printk("D2H stream buffer paddr:            0x%08X\n",(u32) pElphel_buf -> d2h_paddr);
-    printk("D2H stream buffer length:           0x%08X\n",(u32) pElphel_buf -> d2h_size * PAGE_SIZE);
+    printk("D2H stream buffer length:           0x%08lX\n",(u32) pElphel_buf -> d2h_size * PAGE_SIZE);
 
     printk("Bidirectional stream buffer vaddr:  0x%08X\n",(u32) pElphel_buf -> bidir_vaddr);
     printk("Bidirectional stream buffer paddr:  0x%08X\n",(u32) pElphel_buf -> bidir_paddr);
-    printk("Bidirectional stream buffer length: 0x%08X\n",(u32) pElphel_buf -> bidir_size * PAGE_SIZE);
+    printk("Bidirectional stream buffer length: 0x%08lX\n",(u32) pElphel_buf -> bidir_size * PAGE_SIZE);
 
     printk("HISTOGRAMS stream buffer vaddr:     0x%08X\n",(u32) pElphel_buf -> histograms_vaddr);
     printk("HISTOGRAMS stream buffer paddr:     0x%08X\n",(u32) pElphel_buf -> histograms_paddr);
-    printk("HISTOGRAMS stream buffer length:    0x%08X\n",(u32) pElphel_buf -> histograms_size * PAGE_SIZE);
+    printk("HISTOGRAMS stream buffer length:    0x%08lX\n",(u32) pElphel_buf -> histograms_size * PAGE_SIZE);
 
     printk("LOGGER stream buffer vaddr:         0x%08X\n",(u32) pElphel_buf -> logger_vaddr);
     printk("LOGGER stream buffer paddr:         0x%08X\n",(u32) pElphel_buf -> logger_paddr);
-    printk("LOGGER stream buffer length:        0x%08X\n",(u32) pElphel_buf -> logger_size * PAGE_SIZE);
+    printk("LOGGER stream buffer length:        0x%08lX\n",(u32) pElphel_buf -> logger_size * PAGE_SIZE);
 
 	return 0;
 }

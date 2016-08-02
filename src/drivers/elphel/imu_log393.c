@@ -34,44 +34,44 @@
  */
 /****************** INCLUDE FILES SECTION ***********************************/
 
-#include <linux/module.h>
 #include <linux/sched.h>
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/interrupt.h>
+//#include <linux/time.h> //?
+#include <linux/platform_device.h>
+//#include <linux/of.h>
+#include <linux/of_device.h>
+
+
+#include <asm/outercache.h>
+#include <asm/cacheflush.h>
+
+#include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/errno.h>
-#include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/string.h>
-#include <linux/init.h>
-//#include <linux/autoconf.h>
+//#include <asm/io.h>
 
-//#include <asm/system.h>
-//#include <asm/arch/memmap.h>
-//#include <asm/svinto.h>
-#include <asm/io.h>
-//#include <asm/arch/dma.h>
-//#include <asm/arch/hwregs/dma_defs.h>
-//#include <asm/arch/hwregs/dma.h>
-//#include <asm/arch/hwregs/reg_map.h>
-//#include <asm/arch/hwregs/bif_dma_defs.h>
 
-#include <asm/irq.h>
-//#include <asm/fasttimer.h>
-#include <asm/atomic.h>
+//#include <asm/irq.h>
+//#include <asm/atomic.h>
 
 #include <asm/delay.h>
-#include <asm/uaccess.h>
-//#include <asm/arch/cache.h>
+#include <asm/uaccess.h> // copy_*_user
 
 
 #include <elphel/driver_numbers.h>
 #include <elphel/c313a.h>
-//#include <asm/elphel/fpgaconfa.h>
-
-//#include "fpgactrl.h"
-//#include "fpga_sdram.h"
+#include <elphel/elphel393-mem.h>
 #include "imu_log393.h"
 #include "x393.h"
 #include "legacy_defines.h" // temporarily
+
+//#include "x393_macro.h"
+//#include "x393_helpers.h"
+
 
 //#include "x3x3.h"
 //#include "cci2c.h" // i2c to enable CS for the IMU
@@ -95,6 +95,15 @@
 
 #define IS_103695_REV_A 1
 
+#define MULT_SAXI_CHN 0 ///< using channel 0 of a 4-channel DMA engine
+#define LOGGER_DMA_RESET 0
+#define LOGGER_DMA_STOP  1
+#define LOGGER_DMA_RUN   2
+#define LOGGER_STATUS_MODE 3    // autoupdate
+#define MULT_SAXI_STATUS_MODE 3 // autoupdate
+#define LOGGER_IRQ_DW_BIT 4     // Number of DWORD address bit to change to cause interrupt
+#define LOGGER_USE_IRQ 1
+
 #ifdef NC353
 #define EXT_DMA_1_START \
         do { reg_bif_dma_rw_ch1_start c = {.run=1};\
@@ -102,11 +111,11 @@
 #define EXT_DMA_1_STOP \
         do { reg_bif_dma_rw_ch1_start c = {.run=0};\
         REG_WR(bif_dma, regi_bif_dma, rw_ch1_start, (reg_bif_dma_rw_ch1_start) c); } while( 0 )
-#else
-#define EXT_DMA_1_START
-#define EXT_DMA_1_STOP
-#endif
 #define bytePtrMask  ((CCAM_DMA1_SIZE << 2)-1) // and byte pointer in the dma buffer to get index in the array
+#else
+//#define EXT_DMA_1_START
+//#define EXT_DMA_1_STOP
+#endif
 
 #ifdef NC353
     #define XCLK_RATE 80000000 ///< 80MHz clock in NC353
@@ -115,7 +124,7 @@
 #endif
 #define RS232_RATE 19200   ///< RS232 bps
 #define IMU_MODULE_DESCRIPTION "IMU logger for 10365 ext. board"
-#define	IMU_DRIVER_NAME "imu_logger"
+#define	LOGGER_DRIVER_NAME "imu_logger"
 #define IMU_MAXMINOR 10
 
 #ifdef NC353
@@ -188,7 +197,7 @@
 #define DFLT_STALL_USEC 2           ///< stall time in usec
 #define DFLT_STALL  (( DFLT_STALL_USEC * ( XCLK_RATE / DFLT_DIVISOR )) / 1000000 )    ///< stall time in usec
 
-#define DFLT_SLEEP   30000 ///< usec, sleep if not ready
+#define DFLT_SLEEP   30000 ///< usec, sleep if not ready (30ms)
 //#define DFLT_FEQ 300
 //#define DFLT_PERIOD ( XCLK_RATE / DFLT_DIVISOR / DFLT_FEQ ) // fixed scan period
 #define DFLT_PERIOD 0xFFFFFFFF ///< read IMU when it is ready
@@ -278,7 +287,7 @@ static unsigned char dflt_wbuf[]=
 };
 static unsigned char wbuf[sizeof(dflt_wbuf)];
 
-static const char fpga_name[] = "imu_control";
+//static const char fpga_name[] = "imu_control";
 static int     imu_open   (struct inode *inode, struct file *filp);
 static int     imu_release(struct inode *inode, struct file *filp);
 static ssize_t imu_write  (struct file * file, const char * buf, size_t count, loff_t *off);
@@ -287,23 +296,42 @@ static ssize_t imu_read   (struct file * file, char * buf, size_t count, loff_t 
 
 #define IMU_MAXMINOR 10
 
-static loff_t numBytesRead=0;    ///< totalnumber of bytes read from the imu - global pointer (modified when open in write mode)
-static loff_t numBytesWritten=0; ///< totalnumber of bytes writtent to the IMU buffer since it was started/restarted
-static int lastFPGABytes=0;      ///< last read FPGA counter (24 bits) << 6
+static loff_t numBytesRead=0;        ///< total number of bytes read from the imu - global pointer (modified when open in write mode)
+static loff_t numBytesWritten=0;     ///< total number of bytes written to the IMU buffer since it was started/restarted
+static loff_t numBytesWrittenBase=0; ///< number of byte written in full buffers  since it was started/restarted
 
 
 //TODO 393: Use allocated 4MB
+static int dma_is_on=0;
+#ifdef NC353
+static int lastFPGABytes=0;          ///< last read FPGA counter (24 bits) << 6
 static unsigned long ccam_dma1_buf[CCAM_DMA1_SIZE + (PAGE_SIZE>>2)] __attribute__ ((aligned (PAGE_SIZE)));
 //!Without "static" system hangs after "Uncompressing Linux...
-unsigned long  * ccam_dma1_buf_ptr = NULL;
+unsigned long  * logger_buffer = NULL;
 //unsigned long * ccam_dma1 =         NULL; //! still used in autoexposure or something - why is in needed there?
 
 void init_ccam_dma1_buf_ptr(void) {
-    ccam_dma1_buf_ptr = ccam_dma1_buf;
+    logger_buffer = ccam_dma1_buf;
     //    ccam_dma1 =         ccam_dma1_buf; //&ccam_dma_buf[0]; Use in autoexposure
 }
+#else
+u32 * logger_buffer = NULL; ///< use instead of ccam_dma1_buf, logger_buffer. Initialize from the elphel393-mem
+static u32 logger_size = 0;  // size in bytes, should be 2^n
+static u32 logger_offs32 = 0; // write offset in the buffer
+static u32 bytePtrMask = 0;
+static dma_addr_t logger_phys; ///< physical address of the DMA memory start
+static int logger_fpga_configured = 0;
+static const struct of_device_id elphel393_logger_of_match[];
+/** @brief Global pointer to basic device structure. This pointer is used in debugfs output functions */
+static struct device *g_dev_ptr;
+wait_queue_head_t logger_wait_queue;
+#endif
 
 
+
+int logger_dma_ctrl(int cmd);
+
+#ifdef NC353 // will update from mult_saxi pointer
 void updateNumBytesWritten(void){
     x393_logger_status_t logger_status = x393_logger_status();
 #ifdef NC353
@@ -316,6 +344,7 @@ void updateNumBytesWritten(void){
     if (delta<0) delta+=(IMU_COUNT_OVERFLOW<<6);
     numBytesWritten+=delta; // long long
 }
+#endif
 
 static struct file_operations imu_fops = {
         owner:    THIS_MODULE,
@@ -348,9 +377,9 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 
     D(for (i=0; i< sizeof (wbuf); i++ ) {  if ((i & 0x1f)==0) printk("\n %03x",i);  printk(" %02x",(int) wbuf[i]); });
     if (which & WHICH_RESET) {
-        if (x313_is_dma1_on()!=0) {
+        if (logger_is_dma_on()!=0) {
             D(printk("Stopping DMA\n"));
-            x313_dma1_stop();
+            logger_dma_stop();
         }
 
         D(printk("Resetting logger\n"));
@@ -567,12 +596,12 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 TODO: (re)start DMA1 here !
          */
         /// for now - init everything again?
-        if (x313_is_dma1_on()!=0) {
+        if (logger_is_dma_on()!=0) {
             D(printk("Stopping DMA\n"));
-            x313_dma1_stop();
+            logger_dma_stop();
         }
         x313_dma1_init();
-        x313_dma1_start();
+        logger_dma_start();
     }
 
     if (which & WHICH_EN_LOGGER) {
@@ -601,18 +630,18 @@ static int imu_open(struct inode *inode, struct file *filp) {
     D(printk("filp=%lx\r\n",(unsigned long)filp) );
 
     switch ( p ) {
-    case IMU_CTL_MINOR:
+    case LOGGER_CTL_MINOR:
         D1(printk(KERN_NOTICE "IMU_ctl_open\n"));
         inode->i_size=sizeof(wbuf);
-        // nothing more here, after writeing parameters should start imu (and dma), otherwise will use defaults on next open of /dev/imu
+        // nothing more here, after writing parameters should start imu (and dma), otherwise will use defaults on next open of /dev/imu
         break;
-    case IMU_MINOR :
+    case LOGGER_MINOR :
     {
         D1(printk(KERN_NOTICE "IMU_open\n"));
         inode->i_size=sizeof(wbuf); // only in write mode
 
         /// See if initialization is needed
-        if (x313_is_dma1_on()==0) {
+        if (logger_is_dma_on()==0) {
             /// copy defaults
             D1(printk(KERN_NOTICE "Initializing IMU\n"));
             for (i=0;i<sizeof(wbuf);i++) wbuf[i]=dflt_wbuf[i];
@@ -631,11 +660,16 @@ static int imu_open(struct inode *inode, struct file *filp) {
             numBytesRead=0;
         } else {
             D1(printk(KERN_NOTICE "Skipping IMU initialization\n"));
+#ifdef NC353
             updateNumBytesWritten();
-            //             numBytesWritten= (int) port_csp0_addr[X313_RA_IMU_COUNT]<<6;
+#endif
             if (filp->f_mode & FMODE_WRITE) { // write mode, use global read pointer
-                //               if ((numBytesWritten < numBytesRead) || (numBytesWritten - numBytesRead)>=(CCAM_DMA1_SIZE<<2)) {
-                if ((numBytesWritten - numBytesRead)>=(CCAM_DMA1_SIZE<<2)) { // there is still a chance to read as much as possible using lseek
+#ifdef NC353
+                if ((numBytesWritten - numBytesRead)>=(CCAM_DMA1_SIZE<<2)) // there is still a chance to read as much as possible using lseek
+#else
+                if ((numBytesWritten - numBytesRead) >= logger_size) // there is still a chance to read as much as possible using lseek
+#endif
+                {
                     // alternatively - open at lower pointer?
                     D1(printk(KERN_ERR "DMA1 buffer overrun (numBytesWritten=0x%llx, numBytesRead=0x%llx, resetting numBytesRead\n", numBytesWritten, numBytesRead));
                     numBytesRead=numBytesWritten;
@@ -658,8 +692,8 @@ static int imu_release(struct inode *inode, struct file *filp) {
     //   int res=0;
     int p = MINOR(inode->i_rdev);
     switch ( p ) {
-    case IMU_MINOR :
-    case IMU_CTL_MINOR:
+    case LOGGER_MINOR :
+    case LOGGER_CTL_MINOR:
         printk(KERN_NOTICE "Closing IMU device, numBytesWritten=0x%llx,  numBytesRead=0x%llx (only global pointer, does not include files opened in read mode)\n", numBytesWritten, numBytesRead);
         break;
     default: return -EINVAL;
@@ -677,8 +711,8 @@ static ssize_t imu_write(struct file * file, const char * buf, size_t count, lof
     D(printk("imu_write: (int)file->private_data)= %x\r\n",((int)file->private_data)));
     //    switch (((int *)file->private_data)[0]) {
     switch ((int) file->private_data) {
-    case IMU_MINOR :
-    case IMU_CTL_MINOR:
+    case LOGGER_MINOR :
+    case LOGGER_CTL_MINOR:
         if (!file->f_mode & FMODE_WRITE) {
             return -EINVAL; // readonly
         }
@@ -712,8 +746,8 @@ static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
     D(printk (" file=%x, offset=%llx (%d), orig=%x\r\n", (int) file, offset,(int) offset, (int) orig));
     int p=(int)file->private_data;
     switch (p) {
-    case IMU_MINOR:
-    case IMU_CTL_MINOR:
+    case LOGGER_MINOR:
+    case LOGGER_CTL_MINOR:
         switch (orig) {
         case SEEK_SET:
             file->f_pos = offset;
@@ -728,7 +762,9 @@ static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
             } else {
                 switch (offset) {
                 case LSEEK_IMU_NEW: // sets file pointer to the last written data TODO: add lseeking to the earliest data?
+#ifdef NC353
                     updateNumBytesWritten();
+#endif
                     //                  numBytesRead=(int) port_csp0_addr[X313_RA_IMU_COUNT]<<6; //numBytesWritten
                     return file->f_pos;
                 case LSEEK_IMU_STOP:
@@ -771,7 +807,7 @@ static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
         return (-EOVERFLOW);
     }
     /** enable seeking beyond buffer - it now is absolute position in the data stream*/
-    if ((p==IMU_CTL_MINOR) && (file->f_pos > sizeof(wbuf))) {
+    if ((p==LOGGER_CTL_MINOR) && (file->f_pos > sizeof(wbuf))) {
         printk(KERN_ERR "beyond end: minor=%d, file->f_pos=0x%llx\n", p, file->f_pos);
         file->f_pos = sizeof(wbuf);
         return (-EOVERFLOW);
@@ -780,22 +816,26 @@ static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
     return (file->f_pos);
 }
 
+
+
 static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *off) {
     int err;
     unsigned long * sleep;
     char *charDMABuf;
     int idbg;
+    int byteIndexRead;
+    int byteIndexValid;
+    int leftToRead;
+    int pe;
+
     //    loff_t numBytesWritten; - it is global now, made absolute from the IMU start
     loff_t thisNumBytesRead;
 #ifdef NC353
     reg_dma_rw_stat stat;
     reg_bif_dma_r_ch1_stat ch1_stat;
 #endif
-    //        REG_WR(bif_dma, regi_bif_dma, rw_ch1_addr, exdma_addr);
-
-    //    switch (((int *)file->private_data)[0]) {
     switch ((int)file->private_data) {
-    case IMU_CTL_MINOR:
+    case LOGGER_CTL_MINOR:
         //       if (*off >= sizeof(wbuf))  return -EINVAL; // bigger than all
         if (*off >= sizeof(wbuf))  return 0; // bigger than all
         if( (*off + count) > sizeof(wbuf)) { // truncate count
@@ -810,38 +850,48 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
         *off+=count;
         return count;
         break;
-    case IMU_MINOR :
+    case LOGGER_MINOR :
+#ifdef NC353
         updateNumBytesWritten();
+#endif
         thisNumBytesRead=(file->f_mode & FMODE_WRITE)?numBytesRead:*off; // is that needed ("write mode") ?
-        charDMABuf = (char *) ccam_dma1_buf_ptr;
+        charDMABuf = (char *) logger_buffer;
         sleep=  (unsigned long *) &wbuf[X313_IMU_SLEEP_OFFS];
-        //        numBytesWritten= (int) port_csp0_addr[X313_RA_IMU_COUNT]<<6;
-        //        if ( thisNumBytesRead > numBytesWritten)  thisNumBytesRead-= (IMU_COUNT_OVERFLOW<<6); // may become negative here
         /// should we wait for data?
         idbg=0;
-        while ((sleep[0]!=0) && ((numBytesWritten-thisNumBytesRead)<= 64)) { /// last 32 bytes can get stuck in ETRAX dma channel
-
 #ifdef NC353
+        while ((sleep[0]!=0) && ((numBytesWritten-thisNumBytesRead)<= 64)) { // last 32 bytes can get stuck in ETRAX dma channel
             schedule_usleep(*sleep); // ETRAX-specific wait, replace!
-#else
-            BUG();
-#endif
             updateNumBytesWritten();
-            //          numBytesWritten= (int) port_csp0_addr[X313_RA_IMU_COUNT]<<6;
-            //          if ( thisNumBytesRead > numBytesWritten)  thisNumBytesRead-= (IMU_COUNT_OVERFLOW<<6); // may become negative here
             idbg++;
         }
+#else
+        wait_event_interruptible(logger_wait_queue, (sleep[0]==0) || ((numBytesWritten-thisNumBytesRead) > 64)); // AF2016 Why sleep[0] here?
+#endif
+
+
         if (idbg>0) {
             D(printk ("slept %d times (%d usec)\n", idbg, (int) (*sleep * idbg)));
         }
-        //! now read what is available (and required), roll over the buffer (if needed), copy data and advance numReadBytes
-        int byteIndexRead=thisNumBytesRead & bytePtrMask;
-        int byteIndexValid=(numBytesWritten-64) & bytePtrMask; // one record less to mitigate data hidden in ETRAX dma buffer
+        // now read what is available (and required), roll over the buffer (if needed), copy data and advance numReadBytes
+//TODO:Flush cache !!!!!!!!!!!!!!!!!!!!!!*********************************
+
+
+        byteIndexRead=thisNumBytesRead & bytePtrMask; // requires buffer size to be 2**N
+        byteIndexValid=(numBytesWritten-64) & bytePtrMask; // one record less to mitigate data hidden in ETRAX dma buffer
+#ifdef NC353
         if (byteIndexValid<byteIndexRead) byteIndexValid += (CCAM_DMA1_SIZE<<2);
+#else
+        if (byteIndexValid<byteIndexRead) byteIndexValid += logger_size;
+#endif
         if (count>(byteIndexValid-byteIndexRead)) count = (byteIndexValid-byteIndexRead);
-        int leftToRead=count;
-        int pe=byteIndexRead+leftToRead;
+        leftToRead=count;
+        pe=byteIndexRead+leftToRead;
+#ifdef NC353
         if (pe>(CCAM_DMA1_SIZE<<2)) pe=(CCAM_DMA1_SIZE<<2);
+#else
+        if (pe>(logger_size << PAGE_SHIFT)) pe= logger_size;
+#endif
         /// copy all (or first part)
         err=copy_to_user(buf, &charDMABuf[byteIndexRead], (pe-byteIndexRead));
         if (err) {
@@ -885,62 +935,188 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
     }
 }
 
-
-static int __init 
-imu_init(void)
+/**
+ * @brief Handle interrupts from sensor channels. This handler is installed without SA_INTERRUPT
+ * flag meaning that interrupts are enabled during processing. Such behavior is recommended in LDD3.
+ * @param[in]   irq   interrupt number
+ * @param[in]   dev_id pointer to driver's private data structure #jpeg_ptr_t corresponding to
+ * the channel which raise interrupt
+ * @return \e IRQ_HANDLED if interrupt was processed and \e IRQ_NONE otherwise
+ */
+static irqreturn_t logger_irq_handler(int irq, void *dev_id)
 {
-    //    int i;
-    int res;
-    res = register_chrdev(IMU_MAJOR, IMU_DRIVER_NAME, &imu_fops);
-    if(res < 0) {
-        printk(KERN_ERR "\nimu_init: couldn't get a major number  %d.\n ",IMU_MAJOR);
-        return res;
+    x393_mult_saxi_al_t mult_saxi_dwp = x393_mult_saxi_pointers(MULT_SAXI_CHN);
+    if (mult_saxi_dwp.addr32 < logger_offs32){
+        numBytesWrittenBase += logger_size;
     }
-    printk(IMU_DRIVER_NAME"- %d\n",IMU_MAJOR);
-    //    for (i=0;i<=IMU_MAXMINOR;i++) minors[i]=0;
-
-
-    init_ccam_dma1_buf_ptr();
-    return 0;
+    logger_offs32 = mult_saxi_dwp.addr32;
+    numBytesWritten = numBytesWrittenBase + logger_offs32;
+    logger_irq_cmd(X393_IRQ_RESET);
+    wake_up_interruptible(&logger_wait_queue);
+//thisFPGABytes
+    return IRQ_HANDLED;
 }
 
 
+
+static int logger_init(struct platform_device *pdev)
+{
+    unsigned int irq;
+    int res;
+    struct device *dev = &pdev->dev;
+    const struct of_device_id *match;
+    const char *logger_irq_names[4] = {"mult_saxi_0", "mult_saxi_1", "mult_saxi_2", "mult_saxi_3"};
+
+    /* sanity check */
+    match = of_match_device(elphel393_logger_of_match, dev);
+    if (!match)
+        return -EINVAL;
+
+    dev_dbg(dev, "Registering character device with name "LOGGER_DRIVER_NAME);
+    res = register_chrdev(LOGGER_MAJOR, LOGGER_DRIVER_NAME, &imu_fops);
+    if(res < 0) {
+        dev_err(dev, "\nlogger_init: couldn't get a major number  %d.\n ",LOGGER_MAJOR);
+        return res;
+    }
+    dev_info(dev,LOGGER_DRIVER_NAME"- %d\n",LOGGER_MAJOR);
+    // Setup memory buffer from CMA
+    logger_buffer = (u32 *) pElphel_buf->logger_vaddr; // must be page-aligned!
+    logger_size = pElphel_buf->logger_size << PAGE_SHIFT;
+    bytePtrMask = logger_size;
+    logger_phys =   pElphel_buf->logger_paddr;
+    dma_is_on = 0;
+    // Setup interrupt
+    irq = platform_get_irq_byname(pdev, logger_irq_names[MULT_SAXI_CHN]);
+    if (request_irq(irq,
+            logger_irq_handler,
+            0, // no flags
+            logger_irq_names[MULT_SAXI_CHN],
+            NULL)) {
+        dev_err(dev, "can not allocate interrupts for %s\n",logger_irq_names[MULT_SAXI_CHN]);
+        return -EBUSY;
+    }
+//MULT_SAXI_CHN
+    init_waitqueue_head(&logger_wait_queue);    // wait queue for logger
+    //    init_ccam_dma1_buf_ptr();
+    g_dev_ptr = dev; // for debugfs
+    return 0;
+}
+
+/** Initialize FPGA DMA engine for the logger. Obviously requires bitstream to be loaded. */
+int logger_init_fpga(int force) ///< if 0, only do if not already initialized
+{
+    if (logger_fpga_configured && !force) return 0; // Already initialized
+    x393_status_ctrl_t logger_status_ctrl=    {.d32 = 0};
+    x393_status_ctrl_t mult_saxi_status_ctrl= {.d32 = 0};
+    x393_mult_saxi_al_t    mult_saxi_a=   {.d32=0};
+    x393_mult_saxi_al_t    mult_saxi_l=   {.d32=0};
+    x393_mult_saxi_irqlen_t mult_saxi_irqlen=   {.d32=0};
+    mult_saxi_a.addr32 = logger_phys >> 2; // in DWORDs
+    x393_mult_saxi_buf_address(mult_saxi_a,      MULT_SAXI_CHN);
+    mult_saxi_l.addr32 = logger_size >> 2;
+    x393_mult_saxi_buf_len    (mult_saxi_l,      MULT_SAXI_CHN);
+    mult_saxi_irqlen.irqlen = LOGGER_IRQ_DW_BIT;
+    x393_mult_saxi_irqlen     (mult_saxi_irqlen, MULT_SAXI_CHN);
+    logger_status_ctrl.mode = LOGGER_STATUS_MODE;
+    set_x393_logger_status_ctrl(logger_status_ctrl);
+    if (MULT_SAXI_STATUS_MODE) { // do not set (overwrite other channels if 0)
+        mult_saxi_status_ctrl.mode = MULT_SAXI_STATUS_MODE;
+        set_x393_mult_saxi_status_ctrl(mult_saxi_status_ctrl);
+    }
+    // resets (do once?)
+    logger_dma_ctrl(0); ///reset DMA
+#if LOGGER_USE_IRQ
+    logger_irq_cmd(X393_IRQ_RESET);
+    logger_irq_cmd(X393_IRQ_ENABLE);
+#endif /* LOGGER_USE_IRQ */
+    logger_fpga_configured = 1;
+    return 0;
+}
+
+/** DMA control for the logger (mult_saxi channel 0) */
+int logger_dma_ctrl(int cmd) ///< commands: 0 - reset, 1 - stop, 2 - run
+                             ///<@return 0/-EINVAL
+{
+    x393_mult_saxi_mode_t mult_saxi_mode= {.d32=0};
+    int en,run;
+    BUG_ON (!logger_buffer);
+    mult_saxi_mode = get_x393_mult_saxi_mode(); // Now not needed, later to take care about other channels
+    switch (cmd){
+    case LOGGER_DMA_RESET: en=0; run=0; break;
+    case LOGGER_DMA_STOP:  en=1; run=0; break;
+    case LOGGER_DMA_RUN:   en=1; run=1; break;
+    default: return -EINVAL;
+    }
+    if (!en) {
+        logger_offs32 = 0; // byte offset in the buffer
+        numBytesWritten=0;     ///< total number of bytes written to the IMU buffer since it was started/restarted
+        numBytesWrittenBase=0; ///< number of byte written in full buffers  since it was started/restarted
+    }
+#if    MULT_SAXI_CHN == 0
+    mult_saxi_mode.en0=en; mult_saxi_mode.run0=run;
+#elif  MULT_SAXI_CHN == 1
+    mult_saxi_mode.en1=en; mult_saxi_mode.run1=run;
+#elif  MULT_SAXI_CHN == 2
+    mult_saxi_mode.en2=en; mult_saxi_mode.run2=run;
+#elif  MULT_SAXI_CHN == 3
+    mult_saxi_mode.en3=en; mult_saxi_mode.run3=run;
+#endif
+    set_x393_mult_saxi_mode(mult_saxi_mode);
+    return 0;
+}
+
+void logger_irq_cmd(int cmd) ///< interrupt command: 0 - nop, 1 - reset, 2 - disable, 3 - enable
+{
+    x393_mult_saxi_interrupts_t mult_saxi_interrupts= {.d32=0};
+#if    MULT_SAXI_CHN == 0
+    mult_saxi_interrupts.interrupt_cmd0 = cmd;
+#elif  MULT_SAXI_CHN == 1
+    mult_saxi_interrupts.interrupt_cmd1 = cmd;
+#elif  MULT_SAXI_CHN == 2
+    mult_saxi_interrupts.interrupt_cmd2 = cmd;
+#elif  MULT_SAXI_CHN == 3
+    mult_saxi_interrupts.interrupt_cmd3 = cmd;
+#endif
+    x393_mult_saxi_interrupts(mult_saxi_interrupts);
+}
+#ifdef NC353
 ///TODO: it seems we could use a single data descriptor (in LX data segment was limited to 16KB), but let's have minimal changes
 //#define DMA_CHUNK 0x4000 // 32-bit words - may increase??
 //#define CCAM_DESCR_DATA_NUM (( CCAM_DMA_SIZE  / DMA_CHUNK) +1 ) // number of data descriptors
 #define CCAM_DESCR1_DATA_NUM (( CCAM_DMA1_SIZE  / DMA_CHUNK) +1 ) // number of data descriptors
 
-#ifdef NC353
 static dma_descr_data    ccam_dma1_descr_data    [CCAM_DESCR1_DATA_NUM]  __attribute__ ((__aligned__(16)));
 static dma_descr_context ccam_dma1_descr_context __attribute__ ((__aligned__(32)));
-#endif
-static int dma1_on=0;
 
 int            x313_setDMA1Buffer(void);
 unsigned long  x313_DMA1_size (void);
+#endif
 
 /**
  * @brief tests if ETRAX DMA1 is running
  * @return 1 - DMA is on, 0 - DMA is off
  */
-int           x313_is_dma1_on(void) {
-    return dma1_on;
+int           logger_is_dma_on(void) {
+    return dma_is_on;
 }
 
 /**
  * @brief Stop ETRAX DMA1
  * @return 0
  */
-int x313_dma1_stop(void) {
-    dma1_on=0;
-    MD12(printk("==========x313_dma1_stop\n"));
+int logger_dma_stop(void) {
+    dma_is_on=0;
+    MD12(printk("==========logger_dma_stop\n"));
 #ifdef NC353
     port_csp0_addr[X313_WA_DMACR] = 0x20; // disable DMA1, dot't modify DMA0
     EXT_DMA_1_STOP ; /// for testing - no reset DMA after acquisition
     udelay(10) ; //?
     DMA_RESET( regi_dma7 );
-#endif
     // put here restoring of the .after pointer ?
+#else
+    logger_dma_ctrl(LOGGER_DMA_STOP);
+    // TODO: stop logger first
+#endif
     return 0;
 }
 
@@ -949,18 +1125,18 @@ int x313_dma1_stop(void) {
  * @brief Start ETRAX DMA for the IMU
  */
 
-void x313_dma1_start(void) {
+void logger_dma_start(void) {
+#ifdef NC353
     unsigned long dai;
     int i = 0;
-    MD12(printk("----------x313_dma1_start\n"));
-#ifdef NC353
+    MD12(printk("----------logger_dma_start\n"));
     DMA_RESET(regi_dma7);
     /// need to restore pointers after previous stop DMA - maybe later move there?
     for(dai = 0; dai < CCAM_DMA1_SIZE; dai += DMA_CHUNK) { /// DMA_CHUNK==0x4000
         if(dai + DMA_CHUNK >= CCAM_DMA1_SIZE)  /// last descriptor
-            ccam_dma1_descr_data[i].after = (char *)virt_to_phys(&ccam_dma1_buf_ptr[CCAM_DMA1_SIZE]);
+            ccam_dma1_descr_data[i].after = (char *)virt_to_phys(&logger_buffer[CCAM_DMA1_SIZE]);
         else  /// not the last one
-            ccam_dma1_descr_data[i].after = (char *)virt_to_phys(&ccam_dma1_buf_ptr[dai + DMA_CHUNK]);
+            ccam_dma1_descr_data[i].after = (char *)virt_to_phys(&logger_buffer[dai + DMA_CHUNK]);
         //!TODO: does flush here IS IT STILL NEEDED HERE?
         flush_dma_descr( & ccam_dma1_descr_data[i], 0);
         i++;
@@ -977,8 +1153,10 @@ void x313_dma1_start(void) {
     DMA_START_CONTEXT(regi_dma7, virt_to_phys(&ccam_dma1_descr_context));
     EXT_DMA_1_START ;
     port_csp0_addr[X313_WA_DMACR] = 0x28; // enable DMA1, don't modify DMA0
+#else
+    logger_dma_ctrl(LOGGER_DMA_RUN);
 #endif
-    dma1_on=1;
+    dma_is_on=1;
 }
 
 
@@ -986,7 +1164,7 @@ void x313_dma1_start(void) {
 ///dma0 is using external dma 3 (input) with dma channel 9 
 ///dma1 (this) is using external dma 1 (input) with dma channel 7 (shared with async. serial 0, so do not use DMA there!)
 unsigned long x313_dma1_init(void) {
-    dma1_on=0;
+    dma_is_on=0;
     int rslt;
 #ifdef NC353
     reg_dma_rw_cfg cfg = {.en = regk_dma_yes}; //  if disabled - will be busy and hang on attemt of DMA_WR_CMD
@@ -1045,26 +1223,26 @@ unsigned long x313_dma1_init(void) {
     }
     ///    DMABufferLength = 0;
     x313_setDMA1Buffer();
-    return ((unsigned long)virt_to_phys(ccam_dma1_buf_ptr)) | 0x80000000;
+    return ((unsigned long)virt_to_phys(logger_buffer)) | 0x80000000;
 #endif
     return 0;
 }
 
+#ifdef NC353
 int x313_setDMA1Buffer(void) {
     unsigned long dai;
     int i = 0;
-#ifdef NC353
     EXT_DMA_1_STOP; /// Stop DMA1 (just in case)
     for(dai = 0; dai < CCAM_DMA1_SIZE; dai += DMA_CHUNK) { /// DMA_CHUNK==0x4000
-        ccam_dma1_descr_data[i].buf = (char *)virt_to_phys(&ccam_dma1_buf_ptr[dai]);
+        ccam_dma1_descr_data[i].buf = (char *)virt_to_phys(&logger_buffer[dai]);
         ccam_dma1_descr_data[i].intr = 0;
         ccam_dma1_descr_data[i].wait = 0;
         ccam_dma1_descr_data[i].eol = 0; /// we probably do not need to use eol as the descriptors are linked in a loop anyway
         if(dai + DMA_CHUNK >= CCAM_DMA1_SIZE) { ///last descriptor
-            ccam_dma1_descr_data[i].after = (char *)virt_to_phys(&ccam_dma1_buf_ptr[CCAM_DMA1_SIZE]);
+            ccam_dma1_descr_data[i].after = (char *)virt_to_phys(&logger_buffer[CCAM_DMA1_SIZE]);
             ccam_dma1_descr_data[i].next = (dma_descr_data*)virt_to_phys(&ccam_dma1_descr_data[0]);
         } else { /// not the last one
-            ccam_dma1_descr_data[i].after = (char *)virt_to_phys(&ccam_dma1_buf_ptr[dai + DMA_CHUNK]);
+            ccam_dma1_descr_data[i].after = (char *)virt_to_phys(&logger_buffer[dai + DMA_CHUNK]);
             ccam_dma1_descr_data[i].next = (dma_descr_data*)virt_to_phys(&ccam_dma1_descr_data[i + 1]);
         }
         flush_dma_descr( & ccam_dma1_descr_data[i], 0);
@@ -1074,17 +1252,58 @@ int x313_setDMA1Buffer(void) {
     //    set_globalParam (G_CIRCBUFSIZE,CCAM_DMA_SIZE<<2); /// make it adjustable? TODO: initialize with others?
     //*********************** TEMPORARY ********************************
     MD8(printk ("filling DMA1 buffer with natural numbers - just test \n"));
-    for(dai = 0; dai < CCAM_DMA1_SIZE; dai++) ccam_dma1_buf_ptr[dai] = dai;
+    for(dai = 0; dai < CCAM_DMA1_SIZE; dai++) logger_buffer[dai] = dai;
+    return 0;
+}
 #endif
+
+
+
+
+/** IMU/GPS logger driver remove function */
+static int logger_remove(struct platform_device *pdev) ///< [in] pointer to @e platform_device structure
+                                                       ///< @return always 0
+{
+    unregister_chrdev(LOGGER_MAJOR, LOGGER_DRIVER_NAME);
+
     return 0;
 }
 
+static const struct of_device_id elphel393_logger_of_match[] = {
+        { .compatible = "elphel,elphel393-logger-1.00" },
+        { /* end of list */ }
+};
+MODULE_DEVICE_TABLE(of, elphel393_logger_of_match);
 
+static struct platform_driver elphel393_logger = {
+        .probe          = logger_init,
+        .remove         = logger_remove,
+        .driver = {
+                .name = LOGGER_DRIVER_NAME,
+                .of_match_table = elphel393_logger_of_match,
+        },
+};
 
+//module_init(logger_init);
 
-
-
-module_init(imu_init);
-MODULE_LICENSE("GPLv3");
+MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(IMU_MODULE_DESCRIPTION);
+/*
+ DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); /// 0 - no arguments for now
+in irq:
+   wake_up_interruptible(&framepars_wait_queue); /// all interrupts, not just frames acquired
+   tasklet_schedule(&tasklet_fpga); /// trigger software interrupt
+void tasklet_fpga_function(unsigned long arg);
+
+void tasklet_fpga_function(unsigned long arg){
+...
+  wake_up_interruptible(&hist_c_wait_queue);     /// wait queue for all the other (R,G2,B) histograms (color)
+---
+wait_queue_head_t hist_y_wait_queue;    /// wait queue for the G1 histogram (used as Y)
+wait_event_interruptible (hist_c_wait_queue,GLOBALPARS(G_HIST_C_FRAME)>=offset);
+   init_waitqueue_head(&hist_c_wait_queue);    /// wait queue for all the other (R,G2,B) histograms (color)
+  wake_up_interruptible(&hist_c_wait_queue);     /// wait queue for all the other (R,G2,B) histograms (color)
+
+}
+ */

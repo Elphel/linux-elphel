@@ -1552,11 +1552,12 @@ struct p_names_t {
 *       CCAM_MMAP_SIZE -- no. of bytes to mmap.
 */
 // CCAM_DMA1_SIZE should be 2^N 
+#ifdef NC353
 #define CCAM_CHUNK_PER_DMA1BUF 16  /* no. of 64Kbyte chunks per buffer */
 #define CCAM_WORDS_PER_DMA1BUF (CCAM_CHUNK_PER_DMA1BUF<<14) /*32bit words...*/
 #define CCAM_BYTES_PER_DMA1BUF (CCAM_CHUNK_PER_DMA1BUF<<16)
 #define CCAM_DMA1_SIZE CCAM_WORDS_PER_DMA1BUF
-
+#endif
 
 
 #define CCAM_MMAP_OFFSET_MMAP_HEADER 0

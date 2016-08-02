@@ -17,7 +17,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-void          x313_dma1_start(void);
-int           x313_dma1_stop(void);
-int           x313_is_dma1_on(void);
+void          logger_dma_start(void);
+int           logger_dma_stop(void);
+int           logger_is_dma_on(void);
 unsigned long x313_dma1_init(void);
+void          logger_irq_cmd(int cmd);

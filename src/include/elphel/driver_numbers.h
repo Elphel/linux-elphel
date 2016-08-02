@@ -17,12 +17,12 @@
 //#define IMAGERAW_MAJOR   139
 #define IMAGERAW_MAJOR   131
 #define IMAGEACQ_MAJOR   140
-#define IMU_MAJOR        141
+#define LOGGER_MAJOR     141
 
 
 /// MINORS
-#define IMU_MINOR               1
-#define IMU_CTL_MINOR           2
+#define LOGGER_MINOR               1
+#define LOGGER_CTL_MINOR           2
 #define IMAGERAW_MINOR_FRAME	1
 #define IMAGERAW_MINOR_FPN	2
 #define IMAGERAW_MINOR_UNLOCK	3
