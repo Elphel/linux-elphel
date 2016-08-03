@@ -412,6 +412,22 @@ ssize_t jpeghead_read(struct file *file, char *buf, size_t count, loff_t *off)
 	return count;
 }
 
+ssize_t jpeghead_get_data(int sensor_port, void *buff, size_t buff_sz, size_t offset)
+{
+	unsigned long ptr = offset;
+	size_t count = jpeghead_priv[sensor_port].jpeg_h_sz;
+
+	if (ptr >= jpeghead_priv[sensor_port].jpeg_h_sz)
+		ptr = jpeghead_priv[sensor_port].jpeg_h_sz;
+	if ((ptr + count) > jpeghead_priv[sensor_port].jpeg_h_sz)
+		count = jpeghead_priv[sensor_port].jpeg_h_sz - ptr;
+	if (buff_sz < count)
+		return -EINVAL;
+	memcpy(buff, &jpeghead_priv[sensor_port].header[ptr], count);
+
+	return count;
+}
+EXPORT_SYMBOL_GPL(jpeghead_get_data);
 
 /**huffman_* file operations
  * write, read Huffman tables, initialize tables to default ones, program FPGA with the Huffman tables

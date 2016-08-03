@@ -14,6 +14,7 @@ int     jpegheader_create(struct interframe_params_t * params, unsigned char * b
 int     jpeghead_open   (struct inode *inode, struct file *filp); // set filesize
 loff_t  jpeghead_lseek  (struct file * file, loff_t offset, int orig, struct interframe_params_t *fp);
 ssize_t jpeghead_read   (struct file * file, char * buf, size_t count, loff_t *off);
+ssize_t jpeghead_get_data(int sensor_port, void *buff, size_t buff_sz, size_t offset);
 
 int     huffman_open   (struct inode *inode, struct file *filp); // set filesize
 int     huffman_release(struct inode *inode, struct file *filp);

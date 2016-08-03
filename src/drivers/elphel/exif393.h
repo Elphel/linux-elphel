@@ -40,5 +40,6 @@ int putlong_meta(int sensor_port, unsigned long data, int * indx,  unsigned long
 char * encode_time(char buf[27], unsigned long sec, unsigned long usec);
 int store_meta(int sensor_port); //called from IRQ service - put current metadata to meta_buffer, return page index
 
+size_t exif_get_data(int sensor_port, unsigned short meta_index, void * buff, size_t buff_sz);
 
 #endif

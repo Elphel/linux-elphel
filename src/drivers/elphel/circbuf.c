@@ -33,6 +33,7 @@
 #include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/uio.h>
 #include <asm/uaccess.h>
 #include <elphel/driver_numbers.h>
 #include <elphel/c313a.h>
@@ -98,6 +99,36 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 
 	return 0;
 }
+
+int circbuf_get_ptr(int sensor_port, size_t offset, size_t len, struct fvec *vect_0, struct fvec *vect_1)
+{
+	int ret = 1;
+
+	if (offset > CCAM_DMA_SIZE || sensor_port >= SENSOR_PORTS)
+		return -EINVAL;
+
+	if (offset + len < CCAM_DMA_SIZE) {
+		// the image is not split
+		vect_0->iov_base = circbuf_priv[sensor_port].buf_ptr + offset;
+		vect_0->iov_dma = circbuf_priv[sensor_port].phys_addr + offset;
+		vect_0->iov_len = len;
+		vect_1->iov_base = NULL;
+		vect_1->iov_len = 0;
+		vect_1->iov_dma = 0;
+	} else {
+		// the image is split into two segments
+		vect_0->iov_base = circbuf_priv[sensor_port].buf_ptr + offset;
+		vect_0->iov_dma = circbuf_priv[sensor_port].phys_addr + offset;
+		vect_0->iov_len = CCAM_DMA_SIZE - offset;
+		vect_1->iov_base = circbuf_priv[sensor_port].buf_ptr;
+		vect_1->iov_dma = circbuf_priv[sensor_port].phys_addr;
+		vect_1->iov_len = len - vect_0->iov_len;
+		ret = 2;
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(circbuf_get_ptr);
 
 /**
  * @brief Process circular buffer file opening and define further action in accordance
