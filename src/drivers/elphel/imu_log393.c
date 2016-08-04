@@ -40,7 +40,7 @@
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
-#include <asm/outercache.h>
+#include <asm/outercache.h>    // TODO: Implement cache operations for the logger !!!!
 #include <asm/cacheflush.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -304,8 +304,7 @@ static u32 bytePtrMask = 0;
 static dma_addr_t logger_phys; ///< physical address of the DMA memory start
 static int logger_fpga_configured = 0;
 static const struct of_device_id elphel393_logger_of_match[];
-/** @brief Global pointer to basic device structure. This pointer is used in debugfs output functions */
-static struct device *g_dev_ptr;
+static struct device *g_dev_ptr; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
 wait_queue_head_t logger_wait_queue;
 #endif
 
@@ -914,15 +913,11 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
     }
 }
 
-/**
- * @brief Handle interrupts from sensor channels. This handler is installed without SA_INTERRUPT
- * flag meaning that interrupts are enabled during processing. Such behavior is recommended in LDD3.
- * @param[in]   irq   interrupt number
- * @param[in]   dev_id pointer to driver's private data structure #jpeg_ptr_t corresponding to
- * the channel which raise interrupt
- * @return \e IRQ_HANDLED if interrupt was processed and \e IRQ_NONE otherwise
- */
-static irqreturn_t logger_irq_handler(int irq, void *dev_id)
+/** Handle interrupts the logger. This handler is installed without SA_INTERRUPT
+ * flag meaning that interrupts are enabled during processing. Such behavior is recommended in LDD3. */
+static irqreturn_t logger_irq_handler(int irq,      ///< [in] interrupt number
+                                      void *dev_id) ///< [in] pointer to driver's private data structure
+                                                    ///< @return \e IRQ_HANDLED if interrupt was processed and \e IRQ_NONE otherwise
 {
     x393_mult_saxi_al_t mult_saxi_dwp = x393_mult_saxi_pointers(MULT_SAXI_CHN);
     if (mult_saxi_dwp.addr32 < logger_offs32){
@@ -1263,8 +1258,7 @@ static struct platform_driver elphel393_logger = {
         },
 };
 
-//module_init(logger_init);
-
+module_platform_driver(elphel393_logger);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(IMU_MODULE_DESCRIPTION);

@@ -18,14 +18,15 @@
 #define IMAGERAW_MAJOR   131
 #define IMAGEACQ_MAJOR   140
 #define LOGGER_MAJOR     141
+#define VIDEOMEM_MAJOR   142 // implement raw access to memory and/or 16-bit image buffers over membridge interface
 
 
 /// MINORS
 #define LOGGER_MINOR               1
 #define LOGGER_CTL_MINOR           2
-#define IMAGERAW_MINOR_FRAME	1
-#define IMAGERAW_MINOR_FPN	2
-#define IMAGERAW_MINOR_UNLOCK	3
+#define IMAGERAW_MINOR_FRAME	   1
+#define IMAGERAW_MINOR_FPN	       2
+#define IMAGERAW_MINOR_UNLOCK	   3
 
 #define CIRCBUF_MINOR             0x20
 #define CIRCBUF_MINOR_CHN_0       0x20

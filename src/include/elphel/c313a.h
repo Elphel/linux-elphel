@@ -856,8 +856,10 @@
 /// when the 4-bit counter is combined with the software variable to get the full 32-bit frame number.<br/>
 /// Each parameter page includes 927 parameter registers, as well as 97 bit mask ones to speed up updates between frames.<br/>
 /// So if no parameters are changed - nothing to be copied from page to page.
-#define PARS_FRAMES                                  16
-#define PARS_FRAMES_MASK     (PARS_FRAMES-1)         ///< Maximal frame number (15 for NC393)
+#ifndef PARS_FRAMES
+    #define PARS_FRAMES                                  16
+    #define PARS_FRAMES_MASK     (PARS_FRAMES-1)         ///< Maximal frame number (15 for NC393)
+#endif
 /// Keeping the same size of past frames storage as in 353:<br/>
 ///#define PASTPARS_SAVE_ENTRIES       (PARS_FRAMES << 8)     // 2048<br/>
 ///#define PASTPARS_SAVE_ENTRIES_MASK ((PARS_FRAMES << 8)-1)  // 0x7ff

@@ -191,25 +191,15 @@
 #include <linux/fs.h>
 #include <linux/string.h>
 #include <linux/init.h>
-//#include <linux/autoconf.h>
 #include <linux/vmalloc.h>
 
-//#include <asm/system.h>
 #include <asm/byteorder.h> // endians
 #include <asm/io.h>
 
 #include <asm/irq.h>
 #include <linux/delay.h>
-//#include <asm/delay.h>
 #include <asm/uaccess.h>
 #include <elphel/c313a.h>
-//#include <asm/elphel/exifa.h>
-//#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
-//#include "fpga_sdram.h" // use a single fpga_initSDRAM(void)
-//#include "fpgaconfi2c.h"  //to control clocks
-//#include "cc3x3.h"
-//#include "fpga_io.h"
-//#include "x3x3.h"           // hardware definitions
 #include "framepars.h"
 #include "sensor_common.h"
 #include "multi10359.h"
@@ -218,10 +208,8 @@
 #include "quantization_tables.h"
 #include "latency.h"
 #include "pgm_functions.h"
-//#include "cxdma.h"         // is_dma_on()
 #include "jpeghead.h"      // to program FPGA Huffman tables
-
-#include "legacy_defines.h" // temporarily
+ #include "legacy_defines.h" // temporarily
 #include "sensor_i2c.h"
 
 
