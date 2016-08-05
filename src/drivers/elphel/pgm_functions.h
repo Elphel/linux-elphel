@@ -6,6 +6,13 @@
 int init_pgm_proc(void);
 int add_sensor_proc(int index, int (*sens_func)(int sensor_port, struct sensor_t * ,  struct framepars_t * , struct framepars_t *, int ));
 
+/// Commands through sequencer: switch between ASAP (frame <0) and absolute
+/// @param port - sensor port (0..3)
+/// @param frame - <0 for ASAP command, otherwise absolute frame number to program for 4 LSB only are used)
+/// @param func - part of the command write through sequencer w/o 'seqr_/seqa_ prefix
+/// @param data - appropriate data type (matching function definition) to be written
+#define X393_SEQ_SEND1(port,frame,func,data) {if ((frame) < 0) seqr_##func (0,       (data), (port)); \
+                                              else             seqa_##func ((frame), (data), (port)); }
 
 
 /** Tells if parameter is modifies

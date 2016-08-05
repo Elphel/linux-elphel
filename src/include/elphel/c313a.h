@@ -293,10 +293,10 @@
 <li>                     bit 2 - async (snapshot, ext trigger) mode, 0 - continuous NOTE: Only this bit is used now
 <li>                     bit 3 - no overlap,  single frames: program - acquire/compress same frame</ul>*/
 #define P_BGFRAME       16 ///< Background measurement mode - will use 16-bit mode and no FPN correction
-#define P_IMGSZMEM      17 ///< image size in video memory (calculated when channel 0 is programmed)
+#define P_IMGSZMEM      17 ///< image size in video memory (calculated when channel 0 is programmed) NC393: Not used ???
 // image page numbers depend on image size/pixel depth, so changing any of them will invalidate all pages
-#define P_PAGE_ACQ      18 ///< Number of image page buffer to acquire to (0.1?)
-#define P_PAGE_READ     19 ///< Number of image page buffer to read from to (0.1?)
+#define P_PAGE_ACQ      18 ///< Number of image page buffer to acquire to (0.1?)  NC393: Not used ???
+#define P_PAGE_READ     19 ///< Number of image page buffer to read from to (0.1?)  NC393: Not used ???
 #define P_OVERLAP       20 ///< number of EXRA lines to be acquired - probably dead,
 #define P_VIRT_KEEP     21 ///< 0 - recalculate P_VIRT_WIDTH, P_VIRT_HEIGHT when window is changed, 1 - keep those parameters
 #define P_VIRT_WIDTH    22 ///< Virtual window width
@@ -312,7 +312,8 @@
 #define P_BIN_HOR       32 ///<  binning 1/2 - KAC1310 only - now for mt9t001
 #define P_BIN_VERT      33 ///<  not used yet binning 1/2 - KAC1310 only  - now for mt9t001
 #define P_FPGATEST      34 ///<  FPGA test modes (now - just one)
-#define P_FRAMESYNC_DLY 35 ///<  maybe - temporary - delay of frame sync (vacts) by number of scan lines - for photofinish mode
+#define P_FRAMESYNC_DLY 35 ///<  maybe - temporary - delay of frame sync (vacts) by number of scan lines - for photofinish mode // not used anywhere?
+                           ///<  Lower bits 16 will be used to delay frame sync, bit 16 - use internal HACT duration (0 - use from sensor) [*]
 #define P_PF_HEIGHT     36 ///<  height of each strip in photofinish mode - normally 2 lines
                            ///<  also now includes timestamping mode +0x10000 - for normal frames, 0x20000 - for photo-finish
 #define P_BITS          37 ///<  pixel depth - bits 10/8/4
@@ -331,7 +332,7 @@
 #define P_SENSOR_PIXV   46 ///<  (readonly) pixels to be read from the sensor, vertical (including margins)
 #define P_FATZERO       47 ///<  subtract while adding data from to consecutive frames (async trigger)
 
-#define P_COMPMOD_TILSH 48 ///<  Horizontal tiles - obsolete in 393?
+#define P_COMPMOD_TILSH 48 ///<  Horizontal tiles - obsolete in 393? YES
 #define P_COMPMOD_DCSUB 49 ///<  Subtract DC in compressor before DCT
 #define P_COMPMOD_QTAB  50 ///<  to be written not directly, but by  pgm_quality ?
 
@@ -459,8 +460,8 @@
 
 // 393: Are they the same?
 #define P_COLOR          135 ///< mono - 0, color mode - 1, +0 - normal, 256 - sensor test, 512 - FPGA test
-  #define COLORMODE_MONO6     0 ///< monochrome, (4:2:0),
-  #define COLORMODE_COLOR     1 ///< color, 4:2:0, 18x18(old)
+  #define COLORMODE_MONO6     1 ///< monochrome, (4:2:0), was:0
+  #define COLORMODE_COLOR     0 ///< color, 4:2:0, 18x18(old) was: 1
   #define COLORMODE_JP46      2 ///< jp4, original (4:2:0)
   #define COLORMODE_JP46DC    3 ///< jp4, dc -improved (4:2:0)
   #define COLORMODE_COLOR20   4 ///<  color, 4:2:0, 20x20, middle of the tile (not yet implemented)
@@ -1662,8 +1663,8 @@ struct sensorproc_t {
 *! that goes after the encoded frame, so total is 36 bytes (26+2+8)
 !****************************************************************************************************/
 // move fram x353.h 
-#define DEFAULT_COLOR_SATURATION_BLUE 0x90 ///< 100*realtive saturation blue
-#define DEFAULT_COLOR_SATURATION_RED  0xb6 ///< 100*realtive saturation red
+#define DEFAULT_COLOR_SATURATION_BLUE 0x90 ///< 100*relative saturation blue
+#define DEFAULT_COLOR_SATURATION_RED  0xb6 ///< 100*relative saturation red
 
 //#define EXPOSURE_UNIT 100 // to move to finer exposure settings - current unit in microseconds. TODO: Propagate it to drivers...
 #define EXPOSURE_UNIT 1 ///< to move to finer exposure settings - current unit in microseconds. TODO: Propagate it to drivers...

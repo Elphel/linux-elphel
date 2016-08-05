@@ -91,6 +91,9 @@ int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
    window_left_top.top =                  window_top;
 
    switch (x393cmd){
+   case ASAP:
+       frame16 = 0;
+       // no break
    case RELATIVE:
        seqr_x393_sens_mcntrl_scanline_startaddr        (frame16, window_frame_sa,         num_sensor); // Set frame start address
        seqr_x393_sens_mcntrl_scanline_frame_size       (frame16, window_frame_sa_inc,     num_sensor); // Set frame size (address increment)
@@ -129,8 +132,10 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
                             int window_height,    ///< 16-bit window height (in scan lines)
                             int window_left,      ///< 13-bit window left margin in 8-bursts (16 bytes)
                             int window_top,       ///< 16-bit window top margin (in scan lines
-                            int tile_width,       ///< tile width in pixels
+                            int tile_width,       ///< tile width in bjursts (16-pixels each)
                             int tile_height,      ///< tile height: 18 for color JPEG, 16 for JP4 flavors // = 18
+                            int tile_vstep,       ///< tile vertical step in pixel rows (JPEG18/jp4 = 16) // = 16
+                            int extra_pages,      ///< extra pages needed (1) - number of previous pages to keep in a 4-page buffer
                             int disable_need,     ///< disable "need" (yield to sensor channels - they can not wait)
                             x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
                             int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
@@ -141,8 +146,6 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
     int frame_sa_inc =     frame_full_width * (buffer_settings.frame_height[num_sensor] >>3);
     int last_frame_num =   buffer_settings.frames_in_buffer[num_sensor] - 1;
     int byte32 =           1;   ///< 1 - 32-byte columns (currently used), 0 - 16 byte columns
-    int tile_vstep =       16;  ///< tile vertical step in pixel rows (JPEG18/jp4 = 16) // = 16
-    int extra_pages =      1;   ///< extra pages needed (1) - number of previous pages to keep in a 4-page buffer
 
    x393_mcntrl_mode_scan_t mcntrl_mode = {.enable =        1, // [    0] (1) enable requests from this channel ( 0 will let current to finish, but not raise want/need)
                                           .chn_nreset =    0, // [    1] (1) 0: immediately reset all the internal circuitry
@@ -179,6 +182,9 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
    mcntrl_mode.extra_pages =  extra_pages;  // non-constant parameter
 
    switch (x393cmd){
+   case ASAP:
+       frame16 = 0;
+       // no break
    case RELATIVE:
        seqr_x393_sens_mcntrl_tiled_startaddr        (frame16, window_frame_sa,         num_sensor); // Set frame start address
        seqr_x393_sens_mcntrl_tiled_frame_size       (frame16, window_frame_sa_inc,     num_sensor); // Set frame size (address increment)

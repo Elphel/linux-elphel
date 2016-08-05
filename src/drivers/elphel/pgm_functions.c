@@ -209,9 +209,11 @@
 #include "latency.h"
 #include "pgm_functions.h"
 #include "jpeghead.h"      // to program FPGA Huffman tables
- #include "legacy_defines.h" // temporarily
+#include "x393.h"
+  #include "legacy_defines.h" // temporarily
 #include "sensor_i2c.h"
-
+#include "x393_videomem.h"
+#define COLOR_MARGINS 2 // add this many pixels each side
 
 /**
  * @brief optional debug output macros
@@ -854,8 +856,8 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     if (unlikely(thispars->pars[P_ACTUAL_WIDTH] != (width+timestamp_len))) {
         SETFRAMEPARS_SET(P_ACTUAL_WIDTH, width+timestamp_len); ///full width for the compressor, including timestamp, but excluding margins
     }
-    if (unlikely(thispars->pars[P_SENSOR_PIXH] != width+X313_MARGINS))
-        SETFRAMEPARS_SET(P_SENSOR_PIXH,  width+X313_MARGINS); ///full width for the sensor (after decimation), including margins
+    if (unlikely(thispars->pars[P_SENSOR_PIXH] != width+(2 * COLOR_MARGINS)))
+        SETFRAMEPARS_SET(P_SENSOR_PIXH,  width+(2 * COLOR_MARGINS)); ///full width for the sensor (after decimation), including margins
     width*=dh;
     if (unlikely(thispars->pars[P_WOI_WIDTH] != width))
         SETFRAMEPARS_SET(P_WOI_WIDTH, width);  // WOI width, as specified (corrected for the sensor if needed)
@@ -878,8 +880,8 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
         height= ((height/dv)/X313_TILEVERT) * X313_TILEVERT; // divided by dv (before multisensor options)
         // suppose minimal height refers to decimated output
         while (height < sensor->minHeight) height+=X313_TILEVERT;
-        if (unlikely(thispars->pars[P_SENSOR_PIXV] != height+X313_MARGINS))
-            SETFRAMEPARS_SET(P_SENSOR_PIXV,  height+X313_MARGINS); ///full height for the sensor (after decimation), including margins
+        if (unlikely(thispars->pars[P_SENSOR_PIXV] != height+(2 * COLOR_MARGINS)))
+            SETFRAMEPARS_SET(P_SENSOR_PIXV,  height+(2 * COLOR_MARGINS)); ///full height for the sensor (after decimation), including margins
         height*=dv;
         pf_stripes = 0;
         pfh = 0;
@@ -904,8 +906,8 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     left = thispars->pars[P_WOI_LEFT];
     if (!oversize) { // in oversize mode let user to specify any margin, including odd ones (bayer shifted)
         if (is_color)                    left &= 0xfffe;
-        if ((left + width + X313_MARGINS) > sensor->clearWidth) {
-            left = sensor->clearWidth - width - X313_MARGINS;
+        if ((left + width + (2 * COLOR_MARGINS)) > sensor->clearWidth) {
+            left = sensor->clearWidth - width - (2 * COLOR_MARGINS);
             if (is_color)               left &= 0xfffe;
         }
         if (left & 0x8000) left = 0;
@@ -921,8 +923,8 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     int clearHeight=(sensor->clearHeight-sensor->imageHeight) + thispars->pars[P_SENSOR_HEIGHT];
     if (!oversize) { // in oversize mode let user to specify any margin, including odd ones (bayer shifted)
         if (is_color)                    top &= 0xfffe;
-        if ((top + ((pfh>0)?0:height) + X313_MARGINS) > clearHeight) {
-            top = clearHeight - ((pfh>0)?0:height) - X313_MARGINS;
+        if ((top + ((pfh>0)?0:height) + (2 * COLOR_MARGINS)) > clearHeight) {
+            top = clearHeight - ((pfh>0)?0:height) - (2 * COLOR_MARGINS);
             if (is_color)               top &= 0xfffe;
         }
         if (top & 0x8000) top = 0;
@@ -1109,31 +1111,53 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
 												   ///< be applied to,  negative - ASAP
 												   ///< @return OK - 0, <0 - error
 {
+#ifndef NC353
+    x393_sens_mode_t sens_mode = {.d32=0};
     MDF3(printk(" frame16=%d\n",frame16));
-#ifdef NC353
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-    int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
-    // Set FPN mode (P_FPGATEST - currently only LSB is processed)
-    X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SENSFPN, X313_SENSFPN_D( \
-            (thispars->pars[P_FPGATEST]), \
-            (thispars->pars[P_FPNS]),  \
-            (thispars->pars[P_FPNM]),     \
-            ((thispars->pars[P_BITS]>8)?1:0), \
-            thispars->pars[P_SHIFTL]));
-
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SENSFPN, (int) (X313_SENSFPN_D( \
-            (thispars->pars[P_FPGATEST]), \
-            (thispars->pars[P_FPNS]),  \
-            (thispars->pars[P_FPNM]),     \
-            ((thispars->pars[P_BITS]>8)?1:0), \
-            thispars->pars[P_SHIFTL]))));
-
+    if (FRAMEPAR_MODIFIED(P_BITS)){
+        sens_mode.bit16 = thispars->pars[P_BITS];
+        sens_mode.bit16_set = 1;
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_mode, sens_mode);
+        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, sens_mode.d32));
+        //TODO: not (yet) implemented
+        //(thispars->pars[P_FPGATEST]), \
+        //(thispars->pars[P_FPNS]),  \
+        //(thispars->pars[P_FPNM]),     \
+        //thispars->pars[P_SHIFTL]));
+    }
+    //
     int n_scan_lines, n_ph_lines, n_pixels;
 
     // New - writing WOI width for internally generated HACT
-    n_pixels=((thispars->pars[P_ACTUAL_WIDTH]+X313_MARGINS) & 0x3fff) | 0x4000;
+    n_pixels=((thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS)) & 0x3fff) | 0x4000;
     X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, n_pixels);
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_NLINES, (int) n_pixels));
+
+//#define P_FRAMESYNC_DLY 35 ///<  maybe - temporary - delay of frame sync (vacts) by number of scan lines - for photofinish mode // not used anywhere?
+    ///<  Lower bits 16 will be used to delay frame sync, bit 16 - use internal HACT duration (0 - use from sensor) [*]
+//#define P_PF_HEIGHT     36 ///<  height of each strip in photofinish mode - normally 2 lines
+    ///<  also now includes timestamping mode +0x10000 - for normal frames, 0x20000 - for photo-finish
+//#define P_BITS          37 ///<  pixel depth - bits 10/8/4
+/*
+ Change bit16 only without histograms
+ typedef union {
+    struct {
+          u32         hist_en: 4; // [ 3: 0] (0xf) Enable subchannel histogram modules (may be less than 4)
+          u32       hist_nrst: 4; // [ 7: 4] (0xf) Reset off for histograms subchannels (may be less than 4)
+          u32        hist_set: 1; // [    8] (0) Apply values in hist_en and hist_nrst fields (0 - ignore)
+          u32          chn_en: 1; // [    9] (1) Enable this sensor channel
+          u32      chn_en_set: 1; // [   10] (1) Apply chn_en value (0 - ignore)
+          u32           bit16: 1; // [   11] (0) 0 - 8 bpp mode, 1 - 16 bpp (bypass gamma). Gamma-processed data is still used for histograms
+          u32       bit16_set: 1; // [   12] (0) Apply bit16 value (0 - ignore)
+          u32                :19;
+    };
+    struct {
+          u32             d32:32; // [31: 0] (0) cast to u32
+    };
+} x393_sens_mode_t;
+
+ */
 
     // Program number of scan lines to acquire
     // Is PhotoFinish mode enabled? // **************** TODO: use ACTUAL_HEIGHT (and update it) not WOI_HEIGHT
@@ -1150,7 +1174,7 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", X313_SEQ_ASAP, X313_WA_NLINES, 0x8000));
         X3X3_SEQ_SEND1 (X313_SEQ_ASAP,  X313_WA_NLINES,  0x8000);
 
-        n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]+X313_MARGINS+thispars->pars[P_OVERLAP];
+        n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]+(2 * COLOR_MARGINS)+thispars->pars[P_OVERLAP];
     }
     n_scan_lines&=0x3fff;
     X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, n_scan_lines);
@@ -1173,8 +1197,73 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int)X313_WA_DCR0, (int)X353_DCR0(BAYER_PHASE,thispars->pars[P_BAYER] ^ ((thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1)<<1)) ^ sensor->bayer) ));
 
     }
-#endif
     return 0;
+#else
+    MDF3(printk(" frame16=%d\n",frame16));
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+    int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
+    // Set FPN mode (P_FPGATEST - currently only LSB is processed)
+    X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SENSFPN, X313_SENSFPN_D( \
+            (thispars->pars[P_FPGATEST]), \
+            (thispars->pars[P_FPNS]),  \
+            (thispars->pars[P_FPNM]),     \
+            ((thispars->pars[P_BITS]>8)?1:0), \
+            thispars->pars[P_SHIFTL]));
+
+    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SENSFPN, (int) (X313_SENSFPN_D( \
+            (thispars->pars[P_FPGATEST]), \
+            (thispars->pars[P_FPNS]),  \
+            (thispars->pars[P_FPNM]),     \
+            ((thispars->pars[P_BITS]>8)?1:0), \
+            thispars->pars[P_SHIFTL]))));
+
+    int n_scan_lines, n_ph_lines, n_pixels;
+
+    // New - writing WOI width for internally generated HACT
+    n_pixels=((thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS)) & 0x3fff) | 0x4000;
+    X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, n_pixels);
+    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_NLINES, (int) n_pixels));
+
+    // Program number of scan lines to acquire
+    // Is PhotoFinish mode enabled? // **************** TODO: use ACTUAL_HEIGHT (and update it) not WOI_HEIGHT
+    if (((thispars->pars[P_PF_HEIGHT] & 0xffff)>0) && (thispars->pars[P_PF_HEIGHT]<=thispars->pars[P_ACTUAL_HEIGHT])){
+        n_ph_lines=  thispars->pars[P_ACTUAL_HEIGHT]/(thispars->pars[P_PF_HEIGHT] &  0x3fff);
+        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_NLINES, (int) (n_ph_lines-1) | 0x8000));
+        X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, (n_ph_lines-1) | 0x8000);
+        //    n_scan_lines= thispars->pars[P_PF_HEIGHT];
+        n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]; // no margins here
+
+    } else {
+        // temporary hack trying to disable PH mode earlier
+
+        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", X313_SEQ_ASAP, X313_WA_NLINES, 0x8000));
+        X3X3_SEQ_SEND1 (X313_SEQ_ASAP,  X313_WA_NLINES,  0x8000);
+
+        n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]+(2 * COLOR_MARGINS)+thispars->pars[P_OVERLAP];
+    }
+    n_scan_lines&=0x3fff;
+    X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, n_scan_lines);
+    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_NLINES, (int) n_scan_lines));
+    // Bayer phase changed?
+
+    int flips=(thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1)<<1);
+    int bayer_modified=FRAMEPAR_MODIFIED(P_BAYER) || FRAMEPAR_MODIFIED(P_FLIPH) || FRAMEPAR_MODIFIED(P_FLIPV) || FRAMEPAR_MODIFIED(P_MULTI_MODE);
+    MDF3(printk(" flips=%x\n", flips));
+
+    if (thispars->pars[P_MULTI_MODE]) { // Modify flips in composite mode - should match flips of the top (direct) channel
+        int this_bit=(1<<thispars->pars[P_MULTI_TOPSENSOR]);
+        if (thispars->pars[P_MULTI_FLIPH] & this_bit) flips^=1;
+        if (thispars->pars[P_MULTI_FLIPV] & this_bit) flips^=2;
+        MDF3(printk(" composite mode - adjusted flips=%x\n", flips));
+        bayer_modified=  bayer_modified || FRAMEPAR_MODIFIED(P_MULTI_FLIPH) || FRAMEPAR_MODIFIED(P_MULTI_FLIPV)  || FRAMEPAR_MODIFIED(P_MULTI_TOPSENSOR);
+    }
+    if (bayer_modified) {
+        X3X3_SEQ_SEND1(fpga_addr,  X313_WA_DCR0, X353_DCR0(BAYER_PHASE,thispars->pars[P_BAYER] ^ flips ^ sensor->bayer)); ///NOTE: hardware bayer
+        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int)X313_WA_DCR0, (int)X353_DCR0(BAYER_PHASE,thispars->pars[P_BAYER] ^ ((thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1)<<1)) ^ sensor->bayer) ));
+
+    }
+    return 0;
+#endif
 }
 
 /** Start/single acquisition from the sensor to the FPGA (stop has latency of 1)
@@ -1425,41 +1514,60 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
 													   ///< be applied to,  negative - ASAP
 													   ///< @return OK - 0, <0 - error
 {
+#ifndef NC353
+    int width_marg, height_marg, width_bursts;
+    MDF3(printk(" frame16=%d\n",frame16));
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+    width_marg = thispars->pars[P_ACTUAL_WIDTH];
+    height_marg = thispars->pars[P_ACTUAL_WIDTH];
+    switch(thispars->pars[P_COLOR]){
+    case COLORMODE_COLOR:
+    case COLORMODE_COLOR20:
+        width_marg += (2 * COLOR_MARGINS);
+        if ((thispars->pars[P_PF_HEIGHT] & 0xffff)==0) { // not a photofinish
+            height_marg += (2 * COLOR_MARGINS);
+        }
+        break;
+    }
+    width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+    setup_sensor_memory (sensor_port,       // sensor port number (0..3)
+                         width_bursts,      // 13-bit - in 8*16=128 bit bursts
+                         height_marg,       // 16-bit window height (in scan lines)
+                         0,                 // 13-bit window left margin in 8-bursts (16 bytes)
+                         0,                 // 16-bit window top margin (in scan lines
+                         (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                         frame16);          // Frame number the command should be applied to (if not immediate mode)
+    return 0;
+
+#else
     int ntilex,ntiley,goodEOL,padlen, imgsz,sa;
     MDF3(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-#ifdef NC353
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
-#endif
+    //NC393 - use margins of 2 pixels from each side for color JPEG (even for JPEG18) to preserve Bayer
     ///programm channel1 (FPN). Will not enable if not needed (imageParamsR[P_FPN]==0)
-    ntilex=((thispars->pars[P_ACTUAL_WIDTH]+X313_MARGINS+7)>>3);
-    ntiley=thispars->pars[P_ACTUAL_HEIGHT]+(((thispars->pars[P_PF_HEIGHT] & 0xffff)>0)?0:X313_MARGINS);
+    ntilex=((thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS)+7)>>3);
+    ntiley=thispars->pars[P_ACTUAL_HEIGHT]+(((thispars->pars[P_PF_HEIGHT] & 0xffff)>0)?0:(2 * COLOR_MARGINS));
     MDF3(printk("ntilex=0x%x ntiley=0x%x\n",ntilex,ntiley));
     if ((thispars->pars[P_PF_HEIGHT] & 0xffff)==0) { // not a photofinish
         if(!thispars->pars[P_BGFRAME] && ((thispars->pars[P_FPNS]!=0) || (thispars->pars[P_FPNM]!=0))) {
             // program memory channel1
-#ifdef NC353
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH1_CTL1, X313_SDCHAN_REG1(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1)));
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH1_CTL2, X313_SDCHAN_REG2(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1)));
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH1_CTL0, X313_SDCHAN_REG0(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1)));
             // enable channel1 for reading SDRAM
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_EN_D(1)); // wait ready later... ???
-#endif
             MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH1_CTL1, (int) X313_SDCHAN_REG1(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1))));
             MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH1_CTL2, (int) X313_SDCHAN_REG2(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1))));
             MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH1_CTL0, (int) X313_SDCHAN_REG0(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1))));
             MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_EN_D(1)));
 
         } else  {
-#ifdef NC353
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_DIS_D(1));
-#endif
             MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_DIS_D(1)));
         }
     } else  {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_DIS_D(1));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_DIS_D(1)));
     }
     // Program channel 0 (sensor->memory)
@@ -1470,7 +1578,7 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
     // When reading 20x20 macroblocks to the compressor, such exception is not needed, it crosses page boundaries when needed
 
     if ((thispars->pars[P_BITS]==8) && (!thispars->pars[P_BGFRAME])) { // in 16-bit mode ntilex will stay the same
-        ntilex=((thispars->pars[P_ACTUAL_WIDTH]+X313_MARGINS+15)>>4);
+        ntilex=((thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS)+15)>>4);
         goodEOL=((thispars->pars[P_ACTUAL_WIDTH] & 0x0f) == 0) && ((thispars->pars[P_ACTUAL_WIDTH] & 0x1f0) != 0);
         if (goodEOL) ntilex--;
         MDF3(printk("ntilex=0x%x ntiley=0x%x goodEOL=0x%x\n",ntilex,ntiley,goodEOL));
@@ -1481,11 +1589,10 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
     if (thispars->pars[P_OVERLAP]>0) ntiley=(ntiley<<1); // ntiley will be twice bigger for synch. mode)
     padlen=((ntilex+31)>>5) << 8;
     //TODO:fix it to be able to use two (or larger) frame buffer
-    //  imgsz=((padlen * (thispars->pars[P_ACTUAL_HEIGHT]+X313_MARGINS) * thispars->pars[P_PAGE_ACQ]) << ((thispars->pars(P_TRIG) & 1)?1:0)); // mostly rotten too
+    //  imgsz=((padlen * (thispars->pars[P_ACTUAL_HEIGHT]+(2 * COLOR_MARGINS)) * thispars->pars[P_PAGE_ACQ]) << ((thispars->pars(P_TRIG) & 1)?1:0)); // mostly rotten too
     imgsz=padlen * ntiley;
     MDF3(printk("imgsz=0x%x, padlen=0x%x\n",imgsz,padlen));
     if (thispars->pars[P_IMGSZMEM]!= imgsz)  setFramePar(sensor_port, thispars, P_IMGSZMEM, imgsz);  // set it (and propagate to the later frames)
-#ifdef NC353
     sa=X313_MAP_FRAME + (imgsz * thispars->pars[P_PAGE_ACQ]);  // now - always X313_MAP_FRAME
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH0_CTL1, X313_SDCHAN_REG1(0,1,1, sa, (ntilex-1), (ntiley-1)));
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH0_CTL1, (int) X313_SDCHAN_REG1(0,1,1, sa, (ntilex-1), (ntiley-1))  ));
@@ -1495,9 +1602,10 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH0_CTL0, (int) X313_SDCHAN_REG0(0,1,1, sa, (ntilex-1), (ntiley-1))  ));
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_EN_D(0));
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_EN_D(0)  ));
-#endif
     // number of scan lines to read from sensor - program in pgm_sensorin
     return 0;
+#endif
+
 }
 
 /** Program memory channel 2 (memory->compressor)
@@ -1514,7 +1622,66 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
 													   ///< @return OK - 0, <0 - error
 {
     //TODO: redo for nc393
-#ifdef NC353
+#ifndef NC353
+    int width_marg, height_marg;
+    int overlap; // tile overlap (total - 2 for JPEG18, 4 - for JPEG20, 0 otherwise
+    int width_bursts;
+    int cmprs_top = 0; // 1 for JPEG18 only, 0 for others
+    int tile_width; // in bursts, 2 for those with overlap (height>16), 4 with heigh==16
+    int tile_height; // 16/18 (20 not yet implemented)
+    int extra_pages; // 1 with overlap, 0 w/o overlap
+    int disable_need =  1; // TODO: Use some G_* parameter
+    MDF3(printk(" frame16=%d\n",frame16));
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+    width_marg = thispars->pars[P_ACTUAL_WIDTH];
+    height_marg = thispars->pars[P_ACTUAL_WIDTH];
+    switch(thispars->pars[P_COLOR]){
+    case COLORMODE_COLOR:
+        overlap = 2;
+        cmprs_top = 1;
+        break;
+    case COLORMODE_COLOR20:
+        overlap = 4;
+        break;
+    }
+    if (overlap){
+        width_marg += (2 * COLOR_MARGINS);
+        if ((thispars->pars[P_PF_HEIGHT] & 0xffff)==0) { // not a photofinish
+            height_marg += (2 * COLOR_MARGINS);
+        }
+        tile_width = 2;
+        extra_pages = 1;
+    } else {
+        tile_width = 4;
+        extra_pages = 0;
+    }
+    width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+    // Adjusting for tile width. TODO: probably not needed, handled in FPGA - verify (and remove 2 next lines)
+    if (width_bursts & 1)                     width_bursts++;
+    if ((tile_width>2) && (width_bursts & 2)) width_bursts += 2;
+
+    tile_height = 16 + overlap;
+    setup_compressor_memory (sensor_port,       // sensor port number (0..3)
+                             width_bursts,      // 13-bit - in 8*16=128 bit bursts
+                             height_marg,       // 16-bit window height (in scan lines)
+                             0,                 // 13-bit window left margin in 8-bursts (16 bytes)
+                             cmprs_top,         // 16-bit window top margin (in scan lines
+                             tile_width,        // tile width in bjursts (16-pixels each)
+                             tile_height,       // tile height: 18 for color JPEG, 16 for JP4 flavors // = 18
+                             16,                // tile vertical step in pixel rows (JPEG18/jp4 = 16) // = 16
+                             extra_pages,       // extra pages needed (1) - number of previous pages to keep in a 4-page buffer
+                             disable_need,      // disable "need" (yield to sensor channels - they can not wait)
+                             (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                             frame16);          // Frame number the command should be applied to (if not immediate mode)
+
+
+    return 0;
+// TODO: Do we need to maintain P_IMGSZMEM ?
+// #define P_PAGE_ACQ      18 ///< Number of image page buffer to acquire to (0.1?)
+// #define P_PAGE_READ     19 ///< Number of image page buffer to read from to (0.1?)
+
+#else
+
     int ntilex,ntiley,sa,pf;
     //  struct frameparspair_t * pars_to_update[4]={
     struct frameparspair_t pars_to_update[4]={
@@ -1526,11 +1693,9 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     MDF3(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     //  int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
-    ntilex=((thispars->pars[P_ACTUAL_WIDTH]+X313_MARGINS-1)>>4);
+    ntilex=((thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS)-1)>>4);
     ntiley=thispars->pars[P_ACTUAL_HEIGHT]; // number of lines it the whole frame
-#ifdef NC353
     sa=X313_MAP_FRAME + ( thispars->pars[P_IMGSZMEM] * thispars->pars[P_PAGE_READ]); // now - always X313_MAP_FRAME
-#endif
     pf=((thispars->pars[P_PF_HEIGHT] & 0xffff)>0)?1:0; // when mode==1, wnr means "photofinish" in fpga
     int depend=((thispars->pars[P_SENSOR_RUN] & 3)==SENSOR_RUN_STOP) ? 0 : 1;
     MDF23(printk("ntilex=0x%x ntiley=0x%x sa=0x%x pf=0x%x depend=%x\n",ntilex,ntiley,sa,pf,depend));
@@ -1542,24 +1707,118 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     pars_to_update[3].val=ntilex*(ntiley>>4);
 
     setFramePars(sensor_port, thispars, 4, pars_to_update);
-#endif
     return 0;
+#endif
 }
 
 
 /** Program compressor modes (does not start/stop)
  * will also program Huffman table to the FPGA if it was not programmed yet */
 int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3)
-		struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
-		struct framepars_t * thispars, ///< sensor current parameters
-		struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
-		int frame16)                   ///< 4-bit (hardware) frame number parameters should
-									   ///< be applied to,  negative - ASAP
-									   ///< @return OK - 0, <0 - error
+                    struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+                    struct framepars_t * thispars, ///< sensor current parameters
+                    struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+                    int frame16)                   ///< 4-bit (hardware) frame number parameters should
+                                                   ///< be applied to,  negative - ASAP
+                                                   ///< @return OK - 0, <0 - error
 {
-    int comp_cmd=0;
     struct frameparspair_t pars_to_update[4]; // 2 needed, increase if more entries will be added
     int nupdate=0;
+    int csb;
+    int csr;
+#ifndef NC353
+    int comp_cmd=0;
+//    x393cmd_t x393cmd;
+    x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
+    x393_cmprs_colorsat_t    cmprs_colorsat =    {.d32=0};
+    x393_cmprs_coring_mode_t cmprs_coring_mode = {.d32=0};
+    MDF3(printk(" frame16=%d\n",frame16));
+    if (!jpeg_htable_is_programmed(sensor_port)) jpeg_htable_fpga_pgm (sensor_port);
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+//    x393cmd = (frame16<0)? ASAP: ABSOLUTE;
+    if (FRAMEPAR_MODIFIED(P_COLOR)) {
+        switch (thispars->pars[P_COLOR] & 0x0f){
+        case COLORMODE_MONO6:    cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_MONO6;          break;
+        case COLORMODE_COLOR:    cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JPEG18;         break;
+        case COLORMODE_JP46:     cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP46;           break;
+        case COLORMODE_JP46DC:   cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP46DC;         break;
+        case COLORMODE_COLOR20:  cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JPEG20;         break; //NOT implemented
+        case COLORMODE_JP4:      cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP4;            break;
+        case COLORMODE_JP4DC:    cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP4DC;          break;
+        case COLORMODE_JP4DIFF:  cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP4DIFF;        break;
+        case COLORMODE_JP4HDR:   cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP4DIFFHDR;     break;
+        case COLORMODE_JP4DIFF2: cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP4DIFFDIV2;    break;
+        case COLORMODE_JP4HDR2:  cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP4DIFFHDRDIV2; break;
+        case COLORMODE_MONO4:    cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_MONO4;          break;
+        }
+        cmprs_mode.cmode_set = 1;
+        // TODO: Modify left margin by 1 for COLORMODE_COLOR !
+    }
+    // Bayer shift changed? (additional bayer shift, separate from the gamma-tables one)
+    if (FRAMEPAR_MODIFIED(P_COMPMOD_BYRSH)) {
+        cmprs_mode.bayer =     thispars->pars[P_COMPMOD_BYRSH];
+        cmprs_mode.bayer_set = 1;
+    }
+#if 0
+    // Tile shift changed? (position of the 16x16, 18x8 or 20x20 inside 20x20 overlapping tile - dx==dy (diagonal), 0..4)
+    if (FRAMEPAR_MODIFIED(P_COMPMOD_TILSH)) {
+        comp_cmd |= COMPCMD_TILESHIFT(thispars->pars[P_COMPMOD_TILSH]);
+    }
+#endif
+    // DC subtraction modse changed? (mostly FPGA debug feature, normally should be on - average block level to bypass DCT conversion)
+    if (FRAMEPAR_MODIFIED(P_COMPMOD_DCSUB)) {
+        cmprs_mode.dcsub =     thispars->pars[P_COMPMOD_DCSUB];
+        cmprs_mode.dcsub_set = 1;
+    }
+
+    // Did focus show mode change? (do it here, not with other focus parameters that can not be set through the sequencer (writing tables
+    // could break writing gamma/quantization/whatever tables . Is it applicable to NC393?
+    if (FRAMEPAR_MODIFIED(P_FOCUS_SHOW)) {
+        cmprs_mode.focus =     thispars->pars[P_FOCUS_SHOW];
+        cmprs_mode.focus_set = 1;
+    }
+
+    // enqueue it for the compressor
+//#define X393_SEQ_SEND1(port,frame,func,data) {if ((frame) < 0) seqr_##func (0,       (data), (port)); \
+//                                              else             seqa_##func ((frame), (data), (port)); }
+
+    //if (frame16 < 0) seqr_x393_cmprs_control_reg (0,       cmprs_mode, sensor_port);
+    //else             seqa_x393_cmprs_control_reg (frame16, cmprs_mode, sensor_port);
+    if (cmprs_mode.d32) {
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+        MDF3(printk("  X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32));
+    } else {
+        MDF3(printk("  comp_cmd.d32==0, does not need to be sent\n"));
+    }
+    // color saturation changed?
+    if (FRAMEPAR_MODIFIED(P_COLOR_SATURATION_BLUE) || FRAMEPAR_MODIFIED(P_COLOR_SATURATION_RED)) {
+        csb=(thispars->pars[P_COLOR_SATURATION_BLUE]* DEFAULT_COLOR_SATURATION_BLUE)/100;
+        csr=(thispars->pars[P_COLOR_SATURATION_RED] * DEFAULT_COLOR_SATURATION_RED)/100;
+        if (unlikely(csb>1023)) {
+            csb=102300/DEFAULT_COLOR_SATURATION_BLUE;
+            SETFRAMEPARS_SET(P_COLOR_SATURATION_BLUE, csb);
+        }
+        if (unlikely(csr>1023)) {
+            csr=102300/DEFAULT_COLOR_SATURATION_RED;
+            SETFRAMEPARS_SET(P_COLOR_SATURATION_RED, csr);
+        }
+        cmprs_colorsat.colorsat_blue = csb;
+        cmprs_colorsat.colorsat_red =  csr;
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_color_saturation, cmprs_colorsat);
+        MDF9(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_cmprs_color_saturation, 0x%x)\n",sensor_port, frame16, cmprs_colorsat.d32));
+    }
+    // compressor quantizer zero bin mode changed?
+    // Quantizer tuning - bits 0..7 - zero bin, 15:8 - quantizer bias
+    if (FRAMEPAR_MODIFIED(P_CORING_PAGE)) {
+        cmprs_coring_mode.coring_table = thispars->pars[P_CORING_PAGE];
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_coring_mode, cmprs_coring_mode);
+        MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x, x393_cmprs_coring_mode,  0x%x)\n", sensor_port, frame16, cmprs_coring_mode.d32));
+    }
+
+    if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
+
+
+#else
     MDF3(printk(" frame16=%d\n",frame16));
     if (!jpeg_htable_is_programmed(sensor_port)) jpeg_htable_fpga_pgm (sensor_port);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
@@ -1582,7 +1841,6 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
         }
     }
 // TODO: Redo for NC393
-#ifdef NC353
     MDF3(printk("comp_cmd=0x%x\n",comp_cmd));
     // Bayer shift changed? (additional bayer shift, separate from the gamma-tables one)
     if (FRAMEPAR_MODIFIED(P_COMPMOD_BYRSH)) {
@@ -1607,17 +1865,15 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
 
     // enqueue it for the compressor
     if (comp_cmd) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COMP_CMD, comp_cmd);
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_COMP_CMD, (int) comp_cmd));
     } else {
         MDF3(printk("  comp_cmd==0, does not need to be sent\n"));
     }
     // color saturation changed?
     if (FRAMEPAR_MODIFIED(P_COLOR_SATURATION_BLUE) || FRAMEPAR_MODIFIED(P_COLOR_SATURATION_RED)) {
-        int csb=(thispars->pars[P_COLOR_SATURATION_BLUE]* DEFAULT_COLOR_SATURATION_BLUE)/100;
-        int csr=(thispars->pars[P_COLOR_SATURATION_RED] * DEFAULT_COLOR_SATURATION_RED)/100;
+        csb=(thispars->pars[P_COLOR_SATURATION_BLUE]* DEFAULT_COLOR_SATURATION_BLUE)/100;
+        csr=(thispars->pars[P_COLOR_SATURATION_RED] * DEFAULT_COLOR_SATURATION_RED)/100;
         if (unlikely(csb>1023)) {
             csb=102300/DEFAULT_COLOR_SATURATION_BLUE;
             SETFRAMEPARS_SET(P_COLOR_SATURATION_BLUE, csb);
@@ -1626,10 +1882,8 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
             csr=102300/DEFAULT_COLOR_SATURATION_RED;
             SETFRAMEPARS_SET(P_COLOR_SATURATION_RED, csr);
         }
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COLOR_SAT, ((DEFAULT_COLOR_SATURATION_BLUE*thispars->pars[P_COLOR_SATURATION_BLUE])/100) |
                 (((DEFAULT_COLOR_SATURATION_RED *thispars->pars[P_COLOR_SATURATION_RED])/100)<<12));
-#endif
         MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%lx)\n", (int)fpga_addr, (int) X313_WA_COLOR_SAT, (int)((DEFAULT_COLOR_SATURATION_BLUE*thispars->pars[P_COLOR_SATURATION_BLUE])/100) | (((DEFAULT_COLOR_SATURATION_RED *thispars->pars[P_COLOR_SATURATION_RED])/100)<<12)));
 
 
@@ -1637,9 +1891,7 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
     // compressor quantizer zero bin mode changed?
     // Quantizer tuning - bits 0..7 - zero bin, 15:8 - quantizer bias
     if (FRAMEPAR_MODIFIED(P_CORING_PAGE)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_QUANTIZER_MODE,thispars->pars[P_CORING_PAGE]);
-#endif
         MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int)X313_WA_QUANTIZER_MODE, (int)thispars->pars[P_CORING_PAGE]));
     }
 
