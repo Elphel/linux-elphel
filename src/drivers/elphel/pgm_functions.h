@@ -13,6 +13,8 @@ int add_sensor_proc(int index, int (*sens_func)(int sensor_port, struct sensor_t
 /// @param data - appropriate data type (matching function definition) to be written
 #define X393_SEQ_SEND1(port,frame,func,data) {if ((frame) < 0) seqr_##func (0,       (data), (port)); \
                                               else             seqa_##func ((frame), (data), (port)); }
+#define X393_SEQ_SEND1S(port,frame,func,data,subchn) {if ((frame) < 0) seqr_##func (0,       (data), (port), (subchn)); \
+                                                      else             seqa_##func ((frame), (data), (port), (subchn)); }
 
 
 /** Tells if parameter is modifies

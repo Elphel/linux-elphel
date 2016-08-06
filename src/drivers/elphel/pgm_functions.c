@@ -1408,54 +1408,80 @@ int pgm_hist       (int sensor_port,               ///< sensor port number (0..3
 												   ///< be applied to,  negative - ASAP
 												   ///< @return OK - 0, <0 - error
 {
+    int sub_chn, poffs;
+    int nupdate=0;
+    x393_hist_left_top_t        left_top = {.d32=0};
+    x393_hist_width_height_m1_t width_height = {.d32=0};
     struct {
         long left;
         long width;
         long top;
         long height;
     } hist_setup_data;
+    struct frameparspair_t pars_to_update[4* MAX_SENSORS];
+    /*
     struct frameparspair_t pars_to_update[4]={
             {P_HISTWND_LEFT, 0},
             {P_HISTWND_WIDTH, 0},
             {P_HISTWND_TOP, 0},
             {P_HISTWND_HEIGHT, 0}
     };
+    */
     MDF3(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-    //  int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
-    // calculate absolute window from the relative, apply limits
-    hist_setup_data.width=  ((thispars->pars[P_HISTWND_RWIDTH] * thispars->pars[P_ACTUAL_WIDTH])>>16) & 0xffe;
-    if (hist_setup_data.width<2) hist_setup_data.width=2;
-    else if (hist_setup_data.width > thispars->pars[P_ACTUAL_WIDTH]) hist_setup_data.width = thispars->pars[P_ACTUAL_WIDTH];
-    hist_setup_data.left=  ((thispars->pars[P_HISTWND_RLEFT] * (thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width)) >>16) & 0xffe;
-    if (hist_setup_data.left> (thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width)) hist_setup_data.left = thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width;
+    for (sub_chn =0; sub_chn < MAX_SENSORS; sub_chn++)  if (GLOBALPARS(sensor_port, G_SUBCHANNELS) & (1 << sub_chn)){
+        poffs = HIST_SUBCHN_OFFSET * sub_chn;
+        //  int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
+        // calculate absolute window from the relative, apply limits
+        hist_setup_data.width=  ((thispars->pars[P_HISTWND_RWIDTH + poffs] * thispars->pars[P_ACTUAL_WIDTH])>>16) & 0xffe;
+        if (hist_setup_data.width<2) hist_setup_data.width=2;
+        else if (hist_setup_data.width > thispars->pars[P_ACTUAL_WIDTH]) hist_setup_data.width = thispars->pars[P_ACTUAL_WIDTH];
+        hist_setup_data.left=  ((thispars->pars[P_HISTWND_RLEFT + poffs] * (thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width)) >>16) & 0xffe;
+        if (hist_setup_data.left> (thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width)) hist_setup_data.left = thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width;
 
-    hist_setup_data.height=  ((thispars->pars[P_HISTWND_RHEIGHT] * thispars->pars[P_ACTUAL_HEIGHT])>>16) & 0xffe;
-    if (hist_setup_data.height<2) hist_setup_data.height=2;
-    else if (hist_setup_data.height > thispars->pars[P_ACTUAL_HEIGHT]) hist_setup_data.height = thispars->pars[P_ACTUAL_HEIGHT];
-    hist_setup_data.top=  ((thispars->pars[P_HISTWND_RTOP] * (thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height)) >>16) & 0xffe;
-    if (hist_setup_data.top > (thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height)) hist_setup_data.top = thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height;
+        hist_setup_data.height=  ((thispars->pars[P_HISTWND_RHEIGHT + poffs] * thispars->pars[P_ACTUAL_HEIGHT])>>16) & 0xffe;
+        if (hist_setup_data.height<2) hist_setup_data.height=2;
+        else if (hist_setup_data.height > thispars->pars[P_ACTUAL_HEIGHT]) hist_setup_data.height = thispars->pars[P_ACTUAL_HEIGHT];
+        hist_setup_data.top=  ((thispars->pars[P_HISTWND_RTOP + poffs] * (thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height)) >>16) & 0xffe;
+        if (hist_setup_data.top > (thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height)) hist_setup_data.top = thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height;
 
-    if ((hist_setup_data.left   != thispars->pars[P_HISTWND_LEFT]) ||
-            (hist_setup_data.width  != thispars->pars[P_HISTWND_WIDTH]) ||
-            (hist_setup_data.top    != thispars->pars[P_HISTWND_TOP]) ||
-            (hist_setup_data.height != thispars->pars[P_HISTWND_HEIGHT])) {
-        // set these values to FPGA
+        if ((hist_setup_data.left   != thispars->pars[P_HISTWND_LEFT + poffs]) ||
+                (hist_setup_data.width  != thispars->pars[P_HISTWND_WIDTH + poffs]) ||
+                (hist_setup_data.top    != thispars->pars[P_HISTWND_TOP + poffs]) ||
+                (hist_setup_data.height != thispars->pars[P_HISTWND_HEIGHT + poffs])) {
+            // set these values to FPGA
+            left_top.left =          hist_setup_data.left;
+            left_top.top =           hist_setup_data.top;
+            width_height.width_m1 =  hist_setup_data.width-2;
+            width_height.height_m1 = hist_setup_data.height-2;
+            X393_SEQ_SEND1S (sensor_port, frame16, x393_histogram_lt, left_top, sub_chn);
+            X393_SEQ_SEND1S (sensor_port, frame16, x393_histogram_wh, width_height,sub_chn);
+            MDF3(printk("  X393_SEQ_SEND1S(0x%x, 0x%x, x393_histogram_lt, 0x%x, %d)\n", sensor_port, frame16, left_top.d32, sub_chn));
+            MDF3(printk("  X393_SEQ_SEND1S(0x%x, 0x%x, x393_histogram_wh, 0x%x, %d)\n", sensor_port, frame16, width_height.d32, sub_chn));
+            if ((nupdate == 0) || (HIST_SUBCHN_OFFSET > 0)) { // Update only once until there are per-subchannle parameters
+                SETFRAMEPARS_SET(P_HISTWND_LEFT + poffs,hist_setup_data.left);
+                SETFRAMEPARS_SET(P_HISTWND_WIDTH + poffs,hist_setup_data.width);
+                SETFRAMEPARS_SET(P_HISTWND_TOP + poffs,hist_setup_data.top);
+                SETFRAMEPARS_SET(P_HISTWND_HEIGHT + poffs,hist_setup_data.height);
+            }
+
 #ifdef NC353
-        X3X3_SEQ_SEND1(frame16,  X313_WA_HIST_LEFT,   hist_setup_data.left);
-        X3X3_SEQ_SEND1(frame16,  X313_WA_HIST_WIDTH,  hist_setup_data.width-2);
-        X3X3_SEQ_SEND1(frame16,  X313_WA_HIST_TOP,    hist_setup_data.top);
-        X3X3_SEQ_SEND1(frame16,  X313_WA_HIST_HEIGHT, hist_setup_data.height-2);
+            X3X3_SEQ_SEND1(frame16,  X313_WA_HIST_LEFT,   hist_setup_data.left);
+            X3X3_SEQ_SEND1(frame16,  X313_WA_HIST_WIDTH,  hist_setup_data.width-2);
+            X3X3_SEQ_SEND1(frame16,  X313_WA_HIST_TOP,    hist_setup_data.top);
+            X3X3_SEQ_SEND1(frame16,  X313_WA_HIST_HEIGHT, hist_setup_data.height-2);
+            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_LEFT,   (int) hist_setup_data.left));
+            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_WIDTH,  (int) hist_setup_data.width-2));
+            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_TOP,    (int) hist_setup_data.top));
+            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_HEIGHT, (int) hist_setup_data.height-2));
+            pars_to_update[0].val=hist_setup_data.left;
+            pars_to_update[1].val=hist_setup_data.width;
+            pars_to_update[2].val=hist_setup_data.top;
+            pars_to_update[3].val=hist_setup_data.height;
+            setFramePars(sensor_port, thispars, 4, pars_to_update);  // save intermediate/readonly parameters
 #endif
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_LEFT,   (int) hist_setup_data.left));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_WIDTH,  (int) hist_setup_data.width-2));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_TOP,    (int) hist_setup_data.top));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_HEIGHT, (int) hist_setup_data.height-2));
-        pars_to_update[0].val=hist_setup_data.left;
-        pars_to_update[1].val=hist_setup_data.width;
-        pars_to_update[2].val=hist_setup_data.top;
-        pars_to_update[3].val=hist_setup_data.height;
-        setFramePars(sensor_port, thispars, 4, pars_to_update);  // save intermediate/readonly parameters
+        }
+        setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save intermediate/readonly parameters
     }
     return 0;
 }

@@ -384,6 +384,8 @@
 #define P_AUTOEXP_ON    76       ///< Autoexposure control (unsigned long on)
 // relative histogram (autoexposure) window (changed from % to 1/0x10000)
 // TODO: For 393 - split per multiplexed channel
+#define HIST_SUBCHN_OFFSET 0 ///< for individual per-subchannel vignetting parameters (add num_sub_chn * VIGNET_SUBCHN_OFFSET)
+                               ///< set for NC393 when define, meanwhile will use the same for all sub-channels
 #define P_HISTWND_RWIDTH  77 ///< Histogram window relative width 16.16 (0x10000 - 1.0);
 #define P_HISTWND_RHEIGHT 78 ///< Histogram window relative height 16.16 (0x10000 - 1.0);
 #define P_HISTWND_RLEFT   79 ///< Histogram window relative left margin 16.16 (0x10000 - 1.0);
