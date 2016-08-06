@@ -529,7 +529,8 @@ int pgm_initsensor     (int sensor_port,               ///< sensor port number (
 }
 
 
-/** Restore image size, decimation,... after sensor reset or set them according to sensor capabilities if none were specified */
+/** Restore image size, decimation,... after sensor reset or set them according to sensor capabilities if none were specified
+ TODO: NC393 add default P_SENSOR_IFACE_TIM0..3 for parallel/serial? */
 int pgm_afterinit      (int sensor_port,               ///< sensor port number (0..3)
 						struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
 						struct framepars_t * thispars, ///< sensor current parameters
@@ -588,7 +589,7 @@ int pgm_afterinit      (int sensor_port,               ///< sensor port number (
     } else {
         SETFRAMEPARS_SET(P_EXPOS | FRAMEPAIR_FORCE_NEW, 10000); // set exposure to 0.01 sec
     }
-    SETFRAMEPARS_UPDATE(P_TRIG | FRAMEPAIR_FORCE_NEW); // set trigger mode (or should it alway be internal after init?)
+    SETFRAMEPARS_UPDATE(P_TRIG | FRAMEPAIR_FORCE_NEW); // set trigger mode (or should it always be internal after init?)
     // something else to add? NOTE: Only sensor parameters, erased when it is reset - other parameters should not chnage here
     // NOTE: increase pars_to_update[24] size if needed
     if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
@@ -605,6 +606,42 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
 ///< @return always 0
 
 {
+#ifndef NC353
+    x393_sensio_tim0_t sensio_tim0 = {.d32=0};
+    x393_sensio_tim1_t sensio_tim1 = {.d32=0};
+    x393_sensio_tim2_t sensio_tim2 = {.d32=0};
+    x393_sensio_tim3_t sensio_tim3 = {.d32=0};
+// TODO: Temporary for NC393 - just applying  SENSOR_IFACE_TIM0 - SENSOR_IFACE_TIM3 to FPGA, no calculations
+// Actual functionality should be moved to separate modules as they are different for parallel and hispi (may be more in the future)
+    if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM0)) {
+        sensio_tim0.d32 = thispars->pars[P_SENSOR_IFACE_TIM0];
+//        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim0, sensio_tim0);
+        set_x393_sensio_tim0  (sensio_tim0, sensor_port); // write directly, sequencer may be not operational
+        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim0,  0x%x)\n", sensor_port, frame16, sensio_tim0.d32));
+
+    }
+    if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM1)) {
+        sensio_tim1.d32 = thispars->pars[P_SENSOR_IFACE_TIM1];
+//        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim1, sensio_tim1);
+        set_x393_sensio_tim1  (sensio_tim1, sensor_port); // write directly, sequencer may be not operational
+        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim1,  0x%x)\n", sensor_port, frame16, sensio_tim1 .d32));
+    }
+    if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM2)) {
+        sensio_tim2.d32 = thispars->pars[P_SENSOR_IFACE_TIM2];
+//        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim2, sensio_tim2);
+        set_x393_sensio_tim2  (sensio_tim2, sensor_port); // write directly, sequencer may be not operational
+        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim2,  0x%x)\n", sensor_port, frame16, sensio_tim2.d32));
+    }
+    if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM3)) {
+        sensio_tim3.d32 = thispars->pars[P_SENSOR_IFACE_TIM3];
+//        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim3, sensio_tim3);
+        set_x393_sensio_tim3  (sensio_tim3, sensor_port); // write directly, sequencer may be not operational
+        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim3,  0x%x)\n", sensor_port, frame16, sensio_tim3.d32));
+    }
+
+    return 0;
+
+#else
     struct frameparspair_t pars_to_update[5]; // ??? needed, increase if more entries will be added
     int nupdate=0;
     int i;
@@ -628,21 +665,17 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
     MDF3(printk(" frame16=%d\n",frame16));
     if (frame16 >= 0) return -1; // can only work in ASAP mode
     //Can not change sensor frequency
-#ifdef NC353
     int was_sensor_freq=getClockFreq(1); // using clock driver data, not thispars
     if (unlikely(new_freq > sensor->maxClockFreq)) {
         new_freq= sensor->maxClockFreq;
         SETFRAMEPARS_SET(P_CLK_SENSOR,  new_freq);
     }
-#endif
     if ((new_freq != was_sensor_freq) || (thisPhase & 0x40000)) { // 0x40000 reprogram clock even if it did not change
-#ifdef NC353
-        if (unlikely(setClockFreq(1, thispars->pars[P_CLK_SENSOR])<0)) { // if it failed to setup frequency - use the old one
+        if (unlikely(setClockFreq(1, thispars->pars[P_CLK_SENSOR])<0)) { // if failed to setup frequency - use the old one
             new_freq=was_sensor_freq;
             setClockFreq(1, was_sensor_freq);
             SETFRAMEPARS_SET(P_CLK_SENSOR,  new_freq);
         }
-#endif
         X3X3_RSTSENSDCM; // Make Xilinx Spartan DCM happy (it does not like changing input clock)
         X3X3_SENSDCM_CLK2X_RESET; // reset pclk2x DCM also
         if (sensor->needReset & SENSOR_NEED_RESET_CLK) schedule_this_pgm_func(sensor_port, thispars, onchange_initsensor);
@@ -707,6 +740,7 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
 
     if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
     return 0;
+#endif
 }
 
 /** Program sensor exposure - nothing to be done here, all sensor-specific */
@@ -1090,12 +1124,25 @@ int pgm_triggermode(int sensor_port,               ///< sensor port number (0..3
 												   ///< be applied to,  negative - ASAP
 												   ///< @return OK - 0, <0 - error
 {
+    x393_camsync_mode_t camsync_mode = {.d32=0};
     MDF3(printk(" frame16=%d\n",frame16));
-    int fpga_addr= frame16;
-    int async=(thispars->pars[P_TRIG] & 4)?1:0;
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-    //  X3X3_SEQ_SEND1(frame16,  X313_WA_DCR0, X353_DCR0(SENSTRIGEN,async));
+#ifndef NC353
+    camsync_mode.trig =     (thispars->pars[P_TRIG] & 4)?1:0;
+    if (camsync_mode.trig) {  // if trigger mode, enable camsync module, if off - do nothing
+        camsync_mode.en = 1;
+        camsync_mode.en_set = 1;
+    }
+    camsync_mode.trig_set = 1;
+    // set directly, bypassing sequencer as it may fail with wrong trigger
+    x393_camsync_mode (camsync_mode);
     return 0;
+#else
+    //    int fpga_addr= frame16;
+    //    int async=(thispars->pars[P_TRIG] & 4)?1:0;
+    X3X3_SEQ_SEND1(frame16,  X313_WA_DCR0, X353_DCR0(SENSTRIGEN,async));
+    return 0;
+#endif
 }
 
 
@@ -1512,6 +1559,7 @@ int pgm_quality    (int sensor_port,               ///< sensor port number (0..3
 												   ///< be applied to,  negative - ASAP
 												   ///< @return OK - 0, <0 - error
 {
+    x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     int y_coring_index;
     int c_coring_index;
     int composite_quality=(thispars->pars[P_QUALITY] & 0xff7f) | ((thispars->pars[P_PORTRAIT] & 1)<<7);
@@ -1524,16 +1572,21 @@ int pgm_quality    (int sensor_port,               ///< sensor port number (0..3
         if (c_coring_index==0) c_coring_index=y_coring_index;
         set_coring_fpga(y_coring_index, 0, sensor_port);
         set_coring_fpga(c_coring_index, 1, sensor_port);
+//TODO: Set coring index (it seems to be a pair?     void  set_x393_cmprs_coring_mode (x393_cmprs_coring_mode_t d, int cmprs_chn);     // Select coring mode
+// Not needed, it is always downloaded to pair 0
+
     }
 
     // calculate quality tables - find already programmed FPGA page or calculates/programms a new one
     // set_qtable_fpga returns table page (0..7) or -1 - invalid q
 
     if ((thispars->pars[P_COMPMOD_QTAB]=set_qtable_fpga(composite_quality, sensor_port))>=0) {
-        //    X3X3_SEQ_SEND1(frame16,  X313_WA_COMP_CMD,   COMPCMD_QTAB(thispars->pars[P_COMPMOD_QTAB]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_COMP_CMD, (int) COMPCMD_QTAB(thispars->pars[P_COMPMOD_QTAB])));
+        cmprs_mode.qbank = thispars->pars[P_COMPMOD_QTAB];
+        cmprs_mode.qbank_set = 1;
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+        MDF3(printk("  X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32));
         return 0;
-    } else return -1;
+    } else return -EFAULT;
 }
 
 /** Program memory channels 0 (sensor->memory) and 1 (memory->FPN)
@@ -2017,46 +2070,122 @@ int pgm_focusmode  (int sensor_port,               ///< sensor port number (0..3
 }
 /** Program trigger generator/external synchronization
  * TODO: 393 reimplement
- * Was for 353: can not use sequencer as data is more than 24 bit wide */
+ * Was for 353: can not use sequencer as data is more than 24 bit wide
+ * In NC393  P_TRIG_DELAY and P_XMIT_TIMESTAMP are per-channel, other parameters are common (Last modified takes control).
+ * Master channel is set to the current channels when any of the common parameters is set */
 int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3)
         struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
         struct framepars_t * thispars, ///< sensor current parameters
         struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
-        int frame16)                   ///< 4-bit (hardware) frame number parameters should
-///< be applied to,  negative - ASAP
-///< @return OK - 0, <0 - error
+        int frame16)                   ///< 4-bit (hardware) frame number parameters should be applied to,  negative - ASAP
+                                       ///< @return OK - 0, <0 - error
 {
-    struct frameparspair_t pars_to_update[10]; // ??? needed, increase if more entries will be added
+    struct frameparspair_t pars_to_update[10]; // ??? needed, increase if more entries will be added - just one
     int nupdate=0;
     int d;
+#ifndef NC353
+    x393_camsync_io_t camsync_src =      {.d32=0};
+    x393_camsync_io_t camsync_dst =      {.d32=0};
+    x393_gpio_set_pins_t gpio_set_pins = {.d32=0};
+    x393_camsync_mode_t camsync_mode =   {.d32=0};
+    int update_master_channel = 0; // set if any of the common (not channel-specific) parameters is modified
     MDF3(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     if (frame16 >= 0) return -1; // ASAP only mode
     // Trigger condition changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_TRIG_CONDITION)) {
-#ifdef NC353
+        camsync_src.d32 =  thispars->pars[P_TRIG_CONDITION];
+        x393_camsync_trig_src(camsync_src);
+        update_master_channel=1;
+        MDF3(printk("  x393_camsync_trig_src(0x%x)\n",  camsync_src.d32));
+    }
+    // Trigger delay changed?
+    if (FRAMEPAR_MODIFIED(P_TRIG_DELAY)) { // individual per-channel parameters
+        set_x393_camsync_trig_delay  (thispars->pars[P_TRIG_DELAY], sensor_port); // CAMSYNC trigger delay
+        MDF3(printk("  set_x393_camsync_trig_delay(0x%x, %d)\n",  camsync_src.d32, sensor_port));
+    }
+    // Sequencer output word changed? (to which outputs it is sent and what polarity)
+    if (FRAMEPAR_MODIFIED(P_TRIG_OUT)) {
+        camsync_dst.d32 =  thispars->pars[P_TRIG_OUT];
+        x393_camsync_trig_dst(camsync_dst);
+        update_master_channel=1;
+        MDF3(printk("  x393_camsync_trig_dst(0x%x)\n",  camsync_dst.d32));
+        MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCOUT, (int) thispars->pars[P_TRIG_OUT]));
+        // Enable connection from the trigger module to the FPGA GPIO pins
+
+        if (thispars->pars[P_TRIG_OUT]!=0) {
+            gpio_set_pins.chn_a = 3;  // Set dibit enable
+            x393_gpio_set_pins(gpio_set_pins);
+            MDF3(printk("  x393_gpio_set_pins(0x%x)\n",  gpio_set_pins.d32));
+        } else {
+            //  Not needed, I think
+            //      port_csp0_addr[X313_WA_IOPINS] = X313_WA_IOPINS_DIS_TRIG_OUT;
+            //      MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_IOPINS, (int) X313_WA_IOPINS_DIS_TRIG_OUT));
+        }
+    }
+    // Sequencer period changed? (0 - stopped, 1 - single trigger, >=256 - start repetitive)
+    if (FRAMEPAR_MODIFIED(P_TRIG_PERIOD)) {
+        if (unlikely((thispars->pars[P_TRIG_PERIOD] > 1) && (thispars->pars[P_TRIG_PERIOD] < 256))) { // Wrong value, restore old one
+            SETFRAMEPARS_SET(P_TRIG_PERIOD,prevpars->pars[P_TRIG_PERIOD]); //+1
+        } else {
+            set_x393_camsync_trig_period(thispars->pars[P_TRIG_PERIOD]);
+            update_master_channel=1;
+            MDF3(printk("  set_x393_camsync_trig_period(0x%x)\n", thispars->pars[P_TRIG_PERIOD]));
+        }
+    }
+    // Bit length changed or not yet initialized?
+    if (FRAMEPAR_MODIFIED(P_TRIG_BITLENGTH) || (thispars->pars[P_TRIG_BITLENGTH]==0)) {
+        d=thispars->pars[P_TRIG_BITLENGTH];
+        if (unlikely((d<2) || (d>255))) { // Wrong value, restore old one
+            d=P_TRIG_BITLENGTH_DEFAULT;
+            SETFRAMEPARS_SET(P_TRIG_BITLENGTH,d);
+        }
+        set_x393_camsync_trig_period(d);
+        update_master_channel=1;
+        MDF3(printk("  set_x393_camsync_trig_period(0x%x) (bit length)\n", d));
+    }
+    // P_EXTERN_TIMESTAMP changed? (0 - internal sequencer)
+    if (FRAMEPAR_MODIFIED(P_EXTERN_TIMESTAMP)) {
+        camsync_mode.ext = thispars->pars[P_EXTERN_TIMESTAMP]?1:0;
+        camsync_mode.ext_set = 1;
+        update_master_channel=1;
+    }
+    // P_XMIT_TIMESTAMP changed? (0 - internal sequencer)
+    if (FRAMEPAR_MODIFIED(P_XMIT_TIMESTAMP)) {
+        camsync_mode.ts_chns =     (thispars->pars[P_EXTERN_TIMESTAMP]?1:0) << sensor_port;
+        camsync_mode.ts_chns_set = 1 << sensor_port;
+    }
+    if (update_master_channel){
+        camsync_mode.master_chn = sensor_port;
+        camsync_mode.master_chn_set = 1;
+    }
+    if (camsync_mode.d32){ // anything set?
+        x393_camsync_mode (camsync_mode);
+        MDF3(printk("  x393_camsync_mode(0x%x)\n",  camsync_mode.d32));
+    }
+    if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
+    return 0;
+#else
+    MDF3(printk(" frame16=%d\n",frame16));
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+    if (frame16 >= 0) return -1; // ASAP only mode
+    // Trigger condition changed? (0 - internal sequencer)
+    if (FRAMEPAR_MODIFIED(P_TRIG_CONDITION)) {
         port_csp0_addr[X313_WA_CAMSYNCTRIG] = thispars->pars[P_TRIG_CONDITION];
-#endif
         MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCTRIG, (int)thispars->pars[P_TRIG_CONDITION]));
     }
     // Trigger delay changed?
     if (FRAMEPAR_MODIFIED(P_TRIG_DELAY)) {
-#ifdef NC353
         port_csp0_addr[X313_WA_CAMSYNCDLY] = thispars->pars[P_TRIG_DELAY];
-#endif
         MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCDLY, (int) thispars->pars[P_TRIG_DELAY]));
     }
     // Sequencer output word changed? (to which outputs it is sent and what polarity)
     if (FRAMEPAR_MODIFIED(P_TRIG_OUT)) {
-#ifdef NC353
         port_csp0_addr[X313_WA_CAMSYNCOUT] = thispars->pars[P_TRIG_OUT];
-#endif
         MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCOUT, (int) thispars->pars[P_TRIG_OUT]));
         // Enable connection from the trigger module to the FPGA GPIO pins
         if (thispars->pars[P_TRIG_OUT]!=0) {
-#ifdef NC353
             port_csp0_addr[X313_WA_IOPINS] = X313_WA_IOPINS_EN_TRIG_OUT;
-#endif
             MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_IOPINS, (int) X313_WA_IOPINS_EN_TRIG_OUT));
         } else {
             //  Not needed, I think
@@ -2069,9 +2198,7 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
         if (unlikely((thispars->pars[P_TRIG_PERIOD] > 1) && (thispars->pars[P_TRIG_PERIOD] < 256))) { // Wrong value, restore old one
             SETFRAMEPARS_SET(P_TRIG_PERIOD,prevpars->pars[P_TRIG_PERIOD]);
         } else {
-#ifdef NC353
             port_csp0_addr[X313_WA_CAMSYNCPER] = thispars->pars[P_TRIG_PERIOD];
-#endif
             MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCPER, (int)thispars->pars[P_TRIG_PERIOD]));
         }
     }
@@ -2082,27 +2209,22 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
             d=P_TRIG_BITLENGTH_DEFAULT;
             SETFRAMEPARS_SET(P_TRIG_BITLENGTH,d);
         }
-#ifdef NC353
         port_csp0_addr[X313_WA_CAMSYNCPER] = d;
-#endif
         MDF3(printk("writing bit length-1:  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCPER, d));
     }
     // P_EXTERN_TIMESTAMP changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_EXTERN_TIMESTAMP)) {
-#ifdef NC353
         port_csp0_addr[X313_WA_DCR1]=X353_DCR1(EXTERNALTS,thispars->pars[P_EXTERN_TIMESTAMP]?1:0);
-#endif
         MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_DCR1, (int)X353_DCR1(EXTERNALTS,thispars->pars[P_EXTERN_TIMESTAMP]?1:0)));
     }
     // P_XMIT_TIMESTAMP changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_XMIT_TIMESTAMP)) {
-#ifdef NC353
         port_csp0_addr[X313_WA_DCR1]=X353_DCR1(OUTPUTTS,thispars->pars[P_XMIT_TIMESTAMP]?1:0);
-#endif
         MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_DCR1, (int)X353_DCR1(OUTPUTTS,thispars->pars[P_XMIT_TIMESTAMP]?1:0)));
     }
     if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
     return 0;
+#endif
 }
 
 /** Program smart IRQ mode (needs to be on, at least bit 0)
@@ -2130,7 +2252,6 @@ int pgm_irq    (int sensor_port,               ///< sensor port number (0..3)
 #endif
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SMART_IRQ, (int) ( (2 | ((thispars->pars[P_IRQ_SMART] & 1)?1:0)) | \
             (8 | ((thispars->pars[P_IRQ_SMART] & 2)?4:0)))));
-
     return 0;
 }
 

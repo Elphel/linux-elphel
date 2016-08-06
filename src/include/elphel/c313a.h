@@ -341,8 +341,8 @@
 #define P_FP1000S       51 ///<  Frames per 1000 sec (fps * 1000)
 #define P_SENSOR_WIDTH  52 ///<  Sensor width
 #define P_SENSOR_HEIGHT 53 ///<  Sensor height
-#define P_COLOR_SATURATION_BLUE 54 ///<  100*realtive saturation blue - preserve?
-#define P_COLOR_SATURATION_RED  55 ///<  100*realtive saturation red
+#define P_COLOR_SATURATION_BLUE 54 ///<  100*relative saturation blue - preserve?
+#define P_COLOR_SATURATION_RED  55 ///<  100*relative saturation red
 
 /// Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C *** 393: These will  need to be split for each subchannel
 #define VIGNET_SUBCHN_OFFSET 0 ///< for individual per-subchannel vignetting parameters (add num_sub_chn * VIGNET_SUBCHN_OFFSET)
@@ -393,13 +393,13 @@
 
 // Are these used anywhere now? ...P_AUTOEXP_SKIP_T
 #define P_AUTOEXP_EXP_MAX     81 ///< unsigned long exp_max;		/* 100 usec == 1 etc... */
-#define P_AUTOEXP_OVEREXP_MAX 82 ///<  unsigned long overexp_max;	/* percentages for overexposured pixels - 1% == 100, 5% == 500, 0.02% == 2 etc... */
-#define P_AUTOEXP_S_PERCENT   83 ///<  unsigned long s_percent;(controlling that % of pixels that should have value greater than S_INDEX - below)
-#define P_AUTOEXP_S_INDEX     84 ///<  unsigned long s_index; Specified number of pixels (S_PERCENT) should have value above S_INDEX
-#define P_AUTOEXP_EXP         85 ///<  unsigned long exp; Current exposure time
-#define P_AUTOEXP_SKIP_PMIN   86 ///<  unsigned long skip_pmin;	/* percent of delta for skip changes: 1% == 100 */ - no exposure corrections if the desired change is less than that
-#define P_AUTOEXP_SKIP_PMAX   87 ///<  unsigned long skip_pmax;	/* percent of changes for wait one frame before apply changes: 1% == 100 */ - do not apply chnanges if they are to big - wait for the next frame
-#define P_AUTOEXP_SKIP_T      88 //v	unsigned long skip_t;		/* time for skip changes: 100 usec == 1 */ Not quite sure what it is
+#define P_AUTOEXP_OVEREXP_MAX 82 ///< unsigned long overexp_max;	/* percentages for overexposured pixels - 1% == 100, 5% == 500, 0.02% == 2 etc... */
+#define P_AUTOEXP_S_PERCENT   83 ///< unsigned long s_percent;(controlling that % of pixels that should have value greater than S_INDEX - below)
+#define P_AUTOEXP_S_INDEX     84 ///< unsigned long s_index; Specified number of pixels (S_PERCENT) should have value above S_INDEX
+#define P_AUTOEXP_EXP         85 ///< unsigned long exp; Current exposure time
+#define P_AUTOEXP_SKIP_PMIN   86 ///< unsigned long skip_pmin;	/* percent of delta for skip changes: 1% == 100 */ - no exposure corrections if the desired change is less than that
+#define P_AUTOEXP_SKIP_PMAX   87 ///< unsigned long skip_pmax;	/* percent of changes for wait one frame before apply changes: 1% == 100 */ - do not apply chnanges if they are to big - wait for the next frame
+#define P_AUTOEXP_SKIP_T      88 ///< unsigned long skip_t;		/* time for skip changes: 100 usec == 1 */ Not quite sure what it is
 
 // same as written to the FPGA for the histogram window // 393: Need to split to sub-channels (hist and focus parameters)
 #define P_HISTWND_WIDTH  89 ///<  autoexposure window width  (pixels) - same as written to FPGA
@@ -418,7 +418,9 @@
 #define P_FOCUS_TOTWIDTH 100 ///< (readonly) - total width of the image frame in pixels
 #define P_FOCUS_FILTER   101 ///< select 8x8 filter used for the focus calculation (same order as quantization coefficients), 0..14
 
-//!timing generator/trigger delay/external trigger control
+//timing generator/trigger delay/external trigger control
+//In NC393  P_TRIG_DELAY and P_XMIT_TIMESTAMP are per-channel, other parameters are common (Last modified takes control).
+// Master channel is set to the current channels when any of the common parameters is set
 #define P_TRIG_CONDITION 102 ///< trigger condition, 0 - internal, else dibits ((use<<1) | level) for each GPIO[11:0] pin
 #define P_TRIG_DELAY     103 ///< trigger delay, 32 bits in pixel clocks
 #define P_TRIG_OUT       104 ///< trigger output to GPIO, dibits ((use << 1) | level_when_active). Bit 24 - test mode, when GPIO[11:10] are controlled by other internal signals
@@ -445,10 +447,16 @@
 #define P_RFOCUS_HEIGHT  118 ///< relative (0x10000 - 1.0)focus WOI height (3 LSB will be zeroed as it should be multiple of 8x8 block height)
 
 // Obsolete in x393, may need something different
+#ifdef NC353
 #define P_SDRAM_CHN20    125 ///< data to be written to the SDRAM CH2 REG 0  (last moment) TODO: Obsolete in x393, may need something different
 #define P_SDRAM_CHN21    126 ///< data to be written to the SDRAM CH2 REG 1 TODO: Obsolete in x393, may need something different
 #define P_SDRAM_CHN22    127 ///< data to be written to the SDRAM CH2 REG 2 TODO: Obsolete in x393, may need something different
-
+#else
+#define P_SENSOR_IFACE_TIM0 124 ///< Sensor interface timing/configuration word 0 (different meaning for different interfaces)
+#define P_SENSOR_IFACE_TIM1 125///< Sensor interface timing/configuration word 1 (different meaning for different interfaces)
+#define P_SENSOR_IFACE_TIM2 126 ///< Sensor interface timing/configuration word 2 (different meaning for different interfaces)
+#define P_SENSOR_IFACE_TIM3 127 ///< Sensor interface timing/configuration word 3 (different meaning for different interfaces)
+#endif
 // The following 4 parameters should have consecutive indexes
 // see  FRAMEPAIR_MASK_BYTES  to modify just part of the word (i.e. scale, not hash16
 //
@@ -1164,9 +1172,10 @@ struct p_names_t {
           P_NAME_ENTRY(RFOCUS_WIDTH), \
           P_NAME_ENTRY(RFOCUS_TOP), \
           P_NAME_ENTRY(RFOCUS_HEIGHT), \
-          P_NAME_ENTRY(SDRAM_CHN20), \
-          P_NAME_ENTRY(SDRAM_CHN21), \
-          P_NAME_ENTRY(SDRAM_CHN22), \
+          P_NAME_ENTRY(SENSOR_IFACE_TIM0), \
+          P_NAME_ENTRY(SENSOR_IFACE_TIM1), \
+          P_NAME_ENTRY(SENSOR_IFACE_TIM2), \
+          P_NAME_ENTRY(SENSOR_IFACE_TIM3), \
           P_NAME_ENTRY(COMPRESSOR_RUN), \
           P_NAME_ENTRY(COMPRESSOR_SINGLE), \
           P_NAME_ENTRY(COMPMOD_BYRSH), \
