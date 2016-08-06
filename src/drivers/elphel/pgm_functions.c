@@ -1112,7 +1112,11 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
 												   ///< @return OK - 0, <0 - error
 {
 #ifndef NC353
-    x393_sens_mode_t sens_mode = {.d32=0};
+    x393_sens_mode_t      sens_mode =    {.d32=0};
+    x393_sensio_width_t   sensio_width = {.d32=0};
+    x393_sens_sync_mult_t sync_mult =    {.d32=0};
+    x393_gamma_ctl_t      gamma_ctl =    {.d32=0};
+    int n_scan_lines, n_ph_lines;
     MDF3(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     if (FRAMEPAR_MODIFIED(P_BITS)){
@@ -1126,59 +1130,31 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
         //(thispars->pars[P_FPNM]),     \
         //thispars->pars[P_SHIFTL]));
     }
-    //
-    int n_scan_lines, n_ph_lines, n_pixels;
-
-    // New - writing WOI width for internally generated HACT
-    n_pixels=((thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS)) & 0x3fff) | 0x4000;
-    X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, n_pixels);
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_NLINES, (int) n_pixels));
-
-//#define P_FRAMESYNC_DLY 35 ///<  maybe - temporary - delay of frame sync (vacts) by number of scan lines - for photofinish mode // not used anywhere?
-    ///<  Lower bits 16 will be used to delay frame sync, bit 16 - use internal HACT duration (0 - use from sensor) [*]
-//#define P_PF_HEIGHT     36 ///<  height of each strip in photofinish mode - normally 2 lines
-    ///<  also now includes timestamping mode +0x10000 - for normal frames, 0x20000 - for photo-finish
-//#define P_BITS          37 ///<  pixel depth - bits 10/8/4
-/*
- Change bit16 only without histograms
- typedef union {
-    struct {
-          u32         hist_en: 4; // [ 3: 0] (0xf) Enable subchannel histogram modules (may be less than 4)
-          u32       hist_nrst: 4; // [ 7: 4] (0xf) Reset off for histograms subchannels (may be less than 4)
-          u32        hist_set: 1; // [    8] (0) Apply values in hist_en and hist_nrst fields (0 - ignore)
-          u32          chn_en: 1; // [    9] (1) Enable this sensor channel
-          u32      chn_en_set: 1; // [   10] (1) Apply chn_en value (0 - ignore)
-          u32           bit16: 1; // [   11] (0) 0 - 8 bpp mode, 1 - 16 bpp (bypass gamma). Gamma-processed data is still used for histograms
-          u32       bit16_set: 1; // [   12] (0) Apply bit16 value (0 - ignore)
-          u32                :19;
-    };
-    struct {
-          u32             d32:32; // [31: 0] (0) cast to u32
-    };
-} x393_sens_mode_t;
-
- */
+    // Writing WOI width for internally generated HACT
+    if (thispars->pars[P_FRAMESYNC_DLY] & 0x10000) { /// set enforced HACT length, if 0 - use HACT from sensor
+        sensio_width.sensor_width = thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS);
+    }
+    X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_width, sensio_width);
+    MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_width,  0x%x)\n", sensor_port, frame16, sensio_width.d32));
 
     // Program number of scan lines to acquire
     // Is PhotoFinish mode enabled? // **************** TODO: use ACTUAL_HEIGHT (and update it) not WOI_HEIGHT
     if (((thispars->pars[P_PF_HEIGHT] & 0xffff)>0) && (thispars->pars[P_PF_HEIGHT]<=thispars->pars[P_ACTUAL_HEIGHT])){
-        n_ph_lines=  thispars->pars[P_ACTUAL_HEIGHT]/(thispars->pars[P_PF_HEIGHT] &  0x3fff);
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_NLINES, (int) (n_ph_lines-1) | 0x8000));
-        X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, (n_ph_lines-1) | 0x8000);
-        //    n_scan_lines= thispars->pars[P_PF_HEIGHT];
+        sync_mult.mult_frames=  thispars->pars[P_ACTUAL_HEIGHT]/(thispars->pars[P_PF_HEIGHT] &  0xffff) -1; // was 0x3fff in NC353 code
         n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]; // no margins here
-
     } else {
         // temporary hack trying to disable PH mode earlier
-
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", X313_SEQ_ASAP, X313_WA_NLINES, 0x8000));
-        X3X3_SEQ_SEND1 (X313_SEQ_ASAP,  X313_WA_NLINES,  0x8000);
-
         n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]+(2 * COLOR_MARGINS)+thispars->pars[P_OVERLAP];
     }
-    n_scan_lines&=0x3fff;
+    X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_sync_mult, sync_mult);
+    MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_sync_mult,  0x%x)\n", sensor_port, frame16, x393_sens_sync_mult.d32));
+    // See if NC393 has n_scan_lines - no
+    /*
+    n_scan_lines&=0xffff; // was 0x3fff in NC353 code
     X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, n_scan_lines);
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_NLINES, (int) n_scan_lines));
+    */
+
     // Bayer phase changed?
 
     int flips=(thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1)<<1);
@@ -1192,10 +1168,13 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
         MDF3(printk(" composite mode - adjusted flips=%x\n", flips));
         bayer_modified=  bayer_modified || FRAMEPAR_MODIFIED(P_MULTI_FLIPH) || FRAMEPAR_MODIFIED(P_MULTI_FLIPV)  || FRAMEPAR_MODIFIED(P_MULTI_TOPSENSOR);
     }
-    if (bayer_modified) {
-        X3X3_SEQ_SEND1(fpga_addr,  X313_WA_DCR0, X353_DCR0(BAYER_PHASE,thispars->pars[P_BAYER] ^ flips ^ sensor->bayer)); ///NOTE: hardware bayer
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int)X313_WA_DCR0, (int)X353_DCR0(BAYER_PHASE,thispars->pars[P_BAYER] ^ ((thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1)<<1)) ^ sensor->bayer) ));
 
+    // Change Bayer for gamma/histograms?
+    if (bayer_modified) {
+        gamma_ctl.bayer = thispars->pars[P_BAYER] ^ flips ^ sensor->bayer;
+        gamma_ctl.bayer_set = 1;
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_gamma_ctrl, gamma_ctl);
+        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n", sensor_port, frame16, gamma_ctl.d32));
     }
     return 0;
 #else
@@ -1267,7 +1246,8 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
 }
 
 /** Start/single acquisition from the sensor to the FPGA (stop has latency of 1)
- * TODO: Implement for 393 */
+ * NC393 controls writing to memory. Also supports SINGLE and RESET */
+
 int pgm_sensorrun  (int sensor_port,               ///< sensor port number (0..3)
 					struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
 					struct framepars_t * thispars, ///< sensor current parameters
@@ -1277,6 +1257,23 @@ int pgm_sensorrun  (int sensor_port,               ///< sensor port number (0..3
 												   ///< @return OK - 0, <0 - error
 
 {
+#ifndef NC353
+    MDF3(printk(" frame16=%d\n",frame16));
+    if (frame16 >= PARS_FRAMES) return -EINVAL; // wrong frame
+    control_sensor_memory (sensor_port,
+                           thispars->pars[P_SENSOR_RUN] & 3,
+                           (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                           frame16);
+    // Is it OK to process stop here too?
+    return 0;
+/*
+     # Enable arbitration of sensor-to-memory controller
+        if exit_step == 12: return False
+
+        self.x393_axi_tasks.enable_memcntrl_en_dis(8 + num_sensor, True);
+
+ */
+#else
     int fpga_data=0;
     MDF3(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
@@ -1285,19 +1282,19 @@ int pgm_sensorrun  (int sensor_port,               ///< sensor port number (0..3
     case 2:
     case 3: fpga_data=5; break;
     }
-#if NC353
+
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
     // only start/single, stopping will be handled by the pgm_sensorstop
     if (fpga_data) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_TRIG, fpga_data);
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_TRIG, (int) fpga_data));
     }
-#endif
     return 0;
+#endif
 }
 
 /** Stop acquisition from the sensor to the FPGA (start/single have latency of 2)
- * TODO: Implement for 393 */
+ * NC393 - currently same as  pgm_sensorrun*/
 int pgm_sensorstop (int sensor_port,               ///< sensor port number (0..3)
 					struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
 					struct framepars_t * thispars, ///< sensor current parameters
@@ -1307,6 +1304,16 @@ int pgm_sensorstop (int sensor_port,               ///< sensor port number (0..3
 												   ///< @return OK - 0, <0 - error
 
 {
+#ifndef NC353
+    MDF3(printk(" frame16=%d\n",frame16));
+    if (frame16 >= PARS_FRAMES) return -EINVAL; // wrong frame
+    // Do we need to filter for stop only (    if ((thispars->pars[P_SENSOR_RUN] & 3)==0){... ) ?
+    control_sensor_memory (sensor_port,
+                           thispars->pars[P_SENSOR_RUN] & 3,
+                           (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                           frame16);
+    return 0;
+#else
     int fpga_data=0;
     MDF3(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
@@ -1315,21 +1322,20 @@ int pgm_sensorstop (int sensor_port,               ///< sensor port number (0..3
     case 2:
     case 3: fpga_data=5; break;
     }
-#if NC353
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
     // only start/single, stopping will be handled by the pgm_sensorstop
     if ((thispars->pars[P_SENSOR_RUN] & 3)==0){
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_TRIG, fpga_data);
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_TRIG, (int) fpga_data));
     }
-#endif
     return 0;
+#endif
 }
 
 /** Program gamma table
  * Table with the same hash should be available in cache. It is very unlikely
  * but is still possible that it can be pushed out - TODO: make it guaranteed. So normally new gamma table is 
- * set through a charcter device driver (with FPGA bit set to get locked?) and then pgm_gamma is activated when
+ * set through a character device driver (with FPGA bit set to get locked?) and then pgm_gamma is activated when
  * the P_GTAB_R (*_G,*_GB, *_B) are updated
  * The scale part of these parameters (lower 16 bits) may be modified by white balancing code without loading a new table
  *
@@ -1629,8 +1635,6 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     int cmprs_top = 0; // 1 for JPEG18 only, 0 for others
     int tile_width; // in bursts, 2 for those with overlap (height>16), 4 with heigh==16
     int tile_height; // 16/18 (20 not yet implemented)
-    int extra_pages; // 1 with overlap, 0 w/o overlap
-    int disable_need =  1; // TODO: Use some G_* parameter
     MDF3(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     width_marg = thispars->pars[P_ACTUAL_WIDTH];
@@ -1650,10 +1654,8 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
             height_marg += (2 * COLOR_MARGINS);
         }
         tile_width = 2;
-        extra_pages = 1;
     } else {
         tile_width = 4;
-        extra_pages = 0;
     }
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
     // Adjusting for tile width. TODO: probably not needed, handled in FPGA - verify (and remove 2 next lines)
@@ -1669,11 +1671,8 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
                              tile_width,        // tile width in bjursts (16-pixels each)
                              tile_height,       // tile height: 18 for color JPEG, 16 for JP4 flavors // = 18
                              16,                // tile vertical step in pixel rows (JPEG18/jp4 = 16) // = 16
-                             extra_pages,       // extra pages needed (1) - number of previous pages to keep in a 4-page buffer
-                             disable_need,      // disable "need" (yield to sensor channels - they can not wait)
                              (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
                              frame16);          // Frame number the command should be applied to (if not immediate mode)
-
 
     return 0;
 // TODO: Do we need to maintain P_IMGSZMEM ?
@@ -1778,13 +1777,11 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
         cmprs_mode.focus_set = 1;
     }
 
-    // enqueue it for the compressor
-//#define X393_SEQ_SEND1(port,frame,func,data) {if ((frame) < 0) seqr_##func (0,       (data), (port)); \
-//                                              else             seqa_##func ((frame), (data), (port)); }
-
-    //if (frame16 < 0) seqr_x393_cmprs_control_reg (0,       cmprs_mode, sensor_port);
-    //else             seqa_x393_cmprs_control_reg (frame16, cmprs_mode, sensor_port);
     if (cmprs_mode.d32) {
+        // Consider frames_in_buffer_minus_one() to be static (it can be actually changed over sysfs),
+        // Set it always but do not count as modified
+        cmprs_mode.multiframe = (frames_in_buffer_minus_one(sensor_port)>0)? 1:0;
+        cmprs_mode.multiframe_set = 1;
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
         MDF3(printk("  X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32));
     } else {
@@ -1911,15 +1908,19 @@ int pgm_focusmode  (int sensor_port,               ///< sensor port number (0..3
 												   ///< be applied to,  negative - ASAP
 												   ///< @return OK - 0, <0 - error
 {
+    unsigned long flags;
+    int i;
+    x393_cmprs_table_addr_t table_addr;
     struct {
-        long left;
-        long right;
-        long top;
-        long bottom;
-        long totalwidth;
-        long filter_no;
-        long show1;
+        short left;
+        short right;
+        short top;
+        short bottom;
+        short totalwidth;
+        short filter_no;
+        short show1;
     } focus_setup_data;
+    u32 * focus_setup_data32 = (u32*) &focus_setup_data;
     //  struct frameparspair_t * pars_to_update[5]={
     struct frameparspair_t pars_to_update[5]={
             {P_FOCUS_TOTWIDTH, 0},
@@ -1956,8 +1957,26 @@ int pgm_focusmode  (int sensor_port,               ///< sensor port number (0..3
             (focus_setup_data.bottom != (focus_setup_data.top+thispars->pars[P_FOCUS_HEIGHT] -8)) ||
             FRAMEPAR_MODIFIED(P_FOCUS_FILTER) ||
             FRAMEPAR_MODIFIED(P_FOCUS_SHOW1) ) {
-        // TODO: Redo for nc393
-#ifdef NC353
+        // TODO: NC393 Focus functionality requires userland write tables (was in fpga_io.c). Other functions
+        // from that file are replaced, but we still need table write with disabling IRQ
+
+#ifndef NC353
+        table_addr.type =   X393_TABLE_FOCUS_TYPE;
+        // Each focus page has 64 of 16-bit entries, total 16 pages (2KB). Configuration uses first 8 of 16-bit words in last page,
+        // And FPGA accepts 32-bit data (16-bit ones merged in pairs). So address is 32*15
+        table_addr.addr32 = 32*15;
+
+        //focus_setup_data32
+
+        local_irq_save(flags);
+        x393_cmprs_tables_address(table_addr, sensor_port);
+        for (i = 0; i < 4; i++) {
+            x393_cmprs_tables_data(focus_setup_data32[i], sensor_port);
+        }
+        local_irq_restore(flags);
+        print_hex_dump_bytes("", DUMP_PREFIX_NONE, &focus_setup_data32[0], sizeof (focus_setup_data));
+
+#else
         fpga_table_write_nice (CX313_FPGA_TABLES_FOCUSPARS, sizeof(focus_setup_data)/sizeof(focus_setup_data.left), (unsigned long *) &focus_setup_data);
 #endif
         pars_to_update[0].val=focus_setup_data.totalwidth;
@@ -2136,7 +2155,7 @@ int pgm_recalcseq  (int sensor_port,               ///< sensor port number (0..3
 
 /** Restart after changing geometry  (recognizes ASAP and programs memory channel 2 then)
  * data for the CHN2 should be available (prepared)
- * TODO: 393 - reimplement */
+ * NC393 - same as  pgm_compctl? */
 int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3)
 					struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
 					struct framepars_t * thispars, ///< sensor current parameters
@@ -2146,43 +2165,72 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
 												   ///< @return OK - 0, <0 - error
 
 {
+#ifndef NC353
+    MDF3(printk(" frame16=%d\n",frame16));
+    int extra_pages;
+    int disable_need =  1; // TODO: Use some G_* parameter
+    x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+    // does it need to be be started (nothing do be done to stop)
+    if (thispars->pars[P_COMPRESSOR_RUN]==0) return 0; // does not need compressor to be started
+    // NC393: memory controller already set by pgm_memcompressor, but we'll need to setup dependent/from memory here
+    switch(thispars->pars[P_COLOR]){
+    case COLORMODE_COLOR:
+    case COLORMODE_COLOR20:
+        extra_pages = 1;
+        break;
+    default:
+        extra_pages = 0;
+    }
+    control_compressor_memory (sensor_port,
+                               thispars->pars[P_SENSOR_RUN] & 3, // stop/single/run(/reset)
+                               extra_pages,
+                               disable_need,
+                               (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                               frame16);
+    // program compressor mode - normal run (3) or standalone(2)
+    switch (thispars->pars[P_COMPRESSOR_RUN]) {
+    case COMPRESSOR_RUN_STOP:
+        cmprs_mode.run = X393_CMPRS_CBIT_RUN_DISABLE;
+        break;
+    case COMPRESSOR_RUN_SINGLE:
+    case COMPRESSOR_RUN_CONT:
+        cmprs_mode.run = ((thispars->pars[P_SENSOR_RUN] & 3)==SENSOR_RUN_CONT)? X393_CMPRS_CBIT_RUN_ENABLE : X393_CMPRS_CBIT_RUN_STANDALONE;
+        break;
+    }
+    cmprs_mode.run_set = 1;
+    X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    MDF3(printk("  X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32));
+    return 0;
+#else
     MDF3(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     // does it need to be be started (nothing do be done to stop)
-    if (thispars->pars[P_COMPRESSOR_RUN]==0) return 0; // does not need comporessor to be started
-#ifdef NC353
+    if (thispars->pars[P_COMPRESSOR_RUN]==0) return 0; // does not need compressor to be started
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
-#endif
     // reset memory controller for the channel2 to the start of the frame
-#ifdef NC353
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH2_CTL1,   thispars->pars[P_SDRAM_CHN21]);
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH2_CTL2,   thispars->pars[P_SDRAM_CHN22]);
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH2_CTL0,   thispars->pars[P_SDRAM_CHN20]);
-#endif
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH2_CTL1,   (int) thispars->pars[P_SDRAM_CHN21]));
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH2_CTL2,   (int) thispars->pars[P_SDRAM_CHN22]));
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH2_CTL0,   (int) thispars->pars[P_SDRAM_CHN20]));
 
     // enable memory channel2
-#ifdef NC353
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_EN_D(0));
-#endif
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_EN_D(0)));
     // set number of tiles to compressor
-#ifdef NC353
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_MCUNUM, thispars->pars[P_TILES]-1);
-#endif
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_MCUNUM, (int) thispars->pars[P_TILES]-1));
     // start the compressor
-#ifdef NC353
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COMP_CMD, (thispars->pars[P_COMPRESSOR_RUN]==2) ? COMPCMD_RUN : COMPCMD_SINGLE);
-#endif
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_COMP_CMD, (int) ((thispars->pars[P_COMPRESSOR_RUN]==2) ? COMPCMD_RUN : COMPCMD_SINGLE)));
     return 0;
+#endif
 }
 
 /** Stop compressor when changing geometry
- * TODO: 353 - reimplement
+ *  NC393 - stopping compressor memory or compressor should also be stopped? Doing both
  */
 int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3)
 					struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
@@ -2192,21 +2240,46 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
 												   ///< be applied to,  negative - ASAP
 												   ///< @return OK - 0, <0 - error
 {
-#ifdef NC353
+#ifndef NC353
+    int extra_pages;
+    int disable_need =  1; // TODO: Use some G_* parameter
+    x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
+    MDF3(printk(" frame16=%d\n",frame16));
+    if (frame16 >= PARS_FRAMES) return -EINVAL; // wrong frame
+    switch(thispars->pars[P_COLOR]){
+    case COLORMODE_COLOR:
+    case COLORMODE_COLOR20:
+        extra_pages = 1;
+        break;
+    default:
+        extra_pages = 0;
+    }
+    // Stop memory -> compressor
+    control_compressor_memory (sensor_port,
+                               X393_CMPRS_CBIT_RUN_DISABLE,
+                               extra_pages,
+                               disable_need,
+                               (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                               frame16);
+    // Stop compressor (do not propagate frame sync late, finish current frame)
+    cmprs_mode.run = X393_CMPRS_CBIT_RUN_DISABLE;
+    cmprs_mode.run_set = 1;
+    X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    MDF3(printk("  X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32));
+    return 0;
+
+#else
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
-#endif
     MDF3(printk(" frame16=%d\n",frame16));
     //  if (frame16 & ~PARS_FRAMES_MASK) return -1; // wrong frame (can be only -1 or 0..7)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame (can be only -1 or 0..7)
-#ifdef NC353
     X3X3_SEQ_SEND1(fpga_addr, X313_WA_COMP_CMD, COMPCMD_STOP);
-#endif
     MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int)  X313_WA_COMP_CMD, (int) COMPCMD_STOP));
     return 0;
+#endif
 }
 
-/** Compressor control: only start/stop/single (after explicitly changed, not when geometry was changed)
- * TODO: 393 - reimplement*/
+/** Compressor control: only start/stop/single (after explicitly changed, not when geometry was changed) */
 int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3)
 					struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
 					struct framepars_t * thispars, ///< sensor current parameters
@@ -2215,27 +2288,64 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
 												   ///< be applied to,  negative - ASAP
 												   ///< @return OK - 0, <0 - error
 {
+#ifndef NC353
+    int extra_pages;
+    int disable_need =  1; // TODO: Use some G_* parameter
+    x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     MDF3(printk(" frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",frame16, (int) prevpars->pars[P_COMPRESSOR_RUN], (int) thispars->pars[P_COMPRESSOR_RUN]));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-#ifdef NC353
+    if ((prevpars->pars[P_COMPRESSOR_RUN]==0) && (thispars->pars[P_COMPRESSOR_RUN]!=0)) { // just started
+        // Was for NC353
+        // reset memory controller for the channel2 to the start of the frame
+        // enable memory channel2 (NOTE: when is it disabled? does it need to be disabled?)
+        // set number of tiles to compressor
+
+        // NC393: memory controller already set by pgm_memcompressor, but we'll need to setup dependent/from memory here
+        //Seems nothing here?
+        // Or is there?
+    }
+    switch(thispars->pars[P_COLOR]){
+    case COLORMODE_COLOR:
+    case COLORMODE_COLOR20:
+        extra_pages = 1;
+        break;
+    default:
+        extra_pages = 0;
+    }
+    control_compressor_memory (sensor_port,
+            thispars->pars[P_SENSOR_RUN] & 3, // stop/single/run(/reset)
+            extra_pages,
+            disable_need,
+            (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                    frame16);
+    // program compressor mode - normal run (3) or standalone(2)
+    switch (thispars->pars[P_COMPRESSOR_RUN]) {
+    case COMPRESSOR_RUN_STOP:
+        cmprs_mode.run = X393_CMPRS_CBIT_RUN_DISABLE;
+        break;
+    case COMPRESSOR_RUN_SINGLE:
+    case COMPRESSOR_RUN_CONT:
+        cmprs_mode.run = ((thispars->pars[P_SENSOR_RUN] & 3)==SENSOR_RUN_CONT)? X393_CMPRS_CBIT_RUN_ENABLE : X393_CMPRS_CBIT_RUN_STANDALONE;
+        break;
+    }
+    cmprs_mode.run_set = 1;
+    X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    MDF3(printk("  X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32));
+    return 0;
+
+#else
+    MDF3(printk(" frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",frame16, (int) prevpars->pars[P_COMPRESSOR_RUN], (int) thispars->pars[P_COMPRESSOR_RUN]));
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
-#endif
     if ((prevpars->pars[P_COMPRESSOR_RUN]==0) && (thispars->pars[P_COMPRESSOR_RUN]!=0)) { // just started
         // reset memory controller for the channel2 to the start of the frame
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH2_CTL1,   thispars->pars[P_SDRAM_CHN21]);
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH2_CTL2,   thispars->pars[P_SDRAM_CHN22]);
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH2_CTL0,   thispars->pars[P_SDRAM_CHN20]);
-#endif
-
         // enable memory channel2 (NOTE: wnen is it disabled? does it need to be disabled?)
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_EN_D(2));
-#endif
         // set number of tiles to compressor
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_MCUNUM, thispars->pars[P_TILES]-1);
-#endif
         MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int)X313_WA_SDCH2_CTL1, (int)thispars->pars[P_SDRAM_CHN21]));
         MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int)X313_WA_SDCH2_CTL2, (int)thispars->pars[P_SDRAM_CHN22]));
         MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int)X313_WA_SDCH2_CTL0, (int)thispars->pars[P_SDRAM_CHN20]));
@@ -2245,32 +2355,23 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     if ((prevpars->pars[P_COMPRESSOR_RUN] != thispars->pars[P_COMPRESSOR_RUN]) || (thispars->pars[P_COMPRESSOR_RUN]==COMPRESSOR_RUN_SINGLE))  // changed or single
         switch (thispars->pars[P_COMPRESSOR_RUN]) {
         case COMPRESSOR_RUN_STOP:
-#ifdef NC353
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COMP_CMD, COMPCMD_STOP);
-#endif
             MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int) X313_WA_COMP_CMD, (int) COMPCMD_STOP));
             break;
         case COMPRESSOR_RUN_SINGLE:
-#ifdef NC353
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COMP_CMD, COMPCMD_SINGLE);
-#endif
             //TODO: Update for NC393
-#ifdef NC353
             if (!x313_is_dma_on()) x313_dma_start();
-#endif
             MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int) X313_WA_COMP_CMD, (int) COMPCMD_SINGLE));
             break;
         case COMPRESSOR_RUN_CONT:
-#ifdef NC353
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COMP_CMD, COMPCMD_RUN);
-#endif
-#ifdef NC353
             if (!x313_is_dma_on()) x313_dma_start();
-#endif
             MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int) X313_WA_COMP_CMD, (int) COMPCMD_RUN));
             break;
         }
     return 0;
+#endif
 }
 
 
@@ -2286,6 +2387,7 @@ int pgm_gammaload  (int sensor_port,               ///< sensor port number (0..3
 												   ///< @return OK - 0, <0 - error
 {
     //TODO: make multi-subchannel, for now using the same gamma for all
+    int sub_chn;
     struct frameparspair_t pars_to_update[4]; // 4 needed, increase if more entries will be added
     int nupdate=0;
     MDF3(printk(" frame16=%d, (getThisFrameNumber() & PARS_FRAMES_MASK)= %ld, thispars->pars[P_GTAB_R]=0x%lx, thispars->pars[P_FRAME]=0x%lx\n",frame16, getThisFrameNumber() & PARS_FRAMES_MASK, thispars->pars[P_GTAB_R],thispars->pars[P_FRAME]));
@@ -2308,22 +2410,33 @@ int pgm_gammaload  (int sensor_port,               ///< sensor port number (0..3
     for (color=0; color<4; color++) if (get_locked_hash32(color,sensor_port, 0)!=thispars->pars[P_GTAB_R+color]) need_pgm++;
     // code currently does not allow to overwrite just 1 table - only all 4
     if (need_pgm) {
-        for (color=0; color<4; color++) {
-            *pgamma32=thispars->pars[P_GTAB_R+color];
-            // Normally, nothing will be calculated in the next set_gamma_table() call
-            rslt=set_gamma_table (gamma32.hash16,
-                    gamma32.scale,
-                    NULL,
-                    GAMMA_MODE_HARDWARE | GAMMA_MODE_LOCK,
-                    color,
-                    sensor_port,
-                    0); // frame16 - one ahead of the current TODO 393 multisensor - split gamma tables to subchannels
-            //   now gtable will be old one if result <=0 get_gamma_fpga(color) can return 0 only if nothing yet was programmed
-//TODO: Update for NC393
-#ifdef NC353
-            if ((gtable= get_gamma_fpga(color))) fpga_table_write_nice (CX313_FPGA_TABLES_GAMMA + (color * 256), 256, gtable);
+        for (sub_chn = 0; sub_chn< MAX_SENSORS;sub_chn++) {
+            for (color=0; color<4; color++) {
+                *pgamma32=thispars->pars[P_GTAB_R+color];
+                // Normally, nothing will be calculated in the next set_gamma_table() call
+                rslt=set_gamma_table (gamma32.hash16,
+                        gamma32.scale,
+                        NULL,
+                        GAMMA_MODE_HARDWARE | GAMMA_MODE_LOCK,
+                        color,
+                        sensor_port,
+                        0); // frame16 - one ahead of the current TODO 393 multisensor - split gamma tables to subchannels
+                //   now gtable will be old one if result <=0 get_gamma_fpga(color) can return 0 only if nothing yet was programmed
+                //TODO: Update for NC393
+#ifndef NC353
+                if ((gtable= get_gamma_fpga(color,sensor_port,sub_chn))) // missing channels return NULL
+                {
+                    fpga_gamma_write_nice(color,         // Color (0..3)
+                                          sensor_port,   // sensor port (0..3)
+                                          sub_chn,       // sensor sub-channel (when several are connected through a multiplexer)
+                                          gtable);       // Gamma table (256 DWORDs) in encoded FPGA format
+
+                }
+#else
+                if ((gtable= get_gamma_fpga(color))) fpga_table_write_nice (CX313_FPGA_TABLES_GAMMA + (color * 256), 256, gtable);
 #endif
-            if (rslt <= 0) SETFRAMEPARS_SET(P_GTAB_R+color, get_locked_hash32(color,sensor_port,0)); // restore to the locked table
+                if (rslt <= 0) SETFRAMEPARS_SET(P_GTAB_R+color, get_locked_hash32(color,sensor_port,0)); // restore to the locked table
+            }
         }
         MDF3(printk("need_pgm=%d, get_locked_hash32(*)=0x%lx 0x%lx 0x%lx 0x%lx\n",need_pgm,get_locked_hash32(0),get_locked_hash32(1),get_locked_hash32(2),get_locked_hash32(3)));
     }
@@ -2378,82 +2491,173 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
 													   ///< be applied to,  negative - ASAP
 													   ///< @return OK - 0, <0 - error
 {
+#ifndef NC353
+    int sub_chn;
+    int par_index, poffs;
+    x393_lens_corr_t lens_corr = {.d32=0};
+
+    // In 393 there can be multiple subchannels, with proportional offsets. Initially offset == 0, so the same parameters will
+    // be applied to all active subchannels.
+
     MDF3(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-#ifdef NC353
+    for (sub_chn = 0; sub_chn < MAX_SENSORS; sub_chn++) if (GLOBALPARS(sensor_port, G_SUBCHANNELS) & (1 << sub_chn)){
+        poffs = VIGNET_SUBCHN_OFFSET * sub_chn;
+        par_index = P_VIGNET_AX + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn = sub_chn;
+            lens_corr.addr = X393_LENS_AX;
+            lens_corr.ax = thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+        par_index = P_VIGNET_AY + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn = sub_chn;
+            lens_corr.addr = X393_LENS_AY;
+            lens_corr.ay = thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+        par_index = P_VIGNET_C + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn = sub_chn;
+            lens_corr.addr = X393_LENS_C;
+            lens_corr.c = thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+
+        par_index = P_VIGNET_BX + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn = sub_chn;
+            lens_corr.addr = X393_LENS_BX;
+            lens_corr.bx = thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+        par_index = P_VIGNET_BY + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn = sub_chn;
+            lens_corr.addr = X393_LENS_BY;
+            lens_corr.by = thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+        par_index = P_SCALE_ZERO_IN + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn =    sub_chn;
+            lens_corr.addr =       X393_LENS_FAT0_IN;
+            lens_corr.fatzero_in = thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+        par_index = P_SCALE_ZERO_OUT + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn =    sub_chn;
+            lens_corr.addr =       X393_LENS_FAT0_OUT;
+            lens_corr.fatzero_out = thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+        par_index = P_VIGNET_SHL + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn =    sub_chn;
+            lens_corr.addr =       X393_LENS_POST_SCALE;
+            lens_corr.post_scale = thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+
+        par_index = P_DGAINR + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn =    sub_chn;
+            lens_corr.addr =       X393_LENS_SCALE0;
+            lens_corr.scale =      thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+
+        par_index = P_DGAING + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn =    sub_chn;
+            lens_corr.addr =       X393_LENS_SCALE1;
+            lens_corr.scale =      thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+        par_index = P_DGAINGB + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn =    sub_chn;
+            lens_corr.addr =       X393_LENS_SCALE2;
+            lens_corr.scale =      thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+        par_index = P_DGAINB + poffs;
+        if (FRAMEPAR_MODIFIED(par_index)) {
+            lens_corr.sub_chn =    sub_chn;
+            lens_corr.addr =       X393_LENS_SCALE3;
+            lens_corr.scale =      thispars->pars[par_index];
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
+            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+        }
+    }
+
+    return 0;
+
+#else
+    MDF3(printk(" frame16=%d\n",frame16));
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
-#endif
     if (FRAMEPAR_MODIFIED(P_VIGNET_AX)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_AX(thispars->pars[P_VIGNET_AX]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_AX(thispars->pars[P_VIGNET_AX])));
     }
     if (FRAMEPAR_MODIFIED(P_VIGNET_AY)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_AY(thispars->pars[P_VIGNET_AY]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_AY(thispars->pars[P_VIGNET_AY])));
     }
     if (FRAMEPAR_MODIFIED(P_VIGNET_C)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_C(thispars->pars[P_VIGNET_C]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_C(thispars->pars[P_VIGNET_C])));
     }
     if (FRAMEPAR_MODIFIED(P_VIGNET_BX)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_BX(thispars->pars[P_VIGNET_BX]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_BX(thispars->pars[P_VIGNET_BX])));
     }
     if (FRAMEPAR_MODIFIED(P_VIGNET_BY)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_BY(thispars->pars[P_VIGNET_BY]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_BY(thispars->pars[P_VIGNET_BY])));
     }
     if (FRAMEPAR_MODIFIED(P_SCALE_ZERO_IN)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_FATZERO_IN(thispars->pars[P_SCALE_ZERO_IN]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_FATZERO_IN(thispars->pars[P_SCALE_ZERO_IN])));
     }
     if (FRAMEPAR_MODIFIED(P_SCALE_ZERO_OUT)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_FATZERO_OUT(thispars->pars[P_SCALE_ZERO_OUT]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_FATZERO_OUT(thispars->pars[P_SCALE_ZERO_OUT])));
     }
     if (FRAMEPAR_MODIFIED(P_VIGNET_SHL)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_POSTSCALE(thispars->pars[P_VIGNET_SHL]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_POSTSCALE(thispars->pars[P_VIGNET_SHL])));
     }
     if (FRAMEPAR_MODIFIED(P_DGAINR)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_SCALES(0, thispars->pars[P_DGAINR]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(0,thispars->pars[P_DGAINR])));
     }
     if (FRAMEPAR_MODIFIED(P_DGAING)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_SCALES(1, thispars->pars[P_DGAING]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(1,thispars->pars[P_DGAING])));
     }
     if (FRAMEPAR_MODIFIED(P_DGAINGB)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_SCALES(2, thispars->pars[P_DGAINGB]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(2,thispars->pars[P_DGAINGB])));
     }
     if (FRAMEPAR_MODIFIED(P_DGAINB)) {
-#ifdef NC353
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_SCALES(3, thispars->pars[P_DGAINB]));
-#endif
         MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(3,thispars->pars[P_DGAINB])));
     }
     return 0;
+#endif
 }

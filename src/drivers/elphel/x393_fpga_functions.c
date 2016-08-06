@@ -17,7 +17,4 @@
 #include "x393.h"
 #include "x393_fpga_functions.h"
 
-/*
-
- */
 

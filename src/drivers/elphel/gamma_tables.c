@@ -117,6 +117,7 @@
 #include <elphel/exifa.h>
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
 #include "framepars.h"        // for debug mask
+#include "sensor_common.h"  // for FPGA_TABLE_CHUNK - or move it?
 
 //#include "fpga_io.h"//fpga_table_write_nice
 
@@ -126,6 +127,7 @@
 //#include "framepars.h"
 //#include "quantization_tables.h"
 #include "gamma_tables.h"
+#include "x393.h"
 /**
  * @brief optional debug output 
  */
@@ -666,6 +668,35 @@ int set_gamma_table (unsigned short hash16,        ///< 16-bit unique (non-scale
   return tmp_p1;
 }
 
+/** Writing gamma table to FPGA (1 color, 1 sub-channel) enabling IRQ after transferring each FPGA_TABLE_CHUNK DWORDs */
+void fpga_gamma_write_nice(int color,         ///< Color (0..3)
+                           int sensor_port,   ///< sensor port (0..3)
+                           int sensor_subchn, ///< sensor sub-channel (when several are connected through a multiplexer)
+                           u32 * gamma)       ///< Gamma table (256 DWORDs) in encoded FPGA format
+{
+    x393_gamma_tbl_t gamma_tbl_a = {.d32=0};
+    x393_gamma_tbl_t gamma_tbl_d = {.d32=0};
+    const int gamma_size=256; // 18-bit entries
+    unsigned long flags;
+    int addr32, len32, i;
+
+    gamma_tbl_a.a_n_d = 1;
+    gamma_tbl_a.color = color;
+    gamma_tbl_a.sub_chn = sensor_subchn;
+    for (addr32 = 0; addr32 < gamma_size; addr32 += FPGA_TABLE_CHUNK){
+        len32 = FPGA_TABLE_CHUNK;
+        if (unlikely(addr32 + len32 > gamma_size))
+            len32 = gamma_size - addr32;
+        gamma_tbl_a.addr= addr32;
+        local_irq_save(flags);
+        x393_sens_gamma_tbl(gamma_tbl_a, sensor_port);
+        for (i = addr32; i < addr32 + len32; i++){
+            gamma_tbl_d.d32 = gamma[i];
+            x393_sens_gamma_tbl(gamma_tbl_d, sensor_port);
+        }
+        local_irq_restore(flags);
+    }
+}
 
 ///======================================
 // File operations:

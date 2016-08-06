@@ -269,12 +269,14 @@
 #define P_SENSOR_RUN     4          ///< Sensor acquisition mode 0 - stop, 1 - single, 2 - run
   #define SENSOR_RUN_STOP   0       ///< Sensor acquisition mode: STOP
   #define SENSOR_RUN_SINGLE 1       ///< Sensor acquisition mode: SINGLE FRAME
-  #define SENSOR_RUN_CONT   2       ///< Sensor acquisition mode: RUN continjuously
+  #define SENSOR_RUN_CONT   2       ///< Sensor acquisition mode: RUN continuously
+  #define SENSOR_RUN_RESET  3       ///< Sensor acquisition mode: RESET
 
 #define P_COMPRESSOR_RUN 5          ///< Compressor mode 0 - stop, 1 - single, 2 - run
   #define COMPRESSOR_RUN_STOP   0   ///< Compressor mode: STOP
   #define COMPRESSOR_RUN_SINGLE 1   ///< Compressor mode: SINGLE
   #define COMPRESSOR_RUN_CONT   2   ///< Compressor mode: RUN
+  #define COMPRESSOR_RUN_RESET  2   ///< Compressor mode: RESET
 
 #define P_BAYER          6 ///< filter number at (0,0) 0-R, 1-G(R), 2-G(B), 3 - B. Write enabled at first, move to WindowSize later
 #define P_TRIGGERED	     7 ///< when trigger occured - 4 LSBs - pixel in DMA word, higher bits - number of DMA word OBSOLETE
@@ -343,6 +345,8 @@
 #define P_COLOR_SATURATION_RED  55 ///<  100*realtive saturation red
 
 /// Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C *** 393: These will  need to be split for each subchannel
+#define VIGNET_SUBCHN_OFFSET 0 ///< for individual per-subchannel vignetting parameters (add num_sub_chn * VIGNET_SUBCHN_OFFSET)
+                               ///< set for NC393 when define, meanwhile will use the same for all sub-channels
 #define P_VIGNET_AX      56 ///< AX in Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C. 393: These will  need to be split for each subchannel
 #define P_VIGNET_AY      57 ///< AY in Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C. 393: These will  need to be split for each subchannel
 #define P_VIGNET_BX      58 ///< BX in Vignetting control, AX*X^2+BX*X+AY*Y^2+BY*Y+C. 393: These will  need to be split for each subchannel

@@ -12,6 +12,8 @@ int unlock_gamma_node (int color, int sensor_port, int sensor_subchn); /// NOTE:
 /// return a pointer to the gamma table (single color) encoded in FPGA format (NULL if there is to table ready)
 ///
 unsigned long * get_gamma_fpga(int color, int sensor_port, int sensor_subchn);
+void fpga_gamma_write_nice    (int color, int sensor_port, int sensor_subchn, u32 * gamma);
+
 
 int gamma_new_node(void);
 void gamma_encode_fpga(unsigned short * gamma_in, unsigned long * gamma_out);///Hardware-dependent encoding of the FPGA "gamma" table. Converts unsigned short array of 257 16-bit values (only 10 msb-s are used) to 256 unsigned long words to be written to FPGA

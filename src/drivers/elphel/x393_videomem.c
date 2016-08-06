@@ -18,6 +18,7 @@
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
 #include <linux/module.h>
+#include <linux/errno.h>
 #include <asm/outercache.h>     // TODO: Implement cache operations for the membridge !!!!
 #include <asm/cacheflush.h>
 
@@ -27,6 +28,7 @@
 #include "x393.h"
 #include "x393_videomem.h"
 #include <elphel/driver_numbers.h>
+#include <elphel/c313a.h>
 
 
 
@@ -45,7 +47,6 @@ static struct elphel_video_buf_t buffer_settings = { ///< some default settings,
 };
 
 
-/* Programming mdemory channel access to video memory */
 /** Setup memory controller for a sensor channel */
 int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
                          int window_width,     ///< 13-bit - in 8*16=128 bit bursts
@@ -61,18 +62,6 @@ int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
    int frame_full_width = buffer_settings.frame_full_width[num_sensor] >> 4;
    int frame_sa_inc =     frame_full_width * (buffer_settings.frame_height[num_sensor] >>3);
    int last_frame_num =   buffer_settings.frames_in_buffer[num_sensor] - 1;
-
-   x393_mcntrl_mode_scan_t mcntrl_mode = {.enable =        1, // [    0] (1) enable requests from this channel ( 0 will let current to finish, but not raise want/need)
-                                          .chn_nreset =    0, // [    1] (1) 0: immediately reset all the internal circuitry
-                                          .write_mem =     1, // [    2] (0) 0 - read from memory, 1 - write to memory
-                                          .extra_pages =   0, // [ 4: 3] (0) 2-bit number of extra pages that need to stay (not to be overwritten) in the buffer
-                                          .keep_open =     0, // [    5] (0) (NA in linescan) for 8 or less rows - do not close page between accesses (not used in scanline mode)
-                                          .byte32 =        0, // [    6] (1) (NA in linescan) 32-byte columns (0 - 16-byte), not used in scanline mode
-                                          .reset_frame =   0, // [    8] (0) reset frame number
-                                          .single =        0, // [    9] (0) run single frame
-                                          .repetitive =    1, // [   10] (1) run repetitive frames
-                                          .disable_need =  0, // [   11] (0) disable 'need' generation, only 'want' (compressor channels)
-                                          .skip_too_late = 1}; // [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
 
    x393_mcntrl_window_frame_sa_t          window_frame_sa =       {.d32=0};
    x393_mcntrl_window_frame_sa_inc_t      window_frame_sa_inc =   {.d32=0};
@@ -101,7 +90,6 @@ int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
        seqr_x393_sens_mcntrl_scanline_frame_full_width (frame16, window_full_width,       num_sensor); // Set frame full(padded) width
        seqr_x393_sens_mcntrl_scanline_window_wh        (frame16, window_width_height,     num_sensor); // Set frame window size
        seqr_x393_sens_mcntrl_scanline_window_x0y0      (frame16, window_left_top,         num_sensor); // Set frame position
-       seqr_x393_sens_mcntrl_scanline_mode             (frame16, mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    case ABSOLUTE:
        seqa_x393_sens_mcntrl_scanline_startaddr        (frame16, window_frame_sa,         num_sensor); // Set frame start address
@@ -110,7 +98,6 @@ int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
        seqa_x393_sens_mcntrl_scanline_frame_full_width (frame16, window_full_width,       num_sensor); // Set frame full(padded) width
        seqa_x393_sens_mcntrl_scanline_window_wh        (frame16, window_width_height,     num_sensor); // Set frame window size
        seqa_x393_sens_mcntrl_scanline_window_x0y0      (frame16, window_left_top,         num_sensor); // Set frame position
-       seqa_x393_sens_mcntrl_scanline_mode             (frame16, mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    case DIRECT:
        x393_sens_mcntrl_scanline_startaddr             (window_frame_sa,         num_sensor); // Set frame start address
@@ -119,6 +106,59 @@ int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
        x393_sens_mcntrl_scanline_frame_full_width      (window_full_width,       num_sensor); // Set frame full(padded) width
        x393_sens_mcntrl_scanline_window_wh             (window_width_height,     num_sensor); // Set frame window size
        x393_sens_mcntrl_scanline_window_x0y0           (window_left_top,         num_sensor); // Set frame position
+       break;
+   }
+
+   return 0;
+}
+
+/** Control (stop/single/run/reset) memory controller for a sensor channel */
+int  control_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
+                            int cmd,              ///< command: 0 stop, 1 - single, 2 - repetitive, 3 - reset
+                            x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
+                            int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
+                                                  ///< @return 0 -OK
+{
+
+   x393_mcntrl_mode_scan_t mcntrl_mode = {.enable =        1, // [    0] (1) enable requests from this channel ( 0 will let current to finish, but not raise want/need)
+                                          .chn_nreset =    1, // [    1] (1) 0: immediately reset all the internal circuitry
+                                          .write_mem =     1, // [    2] (0) 0 - read from memory, 1 - write to memory
+                                          .extra_pages =   0, // [ 4: 3] (0) 2-bit number of extra pages that need to stay (not to be overwritten) in the buffer
+                                          .keep_open =     0, // [    5] (0) (NA in linescan) for 8 or less rows - do not close page between accesses (not used in scanline mode)
+                                          .byte32 =        0, // [    6] (1) (NA in linescan) 32-byte columns (0 - 16-byte), not used in scanline mode
+                                          .reset_frame =   0, // [    8] (0) reset frame number
+                                          .single =        0, // [    9] (0) run single frame
+                                          .repetitive =    1, // [   10] (1) run repetitive frames
+                                          .disable_need =  0, // [   11] (0) disable 'need' generation, only 'want' (compressor channels)
+                                          .skip_too_late = 1}; // [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
+   switch (cmd){
+   case SENSOR_RUN_STOP:
+       mcntrl_mode.enable = 0;
+       break;
+   case SENSOR_RUN_SINGLE:
+       mcntrl_mode.single = 1;
+       mcntrl_mode.repetitive = 0;
+       break;
+   case SENSOR_RUN_CONT:
+       break;
+   case SENSOR_RUN_RESET:
+       mcntrl_mode.chn_nreset = 0;
+       break;
+   default:
+       return -EINVAL;
+   }
+
+   switch (x393cmd){
+   case ASAP:
+       frame16 = 0;
+       // no break
+   case RELATIVE:
+       seqr_x393_sens_mcntrl_scanline_mode             (frame16, mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
+       break;
+   case ABSOLUTE:
+       seqa_x393_sens_mcntrl_scanline_mode             (frame16, mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
+       break;
+   case DIRECT:
        x393_sens_mcntrl_scanline_mode                  (mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    }
@@ -126,17 +166,16 @@ int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
    return 0;
 }
 
+
 /** Setup memory controller for a compressor channel */
 int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3)
                             int window_width,     ///< 13-bit - in 8*16=128 bit bursts
                             int window_height,    ///< 16-bit window height (in scan lines)
                             int window_left,      ///< 13-bit window left margin in 8-bursts (16 bytes)
                             int window_top,       ///< 16-bit window top margin (in scan lines
-                            int tile_width,       ///< tile width in bjursts (16-pixels each)
+                            int tile_width,       ///< tile width in bursts (16-pixels each)
                             int tile_height,      ///< tile height: 18 for color JPEG, 16 for JP4 flavors // = 18
                             int tile_vstep,       ///< tile vertical step in pixel rows (JPEG18/jp4 = 16) // = 16
-                            int extra_pages,      ///< extra pages needed (1) - number of previous pages to keep in a 4-page buffer
-                            int disable_need,     ///< disable "need" (yield to sensor channels - they can not wait)
                             x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
                             int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
                                                   ///< @return 0 - OK
@@ -147,17 +186,6 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
     int last_frame_num =   buffer_settings.frames_in_buffer[num_sensor] - 1;
     int byte32 =           1;   ///< 1 - 32-byte columns (currently used), 0 - 16 byte columns
 
-   x393_mcntrl_mode_scan_t mcntrl_mode = {.enable =        1, // [    0] (1) enable requests from this channel ( 0 will let current to finish, but not raise want/need)
-                                          .chn_nreset =    0, // [    1] (1) 0: immediately reset all the internal circuitry
-                                          .write_mem =     0, // [    2] (0) 0 - read from memory, 1 - write to memory
-                                          .extra_pages =   1, // [ 4: 3] (0) 2-bit number of extra pages that need to stay (not to be overwritten) in the buffer
-                                          .keep_open =     0, // [    5] (0) (NA in linescan) for 8 or less rows - do not close page between accesses (not used in scanline mode)
-                                          .byte32 =        1, // [    6] (1) (NA in linescan) 32-byte columns (0 - 16-byte), not used in scanline mode
-                                          .reset_frame =   0, // [    8] (0) reset frame number
-                                          .single =        0, // [    9] (0) run single frame
-                                          .repetitive =    1, // [   10] (1) run repetitive frames
-                                          .disable_need =  1, // [   11] (0) disable 'need' generation, only 'want' (compressor channels)
-                                          .skip_too_late = 1};// [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
    x393_mcntrl_window_frame_sa_t          window_frame_sa =       {.d32=0};
    x393_mcntrl_window_frame_sa_inc_t      window_frame_sa_inc =   {.d32=0};
    x393_mcntrl_window_last_frame_num_t    window_last_frame_num = {.d32=0};
@@ -178,9 +206,6 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
    window_tile_whs.vert_step =            tile_vstep;
    window_tile_whs.tile_height =          tile_height;
 
-   mcntrl_mode.disable_need = disable_need; // non-constant parameter
-   mcntrl_mode.extra_pages =  extra_pages;  // non-constant parameter
-
    switch (x393cmd){
    case ASAP:
        frame16 = 0;
@@ -193,7 +218,6 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
        seqr_x393_sens_mcntrl_tiled_window_wh        (frame16, window_width_height,     num_sensor); // Set frame window size
        seqr_x393_sens_mcntrl_tiled_window_x0y0      (frame16, window_left_top,         num_sensor); // Set frame position
        seqr_x393_sens_mcntrl_tiled_tile_whs         (frame16, window_tile_whs,         num_sensor); // Set tile size/step (tiled mode only)
-       seqr_x393_sens_mcntrl_tiled_mode             (frame16, mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    case ABSOLUTE:
        seqa_x393_sens_mcntrl_tiled_startaddr        (frame16, window_frame_sa,         num_sensor); // Set frame start address
@@ -203,7 +227,6 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
        seqa_x393_sens_mcntrl_tiled_window_wh        (frame16, window_width_height,     num_sensor); // Set frame window size
        seqa_x393_sens_mcntrl_tiled_window_x0y0      (frame16, window_left_top,         num_sensor); // Set frame position
        seqa_x393_sens_mcntrl_tiled_tile_whs         (frame16, window_tile_whs,         num_sensor); // Set tile size/step (tiled mode only)
-       seqa_x393_sens_mcntrl_tiled_mode             (frame16, mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    case DIRECT:
        x393_sens_mcntrl_tiled_startaddr             (window_frame_sa,         num_sensor); // Set frame start address
@@ -213,7 +236,6 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
        x393_sens_mcntrl_tiled_window_wh             (window_width_height,     num_sensor); // Set frame window size
        x393_sens_mcntrl_tiled_window_x0y0           (window_left_top,         num_sensor); // Set frame position
        x393_sens_mcntrl_tiled_tile_whs              (window_tile_whs,         num_sensor); // Set tile size/step (tiled mode only)
-       x393_sens_mcntrl_tiled_mode                  (mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    }
 
@@ -221,7 +243,71 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
 }
 
 
+/** Control memory controller (stop/single/run/reset) for a compressor channel */
+int control_compressor_memory (int num_sensor,       ///< sensor port number (0..3)
+                               int cmd,              ///< command: 0 stop, 1 - single, 2 - repetitive, 3 - reset
+                               int extra_pages,      ///< extra pages needed (1) - number of previous pages to keep in a 4-page buffer
+                               int disable_need,     ///< disable "need" (yield to sensor channels - they can not wait)
+                               x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
+                               int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
+                                                     ///< @return 0 - OK
+{
+   x393_mcntrl_mode_scan_t mcntrl_mode = {.enable =        1, // [    0] (1) enable requests from this channel ( 0 will let current to finish, but not raise want/need)
+                                          .chn_nreset =    1, // [    1] (1) 0: immediately reset all the internal circuitry
+                                          .write_mem =     0, // [    2] (0) 0 - read from memory, 1 - write to memory
+                                          .extra_pages =   1, // [ 4: 3] (0) 2-bit number of extra pages that need to stay (not to be overwritten) in the buffer
+                                          .keep_open =     0, // [    5] (0) (NA in linescan) for 8 or less rows - do not close page between accesses (not used in scanline mode)
+                                          .byte32 =        1, // [    6] (1) (NA in linescan) 32-byte columns (0 - 16-byte), not used in scanline mode
+                                          .reset_frame =   0, // [    8] (0) reset frame number
+                                          .single =        0, // [    9] (0) run single frame
+                                          .repetitive =    1, // [   10] (1) run repetitive frames
+                                          .disable_need =  1, // [   11] (0) disable 'need' generation, only 'want' (compressor channels)
+                                          .skip_too_late = 1};// [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
 
+   mcntrl_mode.disable_need = disable_need; // non-constant parameter
+   mcntrl_mode.extra_pages =  extra_pages;  // non-constant parameter
+   switch (cmd){
+   case SENSOR_RUN_STOP:
+       mcntrl_mode.enable = 0;
+       break;
+   case SENSOR_RUN_SINGLE:
+       mcntrl_mode.single = 1;
+       mcntrl_mode.repetitive = 0;
+       break;
+   case SENSOR_RUN_CONT:
+       break;
+   case SENSOR_RUN_RESET:
+       mcntrl_mode.chn_nreset = 0;
+       break;
+   default:
+       return -EINVAL;
+   }
+
+   switch (x393cmd){
+   case ASAP:
+       frame16 = 0;
+       // no break
+   case RELATIVE:
+       seqr_x393_sens_mcntrl_tiled_mode             (frame16, mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
+       break;
+   case ABSOLUTE:
+       seqa_x393_sens_mcntrl_tiled_mode             (frame16, mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
+       break;
+   case DIRECT:
+       x393_sens_mcntrl_tiled_mode                  (mcntrl_mode,                      num_sensor); // Set mode register (write last after other channel registers are set)
+       break;
+   }
+
+   return 0;
+}
+
+/** Return number of rames in videobuffer for the sesnor port minus 1 (0 means single frame buffer) */
+int frames_in_buffer_minus_one(int num_sensor) ///< sensor port number (0..3)
+                                               ///< @return number of frames in buffer - 1 (<0 for disabled channels ?)
+{
+    return buffer_settings.frames_in_buffer[num_sensor] - 1;
+
+}
 
 
 

@@ -993,14 +993,13 @@ static unsigned long coring_tables[] = {
 /**
  * @brief Directly set one of the coring LUTs (currently 100: 0.0 to 9.9 with 0.1 step)
  *        to one of 16 FPGA tables (even - for Y, odd - for C)
- * @param[in]   coring_number   0..99 - function number
- * @param[in]   fpga_tbl_num    0..15 - FPGA table number
- * @param[in]   chn             compressor channel number
- * @return None
- */
-void set_coring_fpga(unsigned int coring_number, int fpga_tbl_num, unsigned int chn)
+ * Table is rather small, so turn off IRQ  for the whole duration */
+void set_coring_fpga(unsigned int coring_number, ///< [in]   0..99 - function number
+                     int fpga_tbl_num,           ///< [in]   0..15 - FPGA table number
+                     unsigned int chn)           ///< [in]   compressor channel number
 {
 	int i;
+    unsigned long flags;
 	x393_cmprs_table_addr_t table_addr;
 
 	if (coring_number >= sizeof(coring_tables) / (4 * CORING_SIZE))
@@ -1010,11 +1009,12 @@ void set_coring_fpga(unsigned int coring_number, int fpga_tbl_num, unsigned int 
 
 	table_addr.type = TABLE_TYPE_CORING;
 	table_addr.addr32 = fpga_tbl_num * CORING_SIZE;
+    local_irq_save(flags);
 	x393_cmprs_tables_address(table_addr, chn);
 	for (i = 0; i < CORING_SIZE; i++) {
-		x393_cmprs_tables_data(coring_tables[coring_number * CORING_SIZE], chn);
+		x393_cmprs_tables_data(coring_tables[coring_number * CORING_SIZE + i], chn);
 	}
-
+    local_irq_restore(flags);
 	print_hex_dump_bytes("", DUMP_PREFIX_NONE, &coring_tables[coring_number * CORING_SIZE], CORING_SIZE * 4);
 }
 
