@@ -210,10 +210,17 @@
 #include "pgm_functions.h"
 #include "jpeghead.h"      // to program FPGA Huffman tables
 #include "x393.h"
-  #include "legacy_defines.h" // temporarily
+//  #include "legacy_defines.h" // temporarily
 #include "sensor_i2c.h"
 #include "x393_videomem.h"
 #define COLOR_MARGINS 2 // add this many pixels each side
+#define X313_TIMESTAMPLEN 28 // pixels used for timestamp (in linescan mode added after the line)
+#define X393_TILEHOR 16
+#define X393_TILEVERT 16
+#define X393_MAXWIDTH       65536 // 4096 // multiple of 128
+#define X393_MAXHEIGHT      65536 // 16384 // multiple of 16 - unsafe - not enough room for black level subtraction
+#define X393_MAXHEIGHT_SAFE 65536 // 4096 // multiple of 16  OK for black level subtraction TODO: disable black level if unsafe
+
 
 /**
  * @brief optional debug output macros
@@ -356,7 +363,10 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
   if (thispars->pars[P_SENSOR]) return 0; // Sensor is already detected - do not bother (to re-detect it P_SENSOR should be set to 0)
 // no other initializations, just the sensor-related stuff (starting with lowest sensor clock)
 // stop hardware i2c controller, so it will not get stuck when waiting for !busy
-
+#ifndef NC353
+  // NC393 - nothing to do here - use a separate module for sensor setup: DT, sysfs, something else (add pin pullup/down)
+  return 0;
+#else
 
 // NOTE: disabling interrupts here !!!
   camera_interrupts (0);
@@ -376,13 +386,11 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 // Need to set slow clock
 //  f1=imageParamsR[P_CLK_SENSOR]=20000000; setClockFreq(1, imageParamsR[P_CLK_SENSOR]); X3X3_RSTSENSDCM;
 
-#ifdef NC353
    was_sensor_freq=getClockFreq(1); // using clock driver data, not thispars
    setFramePar(sensor_port, thispars, P_CLK_FPGA,  getClockFreq(0)); // just in case - read the actual fpga clock frequency and store it (no actions)
    setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
    setClockFreq(1, thispars->pars[P_CLK_SENSOR]);
    printk("\nsensor clock set to %d\n",(int) thispars->pars[P_CLK_SENSOR]);
-#endif
    udelay (100);// 0.0001 sec to stabilize clocks
    X3X3_RSTSENSDCM; // FPGA DCM can fail after clock change, needs to be reset
    X3X3_SENSDCM_CLK2X_RESET; // reset pclk2x DCM also
@@ -402,12 +410,11 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
      printk("removing MRST from the sensor\n");
      CCAM_MRST_OFF;
    }
-#ifdef CONFIG_ETRAX_ELPHEL_MT9X001
    if (thispars->pars[P_SENSOR]==0) {
       mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
       printk("trying MT9P001\n");
    }
-#endif
+
 // temporary - disabling old sensors
 #define ENABLE_OLD_SENSORS 1
 #ifdef ENABLE_OLD_SENSORS
@@ -501,8 +508,10 @@ printk ("Inverted MRST\n");
 
    // NOTE: sensor detected - enabling camera interrupts here (actual interrupts will start later)
 // Here interrupts are disabled - with camera_interrupts (0) earlier in this function)
+
    camera_interrupts (1);
    return 0;
+#endif
 }
 
 
@@ -884,9 +893,9 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     if ((!oversize) && (width > sensor_width)) width= sensor_width;
 
     // make width to be multiple of the compressor tile (before adding margins of 4 pixels)
-    width= (((width/dh) + timestamp_len)/X313_TILEHOR)*X313_TILEHOR-timestamp_len; // divided by dh
+    width= (((width/dh) + timestamp_len)/X393_TILEHOR)*X393_TILEHOR-timestamp_len; // divided by dh
     // suppose minimal width refers to decimated output
-    while (width < sensor->minWidth) width+=X313_TILEHOR;
+    while (width < sensor->minWidth) width+=X393_TILEHOR;
     if (unlikely(thispars->pars[P_ACTUAL_WIDTH] != (width+timestamp_len))) {
         SETFRAMEPARS_SET(P_ACTUAL_WIDTH, width+timestamp_len); ///full width for the compressor, including timestamp, but excluding margins
     }
@@ -902,7 +911,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     if(pfh > 0) {
         if (pfh < sensor->minHeight)  pfh =  sensor->minHeight;
         if (pfh & 1) pfh++;
-        if (height > X313_MAXHEIGHT*dv) height=X313_MAXHEIGHT*dv;
+        if (height > X393_MAXHEIGHT*dv) height=X393_MAXHEIGHT*dv;
         pf_stripes = height / (pfh * dv);
         if(pf_stripes < 1) pf_stripes = 1;
         if (unlikely(thispars->pars[P_SENSOR_PIXV] != pfh)) {
@@ -911,9 +920,9 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
         }
     } else {
         if ((!oversize ) && (height > sensor_height)) height=sensor_height;
-        height= ((height/dv)/X313_TILEVERT) * X313_TILEVERT; // divided by dv (before multisensor options)
+        height= ((height/dv)/X393_TILEVERT) * X393_TILEVERT; // divided by dv (before multisensor options)
         // suppose minimal height refers to decimated output
-        while (height < sensor->minHeight) height+=X313_TILEVERT;
+        while (height < sensor->minHeight) height+=X393_TILEVERT;
         if (unlikely(thispars->pars[P_SENSOR_PIXV] != height+(2 * COLOR_MARGINS)))
             SETFRAMEPARS_SET(P_SENSOR_PIXV,  height+(2 * COLOR_MARGINS)); ///full height for the sensor (after decimation), including margins
         height*=dv;

@@ -19,6 +19,7 @@
 #define IMAGEACQ_MAJOR   140
 #define LOGGER_MAJOR     141
 #define VIDEOMEM_MAJOR   142 // implement raw access to memory and/or 16-bit image buffers over membridge interface
+#define DETECT_SENSORS_MAJOR   143 // Maybe not needed?
 
 
 /// MINORS

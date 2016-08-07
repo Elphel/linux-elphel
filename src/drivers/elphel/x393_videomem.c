@@ -497,9 +497,9 @@ static int videomem_probe(struct platform_device *pdev)
 
 
     dev_dbg(dev, "Registering character device with name "VIDEOMEM_DRIVER_NAME);
-    res = register_chrdev(LOGGER_MAJOR, VIDEOMEM_DRIVER_NAME, &videomem_fops);
+    res = register_chrdev(VIDEOMEM_MAJOR, VIDEOMEM_DRIVER_NAME, &videomem_fops);
     if(res < 0) {
-        dev_err(dev, "\nlogger_init: couldn't get a major number  %d.\n ",VIDEOMEM_MAJOR);
+        dev_err(dev, "\videomem_probe: couldn't get a major number  %d.\n ",VIDEOMEM_MAJOR);
         return res;
     }
     // Setup interrupt
@@ -513,13 +513,13 @@ static int videomem_probe(struct platform_device *pdev)
         dev_err(dev, "can not allocate interrupts for %s\n","membridge_irq");
         return -EBUSY;
     }
-    init_waitqueue_head(&videomem_wait_queue);    // wait queue for logger
+    init_waitqueue_head(&videomem_wait_queue);    // wait queue for video memory driver
     g_dev_ptr = dev; // for debugfs
     return 0;
 }
 
 
-/** IMU/GPS logger driver remove function */
+/** Video memory driver remove function */
 static int videomem_remove(struct platform_device *pdev) ///< [in] pointer to @e platform_device structure
                                                          ///< @return always 0
 {

@@ -32,3 +32,4 @@ obj-$(CONFIG_ELPHEL393)           += imu_log393.o
 
 obj-$(CONFIG_ELPHEL393)           += cxi2c.o
 obj-$(CONFIG_ELPHEL393)           += x393_videomem.o
+obj-$(CONFIG_ELPHEL393)           += detect_sensors.o

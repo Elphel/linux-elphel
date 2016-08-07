@@ -224,15 +224,22 @@
 
 // leave it here - may be used in user applications
 #define SENSOR_MASK      0xfc ///< Mask to apply for distinguish between different sensor groups (of similar devices)
+#define SENSOR_DETECT    0x00 ///< Unknown sensor, try to autodetect
 #define SENSOR_ZR32112   0x04 ///< Zoran ZR32112
 #define SENSOR_ZR32212   0x08 ///< Zoran ZR32212
 #define SENSOR_KAC1310   0x20 ///< Kodak KAC1310
 #define SENSOR_KAC5000   0x24 ///< Kodak KAC5000
 #define SENSOR_MI1300    0x30 ///< Micron MI1300
 #define SENSOR_MT9X001   0x30 ///< Micron: MT9M001 - 31, MT9D001 - 32, MT9T001 - 33, MT9P001 - 34
-#define SENSOR_MT9Y001   0x34 ///< Micron/Aptina/Onsemi MT9P001 - 34
+#define SENSOR_MT9M001   0x31 ///< MT9M001
+#define SENSOR_MT9D001   0x32 ///< MT9D001
+#define SENSOR_MT9T001   0x33 ///< MT9T001
+#define SENSOR_MT9P006   0x34 ///< MT9P006
+#define SENSOR_MT9F002   0x38 ///< MT9F002
+//#define SENSOR_MT9Y001   0x34 ///< Micron/Aptina/Onsemi MT9P001 - 34
 #define SENSOR_IBIS51300 0x40 ///< FillFactory IBIS51300
 #define SENSOR_KAI11000  0x80 ///< Kodak KAI11002
+#define SENSOR_MUX_10359 0xe0 ///< Sensor multiplexer 10359
 #define SENSOR_NONE      0xfc ///< No sensor present
 
 // sensor sizes:
