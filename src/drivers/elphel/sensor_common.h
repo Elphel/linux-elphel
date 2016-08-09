@@ -15,6 +15,11 @@ extern struct sensorproc_t * sensorproc;
 #ifdef CONFIG_ETRAX_ELPHEL_MT9X001
   #include "mt9x001.h"
 #endif
+#define SEQ_CMD_STOP  0 ///< Sequencer command stop
+#define SEQ_CMD_RUN   1 ///< Sequencer command run
+#define SEQ_CMD_RESET 2 ///< Sequencer command reset
+
+
 //#include "multisensor.h"
 //int  camSeqGetJPEG_wp(void);
 //int  camSeqGetJPEG_rp(void);
@@ -36,7 +41,9 @@ extern unsigned long  * ccam_dma_buf_ptr[SENSOR_PORTS];
 //int init_FPGA(void); /// can be initialized only after FPGA is configured, not at module init (NOTE was static??)
 ///can be verified with if (!X313_IS_SDRAM_ON)
 void reset_compressor(unsigned int chn);
-void camera_interrupts (int on);
+void compressor_interrupts (int on, int chn);
+void sensor_interrupts     (int on, int chn);
+int sequencer_stop_run_reset(int chn, int cmd);
 struct sensorproc_t * copy_sensorproc (int sensor_port, struct sensorproc_t * copy);
 
 ///NOTE: If profiling is enabled (TASKLET_CTL_ENPROF is set in G_TASKLET_CTL) - save current time in 2 of the 32-bit locations that can be read as pastpars (i.e. from PHP)

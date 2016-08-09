@@ -17,6 +17,13 @@
 *******************************************************************************/
 
 #include "sensor_i2c.h"
+#define COLOR_MARGINS 2 // add this many pixels each side
+#define X313_TIMESTAMPLEN 28 // pixels used for timestamp (in linescan mode added after the line)
+#define X393_TILEHOR 16
+#define X393_TILEVERT 16
+#define X393_MAXWIDTH       65536 // 4096 // multiple of 128
+#define X393_MAXHEIGHT      65536 // 16384 // multiple of 16 - unsafe - not enough room for black level subtraction
+#define X393_MAXHEIGHT_SAFE 65536 // 4096 // multiple of 16  OK for black level subtraction TODO: disable black level if unsafe
 
 int init_pgm_proc(void);
 int add_sensor_proc(int index, int (*sens_func)(int sensor_port, struct sensor_t * ,  struct framepars_t * , struct framepars_t *, int ));

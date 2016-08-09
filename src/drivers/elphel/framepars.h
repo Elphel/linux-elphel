@@ -21,6 +21,8 @@ void resetFrameNumber  (int sensor_port); /// reset this frame number (called fr
 
 unsigned long get_imageParamsThis (int sensor_port, int n);
 unsigned long get_imageParamsPrev (int sensor_port, int n);
+unsigned long get_imageParamsPast(int sensor_port,  int n,  int frame);
+
 
 void          set_imageParamsThis (int sensor_port, int n, unsigned long d);
 unsigned long get_globalParam     (int sensor_port, int n);

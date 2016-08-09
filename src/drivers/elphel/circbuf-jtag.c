@@ -76,7 +76,7 @@
 /** Wait queue for the processes waiting for a new frame to appear in the circular buffer */
 wait_queue_head_t circbuf_wait_queue;
 
-struct circbuf_priv_t circbuf_priv[IMAGE_CHN_NUM];
+struct circbuf_priv_t circbuf_priv[SENSOR_PORTS];
 struct circbuf_priv_t *circbuf_priv_ptr = circbuf_priv;
 
 static struct device *g_dev_ptr;
@@ -109,7 +109,7 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 	// set circular buffer size in bytes
 	set_globalParam(G_CIRCBUFSIZE, CCAM_DMA_SIZE);
 
-	for (i = 0; i < IMAGE_CHN_NUM; i++) {
+	for (i = 0; i < SENSOR_PORTS; i++) {
 		circbuf_priv[i].buf_ptr = ccam_dma_buf_ptr + BYTE2DW(CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE);
 		circbuf_priv[i].phys_addr = dma_handle + CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE;
 	}
@@ -572,10 +572,10 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 	/* debug code follows*/
 	switch (buf[0] - 0x30) {
 	case 0:
-		camera_interrupts(0);
+		compressor_interrupts(0,chn);
 		break;
 	case 1:
-		camera_interrupts(1);
+		compressor_interrupts(1,chn);
 		break;
 	}
 	/* debug code end */

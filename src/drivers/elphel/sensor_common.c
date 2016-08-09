@@ -60,6 +60,7 @@
 
 /** @brief Contains read and write pointers along with IRQ number for a single channel*/
 struct jpeg_ptr_t {
+    volatile u32 frame;          ///< Absolute frame number
 	volatile int jpeg_wp;        ///< JPEG write pointer in 32 bit words
 	volatile int jpeg_rp;        ///< JPEG read pointer in 32 bit words
 	volatile int fpga_cntr_prev; ///< This field contains previous value of the FPGA transfer counter which is used to find out if it has changed. This pointer is in 32 bit words.
@@ -252,7 +253,10 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 	void *virt_addr;
 	//	int prev_dword;
 	int xferred;                                           // number of 32-byte chunks transferred since compressor was reset
+	x393_cmdseqmux_status_t cmdseqmux_status;
 	x393_afimux_status_t stat = x393_afimux0_status(jptr->chn_num);
+	int frame16;
+	u32 aframe = GLOBALPARS(jptr->chn_num,G_THIS_FRAME); // thisFrameNumber(jptr->chn_num); // current absolute frame number
 
 	xferred = stat.offset256 - (jptr->fpga_cntr_prev >> 3);
 	if (xferred == 0)
@@ -261,6 +265,18 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 	jptr->flags |= SENS_FLAG_IRQ;
 	jptr->fpga_cntr_prev = jptr->jpeg_wp;
 	jptr->jpeg_wp = (stat.offset256 << 3);
+
+// Find absolute frame number just compressed
+	cmdseqmux_status = x393_cmdseqmux_status(); // CMDSEQMUX status data (frame numbers and interrupts
+	switch (jptr->chn_num){
+	case 0:  frame16 =cmdseqmux_status.frame_num0; break;
+    case 1:  frame16 =cmdseqmux_status.frame_num1; break;
+    case 2:  frame16 =cmdseqmux_status.frame_num2; break;
+    default: frame16 =cmdseqmux_status.frame_num3;
+	}
+	if (frame16 > (aframe & PARS_FRAMES_MASK))
+	    aframe += 16;
+	jptr->frame = (aframe & ~PARS_FRAMES_MASK) | frame16; // This is absolute compressed frame number, may lag behind current one
 
 	/* debug code follows */
 	frame_counter[jptr->chn_num] += 1;
@@ -416,12 +432,15 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 	return interframe;
 }
 
-/**
- * @brief Fill exif data with the current frame data, save pointer to Exif page in the interframe area
- * @param jptr pointer to jpeg_ptr_t structure with read/write image pointers
- * @param interframe pointer to interframe parameters structure
+/** Fill exif data with the current frame data, save pointer to Exif page in the interframe area
+ *
+ * TODO NC393: Allow lag between current frame and compressor frame, use only previous parameters (among those copied)
+ *
+ *
  */
-inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr, struct interframe_params_t* interframe) {
+inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr,                ///< pointer to jpeg_ptr_t structure with read/write image pointers
+                           struct interframe_params_t* interframe) ///< pointer to interframe parameters structure
+{
 	unsigned char short_buff[2];
 	unsigned int sensor_port = jptr->chn_num;
 	int  index_time = jptr->jpeg_wp - 11;
@@ -431,6 +450,12 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr, struct interframe_params_t* 
     unsigned char orientations[]="1638274545273816";
     unsigned char orientation_short[2];
     int maker_offset;
+    u32 frame =  jptr->frame;
+    int frame_index = frame & PASTPARS_SAVE_ENTRIES_MASK;
+    // [P_FRAME-PARS_SAVE_FROM
+    // Now find if parameters are still available or need pastpars (that may switch at any time or should we use pastpars already as they were copied
+    // at the start of the frame ?
+//get_imageParamsThis
 
     if (index_time<0) index_time+=get_globalParam (sensor_port, G_CIRCBUFSIZE)>>2;
 	//   struct exif_datetime_t
@@ -439,18 +464,18 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr, struct interframe_params_t* 
 	// may be split in datetime/subsec - now it will not notice missing subseq field in template
 	write_meta_irq(sensor_port, exif_meta_time_string, &meta_offsets.Photo_DateTimeOriginal,  Exif_Photo_DateTimeOriginal, 27);
 	write_meta_irq(sensor_port, exif_meta_time_string, &meta_offsets.Image_DateTime,  Exif_Image_DateTime, 20); // may use 27 if room is provided
-	putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_EXPOS), &meta_offsets.Photo_ExposureTime,  Exif_Photo_ExposureTime);
-	putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_FRAME), &meta_offsets.Image_ImageNumber,   Exif_Image_ImageNumber);
+	putlong_meta_irq(sensor_port, get_imageParamsPast(sensor_port, P_EXPOS, frame), &meta_offsets.Photo_ExposureTime,  Exif_Photo_ExposureTime);
+	putlong_meta_irq(sensor_port, frame, &meta_offsets.Image_ImageNumber,   Exif_Image_ImageNumber);
 	//Exif_Photo_MakerNote
-	global_flips=(get_imageParamsThis(sensor_port, P_FLIPH) & 1) | ((get_imageParamsThis(sensor_port, P_FLIPV)<<1)  & 2);
+	global_flips=(get_imageParamsPast(sensor_port, P_FLIPH, frame) & 1) | ((get_imageParamsPast(sensor_port, P_FLIPV, frame)<<1)  & 2);
 	extra_flips=0;
-	if (get_imageParamsThis(sensor_port, P_MULTI_MODE)!=0) {
-		extra_flips=get_imageParamsThis(sensor_port, P_MULTI_MODE_FLIPS);
+	if (get_imageParamsThis(sensor_port, P_MULTI_MODE)!=0) {              // No past!
+		extra_flips=get_imageParamsThis(sensor_port, P_MULTI_MODE_FLIPS); // No past!
 		global_flips=extra_flips & 3;
 	}
 
 	orientation_short[0]=0;
-	orientation_short[1]=0xf & orientations[(get_imageParamsThis(sensor_port, P_PORTRAIT)&3) | (global_flips<<2)];
+	orientation_short[1]=0xf & orientations[(get_imageParamsThis(sensor_port, P_PORTRAIT)&3) | (global_flips<<2)]; // No past!
 	write_meta_irq(sensor_port, orientation_short, &meta_offsets.Image_Orientation,   Exif_Image_Orientation, 2);
 
 	// write sensor number
@@ -460,36 +485,37 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr, struct interframe_params_t* 
 	write_meta_irq(sensor_port, short_buff, &meta_offsets.PageNumber, Exif_Image_PageNumber, 2);
 
 	//TODO - use memcpy
-	maker_offset=putlong_meta_irq(sensor_port, get_imageParamsThis(sensor_port, P_GAINR),   &meta_offsets.Photo_MakerNote, Exif_Photo_MakerNote);
+	maker_offset=putlong_meta_irq(sensor_port, get_imageParamsPast(sensor_port, P_GAINR,frame),   &meta_offsets.Photo_MakerNote, Exif_Photo_MakerNote);
 	if (maker_offset>0) {
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GAING),   maker_offset+4);
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GAINGB),  maker_offset+8);
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GAINB),   maker_offset+12);
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GTAB_R),  maker_offset+16);
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GTAB_G),  maker_offset+20);
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GTAB_GB), maker_offset+24);
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_GTAB_B),  maker_offset+28);
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_WOI_LEFT) | (get_imageParamsThis(sensor_port, P_WOI_WIDTH)<<16),  maker_offset+32);
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_WOI_TOP) | (get_imageParamsThis(sensor_port, P_WOI_HEIGHT)<<16),  maker_offset+36);
+		putlong_meta_raw_irq(sensor_port, get_imageParamsPast(sensor_port, P_GAING,frame),   maker_offset+4);
+		putlong_meta_raw_irq(sensor_port, get_imageParamsPast(sensor_port, P_GAINGB,frame),  maker_offset+8);
+		putlong_meta_raw_irq(sensor_port, get_imageParamsPast(sensor_port, P_GAINB,frame),   maker_offset+12);
+		putlong_meta_raw_irq(sensor_port, get_imageParamsPast(sensor_port, P_GTAB_R,frame),  maker_offset+16);
+		putlong_meta_raw_irq(sensor_port, get_imageParamsPast(sensor_port, P_GTAB_G,frame),  maker_offset+20);
+		putlong_meta_raw_irq(sensor_port, get_imageParamsPast(sensor_port, P_GTAB_GB,frame), maker_offset+24);
+		putlong_meta_raw_irq(sensor_port, get_imageParamsPast(sensor_port, P_GTAB_B,frame),  maker_offset+28);
+		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_WOI_LEFT) | (get_imageParamsThis(sensor_port, P_WOI_WIDTH)<<16),  maker_offset+32); //No Past
+		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_WOI_TOP) | (get_imageParamsThis(sensor_port, P_WOI_HEIGHT)<<16),  maker_offset+36); //No Past
 		putlong_meta_raw_irq(sensor_port,   global_flips |
-				((get_imageParamsThis(sensor_port, P_BAYER)<<2)     & 0xc) |
-				((get_imageParamsThis(sensor_port, P_COLOR)<<4)     & 0xF0) |
-				((get_imageParamsThis(sensor_port, P_DCM_HOR)<<8)   & 0xF00) |
-				((get_imageParamsThis(sensor_port, P_DCM_VERT)<<12) & 0xF000) |
-				((get_imageParamsThis(sensor_port, P_BIN_HOR)<<16)  & 0xF0000) |
-				((get_imageParamsThis(sensor_port, P_BIN_VERT)<<20) & 0xF00000) |
+				((get_imageParamsThis(sensor_port, P_BAYER)<<2)     & 0xc) | // No past!
+				((get_imageParamsPast(sensor_port, P_COLOR, frame)<<4)     & 0xF0) |
+				((get_imageParamsThis(sensor_port, P_DCM_HOR)<<8)   & 0xF00) | // No past!
+				((get_imageParamsThis(sensor_port, P_DCM_VERT)<<12) & 0xF000) | // No past!
+				((get_imageParamsThis(sensor_port, P_BIN_HOR)<<16)  & 0xF0000) | // No past!
+				((get_imageParamsThis(sensor_port, P_BIN_VERT)<<20) & 0xF00000) | // No past!
 				(extra_flips <<24) ,  maker_offset+40);
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_MULTI_HEIGHT_BLANK1),   maker_offset+44);
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_MULTI_HEIGHT_BLANK2),   maker_offset+48);
+		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_MULTI_HEIGHT_BLANK1),   maker_offset+44); // No past!
+		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_MULTI_HEIGHT_BLANK2),   maker_offset+48); // No past!
 		//     putlong_meta_raw_irq(0x1234567,  maker_offset+52); // just testing
-		putlong_meta_raw_irq(sensor_port, get_imageParamsThis(sensor_port, P_QUALITY) | ((get_imageParamsThis(sensor_port, P_PORTRAIT)&1)<<7) | (get_imageParamsThis(sensor_port, P_CORING_INDEX)<<16),  maker_offset+52);
-		putlong_meta_raw_irq(sensor_port, get_globalParam(sensor_port, G_TEMPERATURE01),  maker_offset+56); // data should be provided by a running daemon
-		putlong_meta_raw_irq(sensor_port, get_globalParam(sensor_port, G_TEMPERATURE23),  maker_offset+60);
+		putlong_meta_raw_irq(sensor_port, get_imageParamsPast(sensor_port, P_QUALITY, frame) |
+		        ((get_imageParamsThis(sensor_port, P_PORTRAIT)&1)<<7) |                      // No past!
+		        (get_imageParamsThis(sensor_port, P_CORING_INDEX)<<16),  maker_offset+52);   // No past!
+		putlong_meta_raw_irq(sensor_port, get_globalParam(sensor_port, G_TEMPERATURE01),  maker_offset+56); // data should be provided by a running daemon // No past!
+		putlong_meta_raw_irq(sensor_port, get_globalParam(sensor_port, G_TEMPERATURE23),  maker_offset+60); // No past!
 		//get_globalParam(G_TASKLET_CTL)
 		// left 1 long spare (+44)
 	}
 	interframe->meta_index=store_meta(sensor_port);
-
 }
 
 
@@ -580,7 +606,6 @@ static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
 	irq_ctrl.interrupt_cmd = IRQ_CLEAR;
 	x393_cmprs_interrupts(irq_ctrl, jptr->chn_num);
 	local_irq_restore(flag);
-
 	return IRQ_HANDLED;
 }
 
@@ -777,15 +802,14 @@ void reset_compressor(unsigned int chn)
 	local_irq_restore(flags);
 }
 
-/**
- * @brief Camera interrupts on/off  (currently both in the FPGA and in the CPU)
- * @param on 1 - enable, 0 - disable interrupts
- */
-void camera_interrupts (int on) {
+/** Camera compressor interrupts on/off */
+void compressor_interrupts (int on,   ///< 0 -interrupt disable, 1 - interrupt enable
+                            int chn)  ///< compressor channel (0..3)
+{
 	int i;
-	x393_cmprs_interrupts_t irq_ctrl;
+	x393_cmprs_interrupts_t irq_ctrl =         {.d32=0};
 
-	//MDF2(printk ("camera_interrupts(%d)\n",on));
+	//MDF2(printk ("compressor_interrupts(%d)\n",on));
 	dev_dbg(NULL, "set camera interrupts status: %d\n", on);
 #ifdef TEST_DISABLE_CODE
 	if (on) {
@@ -802,10 +826,65 @@ void camera_interrupts (int on) {
 	REG_WR(intr_vect, regi_irq, rw_mask, intr_mask);
 #endif /* TEST_DISABLE_CODE */
 
-	irq_ctrl.interrupt_cmd = on ? IRQ_ENABLE : IRQ_DISABLE;
-	for (i = 0; i < SENSOR_PORTS; i++) {
-		x393_cmprs_interrupts(irq_ctrl, i);
-	}
+	//
+	irq_ctrl.interrupt_cmd =         on ? IRQ_ENABLE : IRQ_DISABLE;
+	x393_cmprs_interrupts(irq_ctrl, chn);
+}
+
+/** Camera sensor (frame sequencer) compressor interrupts on/off */
+void sensor_interrupts (int on,   ///< 0 -interrupt disable, 1 - interrupt enable
+                        int chn)  ///< compressor channel (0..3)
+{
+    int i;
+    x393_cmdframeseq_mode_t cmdframeseq_mode = {.d32=0};
+
+    //MDF2(printk ("compressor_interrupts(%d)\n",on));
+    dev_dbg(NULL, "set sensor interrupts status: %d\n", on);
+#ifdef TEST_DISABLE_CODE
+    if (on) {
+        EN_INTERRUPT(SMART);
+    }  else {
+        DIS_INTERRUPTS;
+    }
+    // clear smart interrupt circuitry in any case
+    port_csp0_addr[X313_WA_SMART_IRQ]=0x8000;
+
+    reg_intr_vect_rw_mask intr_mask;
+    intr_mask = REG_RD(intr_vect, regi_irq, rw_mask);
+    intr_mask.ext = on ? 1 : 0;
+    REG_WR(intr_vect, regi_irq, rw_mask, intr_mask);
+#endif /* TEST_DISABLE_CODE */
+
+    //
+    cmdframeseq_mode.interrupt_cmd = on ? IRQ_ENABLE : IRQ_DISABLE;
+    x393_cmdframeseq_ctrl(cmdframeseq_mode, chn);
+}
+
+int sequencer_stop_run_reset(int chn,  ///< Sensor port
+                             int cmd)  ///< Command: SEQ_CMD_STOP=0 - stop, SEQ_CMD_RUN=1 - run, SEQ_CMD_RESET=2 - reset
+                                       ///< @return always 0
+{
+    x393_cmdframeseq_mode_t cmdframeseq_mode = {.d32 = 0};
+    x393_status_ctrl_t status_ctrl = {.d32=0};
+
+    switch (cmd){
+    case SEQ_CMD_STOP:
+        cmdframeseq_mode.run_cmd = 2;
+        break;
+    case SEQ_CMD_RUN:
+        cmdframeseq_mode.run_cmd = 3;
+        status_ctrl.mode = 3; // autoupdate, is anyway set to it when reading i2c
+        break;
+    case SEQ_CMD_RESET:
+        cmdframeseq_mode.reset =   1;
+    }
+    if (cmdframeseq_mode.d32)
+        x393_cmdframeseq_ctrl (cmdframeseq_mode, chn);
+    if (cmd == SEQ_CMD_RESET)
+        udelay(1);
+    if (status_ctrl.mode)
+        set_x393_cmdseqmux_status_ctrl(status_ctrl);
+    return 0;
 }
 
 /**

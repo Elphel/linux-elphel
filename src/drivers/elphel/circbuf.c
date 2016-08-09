@@ -753,10 +753,10 @@ ssize_t circbuf_write(struct file *file, const char *buf, size_t count, loff_t *
 	/* debug code follows*/
 	switch (buf[0] - 0x30) {
 	case 0:
-		camera_interrupts(0);
+		compressor_interrupts(0,chn);
 		break;
 	case 1:
-		camera_interrupts(1);
+		compressor_interrupts(1,chn);
 		break;
 	case 3:
 		/* update image quality */

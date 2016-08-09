@@ -18,3 +18,7 @@
 #include "x393_fpga_functions.h"
 
 
+int init_command_sequencer(int sensor_port)
+{
+    return 0;
+}

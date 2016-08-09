@@ -55,8 +55,6 @@
 #include "imu_log393.h"
 #include "x393.h"
 #include "cci2c.h"
-//#include "legacy_defines.h" // temporarily
-
 
 #if 0
 #define D(x) x

@@ -350,8 +350,7 @@
 #include "framepars.h"      // parameters manipulation
 #include "sensor_common.h"
 #include "pgm_functions.h"
-//#include "x3x3.h"           // hardware definitions
-#include "legacy_defines.h" // temporarily
+#include "x393.h"
 #include "sensor_i2c.h"
 
 
@@ -647,16 +646,16 @@ static  unsigned short mt9p001_multiregs[]=
 };
 
 
-int mt9x001_pgm_detectsensor (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame8);
-int mt9x001_pgm_initsensor   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame8);
-int mt9x001_pgm_window       (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame8);
-int mt9x001_pgm_window_safe  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame8);
-int mt9x001_pgm_window_common(int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame8);
-int mt9x001_pgm_limitfps     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame8);
-int mt9x001_pgm_exposure     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame8);
-int mt9x001_pgm_gains        (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame8);
-int mt9x001_pgm_triggermode  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame8);
-int mt9x001_pgm_sensorregs   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame8);
+int mt9x001_pgm_detectsensor (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9x001_pgm_initsensor   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9x001_pgm_window       (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9x001_pgm_window_safe  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9x001_pgm_window_common(int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9x001_pgm_limitfps     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9x001_pgm_exposure     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9x001_pgm_gains        (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9x001_pgm_triggermode  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9x001_pgm_sensorregs   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 // @brief read 2 bytes from i2c
 #ifdef NC353
 #define I2C_READ_DATA16(x) ((i2c_read_data[(x)<<1]<<8)+i2c_read_data[((x)<<1)+1])
@@ -691,23 +690,24 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     int sensor_subtype=0;
     int i;
     struct sensor_t * psensor; // current sensor
-    MDF4(printk(" frame8=%d\n",frame8));
+    x393_sensio_ctl_t sensio_ctl = {.d32=0};
+    MDF4(printk(" frame16=%d\n",frame16));
     //  MDD1(printk("sensor=0x%x\n", (int)sensor));
     if (thispars->pars[P_SENSOR]!=0) { ///already initialized - called second time after common pgm_detectsensor(), first time is inside pgm_detectsensor()
         MDF1(printk(" sensor 0x%x already detected, exiting\n",(int) thispars->pars[P_SENSOR]));
         return sensor->sensorType;
     }
+
+    // try MT9P001 first
+    psensor= &mt9p001;
+
+#ifdef NC353
     // set control lines
     CCAM_NEGRST;  ///set negative MRST polarity
     CCAM_TRIG_INT;
     CCAM_MRST_OFF;
     CCAM_ARST_OFF;
     udelay (100);
-
-    // try MT9P001 first
-    psensor= &mt9p001;
-
-#ifdef NC353
     local_irq_save(flags); // IRQ Off
     i2c_stop_wait();
     i2c_writeData(0, (psensor->i2c_addr) & 0xfe,  &chipver_reg, 1, 0); // no stop before read  (cxi2c.c)
@@ -718,6 +718,22 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
         sensor_subtype=MT9P_TYP; //1;
     }
 #else
+    // set control lines
+    sensio_ctl.mrst = 1;
+    sensio_ctl.mrst_set = 1;
+    sensio_ctl.arst = 1;
+    sensio_ctl.arst_set = 1;
+    sensio_ctl.aro = 1;
+    sensio_ctl.aro_set = 1;
+    x393_sensio_ctrl(sensio_ctl,sensor_port);
+    sensio_ctl.d32=0;
+    // reset mmcm
+    sensio_ctl.mmcm_rst = 1;
+    sensio_ctl.mmcm_rst_set = 1;
+    x393_sensio_ctrl(sensio_ctl,sensor_port);
+    sensio_ctl.mmcm_rst = 0;
+    x393_sensio_ctrl(sensio_ctl,sensor_port);
+    udelay(50); // is it needed?
     X3X3_I2C_RCV2(sensor_port, psensor->i2c_addr, P_MT9X001_CHIPVER, &i2c_read_dataw);
     if (((i2c_read_dataw ^ MT9P001_PARTID) & MT9X001_PARTIDMASK)==0) {
         printk("Found MT9P001 2592x1944 sensor, chip ID=%x\n",i2c_read_dataw);
@@ -727,7 +743,7 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     //  printk("sensor id= 0x%x\r\n",i2c_read_data[0]);
     //  MDD1(printk("sensor=0x%x\n", (int)sensor));
     if (sensor_subtype ==0)  { // not a 5MPix chip
-        CCAM_ARST_ON;
+//        CCAM_ARST_ON; // Why was it here
         psensor= &mt9m001; //address the same for all others
 #ifdef NC353
         local_irq_save(flags); // IRQ Off
@@ -823,8 +839,12 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     for (i=0;i<8;i++) {
         //    MDF(printk("i=%d, m=0x%lx\n",i,GLOBALPARS(G_MULTI_REGSM+i)));
     }
+//    CCAM_ARO_ON ; //set Does it need to be set here? Not earlier (as it is now set for NC393
     MDF4(printk(" set ARO (TRIGGER) line HIGH\n"));
-    CCAM_ARO_ON ; //set
+    sensio_ctl.d32=0;
+    sensio_ctl.aro = 1;
+    sensio_ctl.aro_set = 1;
+    x393_sensio_ctrl(sensio_ctl,sensor_port);
     return sensor->sensorType;
     //NOTE 353:  hardware i2c is turned off (not needed in 393)
 }
@@ -844,9 +864,11 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     struct frameparspair_t pars_to_update[258+(MAX_SENSORS * P_MULTI_NUMREGS )]; // for all the sensor registers. Other P_* values will reuse the same ones
     int first_sensor_i2c;
     unsigned short * sensor_register_overwrites;
-    MDF4(printk(" frame8=%d\n",frame8));
+    x393_sensio_ctl_t sensio_ctl = {.d32=0};
+
+    MDF4(printk(" frame16=%d\n",frame16));
     if (frame16 >= 0) return -1; // should be ASAP
-//    int fpga_addr=(frame8 <0) ? X313_I2C_ASAP : (X313_I2C_FRAME0+frame8);
+//    int fpga_addr=(frame16 <0) ? X313_I2C_ASAP : (X313_I2C_FRAME0+frame16);
 //    unsigned char    i2c_read_data[512]; // each two bytes - one short word, big endian
     u32 i2c_read_data_dw[256];
     int nupdate=0;
@@ -854,6 +876,7 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     int regval, regnum, mreg, j;
     printk("Resetting MT9X001 sensor\r\n");
     // reset sensor by applying MRST (low):
+#ifdef NC353
     CCAM_MRST_ON;
     udelay (100);
     CCAM_MRST_OFF;
@@ -863,7 +886,6 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     if (GLOBALPARS(sensor_port, G_SENS_AVAIL)) {
         first_sensor_i2c+= I2C359_INC * ((GLOBALPARS(sensor_port, G_SENS_AVAIL) & 1)?1:((GLOBALPARS(sensor_port, G_SENS_AVAIL) & 2)?2:3));
     }
-#ifdef NC353
     i2c_read_data[0]=0;
     local_irq_save(flags); // IRQ Off (rather long - all 256 registers through i2c, but there is no hurry - sensor is off)
     i2c_stop_wait();
@@ -884,7 +906,23 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
         }
     }
 #else
-    for (i=0; i<256; i++) { // rdead all registers, one at a time (slower than in 353)
+//    CCAM_MRST_ON;
+    sensio_ctl.mrst = 0;
+    sensio_ctl.mrst_set = 1;
+    x393_sensio_ctrl(sensio_ctl,sensor_port);
+    udelay (100);
+//    CCAM_MRST_OFF;
+    sensio_ctl.mrst = 1;
+    x393_sensio_ctrl(sensio_ctl,sensor_port);
+    sensio_ctl.d32=0;
+    // NC393: both sequencers started in pgm_detectsensor
+    udelay (100);
+    printk("Reading sensor registers to the shadows:\r\n");
+    first_sensor_i2c=sensor->i2c_addr;
+    if (GLOBALPARS(sensor_port, G_SENS_AVAIL)) {
+        first_sensor_i2c+= I2C359_INC * ((GLOBALPARS(sensor_port, G_SENS_AVAIL) & 1)?1:((GLOBALPARS(sensor_port, G_SENS_AVAIL) & 2)?2:3));
+    }
+    for (i=0; i<256; i++) { // read all registers, one at a time (slower than in 353)
         X3X3_I2C_RCV2(sensor_port, first_sensor_i2c, i, &(i2c_read_data_dw[i]));
     }
     for (i=0; i<256; i++) { // possible to modify register range to save (that is why nupdate is separate from i)
@@ -927,8 +965,6 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     X3X3_SEQ_RUN;
     local_irq_restore(flags); // IRQ restore
 #else
-    X3X3_SEQ_RUN;
-    i2c_run();
 #endif
     nupdate=0;  // Second pass over the registers to set
 //#define SET_SENSOR_MBPAR(p,f,s,r,v)
@@ -1038,11 +1074,11 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
     // flip margins for mirrored images (except oversized, not to rely on sensor->clearWidth/sensor->clearHeight
     if (!thispars->pars[P_OVERSIZE]) {
         if(flipX) {
-            wl = sensor->clearWidth - ww - wl - X313_MARGINS * dh;
+            wl = sensor->clearWidth - ww - wl - (2 * COLOR_MARGINS) * dh;
             if(wl < 0) wl = 0;
         }
         if(flipY) {
-            wt = sensor->clearHeight - wh - wt - X313_MARGINS * dv;
+            wt = sensor->clearHeight - wh - wt - (2 * COLOR_MARGINS) * dv;
             if(wt < 0) wt = 0;
         }
         // apply clearTop/clearLeft
@@ -1160,7 +1196,7 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     uint64_t ull_fp1000s;
 #endif
     int target_virt_width=(thispars->pars[P_VIRT_KEEP])?(thispars->pars[P_VIRT_WIDTH]):0;
-    MDF4(printk(" frame8=%d\n",frame8));
+    MDF4(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     switch(styp)  {
     case MT9P_TYP: //page 16
@@ -1925,7 +1961,7 @@ int mt9x001_pgm_sensorregs     (int sensor_port,               ///< sensor port 
                                                                ///< @return 0 - OK, negative - error
 
 {
-    MDF4(printk(" frame8=%d\n",frame8));
+    MDF4(printk(" frame16=%d\n",frame16));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     //  send all parameters marked as "needed to be processed" to the sensor, clear those flags
     // mask out all non sensor pars

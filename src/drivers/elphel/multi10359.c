@@ -114,16 +114,14 @@
 #include "framepars.h"      // parameters manipulation
 #include "sensor_common.h"
 #include "pgm_functions.h"
-//#include "x3x3.h"           // hardware definitions
-#include "legacy_defines.h" // temporarily
 #include "sensor_i2c.h"
 #include "clock10359.h"
+#include "x393.h"
+
 
 /**
  * \def D(x) optional debug output 
  */
-
-#define X313_MARGINS 4
 
 
 #if ELPHEL_DEBUG
@@ -384,7 +382,7 @@ inline int sensor_wl(int wl,                   ///< Specified window left margin
     int i,d;
     if (!oversize) {
       if(flipX) {
-         wl = sensor->clearWidth - ww - wl - X313_MARGINS * dh;
+         wl = sensor->clearWidth - ww - wl - (2 * COLOR_MARGINS) * dh;
          if(wl < 0) wl = 0;
       }
 // apply clearTop/clearLeft
@@ -427,7 +425,7 @@ inline int sensor_wt(int wt,                   ///< Specified window top margin
 {
   if (!oversize) {
       if(flipY) {
-         wt = sensor->clearHeight - wh - wt - X313_MARGINS * dv;
+         wt = sensor->clearHeight - wh - wt - (2 * COLOR_MARGINS) * dv;
          if(wt < 0) wt = 0;
       }
 // apply clearTop/clearLeft
@@ -500,7 +498,7 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
   bh=  thispars->pars[P_BIN_HOR];
   bv=  thispars->pars[P_BIN_VERT];
   ww=  thispars->pars[P_SENSOR_PIXH] * dh;
-//  SETFRAMEPARS_SET(P_SENSOR_PIXV,  height+X313_MARGINS); // full height for the sensor (after decimation), including margins
+//  SETFRAMEPARS_SET(P_SENSOR_PIXV,  height+(2 * COLOR_MARGINS)); // full height for the sensor (after decimation), including margins
   wh=  thispars->pars[P_SENSOR_PIXV] * dv; // number of scan lines read from the sensor multipled by decimation
   d = 2 * bh * (ww / (2 * bh));
   if (unlikely(d != ww)) { // correct window width if needed
@@ -526,12 +524,12 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
          sequence = (sequence<<2) | (i & 3);
   }
 // Now sequence may be opposite to that of the P_MULTI_SEQUENCE
-//  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+0] += X313_MARGINS*dv; // include margins into individual sensor WOI-sizes
-//  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+1] += X313_MARGINS*dv;
-//  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+2] += X313_MARGINS*dv;
-  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+0] = (((wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+0]/dv) & ~1)+ X313_MARGINS)*dv; // include margins into individual sensor WOI-sizes, make even number of output lines
-  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+1] = (((wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+1]/dv) & ~1)+ X313_MARGINS)*dv;
-  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+2] = (((wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+2]/dv) & ~1)+ X313_MARGINS)*dv;
+//  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+0] += (2 * COLOR_MARGINS)*dv; // include margins into individual sensor WOI-sizes
+//  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+1] += (2 * COLOR_MARGINS)*dv;
+//  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+2] += (2 * COLOR_MARGINS)*dv;
+  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+0] = (((wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+0]/dv) & ~1)+ (2 * COLOR_MARGINS))*dv; // include margins into individual sensor WOI-sizes, make even number of output lines
+  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+1] = (((wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+1]/dv) & ~1)+ (2 * COLOR_MARGINS))*dv;
+  wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+2] = (((wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+2]/dv) & ~1)+ (2 * COLOR_MARGINS))*dv;
 
 
 
@@ -545,11 +543,11 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
 // Modify sequence if one or 2 frames is skipped from top because of P_WOI_TOP
 // Margins
     if (flipX) {
-      wl= (thispars->pars[P_SENSOR_WIDTH]+dh*X313_MARGINS)-ww-wl; // simplified (ww includes margins*dh)
+      wl= (thispars->pars[P_SENSOR_WIDTH]+dh*(2 * COLOR_MARGINS))-ww-wl; // simplified (ww includes margins*dh)
       if(wl < 0) wl = 0;
     }
     if (flipY) {
-      wt= (thispars->pars[P_SENSOR_HEIGHT]+dv*X313_MARGINS)-wh-wt; // simplified (wh includes margins*dv)
+      wt= (thispars->pars[P_SENSOR_HEIGHT]+dv*(2 * COLOR_MARGINS))-wh-wt; // simplified (wh includes margins*dv)
       if(wt < 0) wt = 0;
     }
     if ((wt>height1) && (sequence >>2)) { // only skip if anything is left
@@ -690,13 +688,13 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
     if (flipY)  multi_mode_flips ^= 0x2a;
     MDF25(printk("sequence=0x%x flipX=%x flipY=%x multi_mode_flips=0x%x \n",sequence,flipX,flipY,multi_mode_flips ));
     SETFRAMEPARS_COND(P_MULTI_MODE_FLIPS,    multi_mode_flips);
-//    subtract X313_MARGINS from the first and last frame
+//    subtract (2 * COLOR_MARGINS) from the first and last frame
 
-//    SETFRAMEPARS_COND(P_MULTI_HEIGHT_BLANK1, ((height1 - (X313_MARGINS>>1)*(((height2==0) && (height3==0))?2:1)) & 0xffff) | (vblank2<<16));
-//    SETFRAMEPARS_COND(P_MULTI_HEIGHT_BLANK2, ((height2 - (X313_MARGINS>>1)*(((height2 >0) && (height3==0))?1:0)) & 0xffff) | (vblank3<<16));
-// Currently X313_MARGINS (4 pixels) are subtracted from the very last sub-frame only
-    SETFRAMEPARS_COND(P_MULTI_HEIGHT_BLANK1, ((height1 - X313_MARGINS*(((height2==0) && (height3==0))?1:0)) & 0xffff) | (vblank2<<16));
-    SETFRAMEPARS_COND(P_MULTI_HEIGHT_BLANK2, ((height2 - X313_MARGINS*(((height2 >0) && (height3==0))?1:0)) & 0xffff) | (vblank3<<16));
+//    SETFRAMEPARS_COND(P_MULTI_HEIGHT_BLANK1, ((height1 - ((2 * COLOR_MARGINS)>>1)*(((height2==0) && (height3==0))?2:1)) & 0xffff) | (vblank2<<16));
+//    SETFRAMEPARS_COND(P_MULTI_HEIGHT_BLANK2, ((height2 - ((2 * COLOR_MARGINS)>>1)*(((height2 >0) && (height3==0))?1:0)) & 0xffff) | (vblank3<<16));
+// Currently (2 * COLOR_MARGINS) (4 pixels) are subtracted from the very last sub-frame only
+    SETFRAMEPARS_COND(P_MULTI_HEIGHT_BLANK1, ((height1 - (2 * COLOR_MARGINS)*(((height2==0) && (height3==0))?1:0)) & 0xffff) | (vblank2<<16));
+    SETFRAMEPARS_COND(P_MULTI_HEIGHT_BLANK2, ((height2 - (2 * COLOR_MARGINS)*(((height2 >0) && (height3==0))?1:0)) & 0xffff) | (vblank3<<16));
 
 if (GLOBALPARS(sensor_port, G_MULTI_CFG) & (1 <<G_MULTI_CFG_BEFORE)) {
 //TODO: Program 10359 registers here
@@ -935,6 +933,8 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
 {
   struct frameparspair_t pars_to_update[64]; // so far 39 actually needed
   int nupdate=0;
+  x393_sensio_ctl_t sensio_ctl = {.d32=0};
+  x393_camsync_mode_t camsync_mode = {.d32=0};
 
   unsigned long    bitstream_version;
   unsigned long    sensor_id[MAX_SENSORS];
@@ -943,7 +943,7 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   int this_sensor_type;
 //   .hact_delay  = -2500,    // -2.5ns delay in ps
 //   .sensorDelay = 2460,     // Delay from sensor clock at FPGA output to pixel data transition (FPGA input), short cable (ps)
-  multi_unitialized=0; // reset this static variable - it will prevent copying individual flips to multiple until copmosite mode is used
+  multi_unitialized=0; // reset this static variable - it will prevent copying individual flips to multiple until composite mode is used
   MDF3(printk(" frame16=%d\n",frame16));
   GLOBALPARS(sensor_port,G_SENS_AVAIL)=0; // no 10359A board present
   if (frame16 >= 0) return -1; // can only work in ASAP mode
@@ -975,8 +975,13 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   printk("10353 sensor clock set to %d\n",(int) thispars->pars[P_CLK_SENSOR]);
 
   udelay (100);// 0.0001 sec to stabilize clocks
-  X3X3_RSTSENSDCM;  // FPGA DCM can fail after clock change, needs to be reset
-  X3X3_SENSDCM_CLK2X_RESET; // reset pclk2x DCM also
+//  X3X3_RSTSENSDCM;  // FPGA DCM can fail after clock change, needs to be reset
+//  X3X3_SENSDCM_CLK2X_RESET; // reset pclk2x DCM also
+  // NC393 reset mmcm - is it needed? Clock was not changed yet
+  sensio_ctl.mmcm_rst = 1;
+  sensio_ctl.mmcm_rst_set = 1;
+  x393_sensio_ctrl(sensio_ctl,sensor_port);
+
 // reset system and SDRAM DCMs on 10359
   MULTISENSOR_WRITE_I2C16(sensor_port,I2C359_DCM_SYSTEM,  I2C359_DCM_RESET | I2C359_DCM_RESET90);
   MULTISENSOR_WRITE_I2C16(sensor_port,I2C359_DCM_SDRAM,   I2C359_DCM_RESET | I2C359_DCM_RESET90);
@@ -1005,10 +1010,15 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
 // Try to read chip version from each of the 3 possible sensors
   printk("removing MRST from the sensor\n");
 //
-  CCAM_NEGRST;  // set negative MRST polarity
-  CCAM_TRIG_INT;
-  CCAM_MRST_OFF;
-  CCAM_ARST_OFF;
+  sensio_ctl.d32 = 0;
+  sensio_ctl.mrst =     1;
+  sensio_ctl.mrst_set = 1;
+  sensio_ctl.arst =     1;
+  sensio_ctl.arst_set = 1;
+  x393_sensio_ctrl(sensio_ctl,sensor_port);
+  camsync_mode.trig =     0;
+  camsync_mode.trig_set = 1;
+  x393_camsync_mode (camsync_mode);
   udelay (100);
 
   GLOBALPARS(sensor_port,G_SENS_AVAIL) |= 1<< (GLOBALPARS(sensor_port,G_SENS_AVAIL)); // temporary to indicate sensor detection functions that they need to initialize multisensor registers
@@ -1142,9 +1152,10 @@ Now overwrite sensor functions with it's own (originals (physical sensor ones) a
   SETFRAMEPARS_SET(P_MULTI_HEIGHT2,  1940);
   SETFRAMEPARS_SET(P_MULTI_HEIGHT3,  1940);
 
+#ifdef NC353
   CCAM_RESET_MCONTR_ON ; // Set mode that resets memory controller pointers after each frame sync. TODO: Later - make it work without?
   CCAM_ENDFRAMES_EN ;    // Enable ending frame being compressed if no more data will be available (frame ended before specified number of blocks compressed)
-
+#endif
   if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
   return this_sensor_type;
 }
@@ -1295,7 +1306,7 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
   int multi_frame=0;
   if (composite && SENSOR_IN_SEQ_EN(1,sequence,sensor_mask)) {  // specified in sequence is enabled
     multi_frame=1;
-    total_height+=(vblank+X313_MARGINS)*dv;
+    total_height+=(vblank+(2 * COLOR_MARGINS))*dv;
   MDF25(printk(" total_height=0x%x\n",total_height));
     if      (!height2)                      height2=sensor->imageHeight;
     if      (height2 < sensor->minHeight)   height2=sensor->minHeight;
@@ -1305,7 +1316,7 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
     total_height+=height2;
   MDF25(printk(" total_height=0x%x\n",total_height));
     if (SENSOR_IN_SEQ_EN(2,sequence,sensor_mask)) {
-      total_height+=(vblank+X313_MARGINS)*dv;
+      total_height+=(vblank+(2 * COLOR_MARGINS))*dv;
   MDF25(printk(" total_height=0x%x\n",total_height));
       if      (!height3)                      height3=sensor->imageHeight;
       if      (height3 < sensor->minHeight)   height3=sensor->minHeight;

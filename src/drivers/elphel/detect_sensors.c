@@ -60,25 +60,29 @@ struct sensor_name_t {
     const char * name;
     u32          code;
     int          type; ///< +1 - applicable to sensors, +2 - applicable to multiplexers
+    sens_iface_t iface;
 };
+//typedef enum {NONE,PARALLEL12,HISPI} sens_iface_t; ///< Sensor port interface type
+
 const struct sensor_name_t sensor_names[] ={
-        {.name="detect",     .type=3, .code = 0},                // to be automatically detected
-        {.name="none",       .type=3, .code = SENSOR_NONE},      // no device attached
-        {.name="mux10359",   .type=2, .code = SENSOR_MUX_10359}, // no device attached
-        {.name="zr32112",    .type=1, .code = SENSOR_ZR32112},   // Zoran ZR32112
-        {.name="zr32212",    .type=1, .code = SENSOR_ZR32212},   // Zoran ZR32212
-        {.name="kac1310",    .type=1, .code = SENSOR_KAC1310},   // Kodak KAC1310
-        {.name="kac5000",    .type=1, .code = SENSOR_KAC5000},   // Kodak KAC5000
-        {.name="mi1300",     .type=1, .code = SENSOR_MI1300},    // Micron MI1300
-        {.name="mt9m001",    .type=1, .code = SENSOR_MT9M001},   // MT9M001
-        {.name="mt9d001",    .type=1, .code = SENSOR_MT9D001},   // MT9D001
-        {.name="mt9t001",    .type=1, .code = SENSOR_MT9T001},   // MT9T001
-        {.name="mt9p006",    .type=1, .code = SENSOR_MT9P006},   // MT9P006
-        {.name="mt9f002",    .type=1, .code = SENSOR_MT9F002},   // MT9F002
-        {.name="ibis51300",  .type=1, .code = SENSOR_IBIS51300}, // FillFactory IBIS51300
-        {.name="kai11002",   .type=1, .code = SENSOR_KAI11000},  // Kodak KAI11002
-        {.name=NULL,         .type=0, .code = 0} // end of list
+        {.name="detect",     .type=3, .iface=NONE,       .code = 0},                // to be automatically detected
+        {.name="none",       .type=3, .iface=NONE,       .code = SENSOR_NONE},      // no device attached
+        {.name="mux10359",   .type=2, .iface=PARALLEL12, .code = SENSOR_MUX_10359}, // no device attached
+        {.name="zr32112",    .type=1, .iface=PARALLEL12, .code = SENSOR_ZR32112},   // Zoran ZR32112
+        {.name="zr32212",    .type=1, .iface=PARALLEL12, .code = SENSOR_ZR32212},   // Zoran ZR32212
+        {.name="kac1310",    .type=1, .iface=PARALLEL12, .code = SENSOR_KAC1310},   // Kodak KAC1310
+        {.name="kac5000",    .type=1, .iface=PARALLEL12, .code = SENSOR_KAC5000},   // Kodak KAC5000
+        {.name="mi1300",     .type=1, .iface=PARALLEL12, .code = SENSOR_MI1300},    // Micron MI1300
+        {.name="mt9m001",    .type=1, .iface=PARALLEL12, .code = SENSOR_MT9M001},   // MT9M001
+        {.name="mt9d001",    .type=1, .iface=PARALLEL12, .code = SENSOR_MT9D001},   // MT9D001
+        {.name="mt9t001",    .type=1, .iface=PARALLEL12, .code = SENSOR_MT9T001},   // MT9T001
+        {.name="mt9p006",    .type=1, .iface=PARALLEL12, .code = SENSOR_MT9P006},   // MT9P006
+        {.name="mt9f002",    .type=1, .iface=HISPI4,     .code = SENSOR_MT9F002},   // MT9F002
+        {.name="ibis51300",  .type=1, .iface=PARALLEL12, .code = SENSOR_IBIS51300}, // FillFactory IBIS51300
+        {.name="kai11002",   .type=1, .iface=PARALLEL12, .code = SENSOR_KAI11000},  // Kodak KAI11002
+        {.name=NULL,         .type=0, .iface=NONE,       .code = 0} // end of list
 };
+static sens_iface_t port_iface[SENSOR_PORTS];
 //#define DETECT_SENSOR 1 ///< Include sensors, May be OR-ed when looking for sensor/multiplexer code/name
 //#define DETECT_MUX 2    ///< Include multiplexers, May be OR-ed when looking for sensor/multiplexer code/name
 
@@ -111,6 +115,20 @@ const char * get_name_by_code(int code, ///< sensor code
     return NULL;
 }
 
+/** Get sensor/multiplexer interface type by code */
+sens_iface_t get_iface_by_code(int code, ///< sensor code
+                               int type) ///< valid type [DETECT_SENSOR]|[DETECT_MUX]
+                                         ///< @return sensor name or NULL for invalid code
+{
+    int i;
+    for (i = 0; sensor_names[i].name; i++){
+        if ((sensor_names[i].type & type) && (sensor_names[i].code == code)){
+            return sensor_names[i].iface;
+        }
+    }
+    return NONE;
+}
+
 
 /** Get sensor port multiplexer type */
 int get_detected_mux_code(int port) ///< Sensor port number (0..3)
@@ -120,11 +138,58 @@ int get_detected_mux_code(int port) ///< Sensor port number (0..3)
 }
 /** Get sensor type */
 int get_detected_sensor_code(int port,    ///< Sensor port number (0..3)
-                             int sub_chn) ///< Sensor subchannel (0..3)
+                             int sub_chn) ///< Sensor subchannel (0..3), -1 - use first defined sub channel
                                           ///< @return sensor code (SENSOR_DETECT, SENSOR_NONE, or SENSOR_*)
 {
-    return sensorPortConfig[port&3].sensor[sub_chn & 3];
+    int nchn,code;
+    port &= 3;
+    if (sub_chn >= 0)
+        return sensorPortConfig[port].sensor[sub_chn & 3];
+    // Negative sensor - find first defined
+    nchn = (get_detected_mux_code(port) == SENSOR_NONE)? 1: MAX_SENSORS;
+    for (sub_chn = 0; sub_chn < nchn; sub_chn++){
+        code = sensorPortConfig[port].sensor[sub_chn];
+        if ((code != SENSOR_DETECT) && (code != SENSOR_NONE))
+            return code;
+    }
+    return SENSOR_NONE;
 }
+
+/** Gert configured  sensorport subchannels */
+int get_subchannels(int port) ///< Sensor port
+                              ///< @return bitmask of available channels
+{
+    int sub_chn, chn_mask = 0;
+    int nchn = (get_detected_mux_code(port) == SENSOR_NONE)? 1: MAX_SENSORS;
+    for (sub_chn = 0; sub_chn < nchn; sub_chn++){
+        if ((sensorPortConfig[port].sensor[sub_chn]!= SENSOR_DETECT) && (sensorPortConfig[port].sensor[sub_chn] != SENSOR_NONE)) {
+            chn_mask |= 1 << sub_chn;
+        }
+    }
+    return chn_mask;
+
+}
+
+
+/** Update per-port interface type after changing sensor/multiplexer */
+void update_port_iface(int port)  ///< Sensor port number (0..3)
+{
+    sens_iface_t iface = get_iface_by_code(get_detected_mux_code(port), DETECT_MUX);
+    if (iface != NONE) {
+        port_iface[port] = iface;
+        return;
+    }
+    port_iface[port] = get_iface_by_code(get_detected_sensor_code(port,-1), DETECT_MUX); // '-1' - any subchannel
+}
+
+/** Get per-port interface type */
+sens_iface_t get_port_interface(int port)  ///< Sensor port number (0..3)
+                                           ///< @ return interface type (none, parallel12, hispi4
+{
+    return port_iface[port];
+}
+
+
 
 /** Set sensor port multiplexer type */
 int set_detected_mux_code(int port,      ///< Sensor port number (0..3)
@@ -138,6 +203,7 @@ int set_detected_mux_code(int port,      ///< Sensor port number (0..3)
         return -EINVAL;
     }
     sensorPortConfig[port & 3].mux = mux_type;
+    update_port_iface(port);
     return 0;
 }
 
@@ -154,6 +220,7 @@ int set_detected_sensor_code(int port,      ///< Sensor port number (0..3)
         return -EINVAL;
     }
     sensorPortConfig[port & 3].sensor[sub_chn] = sens_type;
+    update_port_iface(port);
     return 0;
 }
 
@@ -182,7 +249,7 @@ static int get_channel_sub_from_name(struct device_attribute *attr) ///< Linux k
 static ssize_t show_port_mux(struct device *dev, struct device_attribute *attr, char *buf)
 {
     int i;
-    const char * name = get_name_by_code(sensorPortConfig[get_channel_from_name(attr)].mux, DETECT_MUX);
+    const char * name = get_name_by_code(get_detected_mux_code(get_channel_from_name(attr)), DETECT_MUX);
     if (name) return sprintf(buf,"%s\n", name);
     // Should never get here
     return sprintf(buf,"0x%x\n", sensorPortConfig[get_channel_from_name(attr)].mux);
@@ -193,7 +260,7 @@ static ssize_t show_sensor(struct device *dev, struct device_attribute *attr, ch
     int psch = get_channel_sub_from_name(attr);
     int port = (psch>>4) &3;
     int sub_chn = psch &3;
-    const char * name = get_name_by_code(sensorPortConfig[port].sensor[sub_chn], DETECT_SENSOR);
+    const char * name = get_name_by_code(get_detected_sensor_code(port,sub_chn), DETECT_SENSOR);
     if (name) return sprintf(buf,"%s\n", name);
     // Should never get here
     return sprintf(buf,"0x%x\n", sensorPortConfig[(psch>>4) & 3].sensor[psch & 3]);

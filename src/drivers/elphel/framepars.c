@@ -146,7 +146,7 @@ wait_queue_head_t       aframepars_wait_queue[SENSOR_PORTS];// used to wait for 
 
 /* Remove after compilation OK */
 struct sensorproc_t * sensorproc = NULL;
-//void camera_interrupts (int on) {}
+//void compressor_interrupts (int on) {}
 #if 0
 #define wait_event_interruptible(wq, condition)				\
 ({									\
@@ -352,6 +352,16 @@ inline unsigned long get_imageParamsPrev(int sensor_port, int n)
 {
 	return aframepars[sensor_port][(thisFrameNumber(sensor_port) - 1) & PARS_FRAMES_MASK].pars[n];
 }
+
+/** Reads past parameters (small subset of all) fro absolute frame number */
+inline unsigned long get_imageParamsPast(int sensor_port, ///< sensor port (0..3)
+                                         int n,           ///< parameter index (should be 128..143)
+                                         int frame)       ///< absolute frame number
+{
+    return apastpars[sensor_port][frame & PASTPARS_SAVE_ENTRIES_MASK].past_pars[n-PARS_SAVE_FROM];
+}
+
+
 
 /**
  * @brief writes read-only parameter to the current frame (does not propagate to next frames as setFramePar() does)
@@ -1181,11 +1191,12 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 					break;
 				case LSEEK_INTERRUPT_OFF: // disable camera interrupts
 					MDF2(printk("LSEEK_INTERRUPT_OFF\n"));
-					camera_interrupts(0);
+//					compressor_interrupts(0,sensor_port);
+                    sensor_interrupts(0,sensor_port);
 					break;
 				case LSEEK_INTERRUPT_ON: // enable camera interrupts
-					MDF2(printk("LSEEK_INTERRUPT_ON\n"));
-					camera_interrupts(1);
+//					MDF2(printk("LSEEK_INTERRUPT_ON\n"));
+					sensor_interrupts(1,sensor_port);
 					break;
 				}
 			}

@@ -24,6 +24,7 @@
 
  */
 
+#define I2C359_CLK_NUMBER 4 ///< OK with NC393, clock is ANDed with 3
 
 //multisensor.h
 //#define I2C359_INC                    2   //< slave address increment between sensors in 10359A board (broadcast, 1,2,3) (7 bits SA) moved to sensor_common

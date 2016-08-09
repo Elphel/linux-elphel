@@ -113,8 +113,6 @@
 //#include "fpga_io.h"//fpga_table_write_nice
 #include "framepars.h"        // for debug mask
 #include <elphel/elphel393-mem.h>
-#include "legacy_defines.h" // temporarily
-//#include "cc3x3.h"
 #include "x393.h"
 #include "histograms.h"
 

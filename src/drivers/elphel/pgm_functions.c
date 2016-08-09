@@ -210,17 +210,9 @@
 #include "pgm_functions.h"
 #include "jpeghead.h"      // to program FPGA Huffman tables
 #include "x393.h"
-//  #include "legacy_defines.h" // temporarily
 #include "sensor_i2c.h"
 #include "x393_videomem.h"
-#define COLOR_MARGINS 2 // add this many pixels each side
-#define X313_TIMESTAMPLEN 28 // pixels used for timestamp (in linescan mode added after the line)
-#define X393_TILEHOR 16
-#define X393_TILEVERT 16
-#define X393_MAXWIDTH       65536 // 4096 // multiple of 128
-#define X393_MAXHEIGHT      65536 // 16384 // multiple of 16 - unsafe - not enough room for black level subtraction
-#define X393_MAXHEIGHT_SAFE 65536 // 4096 // multiple of 16  OK for black level subtraction TODO: disable black level if unsafe
-
+#include "detect_sensors.h"
 
 /**
  * @brief optional debug output macros
@@ -345,172 +337,238 @@ int add_sensor_proc(int index, int (*sens_func)(int sensor_port, struct sensor_t
  * - set sensor structure (capabilities),
  * - set function pointers (by directly calling sensor specific \b *_pgm_detectsensor */
 int pgm_detectsensor   (int sensor_port,               ///< sensor port number (0..3)
-						struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
-						struct framepars_t * thispars, ///< sensor current parameters
-						struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
-						int frame16)                   ///< 4-bit (hardware) frame number parameters should
-													   ///< be applied to,  negative - ASAP
-													   ///< @return OK - 0, <0 - error
+        struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+        struct framepars_t * thispars, ///< sensor current parameters
+        struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+        int frame16)                   ///< 4-bit (hardware) frame number parameters should
+///< be applied to,  negative - ASAP
+///< @return OK - 0, <0 - error
 
 {
-  int was_sensor_freq;
-  int qperiod;
-  int i2cbytes;
-  int phase;
+    x393_camsync_mode_t camsync_mode = {.d32=0};
+    int was_sensor_freq;
+    int qperiod;
+    int i2cbytes;
+    int phase;
+    int mux;
 
-  MDF3(printk(" frame16=%d\n",frame16));
-  if (frame16 >= 0) return -1; // can only work in ASAP mode
-  if (thispars->pars[P_SENSOR]) return 0; // Sensor is already detected - do not bother (to re-detect it P_SENSOR should be set to 0)
-// no other initializations, just the sensor-related stuff (starting with lowest sensor clock)
-// stop hardware i2c controller, so it will not get stuck when waiting for !busy
+    MDF3(printk(" frame16=%d\n",frame16));
+    if (frame16 >= 0) return -1; // can only work in ASAP mode
+    if (thispars->pars[P_SENSOR]) return 0; // Sensor is already detected - do not bother (to re-detect it P_SENSOR should be set to 0)
+    // no other initializations, just the sensor-related stuff (starting with lowest sensor clock)
+    // stop hardware i2c controller, so it will not get stuck when waiting for !busy
 #ifndef NC353
-  // NC393 - nothing to do here - use a separate module for sensor setup: DT, sysfs, something else (add pin pullup/down)
-  return 0;
+    // NC393 - nothing to do here - use a separate module for sensor setup: DT, sysfs, something else (add pin pullup/down)
+    // currently assign same sensor to all subchannles (first present)
+    thispars->pars[P_SENSOR] = get_detected_sensor_code(sensor_port, -1); // "-1" - first detected sensor
+    GLOBALPARS(sensor_port, G_SUBCHANNELS) = get_subchannels(sensor_port);
+    mux = get_detected_mux_code(sensor_port); // none/detect/10359
+    if ((mux == SENSOR_NONE) && (thispars->pars[P_SENSOR] == SENSOR_NONE))
+        return 0; // no sensor/mux enabled on this port
+    //TODO NC393: turn on both sequencers why MRST is active, then i2c frame will definitely match ? Or is it already done in FPGA?
+    sequencer_stop_run_reset(sensor_port, SEQ_CMD_RESET);
+    sequencer_stop_run_reset(sensor_port, SEQ_CMD_RUN);  // also programs status update
+    i2c_stop_run_reset      (sensor_port, I2C_CMD_RESET);
+    i2c_drive_mode          (sensor_port, SDA_DRIVE_HIGH, SDA_RELEASE);
+    i2c_stop_run_reset      (sensor_port, I2C_CMD_RUN); // also programs status update
+
+    camsync_mode.trig =     0;
+    camsync_mode.trig_set = 1;
+    camsync_mode.ext =      1; // use external timestamp (default)
+    camsync_mode.ext_set =  1;
+    x393_camsync_mode (camsync_mode);
+
+    //     printk("trying MT9P001\n");
+    //      mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
+
+    if (mux != SENSOR_NONE) {
+        // try multisensor here (before removing MRST)
+        multisensor_pgm_detectsensor (sensor_port, sensor,  thispars, prevpars, frame16);  // multisensor
+    }
+    if (thispars->pars[P_SENSOR]==0) { // multisensor not detected
+        printk("removing MRST from the sensor\n");
+        //             CCAM_MRST_OFF;
+        printk("trying MT9P001\n");
+        mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
+    }
+
+
+    if (thispars->pars[P_SENSOR] == SENSOR_DETECT) {
+        sensor->sensorType=SENSOR_NONE;                 // to prevent from initializing again
+        printk("No image sensor found\r\n");
+    }
+    setFramePar(sensor_port, thispars, P_SENSOR_WIDTH,   sensor->imageWidth);  // Maybe get rid of duplicates?
+    setFramePar(sensor_port, thispars, P_SENSOR_HEIGHT,  sensor->imageHeight); // Maybe get rid of duplicates?
+    if (sensor->i2c_period==0) sensor->i2c_period=2500;           // SCL period in ns, (standard i2c - 2500)
+    qperiod=thispars->pars[P_I2C_QPERIOD];
+    if (qperiod==0) qperiod=(sensor->i2c_period * (thispars->pars[P_CLK_FPGA]/1000))/4000000;
+    setFramePar(sensor_port, thispars, P_I2C_QPERIOD | FRAMEPAIR_FORCE_NEWPROC,  qperiod); // force i2c
+    i2cbytes=thispars->pars[P_I2C_BYTES];
+    if (i2cbytes==0) i2cbytes=sensor->i2c_bytes;
+    setFramePar(sensor_port, thispars, P_I2C_BYTES | FRAMEPAIR_FORCE_NEWPROC,  i2cbytes); // force i2c
+    // restore/set sensor clock
+    if ((was_sensor_freq < sensor->minClockFreq) || (was_sensor_freq > sensor->maxClockFreq)) was_sensor_freq=sensor->nomClockFreq;
+    setFramePar(sensor_port, thispars, P_CLK_SENSOR | FRAMEPAIR_FORCE_NEWPROC,  was_sensor_freq); // will schedule clock/phase adjustment
+    phase=thispars->pars[P_SENSOR_PHASE];
+    // TODO: remove phase adjustment from here
+    if (phase==0) {
+        phase= 0x40000;
+        setFramePar(sensor_port, thispars, P_SENSOR_PHASE | FRAMEPAIR_FORCE_NEWPROC,  phase); // will schedule clock/phase adjustment
+    }
+    setFramePar(sensor_port, thispars, P_IRQ_SMART | FRAMEPAIR_FORCE_NEWPROC,  3);        // smart IRQ mode programming (and enable interrupts)
+
+    // NOTE: sensor detected - enabling camera interrupts here (actual interrupts will start later)
+    // Here interrupts are disabled - with compressor_interrupts (0) earlier in this function)
+
+    compressor_interrupts (1,sensor_port);
+    sensor_interrupts     (1,sensor_port);
+    return 0;
+
 #else
 
-// NOTE: disabling interrupts here !!!
-  camera_interrupts (0);
-  MDF1(printk("Disabled camera interrupts\n"));
+    // NOTE: disabling interrupts here !!!
+    compressor_interrupts (0);
+    MDF1(printk("Disabled camera interrupts\n"));
 
-// This 3 initialization commands were not here, trying to temporarily fix problem when WP was 8/16 words higher than actual data in DMA buffer
-  if (GLOBALPARS(sensor_port, G_TEST_CTL_BITS) & (1<< G_TEST_CTL_BITS_RESET_DMA_COMPRESSOR )) {
-    MDF1(printk("x313_dma_stop()\n"));
-///    x313_dma_stop();
-    MDF1(printk("x313_dma_init()\n"));
-///    x313_dma_init();
-    MDF1(printk("reset_compressor()\n"));
-    reset_compressor(sensor_port);
-  }
+    // This 3 initialization commands were not here, trying to temporarily fix problem when WP was 8/16 words higher than actual data in DMA buffer
+    if (GLOBALPARS(sensor_port, G_TEST_CTL_BITS) & (1<< G_TEST_CTL_BITS_RESET_DMA_COMPRESSOR )) {
+        MDF1(printk("x313_dma_stop()\n"));
+        ///    x313_dma_stop();
+        MDF1(printk("x313_dma_init()\n"));
+        ///    x313_dma_init();
+        MDF1(printk("reset_compressor()\n"));
+        reset_compressor(sensor_port);
+    }
 
-// TODO: Add 10347 detection here //   if (IS_KAI11000) return init_KAI11000();
-// Need to set slow clock
-//  f1=imageParamsR[P_CLK_SENSOR]=20000000; setClockFreq(1, imageParamsR[P_CLK_SENSOR]); X3X3_RSTSENSDCM;
+    // TODO: Add 10347 detection here //   if (IS_KAI11000) return init_KAI11000();
+    // Need to set slow clock
+    //  f1=imageParamsR[P_CLK_SENSOR]=20000000; setClockFreq(1, imageParamsR[P_CLK_SENSOR]); X3X3_RSTSENSDCM;
 
-   was_sensor_freq=getClockFreq(1); // using clock driver data, not thispars
-   setFramePar(sensor_port, thispars, P_CLK_FPGA,  getClockFreq(0)); // just in case - read the actual fpga clock frequency and store it (no actions)
-   setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
-   setClockFreq(1, thispars->pars[P_CLK_SENSOR]);
-   printk("\nsensor clock set to %d\n",(int) thispars->pars[P_CLK_SENSOR]);
-   udelay (100);// 0.0001 sec to stabilize clocks
-   X3X3_RSTSENSDCM; // FPGA DCM can fail after clock change, needs to be reset
-   X3X3_SENSDCM_CLK2X_RESET; // reset pclk2x DCM also
-   mdelay (50);// 0.05 sec to stabilize clocks
-// setting reasonable state of the control signals
-   CCAM_DCLK_ON;
-   CCAM_CNVEN_OFF;
-   CCAM_NEGRST;  ///set negative MRST polarity
-   CCAM_MRST_ON;
-   CCAM_TRIG_INT;
-   CCAM_EXTERNALTS_EN; // Maybe use default as enabled - yes, it will not be active if not available
-   udelay (100); // apply clock before removing MRS
-// first trying MT9P001 that does not need converter
-// try multisensor here (before removing MRST)
-   if (thispars->pars[P_SENSOR]==0) multisensor_pgm_detectsensor (sensor_port, sensor,  thispars, prevpars, frame16);  // multisensor
-   if (thispars->pars[P_SENSOR]==0) {
-     printk("removing MRST from the sensor\n");
-     CCAM_MRST_OFF;
-   }
-   if (thispars->pars[P_SENSOR]==0) {
-      mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
-      printk("trying MT9P001\n");
-   }
+    was_sensor_freq=getClockFreq(1); // using clock driver data, not thispars
+    setFramePar(sensor_port, thispars, P_CLK_FPGA,  getClockFreq(0)); // just in case - read the actual fpga clock frequency and store it (no actions)
+    setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
+    setClockFreq(1, thispars->pars[P_CLK_SENSOR]);
+    printk("\nsensor clock set to %d\n",(int) thispars->pars[P_CLK_SENSOR]);
+    udelay (100);// 0.0001 sec to stabilize clocks
+    X3X3_RSTSENSDCM; // FPGA DCM can fail after clock change, needs to be reset
+    X3X3_SENSDCM_CLK2X_RESET; // reset pclk2x DCM also
+    mdelay (50);// 0.05 sec to stabilize clocks
+    // setting reasonable state of the control signals
+    CCAM_DCLK_ON;
+    CCAM_CNVEN_OFF;
+    CCAM_NEGRST;  ///set negative MRST polarity
+    CCAM_MRST_ON;
+    CCAM_TRIG_INT;
+    CCAM_EXTERNALTS_EN; // Maybe use default as enabled - yes, it will not be active if not available
+    udelay (100); // apply clock before removing MRS
+    // first trying MT9P001 that does not need converter
+    // try multisensor here (before removing MRST)
+    if (thispars->pars[P_SENSOR]==0) multisensor_pgm_detectsensor (sensor_port, sensor,  thispars, prevpars, frame16);  // multisensor
+    if (thispars->pars[P_SENSOR]==0) {
+        printk("removing MRST from the sensor\n");
+        CCAM_MRST_OFF;
+    }
+    if (thispars->pars[P_SENSOR]==0) {
+        mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
+        printk("trying MT9P001\n");
+    }
 
-// temporary - disabling old sensors
+    // temporary - disabling old sensors
 #define ENABLE_OLD_SENSORS 1
 #ifdef ENABLE_OLD_SENSORS
-   if (thispars->pars[P_SENSOR]==0)  { // no - it is not MT9P001)
-   printk("trying other MT9X001\n");
-   CCAM_CNVEN_ON;
-//     CCAM_ARST_ON; ///MT9P001 expects ARST==0 (STANDBY) - done inside mt9x001.c
-// enable output for power converter signals
-// This should be done first!!!
-// printk ("Will Turn DC power for the sensor after 1 sec delay...\n");  udelay (1000000);
-// turning on DC-DC converter may cause system to reboot because of a power spike, so start slow
+    if (thispars->pars[P_SENSOR]==0)  { // no - it is not MT9P001)
+        printk("trying other MT9X001\n");
+        CCAM_CNVEN_ON;
+        //     CCAM_ARST_ON; ///MT9P001 expects ARST==0 (STANDBY) - done inside mt9x001.c
+        // enable output for power converter signals
+        // This should be done first!!!
+        // printk ("Will Turn DC power for the sensor after 1 sec delay...\n");  udelay (1000000);
+        // turning on DC-DC converter may cause system to reboot because of a power spike, so start slow
 #ifdef NC353
         port_csp0_addr[X313_WA_DCDC] = 0x44; // 48 - enough, 41 - ok - was 0x61; //
         printk ("sensor power set low\r\n ");
-     mdelay (10); // Wait voltage to come up (~10 ms)
+        mdelay (10); // Wait voltage to come up (~10 ms)
         printk ("will set to 0x41\r\n");
-     mdelay (10); // to find the problem
+        mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x41; // 
         printk ("will set to 0x30\r\n");
-     mdelay (10); // to find the problem
+        mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x30; //
         printk ("will set to 0x28\r\n");
-     mdelay (10); // to find the problem
+        mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x28; //
         printk ("will set to 0x24\r\n");
-     mdelay (10); // to find the problem
+        mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x24; //
         printk ("will set to 0x22\r\n");
-     mdelay (10); // to find the problem
+        mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x22; //
-     mdelay (10); // to find the problem
+        mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x10; // now - full frequency (same as 0x21). Slow that down if the sensor clock is above 20MHz (i.e.0x22 for 40MHz)
         printk (".. full\r\n");
-     mdelay (10); // Wait voltage to stabilize
-     CCAM_POSRST;  //set positive MRST polarity (default)
-     udelay (100); // apply clock before removing MRST
-     CCAM_MRST_OFF;
+        mdelay (10); // Wait voltage to stabilize
+        CCAM_POSRST;  //set positive MRST polarity (default)
+        udelay (100); // apply clock before removing MRST
+        CCAM_MRST_OFF;
 #endif
-   }
+    }
 
 #ifdef CONFIG_ETRAX_ELPHEL_KAC1310
-   if (thispars->pars[P_SENSOR]==0) kac1310_pgm_detectsensor(sensor,  thispars, prevpars, frame16);  // try KAC-1310 (does not exist anymore)
+    if (thispars->pars[P_SENSOR]==0) kac1310_pgm_detectsensor(sensor,  thispars, prevpars, frame16);  // try KAC-1310 (does not exist anymore)
 #endif
 #ifdef CONFIG_ETRAX_ELPHEL_IBIS51300
-   if (thispars->pars[P_SENSOR]==0) ibis1300_pgm_detectsensor(sensor,  thispars, prevpars, frame16); // try IBIS5-1300 (software dead)
+    if (thispars->pars[P_SENSOR]==0) ibis1300_pgm_detectsensor(sensor,  thispars, prevpars, frame16); // try IBIS5-1300 (software dead)
 #endif
-// invert MRST for other sensors
-   if (thispars->pars[P_SENSOR]==0) {
-     CCAM_NEGRST;  //set negative MRST polarity
-printk ("Inverted MRST\n");
-      udelay (100);
-   }
+    // invert MRST for other sensors
+    if (thispars->pars[P_SENSOR]==0) {
+        CCAM_NEGRST;  //set negative MRST polarity
+        printk ("Inverted MRST\n");
+        udelay (100);
+    }
 #ifdef CONFIG_ETRAX_ELPHEL_MT9X001
-   if (thispars->pars[P_SENSOR]==0)  printk("trying MT9X001\n");
-   if (thispars->pars[P_SENSOR]==0) mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 1.3/2.0/3.0 Mpixel
+    if (thispars->pars[P_SENSOR]==0)  printk("trying MT9X001\n");
+    if (thispars->pars[P_SENSOR]==0) mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 1.3/2.0/3.0 Mpixel
 #endif
 #ifdef CONFIG_ETRAX_ELPHEL_KAC1310
-   if (thispars->pars[P_SENSOR]==0) kac5000_pgm_detectsensor(sensorsensor_port, sensor,  thispars, prevpars, frame16);  // try KAC-5000
+    if (thispars->pars[P_SENSOR]==0) kac5000_pgm_detectsensor(sensorsensor_port, sensor,  thispars, prevpars, frame16);  // try KAC-5000
 #endif
 #ifdef CONFIG_ETRAX_ELPHEL_ZR32112
-   if (thispars->pars[P_SENSOR]==0) zr32112_pgm_detectsensor(sensorsensor_port, sensor,  thispars, prevpars, frame16); // try ZR32112
+    if (thispars->pars[P_SENSOR]==0) zr32112_pgm_detectsensor(sensorsensor_port, sensor,  thispars, prevpars, frame16); // try ZR32112
 #endif
 #ifdef CONFIG_ETRAX_ELPHEL_ZR32212
-   if (thispars->pars[P_SENSOR]==0) zr32212_pgm_detectsensor(sensorsensor_port, sensor,  thispars, prevpars, frame16); // try ZR32212
+    if (thispars->pars[P_SENSOR]==0) zr32212_pgm_detectsensor(sensorsensor_port, sensor,  thispars, prevpars, frame16); // try ZR32212
 #endif
 #endif // ENABLE_OLD_SENSORS *************** temporary disabling other sensors ********************
 
-   if (thispars->pars[P_SENSOR]==0) {
-     sensor->sensorType=SENSOR_NONE;                 // to prevent from initializing again
-     printk("No image sensor found\r\n");
-   }
-   setFramePar(sensor_port, thispars, P_SENSOR_WIDTH,   sensor->imageWidth);  // Maybe get rid of duplicates?
-   setFramePar(sensor_port, thispars, P_SENSOR_HEIGHT,  sensor->imageHeight); // Maybe get rid of duplicates?
-   if (sensor->i2c_period==0) sensor->i2c_period=2500;           // SCL period in ns, (standard i2c - 2500)
-   qperiod=thispars->pars[P_I2C_QPERIOD];
-   if (qperiod==0) qperiod=(sensor->i2c_period * (thispars->pars[P_CLK_FPGA]/1000))/4000000;
-   setFramePar(sensor_port, thispars, P_I2C_QPERIOD | FRAMEPAIR_FORCE_NEWPROC,  qperiod); // force i2c
-   i2cbytes=thispars->pars[P_I2C_BYTES];
-   if (i2cbytes==0) i2cbytes=sensor->i2c_bytes;
-   setFramePar(sensor_port, thispars, P_I2C_BYTES | FRAMEPAIR_FORCE_NEWPROC,  i2cbytes); // force i2c
-// restore/set sensor clock
-   if ((was_sensor_freq < sensor->minClockFreq) || (was_sensor_freq > sensor->maxClockFreq)) was_sensor_freq=sensor->nomClockFreq;
-   setFramePar(sensor_port, thispars, P_CLK_SENSOR | FRAMEPAIR_FORCE_NEWPROC,  was_sensor_freq); // will schedule clock/phase adjustment
-   phase=thispars->pars[P_SENSOR_PHASE];
-// TODO: remove phase adjustment from here
-   if (phase==0) {
-     phase= 0x40000; 
-     setFramePar(sensor_port, thispars, P_SENSOR_PHASE | FRAMEPAIR_FORCE_NEWPROC,  phase); // will schedule clock/phase adjustment
-   }
-   setFramePar(sensor_port, thispars, P_IRQ_SMART | FRAMEPAIR_FORCE_NEWPROC,  3);        // smart IRQ mode programming (and enable interrupts)
+    if (thispars->pars[P_SENSOR]==0) {
+        sensor->sensorType=SENSOR_NONE;                 // to prevent from initializing again
+        printk("No image sensor found\r\n");
+    }
+    setFramePar(sensor_port, thispars, P_SENSOR_WIDTH,   sensor->imageWidth);  // Maybe get rid of duplicates?
+    setFramePar(sensor_port, thispars, P_SENSOR_HEIGHT,  sensor->imageHeight); // Maybe get rid of duplicates?
+    if (sensor->i2c_period==0) sensor->i2c_period=2500;           // SCL period in ns, (standard i2c - 2500)
+    qperiod=thispars->pars[P_I2C_QPERIOD];
+    if (qperiod==0) qperiod=(sensor->i2c_period * (thispars->pars[P_CLK_FPGA]/1000))/4000000;
+    setFramePar(sensor_port, thispars, P_I2C_QPERIOD | FRAMEPAIR_FORCE_NEWPROC,  qperiod); // force i2c
+    i2cbytes=thispars->pars[P_I2C_BYTES];
+    if (i2cbytes==0) i2cbytes=sensor->i2c_bytes;
+    setFramePar(sensor_port, thispars, P_I2C_BYTES | FRAMEPAIR_FORCE_NEWPROC,  i2cbytes); // force i2c
+    // restore/set sensor clock
+    if ((was_sensor_freq < sensor->minClockFreq) || (was_sensor_freq > sensor->maxClockFreq)) was_sensor_freq=sensor->nomClockFreq;
+    setFramePar(sensor_port, thispars, P_CLK_SENSOR | FRAMEPAIR_FORCE_NEWPROC,  was_sensor_freq); // will schedule clock/phase adjustment
+    phase=thispars->pars[P_SENSOR_PHASE];
+    // TODO: remove phase adjustment from here
+    if (phase==0) {
+        phase= 0x40000;
+        setFramePar(sensor_port, thispars, P_SENSOR_PHASE | FRAMEPAIR_FORCE_NEWPROC,  phase); // will schedule clock/phase adjustment
+    }
+    setFramePar(sensor_port, thispars, P_IRQ_SMART | FRAMEPAIR_FORCE_NEWPROC,  3);        // smart IRQ mode programming (and enable interrupts)
 
-   // NOTE: sensor detected - enabling camera interrupts here (actual interrupts will start later)
-// Here interrupts are disabled - with camera_interrupts (0) earlier in this function)
+    // NOTE: sensor detected - enabling camera interrupts here (actual interrupts will start later)
+    // Here interrupts are disabled - with compressor_interrupts (0) earlier in this function)
 
-   camera_interrupts (1);
-   return 0;
+    compressor_interrupts (1);
+    return 0;
 #endif
 }
 
@@ -616,6 +674,7 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
 
 {
 #ifndef NC353
+    x393_sensio_ctl_t  sensio_ctl = {.d32=0};
     x393_sensio_tim0_t sensio_tim0 = {.d32=0};
     x393_sensio_tim1_t sensio_tim1 = {.d32=0};
     x393_sensio_tim2_t sensio_tim2 = {.d32=0};
@@ -626,6 +685,7 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
         sensio_tim0.d32 = thispars->pars[P_SENSOR_IFACE_TIM0];
 //        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim0, sensio_tim0);
         set_x393_sensio_tim0  (sensio_tim0, sensor_port); // write directly, sequencer may be not operational
+        sensio_ctl.set_dly = 1;
         MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim0,  0x%x)\n", sensor_port, frame16, sensio_tim0.d32));
 
     }
@@ -633,21 +693,35 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
         sensio_tim1.d32 = thispars->pars[P_SENSOR_IFACE_TIM1];
 //        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim1, sensio_tim1);
         set_x393_sensio_tim1  (sensio_tim1, sensor_port); // write directly, sequencer may be not operational
+        sensio_ctl.set_dly = 1;
         MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim1,  0x%x)\n", sensor_port, frame16, sensio_tim1 .d32));
     }
     if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM2)) {
         sensio_tim2.d32 = thispars->pars[P_SENSOR_IFACE_TIM2];
 //        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim2, sensio_tim2);
         set_x393_sensio_tim2  (sensio_tim2, sensor_port); // write directly, sequencer may be not operational
+        sensio_ctl.set_dly = 1;
         MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim2,  0x%x)\n", sensor_port, frame16, sensio_tim2.d32));
     }
     if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM3)) {
         sensio_tim3.d32 = thispars->pars[P_SENSOR_IFACE_TIM3];
 //        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim3, sensio_tim3);
         set_x393_sensio_tim3  (sensio_tim3, sensor_port); // write directly, sequencer may be not operational
+        sensio_ctl.set_dly = 1;
         MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim3,  0x%x)\n", sensor_port, frame16, sensio_tim3.d32));
     }
 
+    if (get_port_interface == PARALLEL12){
+        if (FRAMEPAR_MODIFIED(P_SENSOR_PHASE)) { // for parallel sensor it means quadrants:  90-degree shifts for data [1:0], hact [3:2] and vact [5:4]
+            sensio_ctl.quadrants = thispars->pars[P_SENSOR_PHASE] & 0x3f;
+            sensio_ctl.quadrants_set = 1;
+        }
+        if (sensio_ctl.d32)
+            x393_sensio_ctrl(sensio_ctl, sensor_port);
+
+    } else {
+        /* TODO 393: Add HISPI code */
+    }
     return 0;
 
 #else

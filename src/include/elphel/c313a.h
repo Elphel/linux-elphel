@@ -387,6 +387,7 @@
 #define P_HISTRQ        72       ///< per-frame enabling of histogram calculation - bit 0 - Y (G), bit 2 - C (R,G2,B)
 #define P_TILES         73       ///< Number of 16x16 (20x20) tiles in a compressed frame // 393: Still needed?
 #define P_SENSOR_PHASE  74       ///< packed, low 16 bit - signed fine phase, bits [18:17] - 90-degrees shift
+                                 ///< NC393 parallel12:  6 LSBs mean quadrants:  90-degree shifts for data [1:0], hact [3:2] and vact [5:4]
 #define P_TEMPERATURE_PERIOD  75 ///< period of temperature measurements, ms (normally - multiple seconds)
 #define P_AUTOEXP_ON    76       ///< Autoexposure control (unsigned long on)
 // relative histogram (autoexposure) window (changed from % to 1/0x10000)

@@ -76,6 +76,50 @@ static int sysfs_page[4];            ///< when positive - page locked for exclus
 static struct device *sdev = NULL;   ///< store this device here
 static u32    i2c_read_data[4];      ///< last data read from i2c device
 
+/** I2C sequencer stop/run/reset (also programs status if run)*/
+int i2c_stop_run_reset(int chn,  ///< Sensor port
+                       int cmd)  ///< Command: I2C_CMD_STOP=0 - stop, I2C_CMD_RUN=1 - run, I2C_CMD_RESET=2 - reset
+                                 ///< @return always 0
+{
+    x393_i2c_ctltbl_t i2c_ctl = {.d32=0};
+    x393_status_ctrl_t status_ctrl = {.d32=0};
+
+    switch (cmd){
+    case I2C_CMD_STOP:
+        i2c_ctl.cmd_run = 2;
+        break;
+    case I2C_CMD_RUN:
+        i2c_ctl.cmd_run = 3;
+        status_ctrl.mode = 3; // autoupdate, is anyway set to it when reading i2c
+        break;
+    case I2C_CMD_RESET:
+        i2c_ctl.reset =   1;
+    }
+    if (i2c_ctl.d32)
+        x393_sensi2c_ctrl (i2c_ctl, chn);
+    if (cmd == I2C_CMD_RESET)
+        udelay(1);
+    if (status_ctrl.mode)
+        set_x393_sensi2c_status_ctrl(status_ctrl, chn);
+    return 0;
+}
+EXPORT_SYMBOL_GPL(i2c_stop_run_reset);
+
+/** I2C sequencer drive mode */
+int i2c_drive_mode(int chn,             ///< Sensor port
+                   int sda_drive_high,  ///< Actively drive SDA=1 during second half of SCL=1
+                   int sda_release)     ///< Release SDA early if next bit is SDA=1
+                                        ///< @return always 0
+{
+    x393_i2c_ctltbl_t i2c_ctl = {.d32=0};
+    i2c_ctl.sda_drive_high =    sda_drive_high;
+    i2c_ctl.sda_release =       sda_release;
+    i2c_ctl.drive_ctl =         1;
+    x393_sensi2c_ctrl (i2c_ctl, chn);
+    return 0;
+}
+EXPORT_SYMBOL_GPL(i2c_drive_mode);
+
 /** Mark all i2c pages for each channel as free */
 void i2c_page_alloc_init(void)
 {

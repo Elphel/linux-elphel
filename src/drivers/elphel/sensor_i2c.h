@@ -17,6 +17,14 @@
 
 #ifndef SENSOR_I2C_H
 #define SENSOR_I2C_H
+#define I2C_CMD_STOP  0
+#define I2C_CMD_RUN   1
+#define I2C_CMD_RESET 2
+#define SDA_DRIVE_HIGH 1
+#define SDA_RELEASE    1
+
+
+
 /** I2C device description to be used with i2c sequencer*/
 typedef struct{
 	      char                         name[32];      ///< Device class name (up to 31 characters)
@@ -27,136 +35,29 @@ typedef struct{
 	      int                          scl_khz;       ///< maximal SCL frequency in KHz (currently limited by 200KHz slowest)
 } x393_i2c_device_t;
 
-/** Reserve i2c page (1 of 256) for a sensor port
- * @param chn sensor port number (0..3) */
-int i2c_page_alloc(int chn);
+int i2c_stop_run_reset(int chn, int cmd);
+int i2c_drive_mode    (int chn, int sda_drive_high, int sda_release);
 
-/* Register specific page, can be used with legacy software to register page equal to slave address,
- * and use 0xff for reading. Works with 1byhte addresses and 16-bit data */
-int i2c_page_register(int chn,   // Sensor port
-		              int page);  // page to register (for legacy software, use 7-bit slave address
-		                         // @return 0 on success, -ENOMEM if page is already registered
-
-/* Free i2c page */
-void i2c_page_free(int chn, int page);
-/* Find device list entry by device class name */
-x393_i2c_device_t * xi2c_dev_get(const char * name); // Device class name as string
-
-/* Set i2c table entry to raw data (will just overwrite tbl_mode = 2)*/
-void set_xi2c_raw(int chn,
-	             int page,   // index in lookup table
-				 u32 data);  // Bit delay - number of mclk periods in 1/4 of the SCL period
-
-/* Set i2c table entry for write operation */
-void set_xi2c_wr(int chn,         // sensor port
-		         int page,        // index in lookup table
-				 int sa7,         // slave address (7 bit)
-				 int rah,         // High byte of the i2c register address
-				 int num_bytes,   // Number of bytes to write (1..10)
-				 int bit_delay);  // Bit delay - number of mclk periods in 1/4 of the SCL period
-
-/*
- *  Set i2c table entry for write operation using known devices
- * Get device with xi2c_dev_get(), copy and modify, if needed to
- * offset slave address or change number of bytes to write, SCL frequency
- */
-void set_xi2c_wrc( x393_i2c_device_t * dc,   // device class
-		          int                  chn,  // sensor port
-		          int                  page, // index in lookup table
-				  int                  rah); // High byte of the i2c register address
-
-/*
- * Set i2c table entry for read operation using known devices
- * Get device with xi2c_dev_get(), copy and modify, if needed to
- * offset slave address or change number of bytes to write, SCL frequency
- */
-void set_xi2c_rdc(x393_i2c_device_t * dc,    // device class
-        		 int                 chn,    // sensor port
-				 int                 page);  // index in lookup table
-
-/* Set i2c table entry for read operation */
-void set_xi2c_rd(int chn,
-		         int page,          // index in lookup table
-				 int two_byte_addr, // Number of address bytes (0 - one byte, 1 - two bytes)
-				 int num_bytes,     // Number of bytes to read (1..8, 0 means 8)
-				 int bit_delay);    // Bit delay - number of mclk periods in 1/4 of the SCL period
-
-/* Write one or multiple DWORDs to i2c relative (modulo16) address. Use offs = 0 for immediate (ASAP) command */
-/* Length of data is determined by the page data already preset */
-int write_xi2c_rel (int chn,
-                    int offs,    // 4 bits
-                    u32 * data);
-
-int write_xi2c_abs (int chn,
-                    int offs, // 4 bits
-                    u32 * data);
-/* Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
-void  write_xi2c_reg16  (int chn,
-	 	                 int page,  // page (8 bits)
-                         int addr,  // low 8 bits
-	      				 u32 data); // 16 or 8-bit data (LSB aligned)
-
-/* Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
-void  write_xi2c_reg16_rel (int chn,  // sensor port
-	 	                    int page, // index in the table (8 bits)
-	 	                    int frame, // relative frame number modulo PARS_FRAMES
-                            int addr, // low byte of the register address (high is in the table), 8 bits
-	      				    u32 data); ///< 16 or 8-bit data (LSB aligned)
-
-/* Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
-void  write_xi2c_reg16_abs (int chn,  // sensor port
-	 	                    int page, // index in the table (8 bits)
-	 	                    int frame, // absolute frame number modulo PARS_FRAMES
-                            int addr, // low byte of the register address (high is in the table), 8 bits
-	      				    u32 data); //16 or 8-bit data (LSB aligned)
-
-/* Compatibility with the legacy code: frame <0 - ASAP, >=0 - absolute
- * Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
-void  write_xi2c_reg16_abs_asap (int chn,   // sensor port
-	 	                         int page,  // index in the table (8 bits)
-	 	                         int frame, // absolute frame number modulo PARS_FRAMES
-                                 int addr,  // low byte of the register address (high is in the table), 8 bits
-	      				         u32 data);  // 16 or 8-bit data (LSB aligned)
-
-/* Initiate sensor i2c read in immediate mode (data itself has to be read from FIFO with read_xi2c_fifo)
- * Use slave address from provided class structure. */
-void  read_xi2c (x393_i2c_device_t * dc,     // device class
-		         int chn,
-		         int page,  // page (8 bits)
-                 int addr); // 8/16 bit address
-
-/* Initiate sensor i2c read in immediate mode (data itself has to be read from FIFO with read_xi2c_fifo)*/
-void  read_xi2c_sa7 (int chn,
-		             int page,  // page (8 bits)
-					 int sa7,   // 7-bit i2c slave address
-                     int addr); // 8/16 bit address
-
-/* Read next byte from the channel i2c FIFO. Return byte or -1 if no data available */
-/* Sensor channel status should be in auto update mode (3) */
-int read_xi2c_fifo(int chn);
-
-/* Handling classes of i2c devices */
+int i2c_page_alloc   (int chn);
+int i2c_page_register(int chn,  int page);
+void i2c_page_free   (int chn, int page);
 x393_i2c_device_t * xi2c_dev_get(const char * name);
-
-/* Single-command i2c write/read register using pre-defined device classes */
-int x393_xi2c_write_reg(const char * cname,    // device class name
-						int          chn,      // sensor port number
-				        int          sa7_offs, // slave address (7-bit) offset from the class defined slave address
-				        int          reg_addr, // register address (width is defined by class)
-				        int          data);    // data to write (width is defined by class)
-
-int x393_xi2c_read_reg( const char * cname,    // device class name
-						int          chn,      // sensor port number
-				        int          sa7_offs, // slave address (7-bit) offset from the class defined slave address
-				        int          reg_addr, // register address (width is defined by class)
-				        int *        datap);   // pointer to a data receiver (read data width is defined by class)
-int legacy_read_i2c_reg(int          chn,      // sensor port number
-                        int          page,     // i2c table page registerd for read operation
-                        int          sa7,      // slave address (7-bit) of the device
-                                               // Offset is non-zero when multiple devices of the same class are present.
-                        int          reg_addr, // register address (width is defined by class)
-                        int          len,      // number of bytes to read.
-                        int *        datap);   // pointer to a data receiver (read data width is defined by class)
-                                               // @return 0 on success, < 0 - error (ETIMEDOUT)
-
+void set_xi2c_raw    (int chn, int page, u32 data);
+void set_xi2c_wr     (int chn,int page, int sa7, int rah, int num_bytes, int bit_delay);
+void set_xi2c_wrc    (x393_i2c_device_t * dc, int chn, int page, int rah);
+void set_xi2c_rdc    (x393_i2c_device_t * dc, int chn, int page);
+void set_xi2c_rd     (int chn, int page, int two_byte_addr, int num_bytes, int bit_delay);
+int write_xi2c_rel   (int chn, int offs, u32 * data);
+int write_xi2c_abs   (int chn, int offs, u32 * data);
+void  write_xi2c_reg16  (int chn, int page, int addr, u32 data);
+void  write_xi2c_reg16_rel (int chn, int page, int frame, int addr, u32 data);
+void  write_xi2c_reg16_abs (int chn, int page, int frame, int addr, u32 data);
+void  write_xi2c_reg16_abs_asap (int chn, int page, int frame, int addr, u32 data);
+void  read_xi2c      (x393_i2c_device_t * dc, int chn, int page, int addr);
+void  read_xi2c_sa7  (int chn, int page, int sa7, int addr);
+int   read_xi2c_fifo (int chn);
+x393_i2c_device_t * xi2c_dev_get(const char * name);
+int x393_xi2c_write_reg(const char * cname, int chn, int sa7_offs, int reg_addr, int   data);
+int x393_xi2c_read_reg (const char * cname, int chn, int sa7_offs, int reg_addr, int * datap);
+int legacy_read_i2c_reg(int chn, int page,           int sa7,      int reg_addr, int len, int * datap);
 #endif

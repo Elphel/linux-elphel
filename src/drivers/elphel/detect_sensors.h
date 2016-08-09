@@ -20,9 +20,15 @@
 #define DETECT_SENSOR 1 ///< Include sensors, May be OR-ed when looking for sensor/multiplexer code/name
 #define DETECT_MUX 2    ///< Include multiplexers, May be OR-ed when looking for sensor/multiplexer code/name
 
+typedef enum {NONE,PARALLEL12,HISPI4} sens_iface_t; ///< Sensor port interface type
+
 int          get_code_by_name(const char * name, int type);
 const char * get_name_by_code(int code, int type);
+sens_iface_t get_iface_by_code(int code, int type);
+
 int get_detected_mux_code(int port);
 int get_detected_sensor_code(int port, int sub_chn);
+int get_subchannels(int port);
 int set_detected_mux_code(int port, int mux_type);
 int set_detected_sensor_code(int port, int sub_chn,  int mux_type);
+sens_iface_t get_port_interface(int port);
