@@ -14,7 +14,9 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
- 
+
+#define VIDEOMEM_SENSOR_CHANNEL0     8
+#define VIDEOMEM_COMPRESSOR_CHANNEL0 12
 struct elphel_video_buf_t
 {
     int frame_start[4];      ///< Channel 0 frame start (in bytes)
@@ -30,6 +32,9 @@ int  control_sensor_memory (int num_sensor, int cmd, x393cmd_t x393cmd, int fram
 int setup_compressor_memory (int num_sensor, int window_width,   int window_height, int window_left,
                             int window_top,  int tile_width,     int tile_height,   int tile_vstep,
                             x393cmd_t x393cmd, int frame16);
-int control_compressor_memory (int num_sensor, int cmd, int extra_pages, int disable_need, x393cmd_t x393cmd, int frame16);
+int control_compressor_memory  (int num_sensor, int cmd, int extra_pages, int disable_need, x393cmd_t x393cmd, int frame16);
+int frames_in_buffer_minus_one (int num_sensor);
 
-int frames_in_buffer_minus_one(int num_sensor);
+void memchan_enable            (int chn, int enable);
+void set_memchannel_priority   (int chn, u16 priority);
+u16 get_memchannel_priority    (int chn);

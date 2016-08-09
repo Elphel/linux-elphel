@@ -38,6 +38,7 @@
 static const struct of_device_id elphel393_videomem_of_match[];
 static struct device *g_dev_ptr; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
 wait_queue_head_t videomem_wait_queue;
+static DEFINE_SPINLOCK(lock); // for read-modify-write channel enable
 
 static struct elphel_video_buf_t buffer_settings = { ///< some default settings, same as in DT
         .frame_start =      {0x00000000, 0x08000000, 0x10000000, 0x08000000}, /* Frame starts (in bytes) */
@@ -142,6 +143,7 @@ int  control_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
    case SENSOR_RUN_CONT:
        break;
    case SENSOR_RUN_RESET:
+       mcntrl_mode.enable = 0;
        mcntrl_mode.chn_nreset = 0;
        break;
    default:
@@ -162,7 +164,9 @@ int  control_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
        x393_sens_mcntrl_scanline_mode                  (mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    }
-
+   if (mcntrl_mode.enable){
+       memchan_enable(num_sensor + VIDEOMEM_SENSOR_CHANNEL0, 1); // just enable - nothing will change if it was already enabled. Never disabled
+   }
    return 0;
 }
 
@@ -278,6 +282,7 @@ int control_compressor_memory (int num_sensor,       ///< sensor port number (0.
        break;
    case SENSOR_RUN_RESET:
        mcntrl_mode.chn_nreset = 0;
+       mcntrl_mode.enable = 0;
        break;
    default:
        return -EINVAL;
@@ -297,11 +302,13 @@ int control_compressor_memory (int num_sensor,       ///< sensor port number (0.
        x393_sens_mcntrl_tiled_mode                  (mcntrl_mode,                      num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    }
-
+   if (mcntrl_mode.enable){
+       memchan_enable(num_sensor + VIDEOMEM_COMPRESSOR_CHANNEL0, 1); // just enable - nothing will change if it was already enabled. Never disabled
+   }
    return 0;
 }
 
-/** Return number of rames in videobuffer for the sesnor port minus 1 (0 means single frame buffer) */
+/** Return number of rfames in videobuffer for the sensor port minus 1 (0 means single frame buffer) */
 int frames_in_buffer_minus_one(int num_sensor) ///< sensor port number (0..3)
                                                ///< @return number of frames in buffer - 1 (<0 for disabled channels ?)
 {
@@ -309,10 +316,49 @@ int frames_in_buffer_minus_one(int num_sensor) ///< sensor port number (0..3)
 
 }
 
+/** Enable/disable extrenal memory channel. Uses read-modify-write, so does not work through the sequencer */
+void memchan_enable(int chn,    ///< External memory channel (0..15)
+                    int enable) ///< 1 - enable, 0 - disable
+{
+    x393_mcntr_chn_en_t chn_en;
+    spin_lock(&lock);
+    chn_en= get_x393_mcntrl_chn_en();
+    if (enable){
+        chn_en.chn_en |= 1 << chn;
+    } else {
+        chn_en.chn_en &= ~(1 << chn);
+    }
+    set_x393_mcntrl_chn_en(chn_en);
+    spin_unlock(&lock);
+}
 
+/** Set priority of a memory channel.
+ *  Each channel has a 16-bit counter that increments each time any other channel is granted, and is reset to the specified priority when
+ *  this channel is granted memory access.
+ *
+ *  There are two groups of urgency implemented "want" (can accept/provide data) and "need" (buffer will soon be full for memory writes
+ *  or empty for memory reads). "Need" capability can be disable for some channels - by default for compressor ones as they may tolerate
+ *  waiting longer.
+ *  Arbiter selects channel with highest value of the counter (how long it waited, but started from priority) first among channels in
+ *  "need", then among those just "wanting" memory access.
+ *  By default all channels have equal priority of 0 */
+void set_memchannel_priority(int chn,       ///< Memory channel (0..16). When using for sensor/compressor - add VIDEOMEM_SENSOR_CHANNEL0/VIDEOMEM_COMPRESSOR_CHANNEL0
+                             u16 priority)  ///< 16-bit unsigned channel priority, 0 - lowest
+{
+    x393_arbiter_pri_t arbiter_pri;
+    arbiter_pri.priority = priority;
+    set_x393_mcntrl_arbiter_priority(arbiter_pri, chn);
 
+}
 
-
+/** Get current channel priority
+ *  @see set_memchannel_priority */
+u16 get_memchannel_priority(int chn)       ///< Memory channel (0..16). When using for sensor/compressor - add VIDEOMEM_SENSOR_CHANNEL0/VIDEOMEM_COMPRESSOR_CHANNEL0
+                                           ///< @return 16-bit unsigned channel priority, 0 - lowest
+{
+    x393_arbiter_pri_t arbiter_pri = get_x393_mcntrl_arbiter_priority(chn);
+    return arbiter_pri.priority;
+}
 
 
 // TODO: Implement file operations using membridge for both raw memory access and per-channel image raw (including 16-bit)
