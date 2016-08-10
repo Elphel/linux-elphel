@@ -34,7 +34,7 @@
 #include <asm/uaccess.h>
 #include "x393.h"
 #include "sensor_i2c.h"
-#include <elphel/c313a.h> // PARS_FRAMES_MASK
+#include <uapi/elphel/c313a.h> // PARS_FRAMES_MASK
 
 //------------------
 

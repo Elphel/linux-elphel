@@ -199,7 +199,7 @@
 #include <asm/irq.h>
 #include <linux/delay.h>
 #include <asm/uaccess.h>
-#include <elphel/c313a.h>
+#include <uapi/elphel/c313a.h>
 #include "framepars.h"
 #include "sensor_common.h"
 #include "multi10359.h"

@@ -28,7 +28,7 @@
 #include "x393.h"
 #include "x393_videomem.h"
 #include <elphel/driver_numbers.h>
-#include <elphel/c313a.h>
+#include <uapi/elphel/c313a.h>
 
 
 

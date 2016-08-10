@@ -35,8 +35,8 @@
 #include <asm/cacheflush.h>
 
 #include <elphel/driver_numbers.h>
-#include <elphel/c313a.h>
-#include <elphel/exifa.h>
+#include <uapi/elphel/c313a.h>
+#include <uapi/elphel/exifa.h>
 
 #include "framepars.h"
 #include "sensor_common.h"

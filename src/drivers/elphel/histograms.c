@@ -107,8 +107,8 @@
 // ##include <asm/dma-mapping.h>
 
 #include <elphel/driver_numbers.h>
-#include <elphel/c313a.h>
-#include <elphel/exifa.h>
+#include <uapi/elphel/c313a.h>
+#include <uapi/elphel/exifa.h>
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
 //#include "fpga_io.h"//fpga_table_write_nice
 #include "framepars.h"        // for debug mask

@@ -51,7 +51,7 @@
 
 //#include <asm/delay.h>
 #include <asm/uaccess.h>
-#include <elphel/c313a.h>
+#include <uapi/elphel/c313a.h>
 //#include "fpga_io.h"//fpga_table_write_nice
 #include "jpeghead.h"
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr

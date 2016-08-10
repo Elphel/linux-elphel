@@ -1769,9 +1769,9 @@ struct gamma_stuct_t {
                 };
              };
           };
-          u64 valid;      /// 0 - table invalid, 1 - table valid +2 for table locked (until sent to FPGA)
+          unsigned long long valid;      /// 0 - table invalid, 1 - table valid +2 for table locked (until sent to FPGA)
 //          int locked;     /// bit frame+ (color<<3) locked for color/frame
-          u64 locked;     /// NOTE: Changed to just color locked for color
+          unsigned long long locked;     /// NOTE: Changed to just color locked for color
           int this_non_scaled;      // 0 for non-scaled, others - (for scaled) - pointer to the corresponding non-scaled 
           union { /// used in head (element 0) and non-scaled chain (not used in scaled)
             struct { /// element 0 - heads of the chains

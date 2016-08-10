@@ -1,7 +1,7 @@
 #ifndef _FRAMEPARS_H
 #define _FRAMEPARS_H
 #ifndef SENSOR_PORTS
-	#include <elphel/c313a.h> // to get SENSOR_PORTS
+	#include <uapi/elphel/c313a.h> // to get SENSOR_PORTS
 #endif
 //extern struct framepars_t (*framepars)[PARS_FRAMES];
 extern struct framepars_t      *aframepars[SENSOR_PORTS];

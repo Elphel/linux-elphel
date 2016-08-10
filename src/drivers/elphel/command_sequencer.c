@@ -16,7 +16,7 @@
 *******************************************************************************/
 #include <linux/errno.h>
 #include <linux/spinlock.h>
-#include <elphel/c313a.h> // PARS_FRAMES_MASK
+#include <uapi/elphel/c313a.h> // PARS_FRAMES_MASK
 #include "x393.h"
 static DEFINE_SPINLOCK(lock);
  

@@ -35,7 +35,7 @@
 #include <linux/of_device.h>
 #include <asm/uaccess.h>
 #include <elphel/driver_numbers.h>
-#include <elphel/c313a.h>
+#include <uapi/elphel/c313a.h>
 #include <elphel/elphel393-mem.h>
 
 #include "framepars.h"

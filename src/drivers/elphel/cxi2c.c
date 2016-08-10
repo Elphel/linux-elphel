@@ -97,7 +97,7 @@
 #include <asm/delay.h>
 #include <asm/uaccess.h>
 #include <elphel/driver_numbers.h>
-#include <elphel/c313a.h>
+#include <uapi/elphel/c313a.h>
 #include "x393.h"
 
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr

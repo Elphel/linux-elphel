@@ -33,7 +33,7 @@
 #include "x393.h"
 //#include "x393_detect_sensors.h"
 #include <elphel/driver_numbers.h>
-#include <elphel/c313a.h>
+#include <uapi/elphel/c313a.h>
 #include "mt9x001.h"
 #include "multi10359.h"
 #include "detect_sensors.h"

@@ -50,7 +50,7 @@
 #include <asm/delay.h>
 #include <asm/uaccess.h> // copy_*_user
 #include <elphel/driver_numbers.h>
-#include <elphel/c313a.h>
+#include <uapi/elphel/c313a.h>
 #include <elphel/elphel393-mem.h>
 #include "imu_log393.h"
 #include "x393.h"
