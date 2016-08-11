@@ -112,7 +112,7 @@
 
 #include <asm/delay.h>
 #include <asm/uaccess.h>
-#include <elphel/driver_numbers.h>
+#include <uapi/elphel/x393_devices.h>
 #include <uapi/elphel/c313a.h>
 #include <uapi/elphel/exifa.h>
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
@@ -153,7 +153,7 @@
 /** Combine color, sensor port and sub-channel into a single index
  * It is still possible to use "color" parameter in the range of 0..63 with port and channel set to 0  */
 #define PORT_CHN_COLOR(color,port,chn) (((color) & 0x3f) | ((((port) & 3 ) << 4)) | ((((chn) & 3 ) << 2)))
-#define  X3X3_GAMMAS_DRIVER_NAME "Elphel (R) Model 353 Gamma Tables device driver"
+#define  X3X3_GAMMAS_DRIVER_DESCRIPTION "Elphel (R) Model 353 Gamma Tables device driver"
 /**
  * @brief number of different non-scaled tables in cache when it starts to overwrite non-scaled tables rather than scaled
  * \n TODO: use P_*?
@@ -750,7 +750,7 @@ int gammas_open(struct inode *inode, struct file *file) {
    privData-> minor=MINOR(inode->i_rdev);
    MDF10(printk("gammas_open, minor=0x%x\n",privData-> minor));
    switch (privData-> minor) {
-     case CMOSCAM_MINOR_GAMMAS :
+     case DEV393_MINOR(DEV393_GAMMA) :
         inode->i_size = GAMMA_FILE_SIZE;
         privData-> scale= 0;
         privData-> hash16=0;
@@ -775,7 +775,7 @@ int gammas_release(struct inode *inode, struct file *file) {
   int p = MINOR(inode->i_rdev);
   MDF10(printk("gammas_release, minor=0x%x\n",p));
   switch ( p ) {
-    case  CMOSCAM_MINOR_GAMMAS :
+    case  DEV393_MINOR(DEV393_GAMMA) :
         break;
     default:
         return -EINVAL; //! do not need to free anything - "wrong number"
@@ -804,7 +804,7 @@ loff_t gammas_lseek (struct file * file, loff_t offset, int orig) {
    struct gammas_pd * privData = (struct gammas_pd *) file->private_data;
    MDF10(printk("offset=0x%x, orig=0x%x, file->f_pos=0x%x\n",(int) offset, (int) orig, (int) file->f_pos));
    switch (privData->minor) {
-       case CMOSCAM_MINOR_GAMMAS :
+       case DEV393_MINOR(DEV393_GAMMA) :
          switch(orig) {
          case SEEK_SET:
            file->f_pos = offset;
@@ -872,7 +872,7 @@ ssize_t gammas_write(struct file * file, ///< this file structure
    unsigned short * gamma= data.gamma;
    MDF10(printk(" file->f_pos=0x%x, *off=0x%x\n", (int) file->f_pos, (int) *off));
    switch (privData->minor) {
-       case CMOSCAM_MINOR_GAMMAS :
+       case DEV393_MINOR(DEV393_GAMMA) :
          if (count>sizeof (data)) count = sizeof (data);
          if(count) {
            if(copy_from_user((char *) &data, buf, count))  return -EFAULT;
@@ -903,7 +903,7 @@ int gammas_mmap (struct file *file, struct vm_area_struct *vma) {
   struct gammas_pd * privData = (struct gammas_pd *) file->private_data;
   MDF10(printk("gammas_all_mmap, minor=0x%x\n",privData-> minor));
      switch (privData->minor) {
-       case  CMOSCAM_MINOR_GAMMAS :
+       case  DEV393_MINOR(DEV393_GAMMA) :
            result=remap_pfn_range(vma,
                   vma->vm_start,
                  ((unsigned long) virt_to_phys(gammas_p)) >> PAGE_SHIFT, // Should be page-aligned
@@ -922,19 +922,19 @@ int gammas_mmap (struct file *file, struct vm_area_struct *vma) {
  */
 static int __init gammas_init(void) {
    int res;
-   printk ("Starting "X3X3_GAMMAS_DRIVER_NAME" - %d \n",GAMMAS_MAJOR);
+   printk ("Starting "DEV393_NAME(DEV393_GAMMA)" - %d \n",DEV393_MAJOR(DEV393_GAMMA));
    init_gammas();
    MDF10(printk("set_gamma_table (0, GAMMA_SCLALE_1, NULL,  0, 0)\n"); udelay (ELPHEL_DEBUG_DELAY));
    set_gamma_table (0, GAMMA_SCLALE_1, NULL,  0, 0, 0, 0); // maybe not needed to put linear to cache - it can be calculated as soon FPGA will be tried to be programmed with
                                                         // hash16==0
 
-   res = register_chrdev(GAMMAS_MAJOR, "gamma_tables_operations", &gammas_fops);
+   res = register_chrdev(DEV393_MAJOR(DEV393_GAMMA), DEV393_NAME(DEV393_GAMMA), &gammas_fops);
    if(res < 0) {
-     printk(KERN_ERR "\ngammas_init: couldn't get a major number %d.\n",GAMMAS_MAJOR);
+     printk(KERN_ERR "\ngammas_init: couldn't get a major number %d.\n",DEV393_MAJOR(DEV393_GAMMA));
      return res;
    }
 //   init_waitqueue_head(&gammas_wait_queue);
-   printk(X3X3_GAMMAS_DRIVER_NAME" - %d \n",GAMMAS_MAJOR);
+   printk(DEV393_NAME(DEV393_GAMMA)" - %d \n",DEV393_MAJOR(DEV393_GAMMA));
    return 0;
 }
 
@@ -942,7 +942,7 @@ static int __init gammas_init(void) {
 module_init(gammas_init);
 MODULE_LICENSE("GPLv3.0");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-MODULE_DESCRIPTION(X3X3_GAMMAS_DRIVER_NAME);
+MODULE_DESCRIPTION(X3X3_GAMMAS_DRIVER_DESCRIPTION);
 
 
 

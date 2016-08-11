@@ -96,7 +96,7 @@
 
 #include <asm/delay.h>
 #include <asm/uaccess.h>
-#include <elphel/driver_numbers.h>
+#include <uapi/elphel/x393_devices.h>
 #include <uapi/elphel/c313a.h>
 #include "x393.h"
 
@@ -621,9 +621,9 @@ int i2c_ioctl(struct inode *inode, struct file *file,
 
 //#define X3X3_I2C 134
 // minors (add more later - maybe different minors for different speed - set speed when opening)
-//#define X3X3_I2C_CTRL     0  // control/reset i2c
-//#define X3X3_I2C_8_AINC  1  // 8bit  registers, autoincement while read/write
-//#define X3X3_I2C_16_AINC 2  // 16bit registers, autoincement while read/write
+//#define DEV393_MINOR(DEV393_I2C_CTRL)     0  // control/reset i2c
+//#define DEV393_MINOR(DEV393_I2C_8_AINC)  1  // 8bit  registers, autoincement while read/write
+//#define DEV393_MINOR(DEV393_I2C_16_AINC) 2  // 16bit registers, autoincement while read/write
 #define    X3X3_I2C_DRIVER_NAME "Elphel (R) model 353 i2c character device driver"
 //#define X3X3_I2C_CHANNELS 2
 //#define X3X3_I2C_MAXMINOR 4  //
@@ -662,18 +662,18 @@ int     xi2c_open(struct inode *inode, struct file *filp) {
     int bus=-1;
     int * pd= (int *) &(filp->private_data);
     switch (p) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
         bus=0;
         break;
-    case X3X3_I2C1_RAW:
-    case X3X3_I2C1_8_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C1_RAW):
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         bus=1;
         break;
-    case X3X3_I2C_ENABLE:
-    case X3X3_I2C_CTRL :
+    case DEV393_MINOR(DEV393_I2C_ENABLE):
+    case DEV393_MINOR(DEV393_I2C_CTRL) :
         bus=-1;
         break;
     }
@@ -685,22 +685,22 @@ int     xi2c_open(struct inode *inode, struct file *filp) {
     if (bus>=0) inuse[bus] =1;
 
     switch ( p ) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C1_RAW:
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C1_8_AINC :
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C1_RAW):
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
         inode->i_size=128*256;
         burst_sizes[p]=1; //!fix for PHP read (always 8192) -> 1 byte/read
         break;
-    case X3X3_I2C_16_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         inode->i_size=256*256;
         burst_sizes[p]=2; //!fix for PHP read (always 8192) -> 2 bytes/read
         break;
-    case X3X3_I2C_CTRL :
+    case DEV393_MINOR(DEV393_I2C_CTRL) :
         inode->i_size=sizeof(bitdelays);
         break;
-    case X3X3_I2C_ENABLE:
+    case DEV393_MINOR(DEV393_I2C_ENABLE):
         inode->i_size=sizeof(i2c_enable);
         break;
     default:return -EINVAL;
@@ -721,24 +721,24 @@ static int     xi2c_release(struct inode *inode, struct file *filp){
     int p = MINOR(inode->i_rdev);
     int bus=-1;
     switch (p) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
         bus=0;
         break;
-    case X3X3_I2C1_RAW:
-    case X3X3_I2C1_8_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C1_RAW):
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         bus=1;
         break;
-    case X3X3_I2C_ENABLE:
-    case X3X3_I2C_CTRL :
+    case DEV393_MINOR(DEV393_I2C_ENABLE):
+    case DEV393_MINOR(DEV393_I2C_CTRL) :
         bus=-1;
         break;
     }
     D(printk("xi2c_release, minor=%d\n",p));
     if (bus>=0) inuse[bus]=0;
-    else if (p==X3X3_I2C_CTRL) for (bus=0; bus < X3X3_I2C_CHANNELS; bus++) inuse[bus]=0;
+    else if (p==DEV393_MINOR(DEV393_I2C_CTRL)) for (bus=0; bus < X3X3_I2C_CHANNELS; bus++) inuse[bus]=0;
     //  thisminor =0;
     return 0;
 }
@@ -775,12 +775,12 @@ static loff_t  xi2c_lseek(struct file * file, loff_t offset, int orig) {
     }
     //   switch (((int *)file->private_data)[0]) {
     switch (p) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C1_RAW:
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C1_RAW):
         (file->f_pos) &= ~(0x7f); // zero out 7 MSBs
         break;
-    case X3X3_I2C_16_AINC :
-    case X3X3_I2C1_16_AINC : {
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) : {
         if ((file->f_pos) & 1) (file->f_pos)++; // increment to the next (if odd) for 16-bit accesses
         break;
     }
@@ -818,19 +818,19 @@ ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
 
     //  switch (((int *)file->private_data)[0]) {
     switch ((int)file->private_data) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
         bus=0;
         i2cbuf = &i2cbuf_all[0];
         break;
-    case X3X3_I2C1_RAW:
-    case X3X3_I2C1_8_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C1_RAW):
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         bus=1;
         i2cbuf = &i2cbuf_all[1*I2CBUFSIZE];
         break;
-        //     case X3X3_I2C_CTRL :
+        //     case DEV393_MINOR(DEV393_I2C_CTRL) :
         //       i2cbuf = &i2cbuf_all[X3X3_I2C_CHANNELS*I2CBUFSIZE];
     }
     userbuf=&i2cbuf[1];
@@ -838,14 +838,14 @@ ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
     //  switch (((int *)file->private_data)[0]) {
     slave_adr=(p >> 7) & 0xfe;
     switch ((int)file->private_data) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C1_RAW:
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C1_8_AINC :
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C1_RAW):
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
         if (count == 8192) count=burst_sizes[(int)file->private_data]; //! PHP "feature" fix
         break;
-    case X3X3_I2C_16_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         p&=0xfffffffe;
         if (count == 8192) count=burst_sizes[(int)file->private_data]; //! PHP "feature" fix
         if (count & 1) count++;
@@ -855,28 +855,28 @@ ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
     D(printk("xi2c_read (bus=%d) from 0x%x, count=%d\n", bus, (int) *off, (int) count));
     //! Verify if this slave is enabled for the I2C operation requested
     switch ((int)file->private_data) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C1_RAW:
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C1_RAW):
         en_mask=(1 << X3X3_I2C_ENABLE_RD) | (1 <<X3X3_I2C_ENABLE_RAW);
         break;
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C1_8_AINC :
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
         en_mask=(1 << X3X3_I2C_ENABLE_RD) | (1 <<X3X3_I2C_ENABLE_8);
         break;
-    case X3X3_I2C_16_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         en_mask=(1 << X3X3_I2C_ENABLE_RD) | (1 <<X3X3_I2C_ENABLE_16);
         break;
     }
     switch ((int)file->private_data) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
         en_bits=i2c_enable[ slave_adr>>1 ];
         break;
-    case X3X3_I2C1_RAW:
-    case X3X3_I2C1_8_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C1_RAW):
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         en_bits=i2c_enable[(slave_adr>>1) + 128];
         break;
     }
@@ -895,14 +895,14 @@ ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
     }
     if (count==0) return 0;
     switch ((int)file->private_data) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C1_RAW:
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C1_RAW):
         i2cbuf[0]=p & 0xff;
         error=i2c_readData (bus, slave_adr | 0x01, &i2cbuf[1], count, 1);  // will start with start, not restart
         if (error) return -EINVAL;
         break;
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C1_8_AINC :
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
         i2cbuf[0]=p & 0xff;
 
         if (bus==0) {
@@ -922,8 +922,8 @@ ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
 
         if (error) return -EINVAL;
         break;
-    case X3X3_I2C_16_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         i2cbuf[0]=(p>>1) & 0xff;
 
         if (bus==0) {
@@ -943,11 +943,11 @@ ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
 
         if (error) return -EINVAL;
         break;
-    case X3X3_I2C_CTRL :
+    case DEV393_MINOR(DEV393_I2C_CTRL) :
         userbuf=&bbitdelays[*off];
         //       memcpy(&i2cbuf[1],&bbitdelays[*off],count);
         break;
-    case X3X3_I2C_ENABLE:
+    case DEV393_MINOR(DEV393_I2C_ENABLE):
         userbuf=&i2c_enable[*off];
         break;
     default:return -EINVAL;
@@ -958,8 +958,8 @@ ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
 
     //! do not increment pointer for raw accesses
     switch ((int)file->private_data) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C1_RAW:
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C1_RAW):
         *off &= ~(0x7f); // zero out 7 MSBs
         break;
     default:
@@ -988,26 +988,26 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
 
     //  switch (((int *)file->private_data)[0]) {
     switch ((int)file->private_data) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
         bus=0;
         i2cbuf = &i2cbuf_all[0];
         break;
-    case X3X3_I2C1_RAW:
-    case X3X3_I2C1_8_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C1_RAW):
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         bus=1;
         i2cbuf = &i2cbuf_all[1*I2CBUFSIZE];
         break;
-        //     case X3X3_I2C_CTRL :
+        //     case DEV393_MINOR(DEV393_I2C_CTRL) :
         //       i2cbuf = &i2cbuf_all[X3X3_I2C_CHANNELS*I2CBUFSIZE];
     }
     userbuf=&i2cbuf[1];
     slave_adr=(p >> 7) & 0xfe;
     switch ((int)file->private_data) {
-    case X3X3_I2C_16_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         p&=0xfffffffe;
         if (count & 1) count++;
         slave_adr=(p >> 8) & 0xfe;
@@ -1017,28 +1017,28 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
 
     //! Verify if this slave is enabled for the I2C operation requested
     switch ((int)file->private_data) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C1_RAW:
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C1_RAW):
         en_mask=(1 << X3X3_I2C_ENABLE_WR) | (1 <<X3X3_I2C_ENABLE_RAW);
         break;
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C1_8_AINC :
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
         en_mask=(1 << X3X3_I2C_ENABLE_WR) | (1 <<X3X3_I2C_ENABLE_8);
         break;
-    case X3X3_I2C_16_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         en_mask=(1 << X3X3_I2C_ENABLE_WR) | (1 <<X3X3_I2C_ENABLE_16);
         break;
     }
     switch ((int)file->private_data) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
         en_bits=i2c_enable[ slave_adr>>1 ];
         break;
-    case X3X3_I2C1_RAW:
-    case X3X3_I2C1_8_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C1_RAW):
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         en_bits=i2c_enable[(slave_adr>>1) + 128];
         break;
     }
@@ -1058,10 +1058,10 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
     if (count==0) return 0;
     //!only for control files that write directly to static arrays, no buffering
     switch ((int)file->private_data) {
-    case X3X3_I2C_CTRL :
+    case DEV393_MINOR(DEV393_I2C_CTRL) :
         userbuf=&bbitdelays[p];
         break;
-    case X3X3_I2C_ENABLE:
+    case DEV393_MINOR(DEV393_I2C_ENABLE):
         userbuf=&i2c_enable[p];
         break;
     }
@@ -1069,8 +1069,8 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
     //  if (copy_from_user( &i2cbuf[1], buf, count)) return -EFAULT;
     if (copy_from_user( userbuf, buf, count)) return -EFAULT;
     switch ((int)file->private_data) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C1_RAW:
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C1_RAW):
 
         if (bus==0) {
 #ifdef NC353
@@ -1087,8 +1087,8 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
 
         if (error) return -EINVAL;
         break;
-    case X3X3_I2C_8_AINC :
-    case X3X3_I2C1_8_AINC :
+    case DEV393_MINOR(DEV393_I2C_8_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_8_AINC) :
         i2cbuf[0]=p & 0xff;
 
         if (bus==0) {
@@ -1106,8 +1106,8 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
 
         if (error) return -EINVAL;
         break;
-    case X3X3_I2C_16_AINC :
-    case X3X3_I2C1_16_AINC :
+    case DEV393_MINOR(DEV393_I2C_16_AINC) :
+    case DEV393_MINOR(DEV393_I2C1_16_AINC) :
         i2cbuf[0]=(p>>1) & 0xff;
 
         if (bus==0) {
@@ -1125,7 +1125,7 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
 
         if (error) return -EINVAL;
         break;
-        //     case X3X3_I2C_CTRL :
+        //     case DEV393_MINOR(DEV393_I2C_CTRL) :
         //       memcpy(&bbitdelays[*off],&i2cbuf[1],count);
         //       break;
     default:return -EINVAL;
@@ -1133,8 +1133,8 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
     //  *off+=count;
     //! do not increment pointer for raw accesses
     switch ((int)file->private_data) {
-    case X3X3_I2C_RAW:
-    case X3X3_I2C1_RAW:
+    case DEV393_MINOR(DEV393_I2C_RAW):
+    case DEV393_MINOR(DEV393_I2C1_RAW):
         *off &= ~(0x7f); // zero out 7 MSBs
         break;
     default:
@@ -1147,12 +1147,12 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
 
 static int __init xi2c_init(void) {
     int i,res;
-    res = register_chrdev(X3X3_I2C_MAJOR, "fpga_xi2c", &xi2c_fops);
+    res = register_chrdev(DEV393_MAJOR(DEV393_I2C_CTRL), DEV393_NAME(DEV393_I2C_CTRL), &xi2c_fops);
     if(res < 0) {
-        printk(KERN_ERR "\nxi2c_init: couldn't get a major number %d.\n",X3X3_I2C_MAJOR);
+        printk(KERN_ERR "\nxi2c_init: couldn't get a major number %d.\n",DEV393_MAJOR(DEV393_I2C_CTRL));
         return res;
     }
-    printk(X3X3_I2C_DRIVER_NAME" - %d, %d channels\n",X3X3_I2C_MAJOR,X3X3_I2C_CHANNELS);
+    printk(X3X3_I2C_DRIVER_NAME" - %d, %d channels\n",DEV393_MAJOR(DEV393_I2C_CTRL),X3X3_I2C_CHANNELS);
     //   thisminor =0;
 
     bitdelays[0].scl_high=2;      //! SCL high:
@@ -1172,14 +1172,14 @@ static int __init xi2c_init(void) {
     for (i=0; i<X3X3_I2C_CHANNELS;i++) {
         inuse[i]=0;
     }
-    sizes[X3X3_I2C_CTRL]=     sizeof(bitdelays); // control/reset i2c
-    sizes[X3X3_I2C_8_AINC]=   128*256;           // 8bit  registers, autoincement while read/write
-    sizes[X3X3_I2C_16_AINC]=  256*256;           // 16bit registers, autoincement while read/write
-    sizes[X3X3_I2C1_8_AINC]=  128*256;           // 8bit  registers, autoincement while read/write (bus 1)
-    sizes[X3X3_I2C1_16_AINC]= 256*256;           // 16bit registers, autoincement while read/write (bus 1)
-    sizes[X3X3_I2C_RAW]=      128*256;           // 8bit single register,
-    sizes[X3X3_I2C1_RAW]=     128*256;           // 8bit single register,
-    sizes[X3X3_I2C_ENABLE]=   sizeof(i2c_enable); // enable particular types of accesses for I2C devices
+    sizes[DEV393_MINOR(DEV393_I2C_CTRL)]=     sizeof(bitdelays); // control/reset i2c
+    sizes[DEV393_MINOR(DEV393_I2C_8_AINC)]=   128*256;           // 8bit  registers, autoincement while read/write
+    sizes[DEV393_MINOR(DEV393_I2C_16_AINC)]=  256*256;           // 16bit registers, autoincement while read/write
+    sizes[DEV393_MINOR(DEV393_I2C1_8_AINC)]=  128*256;           // 8bit  registers, autoincement while read/write (bus 1)
+    sizes[DEV393_MINOR(DEV393_I2C1_16_AINC)]= 256*256;           // 16bit registers, autoincement while read/write (bus 1)
+    sizes[DEV393_MINOR(DEV393_I2C_RAW)]=      128*256;           // 8bit single register,
+    sizes[DEV393_MINOR(DEV393_I2C1_RAW)]=     128*256;           // 8bit single register,
+    sizes[DEV393_MINOR(DEV393_I2C_ENABLE)]=   sizeof(i2c_enable); // enable particular types of accesses for I2C devices
     //! Enable/protect known I2C devices. For now - unprotect all unknown
     for (i=0; i<X3X3_I2C_CHANNELS*128; i++) i2c_enable[i]=0xff;
     //! now protect known devices from undesired/unintended accesses:
@@ -1236,8 +1236,8 @@ static int __init xi2c_init(void) {
 
 
     //#define X3X3_I2C_RAW        5  // 8bit  registers, no address byte (just slave, then read/write byte(s)
-    //#define X3X3_I2C1_RAW       6  // 8bit  registers, no address byte (just slave, then read/write byte(s)
-    //#define X3X3_I2C_ENABLE     7  // enable(/protect) different I2C devices for different types of I2C accesses
+    //#define DEV393_MINOR(DEV393_I2C1_RAW)       6  // 8bit  registers, no address byte (just slave, then read/write byte(s)
+    //#define DEV393_MINOR(DEV393_I2C_ENABLE)     7  // enable(/protect) different I2C devices for different types of I2C accesses
     //static unsigned char i2c_enable[X3X3_I2C_CHANNELS*128]; //128 devices in a bus
     //#define X3X3_I2C_ENABLE_RD   0 // bit 0 - enable i2c read
     //#define X3X3_I2C_ENABLE_WR   1 // bit 1 - enable i2c write

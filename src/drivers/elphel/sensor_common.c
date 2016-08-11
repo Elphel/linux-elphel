@@ -34,9 +34,9 @@
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
 
-#include <elphel/driver_numbers.h>
 #include <uapi/elphel/c313a.h>
 #include <uapi/elphel/exifa.h>
+//#include <uapi/elphel/x393_devices.h>
 
 #include "framepars.h"
 #include "sensor_common.h"
@@ -52,8 +52,8 @@
 
 #include <asm/delay.h> // just for usleep1000()
 
-/** @brief Driver name to display in log messages.*/
-#define IMAGEACQ_DRIVER_NAME      "Elphel (R) Model 393 Image Acquisition device driver"
+/* Driver name to display in log messages.*/
+//#define IMAGEACQ_DRIVER_DESCRIPTION      "Elphel (R) Model 393 Image Acquisition device driver"
 
 /** @brief The size in bytes of L2 cache invalidation area. This size must be aligned to cache line size. 16 kbytes seems to be good starting point.*/
 #define L2_INVAL_SIZE             (32 * 1024)
@@ -1031,4 +1031,4 @@ int legacy_i2c(int ports) ///< bitmask of the sensor ports to use
 
 //MODULE_LICENSE("GPL");
 //MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-//MODULE_DESCRIPTION(IMAGEACQ_DRIVER_NAME);
+//MODULE_DESCRIPTION(IMAGEACQ_DRIVER_DESCRIPTION);

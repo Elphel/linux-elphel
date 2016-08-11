@@ -30,7 +30,7 @@
 #include <linux/jiffies.h>
 #include <asm/io.h>
 #include <asm/irq.h>
-#include <elphel/driver_numbers.h>
+#include <uapi/elphel/x393_devices.h> // just driver name
 #include <asm/uaccess.h>
 #include "x393.h"
 #include "sensor_i2c.h"
@@ -52,7 +52,7 @@
 #define SYSFS_READONLY            0444
 #define SYSFS_WRITEONLY           0222
 
-#define DRV_NAME "elphel_sensor_i2c"
+//#define DRV_NAME "elphel_sensor_i2c"
 
 struct x393_i2c_device_list {
 	x393_i2c_device_t i2c_dev;
@@ -1400,7 +1400,7 @@ static struct platform_driver elphel393_sensor_i2c = {
 	.probe   = elphel393_sensor_i2c_probe,     ///< Function executed on probe operation
 	.remove  = elphel393_sensor_i2c_remove,    ///< Function executed on remove operation
 	.driver  = {                                         ///< Driver specifications
-		.name  = "elphel393-sensor-i2c",                 ///< driver name
+		.name  = DEV393_NAME(DEV393_I2C_SENSORS),        ///< driver name
 		.owner = THIS_MODULE,                            ///< Driver owner
 		.of_match_table = elphel393_sensor_i2c_of_match, ///< Device tree match data
 		.pm = NULL,                                      ///< No power management supported in this driver

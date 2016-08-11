@@ -27,13 +27,13 @@
 
 #include "x393.h"
 #include "x393_videomem.h"
-#include <elphel/driver_numbers.h>
 #include <uapi/elphel/c313a.h>
+#include <uapi/elphel/x393_devices.h>
 
 
 
 #define VIDEOMEM_MODULE_DESCRIPTION "Video buffer driver"
-#define VIDEOMEM_DRIVER_NAME        "video_mem"
+//#define VIDEOMEM_DRIVER_NAME        "video_mem"
 
 static const struct of_device_id elphel393_videomem_of_match[];
 static struct device *g_dev_ptr; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
@@ -542,10 +542,12 @@ static int videomem_probe(struct platform_device *pdev)
     // Add sysfs modification
 
 
-    dev_dbg(dev, "Registering character device with name "VIDEOMEM_DRIVER_NAME);
-    res = register_chrdev(VIDEOMEM_MAJOR, VIDEOMEM_DRIVER_NAME, &videomem_fops);
+    dev_dbg(dev, "Registering character device with name "DEV393_NAME(DEV393_VIDEOMEM_RAW));
+//    res = register_chrdev(VIDEOMEM_MAJOR, VIDEOMEM_DRIVER_NAME, &videomem_fops);
+    res = register_chrdev(DEV393_MAJOR(DEV393_VIDEOMEM_RAW), DEV393_NAME(DEV393_VIDEOMEM_RAW), &videomem_fops);
+
     if(res < 0) {
-        dev_err(dev, "\videomem_probe: couldn't get a major number  %d.\n ",VIDEOMEM_MAJOR);
+        dev_err(dev, "\videomem_probe: couldn't get a major number  %d.\n ",DEV393_MAJOR(DEV393_VIDEOMEM_RAW));
         return res;
     }
     // Setup interrupt
@@ -569,7 +571,7 @@ static int videomem_probe(struct platform_device *pdev)
 static int videomem_remove(struct platform_device *pdev) ///< [in] pointer to @e platform_device structure
                                                          ///< @return always 0
 {
-    unregister_chrdev(VIDEOMEM_MAJOR, VIDEOMEM_DRIVER_NAME);
+    unregister_chrdev(DEV393_MAJOR(DEV393_VIDEOMEM_RAW), DEV393_NAME(DEV393_VIDEOMEM_RAW));
 
     return 0;
 }
@@ -585,7 +587,7 @@ static struct platform_driver elphel393_videomem = {
         .probe          = videomem_probe,
         .remove         = videomem_remove,
         .driver = {
-                .name =           VIDEOMEM_DRIVER_NAME,
+                .name =           DEV393_NAME(DEV393_VIDEOMEM_RAW),
                 .of_match_table = elphel393_videomem_of_match,
         },
 };

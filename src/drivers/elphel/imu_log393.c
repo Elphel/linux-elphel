@@ -49,12 +49,13 @@
 #include <linux/string.h>
 #include <asm/delay.h>
 #include <asm/uaccess.h> // copy_*_user
-#include <elphel/driver_numbers.h>
 #include <uapi/elphel/c313a.h>
 #include <elphel/elphel393-mem.h>
 #include "imu_log393.h"
 #include "x393.h"
 #include "cci2c.h"
+#include <uapi/elphel/x393_devices.h>
+
 
 #if 0
 #define D(x) x
@@ -104,7 +105,7 @@
 #endif
 #define RS232_RATE 19200   ///< RS232 bps
 #define IMU_MODULE_DESCRIPTION "IMU logger for 10365 ext. board"
-#define	LOGGER_DRIVER_NAME "imu_logger"
+//#define	LOGGER_DRIVER_NAME "imu_logger"
 #define IMU_MAXMINOR 10
 
 #ifdef NC353
@@ -606,12 +607,12 @@ static int imu_open(struct inode *inode, struct file *filp) {
     D(printk("filp=%lx\r\n",(unsigned long)filp) );
 
     switch ( p ) {
-    case LOGGER_CTL_MINOR:
+    case DEV393_MINOR(DEV393_LOGGER_CTRL):
         D1(printk(KERN_NOTICE "IMU_ctl_open\n"));
         inode->i_size=sizeof(wbuf);
         // nothing more here, after writing parameters should start imu (and dma), otherwise will use defaults on next open of /dev/imu
         break;
-    case LOGGER_MINOR :
+    case DEV393_MINOR(DEV393_LOGGER) :
     {
         D1(printk(KERN_NOTICE "IMU_open\n"));
         inode->i_size=sizeof(wbuf); // only in write mode
@@ -668,8 +669,8 @@ static int imu_release(struct inode *inode, struct file *filp) {
     //   int res=0;
     int p = MINOR(inode->i_rdev);
     switch ( p ) {
-    case LOGGER_MINOR :
-    case LOGGER_CTL_MINOR:
+    case DEV393_MINOR(DEV393_LOGGER) :
+    case DEV393_MINOR(DEV393_LOGGER_CTRL):
         printk(KERN_NOTICE "Closing IMU device, numBytesWritten=0x%llx,  numBytesRead=0x%llx (only global pointer, does not include files opened in read mode)\n", numBytesWritten, numBytesRead);
         break;
     default: return -EINVAL;
@@ -687,8 +688,8 @@ static ssize_t imu_write(struct file * file, const char * buf, size_t count, lof
     D(printk("imu_write: (int)file->private_data)= %x\r\n",((int)file->private_data)));
     //    switch (((int *)file->private_data)[0]) {
     switch ((int) file->private_data) {
-    case LOGGER_MINOR :
-    case LOGGER_CTL_MINOR:
+    case DEV393_MINOR(DEV393_LOGGER) :
+    case DEV393_MINOR(DEV393_LOGGER_CTRL):
         if (!file->f_mode & FMODE_WRITE) {
             return -EINVAL; // readonly
         }
@@ -722,8 +723,8 @@ static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
     D(printk (" file=%x, offset=%llx (%d), orig=%x\r\n", (int) file, offset,(int) offset, (int) orig));
     int p=(int)file->private_data;
     switch (p) {
-    case LOGGER_MINOR:
-    case LOGGER_CTL_MINOR:
+    case DEV393_MINOR(DEV393_LOGGER):
+    case DEV393_MINOR(DEV393_LOGGER_CTRL):
         switch (orig) {
         case SEEK_SET:
             file->f_pos = offset;
@@ -783,7 +784,7 @@ static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
         return (-EOVERFLOW);
     }
     /** enable seeking beyond buffer - it now is absolute position in the data stream*/
-    if ((p==LOGGER_CTL_MINOR) && (file->f_pos > sizeof(wbuf))) {
+    if ((p==DEV393_MINOR(DEV393_LOGGER_CTRL)) && (file->f_pos > sizeof(wbuf))) {
         printk(KERN_ERR "beyond end: minor=%d, file->f_pos=0x%llx\n", p, file->f_pos);
         file->f_pos = sizeof(wbuf);
         return (-EOVERFLOW);
@@ -811,7 +812,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
     reg_bif_dma_r_ch1_stat ch1_stat;
 #endif
     switch ((int)file->private_data) {
-    case LOGGER_CTL_MINOR:
+    case DEV393_MINOR(DEV393_LOGGER_CTRL):
         //       if (*off >= sizeof(wbuf))  return -EINVAL; // bigger than all
         if (*off >= sizeof(wbuf))  return 0; // bigger than all
         if( (*off + count) > sizeof(wbuf)) { // truncate count
@@ -826,7 +827,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
         *off+=count;
         return count;
         break;
-    case LOGGER_MINOR :
+    case DEV393_MINOR(DEV393_LOGGER) :
 #ifdef NC353
         updateNumBytesWritten();
 #endif
@@ -944,13 +945,13 @@ static int logger_init(struct platform_device *pdev)
     if (!match)
         return -EINVAL;
 
-    dev_dbg(dev, "Registering character device with name "LOGGER_DRIVER_NAME);
-    res = register_chrdev(LOGGER_MAJOR, LOGGER_DRIVER_NAME, &imu_fops);
+    dev_dbg(dev, "Registering character device with name "DEV393_NAME(DEV393_LOGGER));
+    res = register_chrdev(DEV393_MAJOR(DEV393_LOGGER), DEV393_NAME(DEV393_LOGGER), &imu_fops);
     if(res < 0) {
-        dev_err(dev, "\nlogger_init: couldn't get a major number  %d.\n ",LOGGER_MAJOR);
+        dev_err(dev, "\nlogger_init: couldn't get a major number  %d.\n ",DEV393_MAJOR(DEV393_LOGGER));
         return res;
     }
-    dev_info(dev,LOGGER_DRIVER_NAME"- %d\n",LOGGER_MAJOR);
+    dev_info(dev,DEV393_NAME(DEV393_LOGGER)"- %d\n",DEV393_MAJOR(DEV393_LOGGER));
     // Setup memory buffer from CMA
     logger_buffer = (u32 *) pElphel_buf->logger_vaddr; // must be page-aligned!
     logger_size = pElphel_buf->logger_size << PAGE_SHIFT;
@@ -1236,7 +1237,7 @@ int x313_setDMA1Buffer(void) {
 static int logger_remove(struct platform_device *pdev) ///< [in] pointer to @e platform_device structure
                                                        ///< @return always 0
 {
-    unregister_chrdev(LOGGER_MAJOR, LOGGER_DRIVER_NAME);
+    unregister_chrdev(DEV393_MAJOR(DEV393_LOGGER), DEV393_NAME(DEV393_LOGGER));
 
     return 0;
 }
@@ -1251,7 +1252,7 @@ static struct platform_driver elphel393_logger = {
         .probe          = logger_init,
         .remove         = logger_remove,
         .driver = {
-                .name = LOGGER_DRIVER_NAME,
+                .name = DEV393_NAME(DEV393_LOGGER),
                 .of_match_table = elphel393_logger_of_match,
         },
 };

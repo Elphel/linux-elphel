@@ -106,7 +106,7 @@
 #include <linux/dma-direction.h>
 // ##include <asm/dma-mapping.h>
 
-#include <elphel/driver_numbers.h>
+#include <uapi/elphel/x393_devices.h>
 #include <uapi/elphel/c313a.h>
 #include <uapi/elphel/exifa.h>
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
@@ -135,7 +135,7 @@
 u32        (*fpga_hist_data)[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]; ///< Array of histogram data, mapped to the memory wheer FPGA sends data
 dma_addr_t   fpga_hist_phys; // physical address of the start of the received histogram data
 
-#define  X3X3_HISTOGRAMS_DRIVER_NAME "Elphel (R) Model 353 Histograms device driver"
+#define  X3X3_HISTOGRAMS_DRIVER_DESCRIPTION "Elphel (R) Model 353 Histograms device driver"
 
 /** for each port and possible sensor subchannel provides index in combine histogram data */
 int histograms_map[SENSOR_PORTS][MAX_SENSORS];
@@ -463,7 +463,7 @@ int histograms_open(struct inode *inode, ///< inode
     privData-> minor=MINOR(inode->i_rdev);
     MDF21(printk("minor=0x%x\n",privData-> minor));
     switch (privData-> minor) {
-    case  CMOSCAM_MINOR_HISTOGRAMS :
+    case  DEV393_MINOR(DEV393_HISTOGRAM) :
         inode->i_size = HISTOGRAMS_FILE_SIZE;
         privData->frame=0xffffffff;
         privData->frame_index=-1;
@@ -490,7 +490,7 @@ int histograms_release (struct inode *inode, ///< inode
     int p = MINOR(inode->i_rdev);
     MDF21(printk("minor=0x%x\n",p));
     switch ( p ) {
-    case  CMOSCAM_MINOR_HISTOGRAMS :
+    case  DEV393_MINOR(DEV393_HISTOGRAM) :
         break;
     default:
         return -EINVAL; //! do not need to free anything - "wrong number"
@@ -535,7 +535,7 @@ loff_t histograms_lseek (struct file * file,
 
     MDF21(printk("offset=0x%x, orig=0x%x\n",(int) offset, (int) orig));
     switch (privData->minor) {
-    case CMOSCAM_MINOR_HISTOGRAMS :
+    case DEV393_MINOR(DEV393_HISTOGRAM) :
         switch(orig) {
         case SEEK_CUR: // ignore offset
             offset+=(privData-> wait_mode)?
@@ -655,7 +655,7 @@ int histograms_mmap (struct file *file, struct vm_area_struct *vma) {
     struct histograms_pd * privData = (struct histograms_pd *) file->private_data;
     MDF21(printk("minor=0x%x\n",privData-> minor));
     switch (privData->minor) {
-    case  CMOSCAM_MINOR_HISTOGRAMS :
+    case  DEV393_MINOR(DEV393_HISTOGRAM) :
         result=remap_pfn_range(vma,
                 vma->vm_start,
                 ((unsigned long) virt_to_phys(histograms_p)) >> PAGE_SHIFT, // Should be page-aligned
@@ -676,15 +676,15 @@ static int __init histograms_init(void) {
     int res;
 //    init_histograms(); // Not now??? Need to have list of channels
     // Do it later, from the user space
-    res = register_chrdev(HISTOGRAMS_MAJOR, "gamma_tables_operations", &histograms_fops);
+    res = register_chrdev(DEV393_MAJOR(DEV393_HISTOGRAM), "gamma_tables_operations", &histograms_fops);
     if(res < 0) {
-        printk(KERN_ERR "histograms_init: couldn't get a major number %d.\n",HISTOGRAMS_MAJOR);
+        printk(KERN_ERR "histograms_init: couldn't get a major number %d.\n",DEV393_MAJOR(DEV393_HISTOGRAM));
         return res;
     }
     //   init_waitqueue_head(&histograms_wait_queue);
     init_waitqueue_head(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
     init_waitqueue_head(&hist_c_wait_queue);    // wait queue for all the other (R,G2,B) histograms (color)
-    printk(X3X3_HISTOGRAMS_DRIVER_NAME"\r\n");
+    printk(DEV393_NAME(DEV393_HISTOGRAM)"\n");
     return 0;
 }
 
@@ -692,4 +692,4 @@ static int __init histograms_init(void) {
 module_init(histograms_init);
 MODULE_LICENSE("GPLv3.0");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-MODULE_DESCRIPTION(X3X3_HISTOGRAMS_DRIVER_NAME);
+MODULE_DESCRIPTION(X3X3_HISTOGRAMS_DRIVER_DESCRIPTION);

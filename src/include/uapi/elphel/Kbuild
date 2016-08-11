@@ -4,4 +4,5 @@
 
 header-y += exifa.h
 header-y += c313a.h
+header-y += x393_devices.h
  

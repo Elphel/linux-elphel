@@ -19,7 +19,8 @@
 #ifndef _X393_MACRO
 #define _X393_MACRO
 
-#include <elphel/driver_numbers.h>
+#include <uapi/elphel/x393_devices.h>
+
 
 /** @brief Resolution of current/OEF pointer in bits */
 #define OFFSET256_CNTR_RES   26
@@ -75,7 +76,7 @@
 static inline unsigned int minor_to_chn(unsigned int minor, unsigned int *dev_type)
 {
 	if (dev_type != NULL) {
-		if ((minor & 0xf0) == CIRCBUF_MINOR || (minor & 0xf0) == HUFFMAN_MINOR || (minor & 0xf0) == JPEGHEAD_MINOR)
+		if ((minor & 0xf0) == DEV393_MINOR(DEV393_CIRCBUF0) || (minor & 0xf0) == DEV393_MINOR(DEV393_HUFFMAN0) || (minor & 0xf0) == DEV393_MINOR(DEV393_JPEGHEAD0))
 			*dev_type = minor & 0xf0;
 		else
 			*dev_type = 0;

@@ -52,7 +52,7 @@
 
 //#include <asm/delay.h>
 //#include <asm/uaccess.h>
-#include <elphel/driver_numbers.h>
+#include <uapi/elphel/x393_devices.h>
 #include <elphel/c313a.h>
 //#include <asm/elphel/fpgaconfa.h>
 #include <elphel/exifa.h>
@@ -78,7 +78,7 @@
 /**
  * @brief driver name to display in log messages
  */
-#define IMAGEACQ_DRIVER_NAME "Elphel (R) Model 393 Image Acquisition device driver"
+#define IMAGEACQ_DRIVER_DESCRIPTION "Elphel (R) Model 393 Image Acquisition device driver"
 
 /**@struct jpeg_ptr_t
  * @brief \e jpeg_ptr_t structure contains read and write pointers along with
@@ -804,4 +804,4 @@ int image_acq_stop(struct platform_device *pdev)
 
 //MODULE_LICENSE("GPL");
 //MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-//MODULE_DESCRIPTION(IMAGEACQ_DRIVER_NAME);
+//MODULE_DESCRIPTION(IMAGEACQ_DRIVER_DESCRIPTION);

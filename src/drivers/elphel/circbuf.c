@@ -34,7 +34,7 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <asm/uaccess.h>
-#include <elphel/driver_numbers.h>
+#include <uapi/elphel/x393_devices.h>
 #include <uapi/elphel/c313a.h>
 #include <elphel/elphel393-mem.h>
 
@@ -47,7 +47,7 @@
 #include "x393_helpers.h"
 
 /** @brief Driver name displayed in system logs */
-#define CIRCBUF_DRIVER_NAME "circbuf driver"
+//#define CIRCBUF_DRIVER_NAME "circbuf driver"
 
 /** @brief Wait queue for the processes waiting for a new frame to appear in the circular buffer */
 wait_queue_head_t circbuf_wait_queue;
@@ -115,13 +115,13 @@ int circbuf_all_open(struct inode *inode, struct file *filp)
 
 	minor_to_chn(minor, &dev_type);
 	switch (dev_type) {
-	case CIRCBUF_MINOR:
+	case DEV393_MINOR(DEV393_CIRCBUF0):
 		res = circbuf_open(inode, filp);
 		break;
-	case JPEGHEAD_MINOR:
+	case DEV393_MINOR(DEV393_JPEGHEAD0):
 		res = jpeghead_open(inode, filp);
 		break;
-	case HUFFMAN_MINOR:
+	case DEV393_MINOR(DEV393_HUFFMAN0):
 		res = huffman_open(inode, filp);
 		break;
 	default:
@@ -146,13 +146,13 @@ int circbuf_all_release(struct inode *inode, struct file *filp)
 
 	minor_to_chn(minor, &dev_type);
 	switch (dev_type) {
-	case CIRCBUF_MINOR:
+	case DEV393_MINOR(DEV393_CIRCBUF0):
 		//        res=circbuf_release(inode,filp);
 		break;
-	case JPEGHEAD_MINOR:
+	case DEV393_MINOR(DEV393_JPEGHEAD0):
 		//        res=jpeghead_release(inode,filp);
 		break;
-	case HUFFMAN_MINOR:
+	case DEV393_MINOR(DEV393_HUFFMAN0):
 		//        res=huffman_release(inode,filp);
 		break;
 	default:
@@ -180,15 +180,15 @@ loff_t circbuf_all_lseek(struct file *file, loff_t offset, int orig)
 	dev_dbg(g_dev_ptr, "circbuf_all_lseek, minor = 0x%x\n", minor);
 
 	switch (dev_type) {
-	case CIRCBUF_MINOR:
+	case DEV393_MINOR(DEV393_CIRCBUF0):
 		return  circbuf_lseek(file, offset, orig);
-	case JPEGHEAD_MINOR:
+	case DEV393_MINOR(DEV393_JPEGHEAD0):
 		if (orig == SEEK_END && offset > 0) {
 			rp = BYTE2DW(X393_BUFFSUB(offset, CHUNK_SIZE)) & (~7); // convert to index to long, align to 32-bytes
 			fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[rp];
 		}
 		return  jpeghead_lseek(file, offset, orig, fp);
-	case HUFFMAN_MINOR:
+	case DEV393_MINOR(DEV393_HUFFMAN0):
 		return  huffman_lseek(file, offset, orig);
 	default:
 		return -EINVAL;
@@ -212,11 +212,11 @@ ssize_t circbuf_all_read(struct file *file, char *buf, size_t count, loff_t *off
 
 	minor_to_chn(minor, &dev_type);
 	switch (dev_type) {
-	case CIRCBUF_MINOR:
+	case DEV393_MINOR(DEV393_CIRCBUF0):
 		return circbuf_read(file, buf, count, off);
-	case JPEGHEAD_MINOR:
+	case DEV393_MINOR(DEV393_JPEGHEAD0):
 		return jpeghead_read(file, buf, count, off);
-	case HUFFMAN_MINOR:
+	case DEV393_MINOR(DEV393_HUFFMAN0):
 		return huffman_read(file, buf, count, off);
 	default:
 		return -EINVAL;
@@ -240,12 +240,12 @@ ssize_t circbuf_all_write(struct file *file, const char *buf, size_t count, loff
 
 	minor_to_chn(minor, &dev_type);
 	switch (dev_type) {
-	case CIRCBUF_MINOR:
+	case DEV393_MINOR(DEV393_CIRCBUF0):
 		return circbuf_write (file, buf, count, off);
-	case JPEGHEAD_MINOR:
+	case DEV393_MINOR(DEV393_JPEGHEAD0):
 		// no method for this module
 		return -EINVAL;
-	case HUFFMAN_MINOR:
+	case DEV393_MINOR(DEV393_HUFFMAN0):
 		return huffman_write (file, buf, count, off);
 	default:
 		return -EINVAL;
@@ -268,7 +268,7 @@ int circbuf_all_mmap(struct file *file, struct vm_area_struct *vma)
 
 	minor_to_chn(minor, &dev_type);
 	switch (dev_type) {
-	case CIRCBUF_MINOR:
+	case DEV393_MINOR(DEV393_CIRCBUF0):
 		return circbuf_mmap(file, vma);
 	default:
 		return -EINVAL;
@@ -292,7 +292,7 @@ unsigned int circbuf_all_poll(struct file *file, poll_table *wait)
 
 	minor_to_chn(minor, &dev_type);
 	switch (dev_type) {
-	case CIRCBUF_MINOR:
+	case DEV393_MINOR(DEV393_CIRCBUF0):
 		return circbuf_poll(file, wait);
 	default:
 		return 0;
@@ -963,12 +963,12 @@ static int circbuf_all_init(struct platform_device *pdev)
 	   return -EINVAL;
 
    dev_dbg(dev, "registering character device with name 'circbuf_operations'");
-   res = register_chrdev(CIRCBUF_MAJOR, "circbuf_operations", &circbuf_fops);
+   res = register_chrdev(DEV393_MAJOR(DEV393_CIRCBUF0), "circbuf_operations", &circbuf_fops);
    if(res < 0) {
-	   dev_err(dev, "couldn't get a major number %d.\n", CIRCBUF_MAJOR);
+	   dev_err(dev, "couldn't get a major number %d.\n", DEV393_MAJOR(DEV393_CIRCBUF0));
 	   return res;
    }
-   dev_info(dev, "registered MAJOR: %d\n", CIRCBUF_MAJOR);
+   dev_info(dev, "registered MAJOR: %d\n", DEV393_MAJOR(DEV393_CIRCBUF0));
 
    res = jpeghead_init(pdev);
    if (res < 0) {
@@ -1002,7 +1002,7 @@ static int circbuf_all_init(struct platform_device *pdev)
  */
 static int circbuf_remove(struct platform_device *pdev)
 {
-	unregister_chrdev(CIRCBUF_MAJOR, "circbuf_operations");
+	unregister_chrdev(DEV393_MAJOR(DEV393_CIRCBUF0), "circbuf_operations");
 
 	return 0;
 }
@@ -1017,7 +1017,7 @@ static struct platform_driver elphel393_circbuf = {
 		.probe          = circbuf_all_init,
 		.remove         = circbuf_remove,
 		.driver = {
-				.name = CIRCBUF_DRIVER_NAME,
+				.name = DEV393_NAME(DEV393_CIRCBUF0),
 				.of_match_table = elphel393_circbuf_of_match,
 		},
 };
@@ -1026,4 +1026,4 @@ module_platform_driver(elphel393_circbuf);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-MODULE_DESCRIPTION(CIRCBUF_DRIVER_NAME);
+MODULE_DESCRIPTION(DEV393_NAME(DEV393_CIRCBUF0));

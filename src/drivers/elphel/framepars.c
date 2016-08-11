@@ -47,9 +47,10 @@
 
 //#include <asm/delay.h>
 #include <asm/uaccess.h>
-#include <elphel/driver_numbers.h>
 #include <uapi/elphel/c313a.h>
 #include <uapi/elphel/exifa.h>
+#include <uapi/elphel/x393_devices.h>
+
 //#include "fpgactrl.h"  // defines port_csp0_adsensor_common.hdr, port_csp4_addr
 //#include "cc3x3.h"
 //#include "x3x3.h"           // hardware definitions
@@ -117,7 +118,7 @@
 /**
  * driver name to display
  */
-#define  FRAMEPARS_DRIVER_NAME "Elphel (R) Model 393 Frame Parameters device driver"
+#define  FRAMEPARS_DRIVER_DESCRIPTION "Elphel (R) Model 393 Frame Parameters device driver"
 
 /* 393: sFrameParsAll is an array of 4per-port structures */
 static struct framepars_all_t sFrameParsAll[SENSOR_PORTS] __attribute__ ((aligned(PAGE_SIZE)));  ///< Sensor Parameters, currently 16 pages all and 2048 pages some, static struct
@@ -1067,10 +1068,10 @@ int framepars_open(struct inode *inode, struct file *filp)
 	privData->minor = MINOR(inode->i_rdev);
 	MDF1(printk(": minor=0x%x\n", privData->minor));
 	switch (privData->minor) {
-	case  CMOSCAM_MINOR_FRAMEPARS_CHN_0:
-	case  CMOSCAM_MINOR_FRAMEPARS_CHN_1:
-	case  CMOSCAM_MINOR_FRAMEPARS_CHN_2:
-	case  CMOSCAM_MINOR_FRAMEPARS_CHN_3:
+	case  DEV393_MINOR(DEV393_FRAMEPARS0):
+	case  DEV393_MINOR(DEV393_FRAMEPARS1):
+	case  DEV393_MINOR(DEV393_FRAMEPARS2):
+	case  DEV393_MINOR(DEV393_FRAMEPARS3):
 		inode->i_size = 0; //or return 8 - number of frame pages?
 		return 0;
 	default:
@@ -1093,10 +1094,10 @@ int framepars_release(struct inode *inode, struct file *filp)
 
 	MDF1(printk(": minor=0x%x\n", p));
 	switch ( p ) {
-	case  CMOSCAM_MINOR_FRAMEPARS_CHN_0:
-	case  CMOSCAM_MINOR_FRAMEPARS_CHN_1:
-	case  CMOSCAM_MINOR_FRAMEPARS_CHN_2:
-	case  CMOSCAM_MINOR_FRAMEPARS_CHN_3:
+	case  DEV393_MINOR(DEV393_FRAMEPARS0):
+	case  DEV393_MINOR(DEV393_FRAMEPARS1):
+	case  DEV393_MINOR(DEV393_FRAMEPARS2):
+	case  DEV393_MINOR(DEV393_FRAMEPARS3):
 		break;
 	default:
 		return -EINVAL; //! do not need to free anything - "wrong number"
@@ -1122,7 +1123,7 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 {
 	unsigned long target_frame;
 	struct framepars_pd * privData = (struct framepars_pd*) file -> private_data;
-	int sensor_port = privData -> minor - CMOSCAM_MINOR_FRAMEPARS_CHN_0;
+	int sensor_port = privData -> minor - DEV393_MINOR(DEV393_FRAMEPARS0);
 //	struct framepars_t *framepars = aframepars[sensor_port];
 	MDF1(printk(" offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port));
 	switch (orig) {
@@ -1223,7 +1224,7 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 	struct frameparspair_t pars_static[256]; // will be sufficient for most calls
 	struct frameparspair_t * pars = pars_static;
 	struct framepars_pd * privData = (struct framepars_pd*)file->private_data;
-	int sensor_port = privData -> minor - CMOSCAM_MINOR_FRAMEPARS_CHN_0;
+	int sensor_port = privData -> minor - DEV393_MINOR(DEV393_FRAMEPARS0);
 	//	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long frame = *off; // ************* NOTE: Never use file->f_pos in write() and read() !!!
 	int latency = -1;
@@ -1234,7 +1235,10 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 	MDF1(printk(": file->f_pos=0x%x, *off=0x%x, count=0x%x\n", (int)file->f_pos, (int)*off, (int)count));
 	count &= ~7; // sizeof (struct frameparspair_t)==8
 	switch (privData->minor) {
-	case CMOSCAM_MINOR_FRAMEPARS:
+	case DEV393_MINOR(DEV393_FRAMEPARS0):
+    case DEV393_MINOR(DEV393_FRAMEPARS1):
+    case DEV393_MINOR(DEV393_FRAMEPARS2):
+    case DEV393_MINOR(DEV393_FRAMEPARS3):
 		if (count > sizeof(pars_static)) // only allocate if static is not enough
 			pars =     (struct frameparspair_t*)kmalloc(count, GFP_KERNEL);
 		if (!pars) return -ENOMEM;
@@ -1296,11 +1300,14 @@ int framepars_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	int result;
 	struct framepars_pd * privData = (struct framepars_pd*)file->private_data;
-	int sensor_port = privData -> minor - CMOSCAM_MINOR_FRAMEPARS_CHN_0;
+	int sensor_port = privData -> minor - DEV393_MINOR(DEV393_FRAMEPARS0);
 
 	MDF1(printk(": minor=0x%x\n", privData->minor));
 	switch (privData->minor) {
-	case  CMOSCAM_MINOR_FRAMEPARS:
+    case DEV393_MINOR(DEV393_FRAMEPARS0):
+    case DEV393_MINOR(DEV393_FRAMEPARS1):
+    case DEV393_MINOR(DEV393_FRAMEPARS2):
+    case DEV393_MINOR(DEV393_FRAMEPARS3):
 		result = remap_pfn_range(vma,
 					 vma->vm_start,
 					 ((unsigned long)virt_to_phys(&aframeparsall[sensor_port])) >> PAGE_SHIFT, // Should be page-aligned
@@ -1331,22 +1338,22 @@ int framepars_init(struct platform_device *pdev)
 		initMultiPars(sensor_port);        // just clear - needs to be called again when sensor is recognized
 	}
 	frameParsInitialized = 0;
-	res = register_chrdev(FRAMEPARS_MAJOR, "framepars_operations", &framepars_fops);
+	res = register_chrdev(DEV393_MAJOR(DEV393_FRAMEPARS0), DEV393_NAME(DEV393_FRAMEPARS0), &framepars_fops);
 	if (res < 0) {
-		printk(KERN_ERR "\nframepars_init: couldn't get a major number %d.\n", FRAMEPARS_MAJOR);
+		printk(KERN_ERR "\nframepars_init: couldn't get a major number %d.\n", DEV393_MAJOR(DEV393_FRAMEPARS0));
 		return res;
 	}
 	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
 		init_waitqueue_head(&aframepars_wait_queue[sensor_port]);
 	}
-	dev_info(dev, "registered MAJOR: %d\n", FRAMEPARS_MAJOR);
+	dev_info(dev, "registered MAJOR: %d\n", DEV393_MAJOR(DEV393_FRAMEPARS0));
 
 	return 0;
 }
 
 int framepars_remove(struct platform_device *pdev)
 {
-	unregister_chrdev(FRAMEPARS_MAJOR, "framepars_operations");
+	unregister_chrdev(DEV393_MAJOR(DEV393_FRAMEPARS0), DEV393_NAME(DEV393_FRAMEPARS0));
 
 	return 0;
 }
@@ -1361,7 +1368,7 @@ int framepars_remove(struct platform_device *pdev)
 //	.probe			= framepars_init,
 //	.remove			= framepars_remove,
 //	.driver			= {
-//		.name		= FRAMEPARS_DRIVER_NAME,
+//		.name		= DEV393_NAME(DEV393_FRAMEPARS0),
 //		.of_match_table = elphel393_framepars_of_match,
 //	},
 //};
@@ -1370,4 +1377,5 @@ int framepars_remove(struct platform_device *pdev)
 //
 //MODULE_LICENSE("GPL");
 //MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-//MODULE_DESCRIPTION(X3X3_FRAMEPARS_DRIVER_NAME);
+//MODULE_DESCRIPTION(FRAMEPARS_DRIVER_DESCRIPTION);
+//

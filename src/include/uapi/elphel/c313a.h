@@ -120,6 +120,8 @@
 #define MCPwrseq	0x200
 #else
     // Temporarily porting, to use only bus = 1 (GPS, IMU)
+    // Moved to include/uapi/elphel/x393_devices.h
+#if 0
     #define X3X3_I2C_CTRL        0  ///< control/reset i2c
     #define X3X3_I2C_8_AINC      1  ///< 8bit  registers, autoincement while read/write
     #define X3X3_I2C_16_AINC     2  ///< 16bit registers, autoincement while read/write
@@ -128,6 +130,7 @@
     #define X3X3_I2C_RAW         5  ///< 8bit  registers, no address byte (just slave, then read/write byte(s)
     #define X3X3_I2C1_RAW        6  ///< 8bit  registers, no address byte (just slave, then read/write byte(s)
     #define X3X3_I2C_ENABLE      7  ///< enable(/protect) different I2C devices for different types of I2C accesses
+#endif
     #define X3X3_I2C_ENABLE_RD   0  ///< bit 0 - enable i2c read
     #define X3X3_I2C_ENABLE_WR   1  ///< bit 1 - enable i2c write
     #define X3X3_I2C_ENABLE_RAW  2  ///< bit 2 - enable i2c raw (no address byte)
@@ -1478,7 +1481,7 @@ struct p_names_t {
 #define      LSEEK_HIST_WAIT_C    0x29 ///< set histogram waiting for the C (actually R, G2, B) histograms to become available - implies G1 too
 #define      LSEEK_HIST_REQ_EN    0x2a ///< enable histogram request when reading histogram (safer, but may be not desirable in HDR mode) - default after opening
 #define      LSEEK_HIST_REQ_DIS   0x2b ///< disable histogram request when reading histogram - will read latest available relying it is available
-#define      LSEEK_HIST_SET_CHN   0x30 ///< ..2F Select channel to wait for (4*port+subchannel)
+#define      LSEEK_HIST_SET_CHN   0x30 ///< ..3F Select channel to wait for (4*port+subchannel)
 #define      LSEEK_HIST_NEEDED    0x10000 ///< set histogram "needed" mask - 0x10000..0x1ffff
 //#define      LSEEK_HIST_WAIT_AE   0x2a ///< wait for autoexposure enabled
 

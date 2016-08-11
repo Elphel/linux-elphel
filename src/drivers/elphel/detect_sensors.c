@@ -31,15 +31,13 @@
 #include <linux/fs.h>
 
 #include "x393.h"
-//#include "x393_detect_sensors.h"
-#include <elphel/driver_numbers.h>
+#include <uapi/elphel/x393_devices.h>
 #include <uapi/elphel/c313a.h>
 #include "mt9x001.h"
 #include "multi10359.h"
 #include "detect_sensors.h"
 
 #define DETECT_SENSORS_MODULE_DESCRIPTION "Detect sensor type(s) attached to each of the ports"
-#define DETECT_SENSORS_DRIVER_NAME        "detect_sensors"
 #define OF_PREFIX_NAME                    "elphel393-detect_sensors"
 struct sensor_port_config_t
  {
@@ -359,31 +357,39 @@ static int elphel393_detect_sensors_sysfs_register(struct platform_device *pdev)
  ///< @return 0 on success, or negative error.
  {
      const   char * config_string;
-     //    struct x393_i2c_device_list * dl;
      char names[4][80];
-//     int rslt;
-     //    int num_devs, nd, ni, sa7, num_addr, num_data, khz;
      struct device_node *node = pdev->dev.of_node;
-     //    struct device_attribute *new_attr;
-//     struct device *dev =&pdev->dev;
      int num_ports, port, num_sub, sub_chn;
      if (node) {
-         if (num_ports > SENSOR_PORTS)
-             num_ports = SENSOR_PORTS;
-         config_string = of_get_property(node,  OF_PREFIX_NAME",ports", NULL); // &len);
-         num_ports = sscanf(config_string,"%79s %79s %79s %79s", names[0],  names[1],  names[2],  names[3]);
-         for (port = 0; port < num_ports; port++){
-             set_detected_mux_code(port, get_code_by_name(names[sub_chn], DETECT_MUX));
+         config_string = of_get_property(node,  OF_PREFIX_NAME",port-mux", NULL); // &len);
+         pr_info ("Mux config_string = %s (was looking for '%s')\n",config_string, OF_PREFIX_NAME",port-mux");
+         if (config_string) {
+             num_ports = sscanf(config_string,"%79s %79s %79s %79s", names[0],  names[1],  names[2],  names[3]);
+             if (num_ports > SENSOR_PORTS)
+                 num_ports = SENSOR_PORTS;
+             pr_info ("num_ports= %d\n",num_ports);
+             for (port = 0; port < num_ports; port++){
+                 pr_info ("Setting port %d mux  '%s' (0x%x)\n",port, names[port], get_code_by_name(names[port], DETECT_MUX));
+                 set_detected_mux_code(port, get_code_by_name(names[port], DETECT_MUX));
+             }
          }
          num_ports = of_property_count_strings(node,OF_PREFIX_NAME",sensors");
+         if (num_ports > SENSOR_PORTS)
+             num_ports = SENSOR_PORTS;
+         pr_info ("num_ports = %d (was looking for '%s')\n",num_ports, OF_PREFIX_NAME",sensors");
          for (port = 0; port < num_ports; port++){
              if (of_property_read_string_index(node, OF_PREFIX_NAME",sensors", port, &config_string)) {
                  pr_err("%s: No data for selected port\n", __func__);
                  BUG();
              }
-             num_sub = sscanf(config_string,"%79s %79s %79s %79s", names[0],  names[1],  names[2],  names[3]);
-             for (sub_chn = 0; sub_chn < num_sub; sub_chn++){
-                 set_detected_sensor_code(port, sub_chn,  get_code_by_name(names[sub_chn], DETECT_SENSOR));
+             pr_info ("Sensor config_string = %s\n",config_string);
+             if (config_string) {
+                 num_sub = sscanf(config_string,"%79s %79s %79s %79s", names[0],  names[1],  names[2],  names[3]);
+                 pr_info ("port %d : %d subchannels\n",port, num_sub);
+                 for (sub_chn = 0; sub_chn < num_sub; sub_chn++){
+                     pr_info ("Setting sensor %d:%d '%s' (0x%x)\n",port, sub_chn, names[sub_chn], get_code_by_name(names[sub_chn], DETECT_SENSOR));
+                     set_detected_sensor_code(port, sub_chn,  get_code_by_name(names[sub_chn], DETECT_SENSOR));
+                 }
              }
          }
      }
@@ -402,17 +408,18 @@ static int elphel393_detect_sensors_sysfs_register(struct platform_device *pdev)
 //     pSensorPortConfig = sensorPortConfig;
 
      elphel393_detect_sensors_sysfs_register(pdev);
-
+     pr_info ("Registered sysfs for detect_sensors");
      match = of_match_device(elphel393_detect_sensors_of_match, dev);
-     if (!match)
+     if (!match) {
          pr_err("Detect sensors ERROR: No device tree for '%s' node found\n",elphel393_detect_sensors_of_match[0].compatible);
-     return -EINVAL;
+         return -EINVAL;
+     }
 
      detect_sensors_init_of(pdev);
 
 
-     //    dev_dbg(dev, "Registering character device with name "DETECT_SENSORS_DRIVER_NAME);
-     //    res = register_chrdev(DETECT_SENSORS_MAJOR, DETECT_SENSORS_DRIVER_NAME, &detect_sensors_fops);
+     //    dev_dbg(dev, "Registering character device with name "DEV393_NAME(DEV393_DETECT_SENSORS));
+     //    res = register_chrdev(DETECT_SENSORS_MAJOR, DEV393_NAME(DEV393_DETECT_SENSORS), &detect_sensors_fops);
      //    if(res < 0) {
      //        dev_err(dev, "\nlogger_init: couldn't get a major number  %d.\n ",DETECT_SENSORS_MAJOR);
      //        return res;
@@ -426,7 +433,7 @@ static int elphel393_detect_sensors_sysfs_register(struct platform_device *pdev)
  static int detect_sensors_remove(struct platform_device *pdev) ///< [in] pointer to @e platform_device structure
  ///< @return always 0
  {
-     //    unregister_chrdev(DETECT_SENSORS_MAJOR, DETECT_SENSORS_DRIVER_NAME);
+     //    unregister_chrdev(DETECT_SENSORS_MAJOR, DEV393_NAME(DEV393_DETECT_SENSORS));
 
      return 0;
  }
@@ -442,7 +449,7 @@ static int elphel393_detect_sensors_sysfs_register(struct platform_device *pdev)
          .probe          = detect_sensors_probe,
          .remove         = detect_sensors_remove,
          .driver = {
-                 .name =           DETECT_SENSORS_DRIVER_NAME,
+                 .name =           DEV393_NAME(DEV393_DETECT_SENSORS),
                  .of_match_table = elphel393_detect_sensors_of_match,
          },
  };
