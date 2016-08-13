@@ -96,7 +96,7 @@ const char *ccc2 = xxx;
 #define FPGA_SJTAG_BOUNDARY_OFFSET       12 // Minors range start for the sensor port boundary
 
 //#define X3X3_EXIF_EXIF                  0 // read encoded Exif data (SEEK_END,
-//#define X3X3_EXIF_META                  1 // write metadata, concurently opened files. All writes atomic
+//#define X3X3_EXIF_META                  1 // write metadata, concurently opened files. All writes are atomic
 // control/setup devices
 #define X3X3_EXIF_TEMPLATE                2 // write Exif template
 #define X3X3_EXIF_METADIR                 3 // write metadata to Exif header translation (dir_table[MAX_EXIF_FIELDS])
@@ -108,8 +108,8 @@ const char *ccc2 = xxx;
 #define X3X3_EXIF_EXIF_CHN_1           0x11 // read encoded Exif data (SEEK_END,
 #define X3X3_EXIF_EXIF_CHN_2           0x12 // read encoded Exif data (SEEK_END,
 #define X3X3_EXIF_EXIF_CHN_3           0x13 // read encoded Exif data (SEEK_END,
-#define X3X3_EXIF_META_CHN_0           0x20 // write metadata, concurently opened files. All writes atomic
-#define X3X3_EXIF_META_CHN_1           0x21 // write metadata, concurently opened files. All writes atomic
-#define X3X3_EXIF_META_CHN_2           0x22 // write metadata, concurently opened files. All writes atomic
-#define X3X3_EXIF_META_CHN_3           0x23 // write metadata, concurently opened files. All writes atomic
+#define X3X3_EXIF_META_CHN_0           0x20 // write metadata, concurently opened files. All writes are atomic
+#define X3X3_EXIF_META_CHN_1           0x21 // write metadata, concurently opened files. All writes are atomic
+#define X3X3_EXIF_META_CHN_2           0x22 // write metadata, concurently opened files. All writes are atomic
+#define X3X3_EXIF_META_CHN_3           0x23 // write metadata, concurently opened files. All writes are atomic
 

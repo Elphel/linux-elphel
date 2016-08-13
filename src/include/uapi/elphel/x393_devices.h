@@ -16,20 +16,26 @@
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
  
+/* Each device node should be specified in the following format:
+#define <DEVICE_RFEFERENCE>   ("<dev path>",    "<driver_name>",  major, minor,"<permissions>","<b/c>") [optional comment]
+ * Access to individual fields is provide with the macros defined below, for example:
+ * DEV393_PATH(DEV393_EXIF_TEMPLATE) returns "/dev/exif_template,
+ * DEV393_MAJOR(DEV393_EXIF_TEMPLATE) returns 2 */
+
 #define DEV393_EXIF_TEMPLATE  ("exif_template",     "exif_elphel",   125,  2, "0666", "c")  ///< write Exif template
 #define DEV393_EXIF_METADIR   ("exif_metadir",      "exif_elphel",   125,  3, "0666", "c")  ///< write metadata to Exif header translation (dir_table[MAX_EXIF_FIELDS])
 #define DEV393_EXIF_TIME      ("exif_time",         "exif_elphel",   125,  4, "0666", "c")  ///< write today/tomorrow date (YYYY:MM:DD) and number of seconds at today/tomorrow
-                                                                             ///< midnight (00:00:00) in seconds from epoch (long, startting from LSB)
+                                                                             ///< midnight (00:00:00) in seconds from epoch (long, starting from LSB)
 
 #define DEV393_EXIF0          ("exif_exif0",        "exif_elphel",   125, 16, "0666", "c")  ///< sensor port 0: read encoded Exif data (SEEK_END)
 #define DEV393_EXIF1          ("exif_exif1",        "exif_elphel",   125, 17, "0666", "c")  ///< sensor port 1: read encoded Exif data (SEEK_END)
 #define DEV393_EXIF2          ("exif_exif2",        "exif_elphel",   125, 18, "0666", "c")  ///< sensor port 2: read encoded Exif data (SEEK_END)
 #define DEV393_EXIF3          ("exif_exif3",        "exif_elphel",   125, 19, "0666", "c")  ///< sensor port 3: read encoded Exif data (SEEK_END)
 
-#define DEV393_EXIF_META0     ("exif_meta0",        "exif_elphel",   125, 32, "0666", "c")  ///< sensor port 0: write metadata, concurrently opened files. All writes atomic
-#define DEV393_EXIF_META1     ("exif_meta1",        "exif_elphel",   125, 33, "0666", "c")  ///< sensor port 1: write metadata, concurrently opened files. All writes atomic
-#define DEV393_EXIF_META2     ("exif_meta2",        "exif_elphel",   125, 34, "0666", "c")  ///< sensor port 2: write metadata, concurrently opened files. All writes atomic
-#define DEV393_EXIF_META3     ("exif_meta3",        "exif_elphel",   125, 35, "0666", "c")  ///< sensor port 3: write metadata, concurrently opened files. All writes atomic
+#define DEV393_EXIF_META0     ("exif_meta0",        "exif_elphel",   125, 32, "0666", "c")  ///< sensor port 0: write metadata, concurrently opened files. All writes are atomic
+#define DEV393_EXIF_META1     ("exif_meta1",        "exif_elphel",   125, 33, "0666", "c")  ///< sensor port 1: write metadata, concurrently opened files. All writes are atomic
+#define DEV393_EXIF_META2     ("exif_meta2",        "exif_elphel",   125, 34, "0666", "c")  ///< sensor port 2: write metadata, concurrently opened files. All writes are atomic
+#define DEV393_EXIF_META3     ("exif_meta3",        "exif_elphel",   125, 35, "0666", "c")  ///< sensor port 3: write metadata, concurrently opened files. All writes are atomic
 
 #define DEV393_FRAMEPARS0     ("frameparsall0","framepars_operations",125,80, "0666", "c")  ///< Access frame parameters for channel 0 (schedule modification, read with mmap)
 #define DEV393_FRAMEPARS1     ("frameparsall1","framepars_operations",125,81, "0666", "c")  ///< Access frame parameters for channel 1 (schedule modification, read with mmap)
@@ -93,12 +99,11 @@
 #define _DEV393_PERMISSIONS(a,b,c,d,n, ...) n
 #define _DEV393_TYPE(a,b,c,d,e,n,...) n
 
-#define DEV393_PATH(LIST)         _DEV393_PATH LIST
-#define DEV393_NAME(LIST)         _DEV393_NAME LIST
-#define DEV393_MAJOR(LIST)        _DEV393_MAJOR LIST
-#define DEV393_MINOR(LIST)        _DEV393_MINOR LIST
-#define DEV393_PERMISSIONS(LIST)  _DEV393_PERMISSIONS LIST
-#define DEV393_TYPE(LIST)         _DEV393_TYPE LIST
+#define DEV393_PATH(LIST)         _DEV393_PATH LIST          ///< @return full path of the device node as string ("/dev/somedivice")
+#define DEV393_NAME(LIST)         _DEV393_NAME LIST          ///< @return driver name
+#define DEV393_MAJOR(LIST)        _DEV393_MAJOR LIST         ///< @return device major number
+#define DEV393_MINOR(LIST)        _DEV393_MINOR LIST         ///< @return device minor number
+#define DEV393_PERMISSIONS(LIST)  _DEV393_PERMISSIONS LIST   ///< @return device permissions as quoted string
+#define DEV393_TYPE(LIST)         _DEV393_TYPE LIST          ///< @return device type: "b" for block devices, "c" - for character ones
 
 
-char * aaa = DEV393_PATH(DEV393_HUFFMAN0);

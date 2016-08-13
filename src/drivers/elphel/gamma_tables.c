@@ -794,7 +794,7 @@ int gammas_release(struct inode *inode, struct file *file) {
  * - lseek (SEEK_END, value = 0) - set file pointer to GAMMA_CACHE_NUMBER
  * - lseek (SEEK_END, value >  0) - execute commands, do not modify file pointer. Commands are:
  *   - LSEEK_GAMMA_INIT      - initialize gamma tables structures
- *   - LSEEK_GAMMA_ISCURRENT - verify that the gumm atable is current
+ *   - LSEEK_GAMMA_ISCURRENT - verify that the gama table is current
  * @param file 
  * @param offset 
  * @param orig SEEK_SET, SEEK_CUR or SEEK_SET END
