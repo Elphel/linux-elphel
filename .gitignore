@@ -4,11 +4,11 @@ Debug
 Release
 linux
 sysroots
-.project
-.cproject
-.externalToolBuilders
-.settings
-.pydevproject
+/.project
+/.cproject
+/.externalToolBuilders
+/.settings
+/.pydevproject
 html
 *.directory
 doxygen.tag
