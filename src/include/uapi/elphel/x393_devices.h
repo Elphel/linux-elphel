@@ -37,10 +37,10 @@
 #define DEV393_EXIF_META2     ("exif_meta2",        "exif_elphel",   125, 34, "0666", "c")  ///< sensor port 2: write metadata, concurrently opened files. All writes are atomic
 #define DEV393_EXIF_META3     ("exif_meta3",        "exif_elphel",   125, 35, "0666", "c")  ///< sensor port 3: write metadata, concurrently opened files. All writes are atomic
 
-#define DEV393_FRAMEPARS0     ("frameparsall0","framepars_operations",125,80, "0666", "c")  ///< Access frame parameters for channel 0 (schedule modification, read with mmap)
-#define DEV393_FRAMEPARS1     ("frameparsall1","framepars_operations",125,81, "0666", "c")  ///< Access frame parameters for channel 1 (schedule modification, read with mmap)
-#define DEV393_FRAMEPARS2     ("frameparsall2","framepars_operations",125,82, "0666", "c")  ///< Access frame parameters for channel 2 (schedule modification, read with mmap)
-#define DEV393_FRAMEPARS3     ("frameparsall3","framepars_operations",125,83, "0666", "c")  ///< Access frame parameters for channel 3 (schedule modification, read with mmap)
+#define DEV393_FRAMEPARS0     ("frameparsall0","framepars_operations",130,80, "0666", "c")  ///< Access frame parameters for channel 0 (schedule modification, read with mmap)
+#define DEV393_FRAMEPARS1     ("frameparsall1","framepars_operations",130,81, "0666", "c")  ///< Access frame parameters for channel 1 (schedule modification, read with mmap)
+#define DEV393_FRAMEPARS2     ("frameparsall2","framepars_operations",130,82, "0666", "c")  ///< Access frame parameters for channel 2 (schedule modification, read with mmap)
+#define DEV393_FRAMEPARS3     ("frameparsall3","framepars_operations",130,83, "0666", "c")  ///< Access frame parameters for channel 3 (schedule modification, read with mmap)
 
 #define DEV393_JTAG_RESET     ("fpgaresetjtag",     "x393_jtag",     132,  0, "0666", "c")  ///< Just close open files (same as jtagraw)
 #define DEV393_JTAG_RAW       ("jtagraw",           "x393_jtag",     132,  0, "0666", "c")  ///< Just close open files (same as jtagraw)

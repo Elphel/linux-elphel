@@ -208,7 +208,7 @@
  */
 // parameter indexes will be updated to group-related ones into the same groups of 32
 // NOTE: P_* and G_* should not end with numbers - numbers will be used in PHP constants to add to the constant value (ELPHEL_AAA3 will be treated as ELPHEL_AAA+3)
-//#define P_NUMBER         1024   //number of registers (was 64) - NOTE: obsolete?
+#define P_NUMBER         1024   //number of registers (was 64) - NOTE: obsolete?
 #define P_SENSOR            1   /**< if set to 0 - will (re)detect sensor, if set to None - won't bother <ul>
 <li>                        4  - ZR32112MLC - now there is no way to see color/mono
 <li>                        5  - ZR32112PLC
@@ -1694,6 +1694,12 @@ struct sensorproc_t {
 
 //#define EXPOSURE_UNIT 100 // to move to finer exposure settings - current unit in microseconds. TODO: Propagate it to drivers...
 #define EXPOSURE_UNIT 1 ///< to move to finer exposure settings - current unit in microseconds. TODO: Propagate it to drivers...
+
+typedef struct{
+    unsigned long usec;
+    unsigned long sec;
+}  sec_usec_t;
+
 /// width,height, quality are still needed even with new Exif - it is used to rebuild JPEG header
 
 // most parameters are moved out, but width, height, quality are needed for JPEG header, so currently the following are used:

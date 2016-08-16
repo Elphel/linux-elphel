@@ -957,7 +957,7 @@ int image_acq_init(struct platform_device *pdev)
 
 #endif
 
-	dev_dbg(dev, "Elphel FPGA interrupts initialized\n");
+	dev_info(dev, "Elphel FPGA interrupts initialized\n");
 	dev_dbg(dev, "reset all compressors\n");
 	for (i = 0; i < SENSOR_PORTS; i++) {
 		reset_compressor(i);
@@ -969,7 +969,7 @@ int image_acq_init(struct platform_device *pdev)
 	//init_pgm_proc ();   // setup pointers to functions (not sensor-specific)
 	//MDD1(printk("reset_qtables()\n"));
 
-	framepars_init(pdev);
+//	framepars_init(pdev);
 
 	return 0;
 }

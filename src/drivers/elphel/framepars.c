@@ -55,7 +55,7 @@
 //#include "cc3x3.h"
 //#include "x3x3.h"           // hardware definitions
 
-
+#include "x393_fpga_functions.h"
 #include "sensor_common.h"
 #include "framepars.h"
 #include "param_depend.h" // specifies what functions should be called for different parameters changed
@@ -168,6 +168,9 @@ struct sensorproc_t * sensorproc = NULL;
 		      schedule())
 
 #endif
+
+/** @brief Global pointer to basic device structure. This pointer is used in debugfs output functions */
+static struct device *g_devfp_ptr;
 
 //wait_queue_head_t framepars_wait_queue; // used to wait for the frame to be acquired
 
@@ -879,7 +882,7 @@ int setFramePar(int sensor_port, struct framepars_t * this_framepars, unsigned l
 	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 
-	MDF8(printk(": thisFrameNumber=0x%lx frame8=%d index= %d (0x%lx), val=0x%lx\n", thisFrameNumber(sensor_port), frame8, index, mindex, val));
+	dev_dbg(g_devfp_ptr, ": thisFrameNumber=0x%lx frame8=%d index= %d (0x%lx), val=0x%lx\n", thisFrameNumber(sensor_port), frame8, index, mindex, val);
 	D1I(local_irq_save(flags));
 //  if (index > P_MAX_PAR) {
 	if (index > ((index >= FRAMEPAR_GLOBALS) ? (P_MAX_GPAR + FRAMEPAR_GLOBALS) : P_MAX_PAR)) {
@@ -911,7 +914,7 @@ int setFramePar(int sensor_port, struct framepars_t * this_framepars, unsigned l
 			if (mindex & FRAMEPAIR_FORCE_PROC) {
 				framepars[frame8].functions        |= funcs2call[index]; //Mark which functions will be needed to process the parameters
 			}
-			MDF8(printk(" bindex=0x%lx, bmask=0x%08lx, bmask32=0x%08lx, functions=0x%08lx\n", bindex, bmask, bmask32, framepars[frame8].functions));
+			dev_dbg(g_devfp_ptr, " bindex=0x%lx, bmask=0x%08lx, bmask32=0x%08lx, functions=0x%08lx\n", bindex, bmask, bmask32, framepars[frame8].functions);
 // Write parameter to the next frames up to the one that have the same parameter already modified
 			if ((mindex & FRAMEPAIR_JUST_THIS) == 0) {
 				MDF8(printk(":        ---   setting next frames"));
@@ -936,7 +939,7 @@ int setFramePar(int sensor_port, struct framepars_t * this_framepars, unsigned l
 		}
 	} else { // error - trying to write "just this" to the "future" - that would stick if allowed
 		D1I(local_irq_restore(flags));
-		ELP_KERR(printk("Tried to write JUST_THIS parameter (0x%lx) too far in the future", mindex));
+		dev_err(g_devfp_ptr, "Tried to write JUST_THIS parameter (0x%lx) too far in the future", mindex);
 		return -ERR_FRAMEPARS_TOOEARLY;
 	}
 	D1I(local_irq_restore(flags));
@@ -964,17 +967,17 @@ int setFramePars(int sensor_port, struct framepars_t * this_framepars, int numPa
 	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 
-	MDF8(printk(": this_framepars=0x%x numPars=%d\n", (int)this_framepars, numPars));
+	dev_dbg(g_devfp_ptr, ": this_framepars=0x%x numPars=%d\n", (int)this_framepars, numPars);
 	D1I(local_irq_save(flags));
 	for (npar = 0; npar < numPars; npar++) {
 		frame8 = (this_framepars->pars[P_FRAME]) & PARS_FRAMES_MASK;
 		val = pars[npar].val;
 		index = pars[npar].num & 0xffff;
-		MDF8(printk(":    ---   frame8=%d index=%d (0x%x) val=0x%x\n", frame8, index, (int)pars[npar].num, (int)val));
+		dev_dbg(g_devfp_ptr, ":    ---   frame8=%d index=%d (0x%x) val=0x%x\n", frame8, index, (int)pars[npar].num, (int)val);
 		// remark: code below looks similar to setFramePar function, call it instead
 		if (index > ((index >= FRAMEPAR_GLOBALS) ? (P_MAX_GPAR + FRAMEPAR_GLOBALS) : P_MAX_PAR)) {
 			D1I(local_irq_restore(flags));
-			ELP_KERR(printk(" bad index=%d > %d\n", index, P_MAX_PAR));
+			dev_err(g_devfp_ptr, " bad index=%d > %d\n", index, P_MAX_PAR);
 			return -ERR_FRAMEPARS_BADINDEX;
 		}
 		if (index >= FRAMEPAR_GLOBALS) {                        // ignore frame logic, set "static" parameters to frame 0
@@ -1021,7 +1024,7 @@ int setFramePars(int sensor_port, struct framepars_t * this_framepars, int numPa
 			}
 		} else { // error - trying to write "just this" to the "future" - that would stick if allowed
 			D1I(local_irq_restore(flags));
-			ELP_KERR(printk("Tried to write JUST_THIS parameter (0x%lx) too far in the future", pars[npar].num));
+			dev_err(g_devfp_ptr, "Tried to write JUST_THIS parameter (0x%lx) too far in the future", pars[npar].num);
 			return -ERR_FRAMEPARS_TOOEARLY;
 		}
 	}
@@ -1124,8 +1127,10 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 	unsigned long target_frame;
 	struct framepars_pd * privData = (struct framepars_pd*) file -> private_data;
 	int sensor_port = privData -> minor - DEV393_MINOR(DEV393_FRAMEPARS0);
+    sec_usec_t sec_usec;
 //	struct framepars_t *framepars = aframepars[sensor_port];
-	MDF1(printk(" offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port));
+    dev_dbg(g_devfp_ptr, "(framepars_lseek)  offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port);
+
 	switch (orig) {
 	case SEEK_SET:
 		file->f_pos = offset;
@@ -1155,48 +1160,55 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 				switch (offset) {
 				case LSEEK_GET_FPGA_TIME:
 					//X313_GET_FPGA_TIME( GLOBALPARS(G_SECONDS), GLOBALPARS(G_MICROSECONDS) );
-					MDF2(printk("X313_GET_FPGA_TIME\n"));
+                    get_fpga_rtc(&sec_usec);
+                    GLOBALPARS(sensor_port,G_SECONDS) =      sec_usec.sec;
+                    GLOBALPARS(sensor_port,G_MICROSECONDS) = sec_usec.usec;
+                    dev_dbg(g_devfp_ptr, "LSEEK_GET_FPGA_TIME: sec=%ld, usec=%ld\n", sec_usec.sec, sec_usec.usec);
 					break;
 				case LSEEK_SET_FPGA_TIME: // better to use write, not lseek to set FPGA time
 					//X313_SET_FPGA_TIME( GLOBALPARS(G_SECONDS) , GLOBALPARS(G_MICROSECONDS) );
-					MDF2(printk("X313_SET_FPGA_TIME\n"));
+                    sec_usec.sec =  GLOBALPARS(sensor_port,G_SECONDS);
+                    sec_usec.usec = GLOBALPARS(sensor_port,G_MICROSECONDS);
+                    set_fpga_rtc(sec_usec);
+                    dev_dbg(g_devfp_ptr, "LSEEK_SET_FPGA_TIME: sec=%ld, usec=%ld\n", sec_usec.sec, sec_usec.usec);
 					break;
 				case LSEEK_FRAMEPARS_INIT:      // reset hardware sequencers, init framepars structure
-					MDF2(printk("LSEEK_FRAMEPARS_INIT\n"));
+				    dev_dbg(g_devfp_ptr, "LSEEK_FRAMEPARS_INIT\n");
 					initGlobalPars(sensor_port);       // reset all global parameters but the first 32
 					initSequencers(sensor_port);
 					break;
 				case LSEEK_FRAME_RESET: // reset absolute frame number to avoid integer frame number overflow
-					MDF2(printk("LSEEK_FRAME_RESET\n"));
+                    dev_dbg(g_devfp_ptr, "LSEEK_FRAME_RESET\n");
 					resetFrameNumber(sensor_port);
 					break;
 				case LSEEK_SENSORPROC:                  // process modified parameters in frame 0 (to start sensor detection)
-					MDF2(printk("LSEEK_SENSORPROC: framepars[0].functions=0x%08lx\n", framepars[0].functions));
+				    dev_dbg(g_devfp_ptr, "LSEEK_SENSORPROC: aframepars[%d][0].functions=0x%08lx\n",
+				            sensor_port, aframepars[sensor_port][0].functions);
 					processPars(sensor_port, sensorproc, 0, 8);  //frame0, all 8 frames (maxAhead==8)
 					break;
 				case LSEEK_DMA_INIT:                    // initialize ETRAX DMA (normally done in sensor_common.c at driver init
-					MDF2(printk("LSEEK_DMA_INIT\n"));
+				    dev_dbg(g_devfp_ptr, "LSEEK_DMA_INIT\n");
 					//x313_dma_init();
 					break;
 				case LSEEK_DMA_STOP: // stop DMA
-					MDF2(printk("LSEEK_DMA_STOP\n"));
+				    dev_dbg(g_devfp_ptr, "LSEEK_DMA_STOP\n");
 					//x313_dma_stop();           //
 					break;
 				case LSEEK_DMA_START: // start DMA
-					MDF2(printk("LSEEK_DMA_START\n"));
+				    dev_dbg(g_devfp_ptr, "LSEEK_DMA_START\n");
 					//x313_dma_start();          //
 					break;
 				case LSEEK_COMPRESSOR_RESET: // reset compressor and buffer pointers
-					MDF2(printk("LSEEK_COMPRESSOR_RESET\n"));
+				    dev_dbg(g_devfp_ptr, "LSEEK_COMPRESSOR_RESET\n");
 					//reset_compressor();
 					break;
 				case LSEEK_INTERRUPT_OFF: // disable camera interrupts
-					MDF2(printk("LSEEK_INTERRUPT_OFF\n"));
+				    dev_dbg(g_devfp_ptr, "LSEEK_INTERRUPT_OFF\n");
 //					compressor_interrupts(0,sensor_port);
                     sensor_interrupts(0,sensor_port);
 					break;
 				case LSEEK_INTERRUPT_ON: // enable camera interrupts
-//					MDF2(printk("LSEEK_INTERRUPT_ON\n"));
+				    dev_dbg(g_devfp_ptr, "LSEEK_INTERRUPT_ON\n");
 					sensor_interrupts(1,sensor_port);
 					break;
 				}
@@ -1231,8 +1243,9 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 	int first = 0;
 	int last;
 	int result;
-
-	MDF1(printk(": file->f_pos=0x%x, *off=0x%x, count=0x%x\n", (int)file->f_pos, (int)*off, (int)count));
+	sec_usec_t sec_usec;
+//	MDF1(printk(": file->f_pos=0x%x, *off=0x%x, count=0x%x\n", (int)file->f_pos, (int)*off, (int)count));
+    dev_dbg(g_devfp_ptr, ": file->f_pos=0x%x, *off=0x%x, count=0x%x\n", (int)file->f_pos, (int)*off, (int)count);
 	count &= ~7; // sizeof (struct frameparspair_t)==8
 	switch (privData->minor) {
 	case DEV393_MINOR(DEV393_FRAMEPARS0):
@@ -1261,10 +1274,16 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 						latency = (pars[first].val & 0x80000000) ? -1 : pars[first].val;
 						break;
 					case FRAMEPARS_SETFPGATIME: //ignore value (should be already set in G_SECONDS, G_MICROSECONDS frame0)
-						//X313_SET_FPGA_TIME( GLOBALPARS(G_SECONDS) , GLOBALPARS(G_MICROSECONDS) );
+                        //X313_SET_FPGA_TIME( GLOBALPARS(G_SECONDS) , GLOBALPARS(G_MICROSECONDS) );
+					    sec_usec.sec =  GLOBALPARS(sensor_port,G_SECONDS);
+                        sec_usec.usec = GLOBALPARS(sensor_port,G_MICROSECONDS);
+                        set_fpga_rtc(sec_usec);
 						break;
 					case FRAMEPARS_GETFPGATIME: //ignore value, set frame 0 G_SECONDS, G_MICROSECONDS to FPGA registers
 						//X313_GET_FPGA_TIME( GLOBALPARS(G_SECONDS) , GLOBALPARS(G_MICROSECONDS) );
+					    get_fpga_rtc(&sec_usec);
+					    GLOBALPARS(sensor_port,G_SECONDS) =      sec_usec.sec;
+                        GLOBALPARS(sensor_port,G_MICROSECONDS) = sec_usec.usec;
 						break;
 					default:
 						printk("framepars_write: invalid special instruction: 0x%x\n", (int)pars[first].num);
@@ -1274,7 +1293,7 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 				last = first + 1;
 				while ((last < count) && ((pars[last].num & 0xff00) != 0xff00)) last++;  // skip to the end or next special instructions
 				result = setFrameParsAtomic(sensor_port,frame, latency, last - first, &pars[first]);
-				MDF1(printk("setFrameParsAtomic(%ld, %d, %d)\n", frame, latency, last - first));
+				dev_dbg(g_devfp_ptr, "setFrameParsAtomic(%ld, %d, %d)\n", frame, latency, last - first);
 				if (result < 0) {
 					if (count > sizeof(pars_static)) kfree(pars);
 					return -EFAULT;
@@ -1304,18 +1323,18 @@ int framepars_mmap(struct file *file, struct vm_area_struct *vma)
 
 	MDF1(printk(": minor=0x%x\n", privData->minor));
 	switch (privData->minor) {
-    case DEV393_MINOR(DEV393_FRAMEPARS0):
-    case DEV393_MINOR(DEV393_FRAMEPARS1):
-    case DEV393_MINOR(DEV393_FRAMEPARS2):
-    case DEV393_MINOR(DEV393_FRAMEPARS3):
-		result = remap_pfn_range(vma,
-					 vma->vm_start,
-					 ((unsigned long)virt_to_phys(&aframeparsall[sensor_port])) >> PAGE_SHIFT, // Should be page-aligned
-					 vma->vm_end - vma->vm_start,
-					 vma->vm_page_prot);
-		MDF1(printk("remap_pfn_range returned=%x\r\n", result));
-		if (result) return -EAGAIN;
-		return 0;
+	case DEV393_MINOR(DEV393_FRAMEPARS0):
+	case DEV393_MINOR(DEV393_FRAMEPARS1):
+	case DEV393_MINOR(DEV393_FRAMEPARS2):
+	case DEV393_MINOR(DEV393_FRAMEPARS3):
+	result = remap_pfn_range(vma,
+	        vma->vm_start,
+	        ((unsigned long)virt_to_phys(&aframeparsall[sensor_port])) >> PAGE_SHIFT, // Should be page-aligned
+	        vma->vm_end - vma->vm_start,
+	        vma->vm_page_prot);
+	dev_dbg(g_devfp_ptr, "remap_pfn_range returned=%x\n", result);
+	if (result) return -EAGAIN;
+	return 0;
 	default: return -EINVAL;
 	}
 }
@@ -1340,13 +1359,15 @@ int framepars_init(struct platform_device *pdev)
 	frameParsInitialized = 0;
 	res = register_chrdev(DEV393_MAJOR(DEV393_FRAMEPARS0), DEV393_NAME(DEV393_FRAMEPARS0), &framepars_fops);
 	if (res < 0) {
-		printk(KERN_ERR "\nframepars_init: couldn't get a major number %d.\n", DEV393_MAJOR(DEV393_FRAMEPARS0));
+	    dev_err(dev, "framepars_init: couldn't get a major number %d (DEV393_MAJOR(DEV393_FRAMEPARS0)).\n",
+		        DEV393_MAJOR(DEV393_FRAMEPARS0));
 		return res;
 	}
 	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
 		init_waitqueue_head(&aframepars_wait_queue[sensor_port]);
 	}
-	dev_info(dev, "registered MAJOR: %d\n", DEV393_MAJOR(DEV393_FRAMEPARS0));
+	dev_info(dev, DEV393_NAME(DEV393_FRAMEPARS0)": registered MAJOR: %d\n", DEV393_MAJOR(DEV393_FRAMEPARS0));
+    g_devfp_ptr = dev;
 
 	return 0;
 }
@@ -1358,24 +1379,24 @@ int framepars_remove(struct platform_device *pdev)
 	return 0;
 }
 
-//static const struct of_device_id elphel393_framepars_of_match[] = {
-//	{ .compatible = "elphel,elphel393-framepars-1.00" },
-//	{ /* end of list */ }
-//};
-//MODULE_DEVICE_TABLE(of, elphel393_framepars_of_match);
-//
-//static struct platform_driver elphel393_framepars = {
-//	.probe			= framepars_init,
-//	.remove			= framepars_remove,
-//	.driver			= {
-//		.name		= DEV393_NAME(DEV393_FRAMEPARS0),
-//		.of_match_table = elphel393_framepars_of_match,
-//	},
-//};
-//
-//module_platform_driver(elphel393_framepars);
-//
-//MODULE_LICENSE("GPL");
-//MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-//MODULE_DESCRIPTION(FRAMEPARS_DRIVER_DESCRIPTION);
-//
+static const struct of_device_id elphel393_framepars_of_match[] = {
+	{ .compatible = "elphel,elphel393-framepars-1.00" },
+	{ /* end of list */ }
+};
+MODULE_DEVICE_TABLE(of, elphel393_framepars_of_match);
+
+static struct platform_driver elphel393_framepars = {
+	.probe			= framepars_init,
+	.remove			= framepars_remove,
+	.driver			= {
+		.name		= DEV393_NAME(DEV393_FRAMEPARS0),
+		.of_match_table = elphel393_framepars_of_match,
+	},
+};
+
+module_platform_driver(elphel393_framepars);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
+MODULE_DESCRIPTION(FRAMEPARS_DRIVER_DESCRIPTION);
+
