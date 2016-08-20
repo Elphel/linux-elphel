@@ -20,13 +20,11 @@
 extern wait_queue_head_t hist_y_wait_queue; /// wait queue for the G1 histogram (used as Y)
 extern wait_queue_head_t hist_c_wait_queue; /// wait queue for all the other (R,G2,B) histograms (color)
 
-void init_histograms(int chn_mask);
-
-int get_hist_index (int sensor_port, int sensor_chn);
-
+// void init_histograms(int chn_mask);
+int histograms_check_init(void);
+int get_hist_index (int sensor_port, int sensor_chn); //no hardware involved
 int set_histograms (int sensor_port, int sensor_chn, unsigned long frame, int needed, unsigned long * gammaHash, unsigned long * framep);
-
 int get_histograms (int sensor_port, int sensor_chn, unsigned long frame, int needed);
 
-int histograms_init_hardware(void);
+//int histograms_init_hardware(void);
 void histograms_dma_ctrl(int mode); // 0 - reset, 1 - disable, 2 - enable

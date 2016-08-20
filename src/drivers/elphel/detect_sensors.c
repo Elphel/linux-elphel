@@ -153,7 +153,7 @@ int get_detected_sensor_code(int port,    ///< Sensor port number (0..3)
     return SENSOR_NONE;
 }
 
-/** Gert configured  sensorport subchannels */
+/** Get configured  sensor port subchannels */
 int get_subchannels(int port) ///< Sensor port
                               ///< @return bitmask of available channels
 {

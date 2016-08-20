@@ -37,6 +37,7 @@ typedef struct{
 
 int i2c_stop_run_reset(int chn, int cmd);
 int i2c_drive_mode    (int chn, int sda_drive_high, int sda_release);
+int read_xi2c_frame   (int chn);
 
 int i2c_page_alloc   (int chn);
 int i2c_page_register(int chn,  int page);

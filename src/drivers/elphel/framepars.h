@@ -17,7 +17,7 @@ void initSequencers    (int sensor_port); ///Move to sensorcommon? currently it 
 void initGlobalPars    (int sensor_port); /// resets all global parameters but debug mask (if ELPHEL_DEBUG)
 int  initMultiPars     (int sensor_port); /// initialize structures for individual per-sensor parameters. Now only works for sensor registers using G_MULTI_REGSM. Should be called aftre/during sensor detection
 void initFramePars     (int sensor_port); ///initialize all parameters, set thisFrameNumber to frame8 (read from hardware, usually 0 after resetting i2c and cmd_seq)
-void resetFrameNumber  (int sensor_port); /// reset this frame number (called from initFramePars(), also can be used to avoid frame number integer overflow)
+void resetFrameNumber  (int sensor_port, u32 aframe, int hreset); /// reset this frame number (called from initFramePars(), also can be used to avoid frame number integer overflow)
 
 unsigned long get_imageParamsThis (int sensor_port, int n);
 unsigned long get_imageParamsPrev (int sensor_port, int n);
@@ -29,9 +29,9 @@ unsigned long get_globalParam     (int sensor_port, int n);
 
 void          set_globalParam     (int sensor_port, int n, unsigned long d);
 void          set_imageParamsR_all(int sensor_port, int n, unsigned long d);
-void          updateFramePars     (int sensor_port, int frame8, struct interframe_params_t * frame_pars); /// called from ISR - advance thisFrameNumber to match hardware frame8, copy parameters as needed.
-                                   /// frame8 usually is just next after thisFrameNumber
-                                   /// frame_pars - pointer to structure (between frames in the frame buffer) to save a pointer to past parameters
+//Next 2 called from ISR
+void          updateInterFrame(int sensor_port, int frame16, struct interframe_params_t * interframe_pars);
+void          updateFramePars     (int sensor_port, int frame16);
 int           setFrameParsStatic  (int sensor_port, int numPars, struct frameparspair_t * pars);
 
 unsigned long getThisFrameNumber  (int sensor_port); /// just return current thisFrameNumber

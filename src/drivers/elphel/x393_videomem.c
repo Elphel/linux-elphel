@@ -423,26 +423,22 @@ static ssize_t show_frames_in_buffer(struct device *dev, struct device_attribute
 }
 static ssize_t store_frame_start(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-    size_t len;
-    sscanf(buf, "%i", &buffer_settings.frame_start[get_channel_from_name(attr)], &len);
+    sscanf(buf, "%i", &buffer_settings.frame_start[get_channel_from_name(attr)]);
     return count;
 }
 static ssize_t store_full_width(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-    size_t len;
-    sscanf(buf, "%i", &buffer_settings.frame_full_width[get_channel_from_name(attr)], &len);
+    sscanf(buf, "%i", &buffer_settings.frame_full_width[get_channel_from_name(attr)]);
     return count;
 }
 static ssize_t store_frame_height(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-    size_t len;
-    sscanf(buf, "%i", &buffer_settings.frame_height[get_channel_from_name(attr)], &len);
+    sscanf(buf, "%i", &buffer_settings.frame_height[get_channel_from_name(attr)]);
     return count;
 }
 static ssize_t store_frames_in_buffer(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-    size_t len;
-    sscanf(buf, "%i", &buffer_settings.frames_in_buffer[get_channel_from_name(attr)], &len);
+    sscanf(buf, "%i", &buffer_settings.frames_in_buffer[get_channel_from_name(attr)]);
     return count;
 }
 

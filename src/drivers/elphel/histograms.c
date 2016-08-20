@@ -78,7 +78,7 @@
 */
 
 //copied from cxi2c.c - TODO:remove unneeded 
-
+#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
@@ -88,6 +88,9 @@
 #include <linux/fs.h>
 #include <linux/string.h>
 #include <linux/init.h>
+#include <linux/platform_device.h>
+#include <linux/spinlock.h>
+
 //#include <linux/autoconf.h>
 #include <linux/vmalloc.h>
 
@@ -115,7 +118,8 @@
 #include <elphel/elphel393-mem.h>
 #include "x393.h"
 #include "histograms.h"
-
+#include "detect_sensors.h"
+#include "x393_fpga_functions.h" // to check bitsteram
 /**
  * \def MDF21(x) optional debug output 
  */
@@ -140,6 +144,8 @@ dma_addr_t   fpga_hist_phys; // physical address of the start of the received hi
 /** for each port and possible sensor subchannel provides index in combine histogram data */
 int histograms_map[SENSOR_PORTS][MAX_SENSORS];
 
+static DEFINE_SPINLOCK(histograms_init_lock); ///< do not start multiple threads of histogram structures initialization
+
 /** total number of sensors (on all ports) used */
 static int numHistChn = 0;
 
@@ -151,12 +157,44 @@ struct  histogram_stuct_t (*histograms)[HISTOGRAM_CACHE_NUMBER];
 dma_addr_t histograms_phys; ///< likely not needed, saved during allocation
 
 struct histogram_stuct_t * histograms_p; ///< alias of histogram_stuct_t
-
-
-
+/** @brief Global pointer to basic device structure. This pointer is used in debugfs output functions */
+static struct device *g_dev_ptr;
 
 wait_queue_head_t hist_y_wait_queue;    ///< wait queue for the G1 histogram (used as Y)
 wait_queue_head_t hist_c_wait_queue;    ///< wait queue for all the other (R,G2,B) histograms (color)
+void init_histograms(int chn_mask); ///< combined subchannels and ports Save mask to global P-variable
+int histograms_init_hardware(void);
+static volatile int histograms_initialized = 0; ///< 0 - not initialized, 1 - structures only, 2 structures and hardware NC393: initialize when first used?
+/** Check if histograms structures are initialized, initialize if not */
+int histograms_check_init(void)
+{
+    int sensor_port, chn_mask=0;
+    if (histograms_initialized > 1)
+        return histograms_initialized;
+
+    spin_lock(&histograms_init_lock);
+    if (histograms_initialized > 1) {
+        spin_unlock(&histograms_init_lock);
+        return histograms_initialized;
+    }
+    if (!histograms_initialized){
+        dev_dbg(g_dev_ptr, "need to initialize histograms structures");
+        for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++){
+            chn_mask |= get_subchannels(sensor_port) << (MAX_SENSORS * sensor_port);
+            dev_dbg(g_dev_ptr, "sensor_port=%d, chn_mask updated to 0x%x", sensor_port, chn_mask);
+        }
+        init_histograms(chn_mask);
+        histograms_initialized = 1; // structures initialized
+    }
+    if (is_fpga_programmed() >0 ){ // do not try to access FPGA if it is not programmed
+        dev_dbg(g_dev_ptr, "need to initialize histograms hardware");
+        if (!histograms_init_hardware())
+            histograms_initialized = 2; // fully initialized
+    }
+    dev_dbg(g_dev_ptr, "histograms_check_init() -> %d", histograms_initialized);
+    spin_unlock(&histograms_init_lock);
+    return histograms_initialized;
+}
 
 /** File operations private data */
 struct histograms_pd {
@@ -184,7 +222,6 @@ int        histograms_open   (struct inode *inode, struct file *file);
 int        histograms_release(struct inode *inode, struct file *file);
 loff_t     histograms_lseek  (struct file * file, loff_t offset, int orig);
 int        histograms_mmap   (struct file *file, struct vm_area_struct *vma);
-static int __init histograms_init(void);
 
 
 inline void  histogram_calc_cumul       ( unsigned long * hist,        unsigned long * cumul_hist );
@@ -224,9 +261,12 @@ void histograms_dma_ctrl(int mode) ///< 0 - reset, 1 - disable, 2 - enable
 
 
 /** Initialize histograms data structures, should be called when active subchannels are known (maybe use DT)? */
+//#define HISTOGRAMS_DISABLE_IRQ
 void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask to global P-variable
 {
+#ifdef HISTOGRAMS_DISABLE_IRQ
     unsigned long flags;
+#endif
     int p,s,i, sz,pages;
     numHistChn = 0; //__builtin_popcount (chn_mask & 0xffff);
     for (p=0; p< SENSOR_PORTS; p++) for (s=0;s <MAX_SENSORS;s++) {
@@ -241,28 +281,44 @@ void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask
             GLOBALPARS(p, G_SUBCHANNELS) &= ~(1 << s);
         }
     }
+    dev_dbg(g_dev_ptr, "Histograms structures, channel mask = 0x%x, numHistChn = 0x%x",chn_mask, numHistChn);
+
     //G_SUBCHANNELS
     sz = numHistChn * HISTOGRAM_CACHE_NUMBER * sizeof(struct histogram_stuct_t);
-    if (sz & (PAGE_SIZE-1)) pages++;
-    pages = sz >> PAGE_SHIFT;
+    pages = ((sz -1) >> PAGE_SHIFT)+1;
+//    if (sz & (PAGE_SIZE-1)) pages++;
     // When device == NULL, dma_alloc_coherent just allocates notmal memory, page aligned, CMA if available
 //    histograms = (struct  histogram_stuct_t* [HISTOGRAM_CACHE_NUMBER]) dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL);
 //    histograms = (struct  histogram_stuct_t[HISTOGRAM_CACHE_NUMBER] * ) dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL);
 //    histograms = (struct  histogram_stuct_t[HISTOGRAM_CACHE_NUMBER]) *  dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL);
-    histograms = dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL); // OK
-//    histograms = (struct  histogram_stuct_t * ) dma_alloc_coherent(NULL,(sz * PAGE_SIZE),&histograms_phys,GFP_KERNEL); //<<<assignment from incompatible pointer type [-Wincompatible-pointer-types]>>>
 
+
+//    histograms = dma_alloc_coherent(NULL,(pages * PAGE_SIZE),&histograms_phys,GFP_KERNEL); // OK
+//    dev_warn(g_dev_ptr, "dma_alloc_coherent(NULL, 0x%x, 0x%x,GFP_KERNEL)",pages * PAGE_SIZE, (int) histograms_phys);
+// This code is spin-locked above to prevent simultaneous allocation from several php instances, so  GFP_KERNEL may not be used
+//    histograms = dma_alloc_coherent(NULL,(pages * PAGE_SIZE),&histograms_phys,GFP_NOWAIT); // OK
+//    dev_warn(g_dev_ptr, "dma_alloc_coherent(NULL, 0x%x, 0x%x,GFP_NOWAIT)",pages * PAGE_SIZE, (int) histograms_phys);
+
+//    histograms = dma_alloc_coherent(NULL,(pages * PAGE_SIZE),&histograms_phys,GFP_ATOMIC); // OK
+    dev_warn(g_dev_ptr, "dma_alloc_coherent should be done before (@probe), needed are 0x%x bytes)",pages * PAGE_SIZE);
     BUG_ON(!histograms);
     histograms_p= (struct histogram_stuct_t *) histograms;
-    MDF21(printk("\n"));
+//    MDF21(printk("\n"));
+#ifdef HISTOGRAMS_DISABLE_IRQ
     local_irq_save(flags);
+#endif
+    dev_dbg(g_dev_ptr, "Histograms structures, channel mask = 0x%x",chn_mask);
     for (s=0; s<numHistChn; s++) {
         for (i=0; i < HISTOGRAM_CACHE_NUMBER; i++) {
             histograms[s][i].frame=0xffffffff;
             histograms[s][i].valid=0;
         }
     }
+#ifdef HISTOGRAMS_DISABLE_IRQ
     local_irq_restore(flags);
+#endif
+    dev_dbg(g_dev_ptr, "Histograms structures initialized");
+
 }
 /** Get histogram index for sensor port/channel, skipping unused ones */
 int get_hist_index (int sensor_port,     ///< sensor port number (0..3)
@@ -351,26 +407,26 @@ int  get_histograms(int sensor_port,     ///< sensor port number (0..3)
     index=GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn);
     raw_needed=(needed | (needed>>4) | needed>>8) & 0xf;
     for (i=0;i<HISTOGRAM_CACHE_NUMBER;i++) {
-        MDF21(printk("index=%d, needed=0x%x\n",index,needed));
+        dev_dbg(g_dev_ptr, "index=%d, needed=0x%x\n",index,needed);
         if ((histograms[hist_indx][index].frame <= frame) && ((histograms[hist_indx][index].valid & raw_needed)==raw_needed)) break;
         index = (index-1) & (HISTOGRAM_CACHE_NUMBER-1);
     }
     if (i>=HISTOGRAM_CACHE_NUMBER) {
-        ELP_KERR(printk("no histograms exist for requested colors (0x%x), requested 0x%x\n",raw_needed,needed));
+        dev_err(g_dev_ptr, "no histograms exist for requested colors (0x%x), requested 0x%x\n",raw_needed,needed);
         return -EFAULT; // if Y - never calculated, if C - maybe all the cache is used by Y
     }
     needed &= ~0x0f; // mask out FPGA read requests -= they are not handled here anymore (use set_histograms())
-    MDF22(printk("needed=0x%x\n",needed));
+    dev_dbg(g_dev_ptr, "needed=0x%x\n",needed);
     needed |= ((needed >>4) & 0xf0); // cumulative histograms are needed for percentile calculations
     needed &= ~histograms[hist_indx][index].valid;
-    MDF22(printk("needed=0x%x\n",needed));
+    dev_dbg(g_dev_ptr, "needed=0x%x\n",needed);
     if (needed & 0xf0) { // Calculating cumulative histograms
         for (i=0; i<4; i++) if (needed & ( 0x10 << i )) {
             color_start= i<<8 ;
             histogram_calc_cumul ( (unsigned long *) &histograms[hist_indx][index].hist[color_start],  (unsigned long *) &histograms[hist_indx][index].cumul_hist[color_start] );
             histograms[hist_indx][index].valid |= 0x10 << i;
         }
-        MDF21(printk("needed=0x%x, valid=0x%lx\n",needed,histograms[hist_indx][index].valid));
+        dev_dbg(g_dev_ptr, "needed=0x%x, valid=0x%lx\n",needed,histograms[hist_indx][index].valid);
     }
     if (needed & 0xf00) { // Calculating percentiles
         for (i=0; i<4; i++) if (needed & ( 0x100 << i )) {
@@ -378,7 +434,7 @@ int  get_histograms(int sensor_port,     ///< sensor port number (0..3)
             histogram_calc_percentiles ( (unsigned long *) &histograms[hist_indx][index].cumul_hist[color_start],  (unsigned char *) &histograms[hist_indx][index].percentile[color_start] );
             histograms[hist_indx][index].valid |= 0x100 << i;
         }
-        MDF21(printk("needed=0x%x, valid=0x%lx\n",needed, histograms[hist_indx][index].valid));
+        dev_dbg(g_dev_ptr, "needed=0x%x, valid=0x%lx\n",needed, histograms[hist_indx][index].valid);
     }
     return index;
 }
@@ -461,7 +517,7 @@ int histograms_open(struct inode *inode, ///< inode
     if (!privData) return -ENOMEM;
     file->private_data = privData;
     privData-> minor=MINOR(inode->i_rdev);
-    MDF21(printk("minor=0x%x\n",privData-> minor));
+    dev_dbg(g_dev_ptr, "histograms_open: minor=0x%x\n",privData-> minor);
     switch (privData-> minor) {
     case  DEV393_MINOR(DEV393_HISTOGRAM) :
         inode->i_size = HISTOGRAMS_FILE_SIZE;
@@ -472,6 +528,8 @@ int histograms_open(struct inode *inode, ///< inode
         privData->request_en=1; // enable requesting histogram for the specified frame (0 - rely on the available ones)
         privData->port=0;
         privData->subchannel=0;
+        if (histograms_check_init() < 2)
+            return -ENODEV; // Bitstream not loaded?
         return 0;
     default:
         kfree(file->private_data); // already allocated
@@ -488,7 +546,7 @@ int histograms_release (struct inode *inode, ///< inode
 {
     int res=0;
     int p = MINOR(inode->i_rdev);
-    MDF21(printk("minor=0x%x\n",p));
+    dev_dbg(g_dev_ptr, "histograms_release minor=0x%x\n",p);
     switch ( p ) {
     case  DEV393_MINOR(DEV393_HISTOGRAM) :
         break;
@@ -533,7 +591,7 @@ loff_t histograms_lseek (struct file * file,
     struct histograms_pd * privData = (struct histograms_pd *) file->private_data;
     unsigned long reqAddr,reqFrame;
 
-    MDF21(printk("offset=0x%x, orig=0x%x\n",(int) offset, (int) orig));
+    dev_dbg(g_dev_ptr, "histograms_lseek: offset=0x%x, orig=0x%x\n",(int) offset, (int) orig);
     switch (privData->minor) {
     case DEV393_MINOR(DEV393_HISTOGRAM) :
         switch(orig) {
@@ -615,11 +673,11 @@ loff_t histograms_lseek (struct file * file,
                     default:
                         switch (offset & ~0x1f) {
                         case  LSEEK_DAEMON_HIST_Y: // wait for daemon enabled and histograms Y ready
-                            MDF21(printk("wait_event_interruptible (hist_y_wait_queue,0x%x & 0x%x)\n",(int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f))));
+                            dev_dbg(g_dev_ptr, "wait_event_interruptible (hist_y_wait_queue,0x%x & 0x%x)\n",(int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f)));
                             wait_event_interruptible (hist_y_wait_queue, get_imageParamsThis(privData->port, P_DAEMON_EN) & (1<<(offset & 0x1f)));
                             break;
                         case  LSEEK_DAEMON_HIST_C: // wait for daemon enabled and histograms Y ready
-                            MDF21(printk("wait_event_interruptible (hist_c_wait_queue,0x%x & 0x%x)\n",(int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f))));
+                            dev_dbg(g_dev_ptr, "wait_event_interruptible (hist_c_wait_queue,0x%x & 0x%x)\n",(int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f)));
                             wait_event_interruptible (hist_c_wait_queue, get_imageParamsThis(privData->port, P_DAEMON_EN) & (1<<(offset & 0x1f)));
                             break;
                         default:
@@ -653,17 +711,17 @@ loff_t histograms_lseek (struct file * file,
 int histograms_mmap (struct file *file, struct vm_area_struct *vma) {
     int result;
     struct histograms_pd * privData = (struct histograms_pd *) file->private_data;
-    MDF21(printk("minor=0x%x\n",privData-> minor));
+    dev_dbg(g_dev_ptr, "histograms_mmap minor=0x%x\n",privData-> minor);
     switch (privData->minor) {
     case  DEV393_MINOR(DEV393_HISTOGRAM) :
-        result=remap_pfn_range(vma,
-                vma->vm_start,
-                ((unsigned long) virt_to_phys(histograms_p)) >> PAGE_SHIFT, // Should be page-aligned
-                vma->vm_end-vma->vm_start,
-                vma->vm_page_prot);
-        MDF21(printk("remap_pfn_range returned=%x\r\n",result));
-        if (result) return -EAGAIN;
-        return 0;
+                result=remap_pfn_range(vma,
+                        vma->vm_start,
+                        ((unsigned long) virt_to_phys(histograms_p)) >> PAGE_SHIFT, // Should be page-aligned
+                        vma->vm_end-vma->vm_start,
+                        vma->vm_page_prot);
+    dev_dbg(g_dev_ptr, "remap_pfn_range returned=%x\r\n",result);
+    if (result) return -EAGAIN;
+    return 0;
     default: return -EINVAL;
     }
 }
@@ -672,24 +730,62 @@ int histograms_mmap (struct file *file, struct vm_area_struct *vma) {
  * @brief Histograms driver init
  * @return 0
  */
-static int __init histograms_init(void) {
+int histograms_init(struct platform_device *pdev) {
     int res;
+    int sz, pages;
+    struct device *dev = &pdev->dev;
+    const struct of_device_id *match; // not yet used
 //    init_histograms(); // Not now??? Need to have list of channels
     // Do it later, from the user space
-    res = register_chrdev(DEV393_MAJOR(DEV393_HISTOGRAM), "gamma_tables_operations", &histograms_fops);
+    res = register_chrdev(DEV393_MAJOR(DEV393_HISTOGRAM), DEV393_NAME(DEV393_HISTOGRAM), &histograms_fops);
     if(res < 0) {
-        printk(KERN_ERR "histograms_init: couldn't get a major number %d.\n",DEV393_MAJOR(DEV393_HISTOGRAM));
+        dev_err(dev, "histograms_init: couldn't get a major number %d.\n", DEV393_MAJOR(DEV393_HISTOGRAM));
         return res;
     }
     //   init_waitqueue_head(&histograms_wait_queue);
     init_waitqueue_head(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
     init_waitqueue_head(&hist_c_wait_queue);    // wait queue for all the other (R,G2,B) histograms (color)
-    printk(DEV393_NAME(DEV393_HISTOGRAM)"\n");
+    dev_info(dev, DEV393_NAME(DEV393_HISTOGRAM)": registered MAJOR: %d\n", DEV393_MAJOR(DEV393_HISTOGRAM));
+    histograms_initialized = 0;
+    // NC393: Did not find a way to get memory when histograms a first needed:
+    // GFP_KERNEL can nolt work inside spinlock (needed to prevent simultaneous initializations
+    // from multiple php-cli instances, GFP_ATOMIC just fails.
+    // So here we
+    // allocate for all 16 (ports*subchannels) ~1.1MB and then use portion of it (usually 1/4)
+
+    sz = SENSOR_PORTS * MAX_SENSORS * HISTOGRAM_CACHE_NUMBER * sizeof(struct histogram_stuct_t);
+    pages = ((sz -1 ) >> PAGE_SHIFT) + 1;
+    histograms = dma_alloc_coherent(NULL,(pages * PAGE_SIZE),&histograms_phys,GFP_KERNEL);
+    dev_info(dev, "dma_alloc_coherent(NULL, 0x%x, 0x%x,GFP_KERNEL)",pages * PAGE_SIZE, (int) histograms_phys);
+    g_dev_ptr = dev; // to use for debug print
     return 0;
 }
+int histograms_remove(struct platform_device *pdev)
+{
+    unregister_chrdev(DEV393_MAJOR(DEV393_HISTOGRAM), DEV393_NAME(DEV393_HISTOGRAM));
+
+    return 0;
+}
+static const struct of_device_id elphel393_histograms_of_match[] = {
+    { .compatible = "elphel,elphel393-histograms-1.00" },
+    { /* end of list */ }
+};
+MODULE_DEVICE_TABLE(of, elphel393_histograms_of_match);
 
 
-module_init(histograms_init);
+static struct platform_driver elphel393_histograms = {
+    .probe          = histograms_init,
+    .remove         = histograms_remove,
+    .driver         = {
+        .name       = DEV393_NAME(DEV393_HISTOGRAM),
+        .of_match_table = elphel393_histograms_of_match,
+    },
+};
+
+//module_init(histograms_init);
+
+module_platform_driver(elphel393_histograms);
+
 MODULE_LICENSE("GPLv3.0");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(X3X3_HISTOGRAMS_DRIVER_DESCRIPTION);

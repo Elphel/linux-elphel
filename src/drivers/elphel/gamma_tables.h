@@ -12,7 +12,7 @@ int unlock_gamma_node (int color, int sensor_port, int sensor_subchn); /// NOTE:
 /// return a pointer to the gamma table (single color) encoded in FPGA format (NULL if there is to table ready)
 ///
 unsigned long * get_gamma_fpga(int color, int sensor_port, int sensor_subchn);
-void fpga_gamma_write_nice    (int color, int sensor_port, int sensor_subchn, u32 * gamma);
+int fpga_gamma_write_nice    (int color, int sensor_port, int sensor_subchn, unsigned long * gamma);
 
 
 int gamma_new_node(void);

@@ -194,6 +194,7 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
                                                                ///< be applied to,  negative - ASAP
                                                                ///< @return 0 - OK, negative - error
 ;
+void mt9x001_set_device(struct device *dev);
 #if 0
 int adjustBinning_mt9x001(void);
 int program_woi_mt9x001(int nonstop);

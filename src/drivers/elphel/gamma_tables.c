@@ -91,7 +91,7 @@
 */
 
 //copied from cxi2c.c - TODO:remove unneeded 
-
+#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
@@ -103,6 +103,8 @@
 #include <linux/init.h>
 //#include <linux/autoconf.h>
 #include <linux/vmalloc.h>
+#include <linux/platform_device.h>
+#include <linux/spinlock.h>
 
 //#include <asm/system.h>
 #include <asm/byteorder.h> // endians
@@ -128,25 +130,28 @@
 //#include "quantization_tables.h"
 #include "gamma_tables.h"
 #include "x393.h"
+#include "detect_sensors.h"
+#include "x393_fpga_functions.h" // to check bitsteram
+
 /**
  * @brief optional debug output 
  */
 #if ELPHEL_DEBUG
-  #define MDF(x) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);x ;}
-  #define D10(x) { if (GLOBALPARS(G_DEBUG) & (1 <<10)) { x ;} }
+#define MDF(x) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);x ;}
+#define D10(x) { if (GLOBALPARS(G_DEBUG) & (1 <<10)) { x ;} }
 //  #define MDD1(x) printk("%s:%d:",__FILE__,__LINE__); x ; udelay (ELPHEL_DEBUG_DELAY)
-  #define MDF10(x) { if (GLOBALPARS(G_DEBUG) & (1 <<10)) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);x ;} }
-  #define MDF11(x) { if (GLOBALPARS(G_DEBUG) & (1 <<11)) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);x ;} }
+#define MDF10(x) { if (GLOBALPARS(G_DEBUG) & (1 <<10)) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);x ;} }
+#define MDF11(x) { if (GLOBALPARS(G_DEBUG) & (1 <<11)) {printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);x ;} }
 
 //  #define MDD1(x)
-  #define D1I(x) x
+#define D1I(x) x
 
 #else
-  #define MDF(x)
-  #define D10(x)
-  #define D1I(x) x
-  #define MDF10(x)
-  #define MDF11(x)
+#define MDF(x)
+#define D10(x)
+#define D1I(x) x
+#define MDF10(x)
+#define MDF11(x)
 
 
 #endif
@@ -159,9 +164,22 @@
  * \n TODO: use P_*?
  */
 #define GAMMA_THRESH (GAMMA_CACHE_NUMBER/16)
+/** @brief Global pointer to basic device structure. This pointer is used in debugfs output functions */
+static struct device *g_dev_ptr;
+
+static DEFINE_SPINLOCK(gamma_lock);   ///< Non port-specific lock
+static DEFINE_SPINLOCK(gamma_lock_0); ///<
+static DEFINE_SPINLOCK(gamma_lock_1); ///<
+static DEFINE_SPINLOCK(gamma_lock_2); ///<
+static DEFINE_SPINLOCK(gamma_lock_3); ///<
+/** Define array of pointers to locks - hardware allows concurrent writes to different ports tables */
+spinlock_t * gamma_locks[4] = {&gamma_lock_0,
+        &gamma_lock_1,
+        &gamma_lock_2,
+        &gamma_lock_3};
 
 static struct gamma_stuct_t gammas[GAMMA_CACHE_NUMBER] __attribute__ ((aligned (PAGE_SIZE)));
-       struct gamma_stuct_t * gammas_p; // to use with mmap
+struct gamma_stuct_t * gammas_p; // to use with mmap
 
 struct gammas_pd {
     int                minor;
@@ -169,7 +187,7 @@ struct gammas_pd {
     unsigned short     hash16;
     unsigned char      mode;
     unsigned char      color; // Does it need port/sub-channel?
-// something else to be added here?
+    // something else to be added here?
 };
 
 int        gammas_open   (struct inode *inode, struct file *file);
@@ -177,7 +195,8 @@ int        gammas_release(struct inode *inode, struct file *file);
 loff_t     gammas_lseek  (struct file * file, loff_t offset, int orig);
 ssize_t    gammas_write  (struct file * file, const char * buf, size_t count, loff_t *off);
 int        gammas_mmap   (struct file *file, struct vm_area_struct *vma);
-static int __init gammas_init(void);
+
+//static int __init gammas_init(void);
 
 
 /**
@@ -196,8 +215,8 @@ inline void remove_from_nonscaled(int index) {
  */
 inline void remove_from_scaled   (int index) {
     if (likely(gammas[index].newer_scaled)) { // will skip first, untill the cache is all used
-     gammas[gammas[index].newer_scaled].older_scaled=gammas[index].older_scaled;
-     gammas[gammas[index].older_scaled].newer_scaled=gammas[index].newer_scaled;
+        gammas[gammas[index].newer_scaled].older_scaled=gammas[index].older_scaled;
+        gammas[gammas[index].older_scaled].newer_scaled=gammas[index].newer_scaled;
     }
 }
 
@@ -215,7 +234,7 @@ inline void remove_from_all      (int index) { // always - in that chain - after
  * @param index item index to remove
  */
 inline void insert_first_nonscaled(int index) {
-  MDF11(printk("index=%d\n",index));
+    dev_dbg(g_dev_ptr,"insert_first_nonscaled(%d)\n",index);
     gammas[gammas[0].newest_non_scaled].newer_non_scaled= index; // 1 ==[0].oldest_non_scaled
     gammas[index].older_non_scaled=  gammas[0].newest_non_scaled; // 4
     gammas[0].newest_non_scaled=index; // 5
@@ -233,14 +252,14 @@ inline void insert_first_nonscaled(int index) {
  * @param index item index to remove
  */
 inline void insert_first_scaled   (int non_scaled, int index) {
-  MDF11(printk("non_scaled=%d, index=%d\n",non_scaled, index));
+    dev_dbg(g_dev_ptr,"insert_first_scaled(%d, %d)\n",non_scaled, index);
     gammas[index].older_scaled=     gammas[non_scaled].newest_scaled; //4
     gammas[gammas[non_scaled].newest_scaled].newer_scaled= index; //1
-//    gammas[index].older_scaled=     gammas[non_scaled].newest_scaled; //4
+    //    gammas[index].older_scaled=     gammas[non_scaled].newest_scaled; //4
 
     gammas[index].newer_scaled= non_scaled; //6
     gammas[non_scaled].newest_scaled=     index; //5
-//    gammas[index].newer_scaled= non_scaled; //6
+    //    gammas[index].newer_scaled= non_scaled; //6
     gammas[index].this_non_scaled=non_scaled;
 }
 
@@ -259,32 +278,30 @@ inline void insert_first_all      (int index) {
  * @brief Initialize gamma tables data structures
  */
 void init_gammas(void) {
-  unsigned long flags;
-  int i;
-  gammas_p=gammas;
-// empty 2-d chain
-  local_irq_save(flags);
-  gammas[0].oldest_non_scaled=0;
-  gammas[0].newest_non_scaled=0;
-// all entries in a same
-  gammas[0].oldest_all=GAMMA_CACHE_NUMBER-1;
-  gammas[0].newest_all=1;
-  MDF10(printk("\n"));
-  for (i=1; i < GAMMA_CACHE_NUMBER;i++) {
-    gammas[i].this_non_scaled=-1; // no parent.FIXME: Where is it used? -1 if never used
-// something else?
-    gammas[i].newer_all=i-1;
-    gammas[i].older_all= (i==(GAMMA_CACHE_NUMBER-1))? 0: (i+1);
-    gammas[i].locked=0;
-    gammas[i].valid=0;
-  }
-  gammas[0].non_scaled_length=0;
-  for (i=1; i < sizeof(gammas[0].locked_chn_color)/sizeof(gammas[0].locked_chn_color[0]);i++) {
-      gammas[0].locked_chn_color[i]=0;
-  }
-  local_irq_restore(flags);
+    int i;
+    gammas_p=gammas;
+    // empty 2-d chain
+    dev_dbg(g_dev_ptr,"init_gammas()\n");
+    spin_lock_bh(&gamma_lock);
+    gammas[0].oldest_non_scaled=0;
+    gammas[0].newest_non_scaled=0;
+    // all entries in a same
+    gammas[0].oldest_all=GAMMA_CACHE_NUMBER-1;
+    gammas[0].newest_all=1;
+    for (i=1; i < GAMMA_CACHE_NUMBER;i++) {
+        gammas[i].this_non_scaled=-1; // no parent.FIXME: Where is it used? -1 if never used
+        // something else?
+        gammas[i].newer_all=i-1;
+        gammas[i].older_all= (i==(GAMMA_CACHE_NUMBER-1))? 0: (i+1);
+        gammas[i].locked=0;
+        gammas[i].valid=0;
+    }
+    gammas[0].non_scaled_length=0;
+    for (i=1; i < sizeof(gammas[0].locked_chn_color)/sizeof(gammas[0].locked_chn_color[0]);i++) {
+        gammas[0].locked_chn_color[i]=0;
+    }
+    spin_unlock_bh(&gamma_lock);
 }
-
 
 /**
  * @brief verifies that index is current (points to specified hash and scale)
@@ -294,7 +311,7 @@ void init_gammas(void) {
  * @return 1 - table pointed by index is current, 0 - table is not current
  */
 int is_gamma_current (unsigned short hash16, unsigned short scale, int index) {
-  return ((gammas[index].hash16 == hash16) && (gammas[index].scale == scale))?1:0;
+    return ((gammas[index].hash16 == hash16) && (gammas[index].scale == scale))?1:0;
 }
 
 /**
@@ -305,7 +322,7 @@ int is_gamma_current (unsigned short hash16, unsigned short scale, int index) {
  * @return 1 - table pointed by index is current and valid, 0 - table is not current or not valid
  */
 int is_gamma_valid (unsigned short hash16, unsigned short scale, int index) {
-  return ((gammas[index].hash16 == hash16) && (gammas[index].scale == scale) && (gammas[index].valid != 0))?1:0;
+    return ((gammas[index].hash16 == hash16) && (gammas[index].scale == scale) && (gammas[index].valid != 0))?1:0;
 }
 
 
@@ -314,66 +331,68 @@ int is_gamma_valid (unsigned short hash16, unsigned short scale, int index) {
  * @return hash32 (combined gamma/black/scale) locked for a specified color. If none - return 0
  */
 unsigned long get_locked_hash32(int color,         ///< color channel 0..3
-								int sensor_port,   ///< sensor port number (0..3)
-								int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
-		                                           ///< @return hash32 (combined gamma/black/scale) locked for a specified color,
-		                                           ///< port, sub-channel
+        int sensor_port,   ///< sensor port number (0..3)
+        int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
+///< @return hash32 (combined gamma/black/scale) locked for a specified color,
+///< port, sub-channel
 {
-  int index=gammas[0].locked_chn_color[PORT_CHN_COLOR(color,sensor_port,sensor_subchn)];
-  return index?gammas[index].hash32:0;
+    int index=gammas[0].locked_chn_color[PORT_CHN_COLOR(color,sensor_port,sensor_subchn)];
+    return index?gammas[index].hash32:0;
 }
 
 /**
  * @brief Lock gamma table for the specified color/port/subchannel, save previous locks (if any) so new locks can be applied/canceled
  * NOTE: interrupts should be disabled!  */
 inline void lock_gamma_node (int index,         ///< gamma table index
-		                     int color,         ///< color channel 0..3
-	                         int sensor_port,   ///< sensor port number (0..3)
-		                     int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
+        int color,         ///< color channel 0..3
+        int sensor_port,   ///< sensor port number (0..3)
+        int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
 
 {
-	int tmp_p;
-	int cps = PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
-	if (((tmp_p=gammas[0].locked_chn_color[cps]))!=0) { ///new gamma to the same color
-	  gammas[tmp_p].locked &= ~(1ULL << cps); // remove any previous lock on the same color (if any)
-	}
-	gammas[0].locked_chn_color[cps]= index;
-	gammas[index].locked |= (1ULL << cps);
+    int tmp_p;
+    int cps = PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
+    if (((tmp_p=gammas[0].locked_chn_color[cps]))!=0) { ///new gamma to the same color
+        gammas[tmp_p].locked &= ~(1ULL << cps); // remove any previous lock on the same color (if any)
+    }
+    gammas[0].locked_chn_color[cps]= index;
+    gammas[index].locked |= (1ULL << cps);
 }
 /** Unlock gamma table for the specified color/port/subchannel
  * NOTE: Not needed anymore */
 int unlock_gamma_node  (int color,         ///< color channel 0..3
-						int sensor_port,   ///< sensor port number (0..3)
-						int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
-						                   ///< @return wrong data -1, nothing to unlock - 0, >0 - unlocked index
+        int sensor_port,   ///< sensor port number (0..3)
+        int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
+///< @return wrong data -1, nothing to unlock - 0, >0 - unlocked index
 {
-  unsigned long flags;
-  int index;
-  int cps = PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
-  MDF11(printk("color=0x%x\n",color));
-  local_irq_save(flags);
-  index =gammas[0].locked_chn_color[cps];
-  if (index) {
-    gammas[index].locked &= ~(1ULL <<  color); // clear appropriate "locked" bit for this table
-    gammas[0].locked_chn_color[color]=0;
-  }
-  local_irq_restore(flags);
-  return index;
+    //  unsigned long flags;
+    int index;
+    int cps = PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
+    dev_dbg(g_dev_ptr,"color=0x%x\n",color);
+    //  local_irq_save(flags);
+    spin_lock_bh(&gamma_lock);
+    index =gammas[0].locked_chn_color[cps];
+    if (index) {
+        gammas[index].locked &= ~(1ULL <<  color); // clear appropriate "locked" bit for this table
+        gammas[0].locked_chn_color[color]=0;
+    }
+    spin_lock_bh(&gamma_lock);
+    //  local_irq_restore(flags);
+    return index;
 }
 /** Find a gamma table in FPGA format to be programmed (table should already be locked for this color) */
 unsigned long * get_gamma_fpga (int color,         ///< color channel 0..3
-								int sensor_port,   ///< sensor port number (0..3)
-								int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
-												   ///< @return pointer to a gamma table (or NULL if table does not exist)
+        int sensor_port,   ///< sensor port number (0..3)
+        int sensor_subchn) ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
+///< @return pointer to a gamma table (or NULL if table does not exist)
 
 { // NOTE: Not needed anymore?
-  int index;
-  int cps = PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
-//  if (unlikely((color>=4) || (color<0))) return NULL; //
-  index =gammas[0].locked_chn_color[cps];
-  MDF11(printk(" index=%d(0x%x)\n",index,index));
-  if (index) return gammas[index].fpga;
-  else return NULL;
+    int index;
+    int cps = PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
+    //  if (unlikely((color>=4) || (color<0))) return NULL; //
+    index =gammas[0].locked_chn_color[cps];
+    dev_dbg(g_dev_ptr," index=%d(0x%x)\n",index,index);
+    if (index) return gammas[index].fpga;
+    else return NULL;
 }
 
 
@@ -385,23 +404,23 @@ unsigned long * get_gamma_fpga (int color,         ///< color channel 0..3
  * @return Node index or 0 if none (unlocked) nodes are found
  */
 int gamma_new_node(void) {
-   int tmp_p;
-   if ((gammas[0].non_scaled_length > GAMMA_THRESH) && (gammas[gammas[0].oldest_non_scaled].newest_scaled == gammas[0].oldest_non_scaled)) { // no scaled for the oldest hash
-// sacrifice oldest hash
-    tmp_p=gammas[0].oldest_non_scaled;
-     remove_from_nonscaled(tmp_p);
-   } else { // use oldest scaled
-    tmp_p=gammas[0].oldest_all;
-// skip locked if any (should be unlikely to get any locked)
-    while ((tmp_p!=0) && gammas[tmp_p].locked) tmp_p=gammas[tmp_p].newer_all;
-    if (tmp_p==0) return 0; // none (unlocked) nodes are found
-// remove from "all" chain (should work for tmp_p being oldest or not
-    remove_from_all   (tmp_p);
-// remove from "scaled chain"
-    remove_from_scaled   (tmp_p);
-   }
-   gammas[tmp_p].valid=0;
-   return tmp_p;
+    int tmp_p;
+    if ((gammas[0].non_scaled_length > GAMMA_THRESH) && (gammas[gammas[0].oldest_non_scaled].newest_scaled == gammas[0].oldest_non_scaled)) { // no scaled for the oldest hash
+        // sacrifice oldest hash
+        tmp_p=gammas[0].oldest_non_scaled;
+        remove_from_nonscaled(tmp_p);
+    } else { // use oldest scaled
+        tmp_p=gammas[0].oldest_all;
+        // skip locked if any (should be unlikely to get any locked)
+        while ((tmp_p!=0) && gammas[tmp_p].locked) tmp_p=gammas[tmp_p].newer_all;
+        if (tmp_p==0) return 0; // none (unlocked) nodes are found
+        // remove from "all" chain (should work for tmp_p being oldest or not
+        remove_from_all   (tmp_p);
+        // remove from "scaled chain"
+        remove_from_scaled   (tmp_p);
+    }
+    gammas[tmp_p].valid=0;
+    return tmp_p;
 }
 
 /**
@@ -410,19 +429,19 @@ int gamma_new_node(void) {
  * @param gamma_out pointer to an array of 256 unsigned long words to be written to FPGA
  */
 void gamma_encode_fpga(unsigned short * gamma_in, unsigned long * gamma_out) {
-  int i,base,diff;
-  MDF11(printk("\n"));
-  for (i=0;i<256;i++) {
-    base=(gamma_in[i] >> 6);
-    diff=(gamma_in[i+1] >> 6);
-    diff-=base;
-    if ((diff>63) || (diff < -64)) {
-      diff=(diff+8)>>4;
-      gamma_out[i]=(base & 0x3ff) | ((diff & 0x7f) << 10) | (1 << 17);
-    } else {
-      gamma_out[i]=(base & 0x3ff) | ((diff & 0x7f) << 10);
+    int i,base,diff;
+    dev_dbg(g_dev_ptr,"gamma_encode_fpga()\n");
+    for (i=0;i<256;i++) {
+        base=(gamma_in[i] >> 6);
+        diff=(gamma_in[i+1] >> 6);
+        diff-=base;
+        if ((diff>63) || (diff < -64)) {
+            diff=(diff+8)>>4;
+            gamma_out[i]=(base & 0x3ff) | ((diff & 0x7f) << 10) | (1 << 17);
+        } else {
+            gamma_out[i]=(base & 0x3ff) | ((diff & 0x7f) << 10);
+        }
     }
-  }
 }
 
 /**
@@ -432,15 +451,15 @@ void gamma_encode_fpga(unsigned short * gamma_in, unsigned long * gamma_out) {
  * @param gamma_out output (scaled) gamma table (16 bit) 
  */
 void  gamma_calc_scaled (unsigned short scale,unsigned short * gamma_in, unsigned short * gamma_out) {
-  int i;
-  unsigned long d;
-  unsigned long max_scaled=0xffff << GAMMA_SCALE_SHIFT;
-  MDF11(printk("\n"));
-  for (i=0; i<257; i++) {
-    d= ((unsigned long) scale ) * ((unsigned long) gamma_in[i] ) + (1 <<(GAMMA_SCALE_SHIFT-1)); ///rounding, not truncating
-    if (d>max_scaled) d=max_scaled;
-    gamma_out[i]=d >> GAMMA_SCALE_SHIFT;
-  }
+    int i;
+    unsigned long d;
+    unsigned long max_scaled=0xffff << GAMMA_SCALE_SHIFT;
+    dev_dbg(g_dev_ptr,"gamma_calc_scaled()\n");
+    for (i=0; i<257; i++) {
+        d= ((unsigned long) scale ) * ((unsigned long) gamma_in[i] ) + (1 <<(GAMMA_SCALE_SHIFT-1)); ///rounding, not truncating
+        if (d>max_scaled) d=max_scaled;
+        gamma_out[i]=d >> GAMMA_SCALE_SHIFT;
+    }
 }
 
 /**
@@ -452,250 +471,270 @@ void  gamma_calc_scaled (unsigned short scale,unsigned short * gamma_in, unsigne
  * @param gamma_out reversed gamma table (8 bit)
  */
 void  gamma_calc_reverse(unsigned short * gamma_in, unsigned char * gamma_out) {
-  unsigned long gcurr=0; // running value to be compared against direct gamma
-  int r=0; // current value of reverse gamma table
-  int x=0; // current indedx of reverse gamma table
-  MDF11(printk("\n"));
-  while ((r<256) && (x<256)) {
-    gamma_out[x]=r;
-//    if ((r<255) && (( gamma_in[r]<<8) <= gcurr)) {
-    if ((r<255) && ( gamma_in[r] <= gcurr)) {
-      r++;
-    } else {
-      x++;
-      gcurr+=256;
+    unsigned long gcurr=0; // running value to be compared against direct gamma
+    int r=0; // current value of reverse gamma table
+    int x=0; // current indedx of reverse gamma table
+    dev_dbg(g_dev_ptr,"gamma_calc_reverse()\n");
+    while ((r<256) && (x<256)) {
+        gamma_out[x]=r;
+        //    if ((r<255) && (( gamma_in[r]<<8) <= gcurr)) {
+        if ((r<255) && ( gamma_in[r] <= gcurr)) {
+            r++;
+        } else {
+            x++;
+            gcurr+=256;
+        }
     }
-  }
 }
 
 /** Calculate gamma table (and requested derivatives), insert new node if needed. */
 int set_gamma_table (unsigned short hash16,        ///< 16-bit unique (non-scaled) gamma table identifier. Can be 1-byte gamma and 1-byte black level shift
-                                                   ///< TODO: make black level fine-grained?
-		             unsigned short scale,         ///< gamma table scale (currently 0x400 ~ 1.0)  GAMMA_SCLALE_1 = 0x400
-					 unsigned short * gamma_proto, ///< 16-bit gamma table prototype (or NULL)
-					 unsigned char mode,           ///< bits specify calculation mode:
-					                               ///< - 1 - if set, no interrupts will be enabled between steps, whole operation will be atomic
-					                               ///<- 2 - calculate reverse gamma table
-					                               ///<- 4 - calculate FPGA-format gamma table
-					                               ///<  - 8 - Lock (FPGA) table for specified color/port/subchannel
-					 int color,                    ///< index (0..63) combined with the next two parameters to lock
-					                               ///< table for (if mode bit 4 is set), otherwise color, sensor_port, sensor_subchn are ignored
-					 int sensor_port,              ///< sensor port number (0..3)
-					 int sensor_subchn)            ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
-					 		                       ///< @return index for the specified table or 0 if none exists and prototype was not provided (gamma_proto==NULL)
+        ///< TODO: make black level fine-grained?
+        unsigned short scale,         ///< gamma table scale (currently 0x400 ~ 1.0)  GAMMA_SCLALE_1 = 0x400
+        unsigned short * gamma_proto, ///< 16-bit gamma table prototype (or NULL)
+        unsigned char mode,           ///< bits specify calculation mode:
+        ///< - 1 - if set, no interrupts will be enabled between steps, whole operation will be atomic
+        ///<- 2 - calculate reverse gamma table
+        ///<- 4 - calculate FPGA-format gamma table
+        ///<  - 8 - Lock (FPGA) table for specified color/port/subchannel
+        int color,                    ///< index (0..63) combined with the next two parameters to lock
+        ///< table for (if mode bit 4 is set), otherwise color, sensor_port, sensor_subchn are ignored
+        int sensor_port,              ///< sensor port number (0..3)
+        int sensor_subchn)            ///< sensor sub-channel (connected to the same port through 10359 mux) (0..3)
+///< @return index for the specified table or 0 if none exists and prototype was not provided (gamma_proto==NULL)
 {
-  D1I(unsigned long flags);
-  int tmp_p, tmp_p1; //,tmp_p0;
-  int cps=PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
-  unsigned short gamma_linear[257]=
-      {0x0000,0x0100,0x0200,0x0300,0x0400,0x0500,0x0600,0x0700,0x0800,0x0900,0x0a00,0x0b00,0x0c00,0x0d00,0x0e00,0x0f00,
-       0x1000,0x1100,0x1200,0x1300,0x1400,0x1500,0x0600,0x1700,0x1800,0x1900,0x1a00,0x1b00,0x1c00,0x1d00,0x1e00,0x1f00,
-       0x2000,0x2100,0x2200,0x2300,0x2400,0x2500,0x0600,0x2700,0x2800,0x2900,0x2a00,0x2b00,0x2c00,0x2d00,0x2e00,0x2f00,
-       0x3000,0x3100,0x3200,0x3300,0x3400,0x3500,0x0600,0x3700,0x3800,0x3900,0x3a00,0x3b00,0x3c00,0x3d00,0x3e00,0x3f00,
-       0x4000,0x4100,0x4200,0x4300,0x4400,0x4500,0x0600,0x4700,0x4800,0x4900,0x4a00,0x4b00,0x4c00,0x4d00,0x4e00,0x4f00,
-       0x5000,0x5100,0x5200,0x5300,0x5400,0x5500,0x0600,0x5700,0x5800,0x5900,0x5a00,0x5b00,0x5c00,0x5d00,0x5e00,0x5f00,
-       0x6000,0x6100,0x6200,0x6300,0x6400,0x6500,0x0600,0x6700,0x6800,0x6900,0x6a00,0x6b00,0x6c00,0x6d00,0x6e00,0x6f00,
-       0x7000,0x7100,0x7200,0x7300,0x7400,0x7500,0x0600,0x7700,0x7800,0x7900,0x7a00,0x7b00,0x7c00,0x7d00,0x7e00,0x7f00,
-       0x8000,0x8100,0x8200,0x8300,0x8400,0x8500,0x0600,0x8700,0x8800,0x8900,0x8a00,0x8b00,0x8c00,0x8d00,0x8e00,0x8f00,
-       0x9000,0x9100,0x9200,0x9300,0x9400,0x9500,0x0600,0x9700,0x9800,0x9900,0x9a00,0x9b00,0x9c00,0x9d00,0x9e00,0x9f00,
-       0xa000,0xa100,0xa200,0xa300,0xa400,0xa500,0x0600,0xa700,0xa800,0xa900,0xaa00,0xab00,0xac00,0xad00,0xae00,0xaf00,
-       0xb000,0xb100,0xb200,0xb300,0xb400,0xb500,0x0600,0xb700,0xb800,0xb900,0xba00,0xbb00,0xbc00,0xbd00,0xbe00,0xbf00,
-       0xc000,0xc100,0xc200,0xc300,0xc400,0xc500,0x0600,0xc700,0xc800,0xc900,0xca00,0xcb00,0xcc00,0xcd00,0xce00,0xcf00,
-       0xf000,0xd100,0xd200,0xd300,0xd400,0xd500,0x0600,0xd700,0xd800,0xd900,0xda00,0xdb00,0xdc00,0xdd00,0xde00,0xdf00,
-       0xe000,0xe100,0xe200,0xe300,0xe400,0xe500,0x0600,0xe700,0xe800,0xe900,0xea00,0xeb00,0xec00,0xed00,0xee00,0xef00,
-       0xf000,0xf100,0xf200,0xf300,0xf400,0xf500,0x0600,0xf700,0xf800,0xf900,0xfa00,0xfb00,0xfc00,0xfd00,0xfe00,0xff00,
-       0xffff};
-  MDF10(printk("hash16=0x%x scale=0x%x gamma_proto=0x%x mode =0x%x port/channel/color=%x\n", (int) hash16, (int) scale, (int) gamma_proto,  (int) mode,  cps));
+    //  D1I(unsigned long flags);
+    int tmp_p, tmp_p1; //,tmp_p0;
+    int cps=PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
+    unsigned short gamma_linear[257]=
+    {0x0000,0x0100,0x0200,0x0300,0x0400,0x0500,0x0600,0x0700,0x0800,0x0900,0x0a00,0x0b00,0x0c00,0x0d00,0x0e00,0x0f00,
+            0x1000,0x1100,0x1200,0x1300,0x1400,0x1500,0x0600,0x1700,0x1800,0x1900,0x1a00,0x1b00,0x1c00,0x1d00,0x1e00,0x1f00,
+            0x2000,0x2100,0x2200,0x2300,0x2400,0x2500,0x0600,0x2700,0x2800,0x2900,0x2a00,0x2b00,0x2c00,0x2d00,0x2e00,0x2f00,
+            0x3000,0x3100,0x3200,0x3300,0x3400,0x3500,0x0600,0x3700,0x3800,0x3900,0x3a00,0x3b00,0x3c00,0x3d00,0x3e00,0x3f00,
+            0x4000,0x4100,0x4200,0x4300,0x4400,0x4500,0x0600,0x4700,0x4800,0x4900,0x4a00,0x4b00,0x4c00,0x4d00,0x4e00,0x4f00,
+            0x5000,0x5100,0x5200,0x5300,0x5400,0x5500,0x0600,0x5700,0x5800,0x5900,0x5a00,0x5b00,0x5c00,0x5d00,0x5e00,0x5f00,
+            0x6000,0x6100,0x6200,0x6300,0x6400,0x6500,0x0600,0x6700,0x6800,0x6900,0x6a00,0x6b00,0x6c00,0x6d00,0x6e00,0x6f00,
+            0x7000,0x7100,0x7200,0x7300,0x7400,0x7500,0x0600,0x7700,0x7800,0x7900,0x7a00,0x7b00,0x7c00,0x7d00,0x7e00,0x7f00,
+            0x8000,0x8100,0x8200,0x8300,0x8400,0x8500,0x0600,0x8700,0x8800,0x8900,0x8a00,0x8b00,0x8c00,0x8d00,0x8e00,0x8f00,
+            0x9000,0x9100,0x9200,0x9300,0x9400,0x9500,0x0600,0x9700,0x9800,0x9900,0x9a00,0x9b00,0x9c00,0x9d00,0x9e00,0x9f00,
+            0xa000,0xa100,0xa200,0xa300,0xa400,0xa500,0x0600,0xa700,0xa800,0xa900,0xaa00,0xab00,0xac00,0xad00,0xae00,0xaf00,
+            0xb000,0xb100,0xb200,0xb300,0xb400,0xb500,0x0600,0xb700,0xb800,0xb900,0xba00,0xbb00,0xbc00,0xbd00,0xbe00,0xbf00,
+            0xc000,0xc100,0xc200,0xc300,0xc400,0xc500,0x0600,0xc700,0xc800,0xc900,0xca00,0xcb00,0xcc00,0xcd00,0xce00,0xcf00,
+            0xf000,0xd100,0xd200,0xd300,0xd400,0xd500,0x0600,0xd700,0xd800,0xd900,0xda00,0xdb00,0xdc00,0xdd00,0xde00,0xdf00,
+            0xe000,0xe100,0xe200,0xe300,0xe400,0xe500,0x0600,0xe700,0xe800,0xe900,0xea00,0xeb00,0xec00,0xed00,0xee00,0xef00,
+            0xf000,0xf100,0xf200,0xf300,0xf400,0xf500,0x0600,0xf700,0xf800,0xf900,0xfa00,0xfb00,0xfc00,0xfd00,0xfe00,0xff00,
+            0xffff};
+    dev_dbg(g_dev_ptr, "hash16=0x%x scale=0x%x gamma_proto=0x%x mode =0x%x port/channel/color=%x\n", (int) hash16, (int) scale, (int) gamma_proto,  (int) mode,  cps);
 
-  if (!gamma_proto & (hash16==0)) {
-    gamma_proto=gamma_linear;
-    MDF10(printk("Using linear table\n"));
-  } else {
-    MDF10(printk("Using non-linear table\n")); ///NOTE: here
-  }
-///disable interrupts here
-  D1I(local_irq_save(flags));
-// look for the matching hash
-  tmp_p=gammas[0].newest_non_scaled;
-//  gammas[0].oldest_all=GAMMA_CACHE_NUMBER-1;
-//  gammas[0].newest_all=1;
+    if (!gamma_proto & (hash16==0)) {
+        gamma_proto=gamma_linear;
+        dev_dbg(g_dev_ptr, "Using linear table\n");
+    } else {
+        dev_dbg(g_dev_ptr, "Using non-linear table\n"); ///NOTE: here
+    }
+    ///disable interrupts here
+    //  D1I(local_irq_save(flags));
+    spin_lock_bh(&gamma_lock);
+    // look for the matching hash
+    tmp_p=gammas[0].newest_non_scaled;
+    //  gammas[0].oldest_all=GAMMA_CACHE_NUMBER-1;
+    //  gammas[0].newest_all=1;
 
-  MDF10(printk("gammas[0].oldest_all=%d\n", gammas[0].oldest_all)); ///NOTE: 253
+    dev_dbg(g_dev_ptr,"gammas[0].oldest_all=%d\n", gammas[0].oldest_all); ///NOTE: 253
 
-  MDF10(printk("gammas[0].newest_all=%d\n", gammas[0].newest_all));
-  MDF10(printk("tmp_p=0x%x gammas[tmp_p].hash16=0x%x hash16=0x%x\n", tmp_p, (int) gammas[tmp_p].hash16, (int) hash16 ));
-  while ((tmp_p!=0) && (gammas[tmp_p].hash16 != hash16)) {
-    D10(printk(" --tmp_p=0x%x\n", tmp_p)); ///NOTE: never
-    tmp_p=gammas[tmp_p].older_non_scaled;
-  }
-  MDF10(printk("tmp_p=0x%x\n", tmp_p)); ///NOTE: 0xff
-// Got right hash?
-  if (tmp_p == 0) { // no luck
-    MDF10(printk("Need new table\n")); ///NOTE: never
-    if (!gamma_proto) { //
-      D1I(local_irq_restore(flags));
-      MDF10(printk("matching hash not found, new table is not provided\n")); ///NOTE: never
-      return 0;   // matching hash not found, new table is not provided - return 0;
+    dev_dbg(g_dev_ptr,"gammas[0].newest_all=%d\n", gammas[0].newest_all);
+    dev_dbg(g_dev_ptr,"tmp_p=0x%x gammas[tmp_p].hash16=0x%x hash16=0x%x\n", tmp_p, (int) gammas[tmp_p].hash16, (int) hash16 );
+    while ((tmp_p!=0) && (gammas[tmp_p].hash16 != hash16)) {
+        dev_dbg(g_dev_ptr," --tmp_p=0x%x\n", tmp_p); ///NOTE: never
+        tmp_p=gammas[tmp_p].older_non_scaled;
     }
-// Create new proto table
-    tmp_p=gamma_new_node();
-    MDF10(printk("tmp_p=0x%x\n gamma_proto= 0x%x 0x%x 0x%x 0x%x\n", tmp_p, (int) gamma_proto[0], (int) gamma_proto[1], (int) gamma_proto[2], (int) gamma_proto[3]));
-    if (unlikely(!tmp_p)) { // could not allocate node
-      D1I(local_irq_restore(flags));
-      return 0;   // failure: could not allocate node - return 0;
-    }
-// fill it:
-    gammas[tmp_p].hash16=hash16;
-    gammas[tmp_p].scale=0;
-    gammas[tmp_p].oldest_scaled=tmp_p;  // points to itself - no scaled versions yet
-    gammas[tmp_p].newest_scaled=tmp_p;  // points to itself - no scaled versions yet
-    if ((mode & GAMMA_MODE_NOT_NICE)==0) {
-// let interrupts to take place, and disable again
-      D1I(local_irq_restore(flags));
-      MDF10(printk("Interrupts reenabled, tmp_p=0x%x\n", tmp_p));
-      D1I(local_irq_save(flags));
-// check if it is still there (likely so, but allow it to fail).
-      if (unlikely(!is_gamma_current (hash16, 0, tmp_p))) {
-        D1I(local_irq_restore(flags));
-        return 0;   // failure: other code used this node - return 0; (try not_nice next time?)
-      }
-    }
-//    memcpy ((void *)...
-    memcpy (gammas[tmp_p].direct, gamma_proto, 257*2) ; ///copy the provided table (full 16 bits)
-    gammas[tmp_p].valid |= GAMMA_VALID_MASK;
-// add it to the chain
-    MDF10(printk("insert_first_nonscaled(0x%x)\n", tmp_p));
-    insert_first_nonscaled(tmp_p);
-
-// matching hash found,make it newest (remove from the chain + add to the chain)
-  } else  if (gammas[tmp_p].newer_non_scaled !=0) { // if 0 - it is already the newest
-    MDF10(printk("remove_from_nonscaled (0x%x)\n", tmp_p)); ///NOTE: 0xff
-    remove_from_nonscaled (tmp_p);
-    MDF10(printk("insert_first_nonscaled (0x%x)\n", tmp_p));///NOTE: 0xff
-    insert_first_nonscaled(tmp_p);
-  }
-  MDF10(printk("0x%x\n", tmp_p)); ///NOTE: 0xff
-
-
-// now looking for the correct scale.
-  if (scale==0) {
-    D1I(local_irq_restore(flags));
-    return tmp_p;   // wanted non-scaled, got it ///NOTE: returns here
-  }
-  tmp_p1=gammas[tmp_p].newest_scaled;
-  MDF10(printk("tmp_p1=0x%x\n", tmp_p1));  ///FIXME: 0xff
-//  while ((tmp_p1!=0) && (gammas[tmp_p1].scale != scale)){ ///FIXME: got stuck here
-  while ((tmp_p1!=tmp_p) && (gammas[tmp_p1].scale != scale)){ ///FIXME: got stuck here
-    D10(printk(" >>tmp_p1=0x%x)\n", tmp_p1));
-    tmp_p1=gammas[tmp_p1].older_scaled;
-  }
-// Got right scale?
-//  if (tmp_p1 == 0) { // no luck
-  if (tmp_p1 == tmp_p) { // no luck
-    MDF10(printk("create new scaled table\n"));
-// create new scale
-    tmp_p1=gamma_new_node();
-    if (unlikely(!tmp_p1)) { // could not allocate node
-      D1I(local_irq_restore(flags));
-      return 0;   // failure: could not allocate node - return 0;
-    }
-// fill it
-    gammas[tmp_p1].hash16=hash16;
-    gammas[tmp_p1].scale= scale;
-// insert into 2-d
-    insert_first_scaled   (tmp_p, tmp_p1);
-// insert into 1-d (all)
-    insert_first_all (tmp_p1);
-    if ((mode & GAMMA_MODE_NOT_NICE)==0) {
-// let interrupts to take place, and disable again
-      D1I(local_irq_restore(flags));
-      D1I(local_irq_save(flags));
-// check if it is still there (likely so, but allow it to fail).
-      if (unlikely(!is_gamma_current (hash16, scale, tmp_p1))) {
-        D1I(local_irq_restore(flags));
-        return 0;   // failure: other code used this node - return 0; (try not_nice next time?)
-      }
-    }
-  } else { // scaled table already exists, make it first in 2 chains:
-    MDF10(printk("reuse scaled table\n"));
-// found right scale, make it newest in two chain (2d - hash/scale and 1-d - all scaled together, regardless of the hash
-///2-d chain
-    if (gammas[tmp_p1].newer_scaled != tmp_p) { // not already the newest of scales for the same hash
-      remove_from_scaled    (tmp_p1);
-      insert_first_scaled   (tmp_p, tmp_p1);
-    }
-///1-d chain
-    if (gammas[tmp_p1].newer_all != 0) { // not already the newest from all scaled
-      remove_from_all       (tmp_p1);
-      insert_first_all      (tmp_p1);
-    }
-  }
-// is the scaled version already calculated?
-  if ((gammas[tmp_p1].valid & GAMMA_VALID_MASK) == 0) {
-// calculate scaled version
-    gamma_calc_scaled (scale, gammas[tmp_p].direct, gammas[tmp_p1].direct);
-    gammas[tmp_p1].valid |= GAMMA_VALID_MASK;
-  }
-  if (mode & GAMMA_MODE_HARDWARE) {
-// is hardware-encoded array already calculated (do it if not)?
-    if ((gammas[tmp_p1].valid & GAMMA_FPGA_MASK)==0) {
-      gamma_encode_fpga(gammas[tmp_p1].direct, gammas[tmp_p1].fpga);
-      gammas[tmp_p1].valid |= GAMMA_FPGA_MASK;
-    }
-  }
-  if (mode & GAMMA_MODE_LOCK) {
-// lock the node for the color/port/channel
-    lock_gamma_node (tmp_p1, color, sensor_port,sensor_subchn);
-  }
-  if (mode & GAMMA_MODE_NEED_REVERSE) {
-    if ((gammas[tmp_p1].valid & GAMMA_VALID_REVERSE)==0) {
-      if ((mode & GAMMA_MODE_NOT_NICE)==0) {
-// let interrupts to take place, and disable again
-        D1I(local_irq_restore(flags));
-        D1I(local_irq_save(flags));
-// check if it is still there (likely so, but allow it to fail).
-        if (unlikely(!is_gamma_current (hash16, 0, tmp_p))) {
-          D1I(local_irq_restore(flags));
-          return 0;   // failure: other code used this node - return 0; (try not_nice next time?)
+    dev_dbg(g_dev_ptr,"tmp_p=0x%x\n", tmp_p); ///NOTE: 0xff
+    // Got right hash?
+    if (tmp_p == 0) { // no luck
+        dev_dbg(g_dev_ptr,"Need new table\n"); ///NOTE: never
+        if (!gamma_proto) { //
+            spin_unlock_bh(&gamma_lock);
+            //          D1I(local_irq_restore(flags));
+            dev_dbg(g_dev_ptr,"matching hash not found, new table is not provided\n"); ///NOTE: never
+            return 0;   // matching hash not found, new table is not provided - return 0;
         }
-      }
-      gamma_calc_reverse(gammas[tmp_p1].direct, gammas[tmp_p1].reverse);
-      gammas[tmp_p1].valid |= GAMMA_VALID_REVERSE;
+        // Create new proto table
+        tmp_p=gamma_new_node();
+        dev_dbg(g_dev_ptr,"tmp_p=0x%x\n gamma_proto= 0x%x 0x%x 0x%x 0x%x\n", tmp_p, (int) gamma_proto[0],
+                (int) gamma_proto[1], (int) gamma_proto[2], (int) gamma_proto[3]);
+        if (unlikely(!tmp_p)) { // could not allocate node
+            //          D1I(local_irq_restore(flags));
+            spin_unlock_bh(&gamma_lock);
+            return 0;   // failure: could not allocate node - return 0;
+        }
+        // fill it:
+        gammas[tmp_p].hash16=hash16;
+        gammas[tmp_p].scale=0;
+        gammas[tmp_p].oldest_scaled=tmp_p;  // points to itself - no scaled versions yet
+        gammas[tmp_p].newest_scaled=tmp_p;  // points to itself - no scaled versions yet
+        if ((mode & GAMMA_MODE_NOT_NICE)==0) {
+            // let interrupts to take place, and disable again - not needed with a tasklet
+            //          D1I(local_irq_restore(flags));
+            //          MDF10(printk("Interrupts reenabled, tmp_p=0x%x\n", tmp_p));
+            //          D1I(local_irq_save(flags));
+            // check if it is still there (likely so, but allow it to fail).
+            if (unlikely(!is_gamma_current (hash16, 0, tmp_p))) {
+                //              D1I(local_irq_restore(flags));
+                spin_unlock_bh(&gamma_lock);
+                return 0;   // failure: other code used this node - return 0; (try not_nice next time?)
+            }
+        }
+        //    memcpy ((void *)...
+        memcpy (gammas[tmp_p].direct, gamma_proto, 257*2) ; ///copy the provided table (full 16 bits)
+        gammas[tmp_p].valid |= GAMMA_VALID_MASK;
+        // add it to the chain
+        dev_dbg(g_dev_ptr,"insert_first_nonscaled(0x%x)\n", tmp_p);
+        insert_first_nonscaled(tmp_p);
+
+        // matching hash found,make it newest (remove from the chain + add to the chain)
+    } else  if (gammas[tmp_p].newer_non_scaled !=0) { // if 0 - it is already the newest
+        dev_dbg(g_dev_ptr,"remove_from_nonscaled (0x%x)\n", tmp_p); ///NOTE: 0xff
+        remove_from_nonscaled (tmp_p);
+        dev_dbg(g_dev_ptr,"insert_first_nonscaled (0x%x)\n", tmp_p);///NOTE: 0xff
+        insert_first_nonscaled(tmp_p);
     }
-  }
-  D1I(local_irq_restore(flags));
-  MDF10(printk("- return %d\n",tmp_p1));
-  return tmp_p1;
+    dev_dbg(g_dev_ptr,"tmp_p= 0x%x\n", tmp_p); ///NOTE: 0xff
+
+
+    // now looking for the correct scale.
+    if (scale==0) {
+        //      D1I(local_irq_restore(flags));
+        spin_unlock_bh(&gamma_lock);
+        return tmp_p;   // wanted non-scaled, got it ///NOTE: returns here
+    }
+    tmp_p1=gammas[tmp_p].newest_scaled;
+    dev_dbg(g_dev_ptr,"tmp_p1=0x%x\n", tmp_p1);  ///FIXME: 0xff
+    while ((tmp_p1!=tmp_p) && (gammas[tmp_p1].scale != scale)){ ///FIXME: got stuck here
+        dev_dbg(g_dev_ptr," >>tmp_p1=0x%x)\n", tmp_p1);
+        tmp_p1=gammas[tmp_p1].older_scaled;
+    }
+    // Got right scale?
+    //  if (tmp_p1 == 0) { // no luck
+    if (tmp_p1 == tmp_p) { // no luck
+        dev_dbg(g_dev_ptr,"create new scaled table\n");
+        // create new scale
+        tmp_p1=gamma_new_node();
+        if (unlikely(!tmp_p1)) { // could not allocate node
+            //          D1I(local_irq_restore(flags));
+            spin_unlock_bh(&gamma_lock);
+            return 0;   // failure: could not allocate node - return 0;
+        }
+        // fill it
+        gammas[tmp_p1].hash16=hash16;
+        gammas[tmp_p1].scale= scale;
+        // insert into 2-d
+        insert_first_scaled   (tmp_p, tmp_p1);
+        // insert into 1-d (all)
+        insert_first_all (tmp_p1);
+        if ((mode & GAMMA_MODE_NOT_NICE)==0) {
+            // let interrupts to take place, and disable again - not needed with tasklets
+            //          D1I(local_irq_restore(flags));
+            //          D1I(local_irq_save(flags));
+            // check if it is still there (likely so, but allow it to fail).
+            if (unlikely(!is_gamma_current (hash16, scale, tmp_p1))) {
+                //              D1I(local_irq_restore(flags));
+                spin_unlock_bh(&gamma_lock);
+                return 0;   // failure: other code used this node - return 0; (try not_nice next time?)
+            }
+        }
+    } else { // scaled table already exists, make it first in 2 chains:
+        dev_dbg(g_dev_ptr,"reuse scaled table\n");
+        // found right scale, make it newest in two chain (2d - hash/scale and 1-d - all scaled together, regardless of the hash
+        ///2-d chain
+        if (gammas[tmp_p1].newer_scaled != tmp_p) { // not already the newest of scales for the same hash
+            remove_from_scaled    (tmp_p1);
+            insert_first_scaled   (tmp_p, tmp_p1);
+        }
+        ///1-d chain
+        if (gammas[tmp_p1].newer_all != 0) { // not already the newest from all scaled
+            remove_from_all       (tmp_p1);
+            insert_first_all      (tmp_p1);
+        }
+    }
+    // is the scaled version already calculated?
+    if ((gammas[tmp_p1].valid & GAMMA_VALID_MASK) == 0) {
+        // calculate scaled version
+        gamma_calc_scaled (scale, gammas[tmp_p].direct, gammas[tmp_p1].direct);
+        gammas[tmp_p1].valid |= GAMMA_VALID_MASK;
+    }
+    if (mode & GAMMA_MODE_HARDWARE) {
+        // is hardware-encoded array already calculated (do it if not)?
+        if ((gammas[tmp_p1].valid & GAMMA_FPGA_MASK)==0) {
+            gamma_encode_fpga(gammas[tmp_p1].direct, gammas[tmp_p1].fpga);
+            gammas[tmp_p1].valid |= GAMMA_FPGA_MASK;
+        }
+    }
+    if (mode & GAMMA_MODE_LOCK) {
+        // lock the node for the color/port/channel
+        lock_gamma_node (tmp_p1, color, sensor_port,sensor_subchn);
+    }
+    if (mode & GAMMA_MODE_NEED_REVERSE) {
+        if ((gammas[tmp_p1].valid & GAMMA_VALID_REVERSE)==0) {
+            if ((mode & GAMMA_MODE_NOT_NICE)==0) {
+                // let interrupts to take place, and disable again // not needed with tasklets
+                //              D1I(local_irq_restore(flags));
+                //              D1I(local_irq_save(flags));
+                // check if it is still there (likely so, but allow it to fail).
+                if (unlikely(!is_gamma_current (hash16, 0, tmp_p))) {
+                    //                  D1I(local_irq_restore(flags));
+                    spin_unlock_bh(&gamma_lock);
+                    return 0;   // failure: other code used this node - return 0; (try not_nice next time?)
+                }
+            }
+            gamma_calc_reverse(gammas[tmp_p1].direct, gammas[tmp_p1].reverse);
+            gammas[tmp_p1].valid |= GAMMA_VALID_REVERSE;
+        }
+    }
+    //  D1I(local_irq_restore(flags));
+    spin_unlock_bh(&gamma_lock);
+
+    dev_dbg(g_dev_ptr,"set_gamma_table(): return %d\n",tmp_p1);
+    return tmp_p1;
 }
 
-/** Writing gamma table to FPGA (1 color, 1 sub-channel) enabling IRQ after transferring each FPGA_TABLE_CHUNK DWORDs */
-void fpga_gamma_write_nice(int color,         ///< Color (0..3)
-                           int sensor_port,   ///< sensor port (0..3)
-                           int sensor_subchn, ///< sensor sub-channel (when several are connected through a multiplexer)
-                           u32 * gamma)       ///< Gamma table (256 DWORDs) in encoded FPGA format
+/** Writing gamma table to FPGA (1 color, 1 sub-channel) enabling IRQ after transferring each FPGA_TABLE_CHUNK DWORDs
+ *
+ * This code may be called from the IRQ context, and from the different CPU */
+
+int fpga_gamma_write_nice(int color,         ///< Color (0..3)
+        int sensor_port,   ///< sensor port (0..3)
+        int sensor_subchn, ///< sensor sub-channel (when several are connected through a multiplexer)
+        unsigned long * gamma)       ///< Gamma table (256 DWORDs) in encoded FPGA format
+                           ///< @return 0 OK, -ENODEV - FPGA is not programmed
 {
     x393_gamma_tbl_t gamma_tbl_a = {.d32=0};
     x393_gamma_tbl_t gamma_tbl_d = {.d32=0};
     const int gamma_size=256; // 18-bit entries
-    unsigned long flags;
+//    unsigned long flags;
     int addr32, len32, i;
+    if (is_fpga_programmed()<=0){
+        return -ENODEV;
+    }
 
     gamma_tbl_a.a_n_d = 1;
     gamma_tbl_a.color = color;
     gamma_tbl_a.sub_chn = sensor_subchn;
+    spin_lock_bh(gamma_locks[sensor_port]);
     for (addr32 = 0; addr32 < gamma_size; addr32 += FPGA_TABLE_CHUNK){
         len32 = FPGA_TABLE_CHUNK;
         if (unlikely(addr32 + len32 > gamma_size))
             len32 = gamma_size - addr32;
         gamma_tbl_a.addr= addr32;
-        local_irq_save(flags);
+//        spin_lock_irqsave(gamma_locks[sensor_port],flags);
         x393_sens_gamma_tbl(gamma_tbl_a, sensor_port);
         for (i = addr32; i < addr32 + len32; i++){
             gamma_tbl_d.d32 = gamma[i];
             x393_sens_gamma_tbl(gamma_tbl_d, sensor_port);
         }
-        local_irq_restore(flags);
+//        spin_unlock_irqrestore(gamma_locks[sensor_port],flags);
     }
+    spin_unlock_bh(gamma_locks[sensor_port]);
+    return 0;
 }
 
 ///======================================
@@ -726,12 +765,12 @@ void fpga_gamma_write_nice(int color,         ///< Color (0..3)
  */
 #define GAMMA_FILE_SIZE GAMMA_CACHE_NUMBER
 static struct file_operations gammas_fops = {
-   owner:    THIS_MODULE,
-   llseek:   gammas_lseek,
-   write:    gammas_write,
-   open:     gammas_open,
-   mmap:     gammas_mmap,
-   release:  gammas_release
+        owner:    THIS_MODULE,
+        llseek:   gammas_lseek,
+        write:    gammas_write,
+        open:     gammas_open,
+        mmap:     gammas_mmap,
+        release:  gammas_release
 };
 /**
  * @brief Gammas driver OPEN method
@@ -740,28 +779,28 @@ static struct file_operations gammas_fops = {
  * @return OK - 0, -EINVAL for wrong minor
  */
 int gammas_open(struct inode *inode, struct file *file) {
-   int res;
-   struct gammas_pd * privData;
-   privData= (struct gammas_pd *) kmalloc(sizeof(struct gammas_pd),GFP_KERNEL);
-  MDF10(printk("gammas[0].oldest_all=%d\n", gammas[0].oldest_all));
-  MDF10(printk("gammas[0].newest_all=%d\n", gammas[0].newest_all));
-   if (!privData) return -ENOMEM;
-   file->private_data = privData;
-   privData-> minor=MINOR(inode->i_rdev);
-   MDF10(printk("gammas_open, minor=0x%x\n",privData-> minor));
-   switch (privData-> minor) {
-     case DEV393_MINOR(DEV393_GAMMA) :
-        inode->i_size = GAMMA_FILE_SIZE;
-        privData-> scale= 0;
-        privData-> hash16=0;
-        privData-> mode= 0;
-        return 0;
-     default:
-       kfree(file->private_data); // already allocated
-       return -EINVAL;
-   }
-   file->f_pos = 0;
-   return res;
+    int res;
+    struct gammas_pd * privData;
+    privData= (struct gammas_pd *) kmalloc(sizeof(struct gammas_pd),GFP_KERNEL);
+    dev_dbg(g_dev_ptr,"gammas[0].oldest_all=%d\n", gammas[0].oldest_all);
+    dev_dbg(g_dev_ptr,"gammas[0].newest_all=%d\n", gammas[0].newest_all);
+    if (!privData) return -ENOMEM;
+    file->private_data = privData;
+    privData-> minor=MINOR(inode->i_rdev);
+    MDF10(printk("gammas_open, minor=0x%x\n",privData-> minor));
+    switch (privData-> minor) {
+    case DEV393_MINOR(DEV393_GAMMA) :
+                inode->i_size = GAMMA_FILE_SIZE;
+    privData-> scale= 0;
+    privData-> hash16=0;
+    privData-> mode= 0;
+    return 0;
+    default:
+        kfree(file->private_data); // already allocated
+        return -EINVAL;
+    }
+    file->f_pos = 0;
+    return res;
 }
 
 /**
@@ -771,17 +810,17 @@ int gammas_open(struct inode *inode, struct file *file) {
  * @return OK - 0, -EINVAL for wrong minor
  */
 int gammas_release(struct inode *inode, struct file *file) {
-  int res=0;
-  int p = MINOR(inode->i_rdev);
-  MDF10(printk("gammas_release, minor=0x%x\n",p));
-  switch ( p ) {
+    int res=0;
+    int p = MINOR(inode->i_rdev);
+    MDF10(printk("gammas_release, minor=0x%x\n",p));
+    switch ( p ) {
     case  DEV393_MINOR(DEV393_GAMMA) :
-        break;
+                break;
     default:
         return -EINVAL; //! do not need to free anything - "wrong number"
     }
-  kfree(file->private_data);
-  return res;
+    kfree(file->private_data);
+    return res;
 }
 
 
@@ -801,46 +840,46 @@ int gammas_release(struct inode *inode, struct file *file) {
  * @return file position gamma cache index (0 - invalid)
  */
 loff_t gammas_lseek (struct file * file, loff_t offset, int orig) {
-   struct gammas_pd * privData = (struct gammas_pd *) file->private_data;
-   MDF10(printk("offset=0x%x, orig=0x%x, file->f_pos=0x%x\n",(int) offset, (int) orig, (int) file->f_pos));
-   switch (privData->minor) {
-       case DEV393_MINOR(DEV393_GAMMA) :
-         switch(orig) {
-         case SEEK_SET:
-           file->f_pos = offset;
-           break;
-         case SEEK_CUR:
-//     file->f_pos = getThisFrameNumber() + offset;
-           break;
-         case SEEK_END:
-           if (offset < 0) {
-              break;
-           } else if (offset == 0) {
-              file->f_pos=GAMMA_CACHE_NUMBER;
-              break;
-           } else {//!Execute commands
-             switch (offset) {
-             case LSEEK_GAMMA_INIT:
-                init_gammas();
-                file->f_pos=0;
-                break;
-             case LSEEK_GAMMA_ISCURRENT:
-               if (file->f_pos==0) break; // wrong index
-               if (!is_gamma_current (privData->hash16, privData->scale, (int) file->f_pos)) file->f_pos=0;
-               break;
-             default: ///other commands
-               return -EINVAL;
-             }
-           break;
-           }
-         default:  // not SEEK_SET/SEEK_CUR/SEEK_END
-            return -EINVAL;
-         } // switch (orig)
-   MDF10(printk("file->f_pos=0x%x\n",(int) file->f_pos));
-         return  file->f_pos ;
-       default: // other minors
-         return -EINVAL;
-  }
+    struct gammas_pd * privData = (struct gammas_pd *) file->private_data;
+    MDF10(printk("offset=0x%x, orig=0x%x, file->f_pos=0x%x\n",(int) offset, (int) orig, (int) file->f_pos));
+    switch (privData->minor) {
+    case DEV393_MINOR(DEV393_GAMMA) :
+                 switch(orig) {
+                 case SEEK_SET:
+                     file->f_pos = offset;
+                     break;
+                 case SEEK_CUR:
+                     //     file->f_pos = getThisFrameNumber() + offset;
+                     break;
+                 case SEEK_END:
+                     if (offset < 0) {
+                         break;
+                     } else if (offset == 0) {
+                         file->f_pos=GAMMA_CACHE_NUMBER;
+                         break;
+                     } else {//!Execute commands
+                         switch (offset) {
+                         case LSEEK_GAMMA_INIT:
+                             init_gammas();
+                             file->f_pos=0;
+                             break;
+                         case LSEEK_GAMMA_ISCURRENT:
+                             if (file->f_pos==0) break; // wrong index
+                             if (!is_gamma_current (privData->hash16, privData->scale, (int) file->f_pos)) file->f_pos=0;
+                             break;
+                         default: ///other commands
+                             return -EINVAL;
+                         }
+                         break;
+                     }
+                 default:  // not SEEK_SET/SEEK_CUR/SEEK_END
+                     return -EINVAL;
+                 } // switch (orig)
+    MDF10(printk("file->f_pos=0x%x\n",(int) file->f_pos));
+    return  file->f_pos ;
+                 default: // other minors
+                     return -EINVAL;
+    }
 }
 
 /** Gammas driver WRITE method
@@ -853,43 +892,43 @@ loff_t gammas_lseek (struct file * file, loff_t offset, int orig) {
  * - next 514 bytes [6..519] - 16-bit gamma table (if less than 514 bytes NULL will be passed to \b set_gamma_table()
  * sets file pointer to gamma cache index (0 - no table exist) */
 ssize_t gammas_write(struct file * file, ///< this file structure
-		             const char * buf,   ///< userland buffer
-					 size_t count,       ///< number of bytes to write
-					 loff_t *off)        ///< updated offset in the buffer
-					                     ///< @return full length passed or 0 if failed
+        const char * buf,   ///< userland buffer
+        size_t count,       ///< number of bytes to write
+        loff_t *off)        ///< updated offset in the buffer
+///< @return full length passed or 0 if failed
 {
-   struct gammas_pd * privData = (struct gammas_pd *) file->private_data;
-   struct {
-     unsigned short scale;
-     unsigned short hash16;
-     unsigned char  mode;
-     unsigned char  color; // 393: it is now combination of color, port and channel. Could not find what are the 3 LSBs ((privData->color >> 3) &3) below
-     unsigned short gamma[257];
-   } data;
+    struct gammas_pd * privData = (struct gammas_pd *) file->private_data;
+    struct {
+        unsigned short scale;
+        unsigned short hash16;
+        unsigned char  mode;
+        unsigned char  color; // 393: it is now combination of color, port and channel. Could not find what are the 3 LSBs ((privData->color >> 3) &3) below
+        unsigned short gamma[257];
+    } data;
 
-   int     head,   result;
-// ************* NOTE: Never use file->f_pos in write() and read() !!!
-   unsigned short * gamma= data.gamma;
-   MDF10(printk(" file->f_pos=0x%x, *off=0x%x\n", (int) file->f_pos, (int) *off));
-   switch (privData->minor) {
-       case DEV393_MINOR(DEV393_GAMMA) :
-         if (count>sizeof (data)) count = sizeof (data);
-         if(count) {
-           if(copy_from_user((char *) &data, buf, count))  return -EFAULT;
-           head=6;
-           if ((count-head) < (2 * 257)) gamma=NULL; // complete gamma table is not available
-           if (head>count) head=count;
-           memcpy (&(privData->scale),&(data.scale),head);
-  MDF10(printk("count=%d, head=%d, hash16=0x%x scale=0x%x mode=0x%x color=%x\n", count, head, (int) data.hash16, (int) data.scale,  (int) data.mode,  (int) data.color));
-  MDF10(printk("count=%d, head=%d, hash16=0x%x scale=0x%x mode=0x%x color=%x\n", count, head, (int) privData->hash16, (int) privData->scale,  (int) privData->mode,  (int) privData->color));
-//           result=set_gamma_table (privData->hash16, privData->scale, gamma,  privData->mode, ( privData->color >> 3) & 3);
-           result=set_gamma_table (privData->hash16, privData->scale, gamma,  privData->mode, ( privData->color >> 0) & 3, ( privData->color >> 4) & 3, ( privData->color >> 2) & 3);
-           *off= (result>0)?result:0;
-         } else *off=0;
-   MDF10(printk("file->f_pos=0x%x\n", (int) *off));
-         return (*off) ? count: 0; 
-       default:                           return -EINVAL;
-  }
+    int     head,   result;
+    // ************* NOTE: Never use file->f_pos in write() and read() !!!
+    unsigned short * gamma= data.gamma;
+    dev_dbg(g_dev_ptr," file->f_pos=0x%x, *off=0x%x\n", (int) file->f_pos, (int) *off);
+    switch (privData->minor) {
+    case DEV393_MINOR(DEV393_GAMMA) :
+                 if (count>sizeof (data)) count = sizeof (data);
+    if(count) {
+        if(copy_from_user((char *) &data, buf, count))  return -EFAULT;
+        head=6;
+        if ((count-head) < (2 * 257)) gamma=NULL; // complete gamma table is not available
+        if (head>count) head=count;
+        memcpy (&(privData->scale),&(data.scale),head);
+        dev_dbg(g_dev_ptr,"count=%d, head=%d, hash16=0x%x scale=0x%x mode=0x%x color=%x\n", count, head, (int) data.hash16, (int) data.scale,  (int) data.mode,  (int) data.color);
+        dev_dbg(g_dev_ptr,"count=%d, head=%d, hash16=0x%x scale=0x%x mode=0x%x color=%x\n", count, head, (int) privData->hash16, (int) privData->scale,  (int) privData->mode,  (int) privData->color);
+        //           result=set_gamma_table (privData->hash16, privData->scale, gamma,  privData->mode, ( privData->color >> 3) & 3);
+        result=set_gamma_table (privData->hash16, privData->scale, gamma,  privData->mode, ( privData->color >> 0) & 3, ( privData->color >> 4) & 3, ( privData->color >> 2) & 3);
+        *off= (result>0)?result:0;
+    } else *off=0;
+    dev_dbg(g_dev_ptr,"file->f_pos=0x%x\n", (int) *off);
+    return (*off) ? count: 0;
+    default:                           return -EINVAL;
+    }
 }
 
 /**
@@ -899,69 +938,75 @@ ssize_t gammas_write(struct file * file, ///< this file structure
  * @return OK - 0, negative - errors
  */
 int gammas_mmap (struct file *file, struct vm_area_struct *vma) {
-  int result;
-  struct gammas_pd * privData = (struct gammas_pd *) file->private_data;
-  MDF10(printk("gammas_all_mmap, minor=0x%x\n",privData-> minor));
-     switch (privData->minor) {
-       case  DEV393_MINOR(DEV393_GAMMA) :
-           result=remap_pfn_range(vma,
-                  vma->vm_start,
-                 ((unsigned long) virt_to_phys(gammas_p)) >> PAGE_SHIFT, // Should be page-aligned
-                  vma->vm_end-vma->vm_start,
-                  vma->vm_page_prot);
-           MDF10(printk("remap_pfn_range returned=%x\r\n",result));
-           if (result) return -EAGAIN;
-           return 0;
-       default: return -EINVAL;
-  }
+    int result;
+    struct gammas_pd * privData = (struct gammas_pd *) file->private_data;
+    dev_dbg(g_dev_ptr,"gammas_all_mmap, minor=0x%x\n",privData-> minor);
+    switch (privData->minor) {
+    case  DEV393_MINOR(DEV393_GAMMA) :
+                   result=remap_pfn_range(vma,
+                           vma->vm_start,
+                           ((unsigned long) virt_to_phys(gammas_p)) >> PAGE_SHIFT, // Should be page-aligned
+                           vma->vm_end-vma->vm_start,
+                           vma->vm_page_prot);
+    dev_dbg(g_dev_ptr,"remap_pfn_range returned=%x\r\n",result);
+    if (result) return -EAGAIN;
+    return 0;
+    default: return -EINVAL;
+    }
 }
 
 /**
  * @brief Gammas driver init
  * @return 0
  */
-static int __init gammas_init(void) {
-   int res;
-   printk ("Starting "DEV393_NAME(DEV393_GAMMA)" - %d \n",DEV393_MAJOR(DEV393_GAMMA));
-   init_gammas();
-   MDF10(printk("set_gamma_table (0, GAMMA_SCLALE_1, NULL,  0, 0)\n"); udelay (ELPHEL_DEBUG_DELAY));
-   set_gamma_table (0, GAMMA_SCLALE_1, NULL,  0, 0, 0, 0); // maybe not needed to put linear to cache - it can be calculated as soon FPGA will be tried to be programmed with
-                                                        // hash16==0
+static int gammas_init(struct platform_device *pdev) {
+    int res;
+    struct device *dev = &pdev->dev;
+    const struct of_device_id *match; // not yet used
+    dev_info(dev,"Starting "DEV393_NAME(DEV393_GAMMA)" - %d \n",DEV393_MAJOR(DEV393_GAMMA));
+    init_gammas();
+    //   MDF10(printk("set_gamma_table (0, GAMMA_SCLALE_1, NULL,  0, 0)\n"); udelay (ELPHEL_DEBUG_DELAY));
+    set_gamma_table (0, GAMMA_SCLALE_1, NULL,  0, 0, 0, 0); // maybe not needed to put linear to cache - it can be calculated as soon FPGA will be tried to be programmed with
+    // hash16==0
 
-   res = register_chrdev(DEV393_MAJOR(DEV393_GAMMA), DEV393_NAME(DEV393_GAMMA), &gammas_fops);
-   if(res < 0) {
-     printk(KERN_ERR "\ngammas_init: couldn't get a major number %d.\n",DEV393_MAJOR(DEV393_GAMMA));
-     return res;
-   }
-//   init_waitqueue_head(&gammas_wait_queue);
-   printk(DEV393_NAME(DEV393_GAMMA)" - %d \n",DEV393_MAJOR(DEV393_GAMMA));
-   return 0;
+    res = register_chrdev(DEV393_MAJOR(DEV393_GAMMA), DEV393_NAME(DEV393_GAMMA), &gammas_fops);
+    if(res < 0) {
+        dev_err(dev,"\ngammas_init: couldn't get a major number %d.\n",DEV393_MAJOR(DEV393_GAMMA));
+        return res;
+    }
+    //   init_waitqueue_head(&gammas_wait_queue);
+    dev_info(dev, DEV393_NAME(DEV393_GAMMA)" - %d \n",DEV393_MAJOR(DEV393_GAMMA));
+    g_dev_ptr = dev; // to use for debug print
+    return 0;
+}
+int gammas_remove(struct platform_device *pdev)
+{
+    unregister_chrdev(DEV393_MAJOR(DEV393_GAMMA), DEV393_NAME(DEV393_GAMMA));
+
+    return 0;
 }
 
+static const struct of_device_id elphel393_gamma_tables_of_match[] = {
+        { .compatible = "elphel,elphel393-gamma_tables-1.00" },
+        { /* end of list */ }
+};
 
-module_init(gammas_init);
+
+MODULE_DEVICE_TABLE(of, elphel393_gamma_tables_of_match);
+
+
+static struct platform_driver elphel393_gamma_tables = {
+        .probe          = gammas_init,
+        .remove         = gammas_remove,
+        .driver         = {
+                .name       = DEV393_NAME(DEV393_GAMMA),
+                .of_match_table = elphel393_gamma_tables_of_match,
+        },
+};
+
+
+module_platform_driver(elphel393_gamma_tables);
+//module_init(gammas_init);
 MODULE_LICENSE("GPLv3.0");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(X3X3_GAMMAS_DRIVER_DESCRIPTION);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

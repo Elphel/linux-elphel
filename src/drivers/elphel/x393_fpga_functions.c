@@ -17,6 +17,9 @@
 
 
 #include <linux/spinlock.h>
+#include <linux/io.h>
+#include <linux/errno.h>
+
 #include <uapi/elphel/c313a.h> // PARS_FRAMES_MASK
 
 #include "x393.h"
@@ -24,6 +27,7 @@
 
 #define REPEAT_STATUS_READ         10 ///< Number of times status is re-read waiting for a new timestamp
 
+static void __iomem* zynq_devcfg_ptr = NULL; // 0xF8007000..f8007fff /f800700c needed
 static DEFINE_SPINLOCK(fpga_time_lock);
 
 // Nothing to init? Started in pgm_detectsesnor through sensor_common:sequencer_stop_run_reset
@@ -44,7 +48,7 @@ sec_usec_t * get_fpga_rtc(sec_usec_t * ts) ///< Pointer to a sec/usec structure 
 //    x393_rtc_sec_t     sec;
     int i;
     if (!ts) return NULL;
-    spin_lock(&fpga_time_lock);
+    spin_lock_bh(&fpga_time_lock);
     stat = x393_rtc_status();
     stat_ctrl.mode = 1;
     stat_ctrl.seq_num = stat.seq_num + 1;
@@ -57,7 +61,7 @@ sec_usec_t * get_fpga_rtc(sec_usec_t * ts) ///< Pointer to a sec/usec structure 
             break;
         }
     }
-    spin_unlock(&fpga_time_lock);
+    spin_unlock_bh(&fpga_time_lock);
     return ts;
 }
 
@@ -68,8 +72,18 @@ void set_fpga_rtc (sec_usec_t ts) ///< timestamp providing seconds and microseco
     x393_rtc_sec_t     sec;
     usec.usec = ts.usec;
     sec.sec =   ts.sec;
-    spin_lock(&fpga_time_lock);
+    spin_lock_bh(&fpga_time_lock);
     set_x393_rtc_usec(usec);
     set_x393_rtc_sec_set(sec);  // And apply
-    spin_unlock(&fpga_time_lock);
+    spin_unlock_bh(&fpga_time_lock);
+}
+/** Check if bitstream is loaded */
+int is_fpga_programmed(void) ///< @return 0 - bitstream is NOT loaded, 1 - bitsteam IS loaded, -ENOMEM - error in ioremap
+{
+    if (!zynq_devcfg_ptr){
+        zynq_devcfg_ptr = ioremap(0xf8007000, 0x00010000);
+        if (!zynq_devcfg_ptr)
+            return -ENOMEM;
+    }
+    return (readl(zynq_devcfg_ptr + 0x000c) & 4)? 1: 0;
 }

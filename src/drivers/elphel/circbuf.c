@@ -706,7 +706,18 @@ loff_t circbuf_lseek(struct file *file, loff_t offset, int orig)
 			case LSEEK_CIRC_UTIME:
 				return get_rtc_usec();
 				break;
-			default:
+
+// New in NC393 - separate comressor interrupts
+            case LSEEK_INTERRUPT_OFF: // disable camera interrupts
+                dev_dbg(g_dev_ptr, "LSEEK_INTERRUPT_OFF\n");
+                compressor_interrupts(0,chn);
+                break;
+            case LSEEK_INTERRUPT_ON: // enable camera interrupts
+                dev_dbg(g_dev_ptr, "LSEEK_INTERRUPT_ON\n");
+                compressor_interrupts(1,chn);
+                break;
+
+			default: // offset >=32
 				if ((offset & ~0x1f)==LSEEK_DAEMON_CIRCBUF) {
 					wait_event_interruptible(circbuf_wait_queue, get_imageParamsThis(chn, P_DAEMON_EN) & (1<<(offset & 0x1f)));
 				}

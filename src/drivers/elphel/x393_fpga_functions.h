@@ -19,4 +19,5 @@
 //void        fpga_table_write_nice (int addr, int len, unsigned long * data);
 sec_usec_t * get_fpga_rtc(sec_usec_t * ts);
 void         set_fpga_rtc (sec_usec_t ts);
+int          is_fpga_programmed(void);
 

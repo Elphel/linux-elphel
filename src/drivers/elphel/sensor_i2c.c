@@ -139,10 +139,10 @@ int i2c_page_alloc(int chn)
 {
 	int g, b;
 	u32 * fb;
-	spin_lock(&lock);
+	spin_lock_bh(&lock);
 	g = __builtin_clz(free_i2c_groups[chn]);
 	if (unlikely(g > 7)) {
-		spin_unlock(&lock);
+		spin_unlock_bh(&lock);
 		return -ENOMEM; // no free i2c pages left
 	}
 	fb = free_i2c_pages + ((chn << 3) + g);
@@ -151,7 +151,7 @@ int i2c_page_alloc(int chn)
 	if (unlikely(*fb == 0)){
 		free_i2c_groups[chn] &= ~(1 << (31 - g));
 	}
-	spin_unlock(&lock);
+	spin_unlock_bh(&lock);
 	return (g << 5) + b;
 }
 EXPORT_SYMBOL_GPL(i2c_page_alloc);
@@ -165,16 +165,16 @@ int i2c_page_register(int chn,   ///< Sensor port
 	int g =    page >> 5;
 	int b =    page & 0x1f;
 	u32 * fb = free_i2c_pages + ((chn << 3) + g);
-	spin_lock(&lock);
+	spin_lock_bh(&lock);
 	if (unlikely(!(*fb & (1 << (31-b))))) {
-		spin_unlock(&lock);
+		spin_unlock_bh(&lock);
 		return -ENOMEM; // page is already registered
 	}
 	*fb &= (1 << (31-b));
 	if (unlikely(*fb == 0)){
 		free_i2c_groups[chn] &= ~(1 << (31 - g));
 	}
-	spin_unlock(&lock);
+	spin_unlock_bh(&lock);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(i2c_page_register);
@@ -190,10 +190,10 @@ void i2c_page_free(int chn, int page)
 	int g =    page >> 5;
 	int b =    page & 0x1f;
 	u32 * fb = free_i2c_pages + ((chn << 3) + g);
-	spin_lock(&lock);
+	spin_lock_bh(&lock);
 	free_i2c_groups[chn] |=  1 << (31 - g);
 	*fb |= 1 << (31-b);
-	spin_unlock(&lock);
+	spin_unlock_bh(&lock);
 }
 EXPORT_SYMBOL_GPL(i2c_page_free);
 
@@ -222,10 +222,10 @@ void set_xi2c_raw(int chn,    ///< Sensor port number
 	tb_data.d32 =      data;
 	tb_data.tbl_mode = 2; //
 	/* Table address and data should not interleave with others */
-	spin_lock(&lock);
+	spin_lock_bh(&lock);
 	x393_sensi2c_ctrl (tb_addr, chn);
 	x393_sensi2c_ctrl (tb_data, chn);
-	spin_unlock(&lock);
+	spin_unlock_bh(&lock);
 	i2c_pages_shadow[(chn << 8) + page] =tb_data.d32;
 }
 EXPORT_SYMBOL_GPL(set_xi2c_raw);
@@ -251,10 +251,10 @@ void set_xi2c_wrc( x393_i2c_device_t * dc,   ///< device class
 	tb_data.dly =      get_bit_delay(dc -> scl_khz);
 	tb_data.tbl_mode = 2;
 	/* Table address and data should not interleave with others */
-	spin_lock(&lock);
+	spin_lock_bh(&lock);
 	x393_sensi2c_ctrl (tb_addr, chn);
 	x393_sensi2c_ctrl (tb_data, chn);
-	spin_unlock(&lock);
+	spin_unlock_bh(&lock);
 	i2c_pages_shadow[(chn << 8) + page] =tb_data.d32;
 }
 EXPORT_SYMBOL_GPL(set_xi2c_wrc);
@@ -279,10 +279,10 @@ void set_xi2c_rdc(x393_i2c_device_t * dc,  ///< device class
 	tb_data.tbl_mode = 2;
 	/* Table address and data should not interleave with others */
 	dev_dbg(sdev, "set_xi2c_rdc(*, %d, %d), tb_addr.d32=0x%08x, tb_data.d32 = 0x%08x\n",chn,page,tb_addr.d32,tb_data.d32);
-	spin_lock(&lock);
+	spin_lock_bh(&lock);
 	x393_sensi2c_ctrl (tb_addr, chn);
 	x393_sensi2c_ctrl (tb_data, chn);
-	spin_unlock(&lock);
+	spin_unlock_bh(&lock);
 	i2c_pages_shadow[(chn << 8) + page] = tb_data.d32;
 }
 EXPORT_SYMBOL_GPL(set_xi2c_rdc);
@@ -308,10 +308,10 @@ void set_xi2c_wr(int chn,        ///< sensor port
 	tb_data.dly =      bit_delay;
 	tb_data.tbl_mode = 2;
 	/* Table address and data should not interleave with others */
-	spin_lock(&lock);
+	spin_lock_bh(&lock);
 	x393_sensi2c_ctrl (tb_addr, chn);
 	x393_sensi2c_ctrl (tb_data, chn);
-	spin_unlock(&lock);
+	spin_unlock_bh(&lock);
 	i2c_pages_shadow[(chn << 8) + page] =tb_data.d32;
 }
 EXPORT_SYMBOL_GPL(set_xi2c_wr);
@@ -335,10 +335,10 @@ void set_xi2c_rd(int chn,           ///< sensor port
 	tb_data.dly =      bit_delay;
 	tb_data.tbl_mode = 2;
 	/* Table address and data should not interleave with others */
-	spin_lock(&lock);
+	spin_lock_bh(&lock);
 	x393_sensi2c_ctrl (tb_addr, chn);
 	x393_sensi2c_ctrl (tb_data, chn);
-	spin_unlock(&lock);
+	spin_unlock_bh(&lock);
 	i2c_pages_shadow[(chn << 8) + page] =tb_data.d32;
 }
 EXPORT_SYMBOL_GPL(set_xi2c_rd);
@@ -375,14 +375,14 @@ int write_xi2c_rel (int chn,    ///< sensor port
 	if (tb_data.tbl_mode !=2) return -EBADR;
 	len = (tb_data.rnw )? 1:((tb_data.nbwr + 5) >> 2); // read mode - always 1 DWORD, write - 1..3
 	if (len > 1) {
-		spin_lock(&lock);
+		spin_lock_bh(&lock);
 		for (i = 0; i <len; i++){
 			x393_sensi2c_rel (data[i], chn, offs);
 		}
 	} else {
 		x393_sensi2c_rel (data[0], chn, offs);
 	}
-	spin_unlock(&lock);
+	spin_unlock_bh(&lock);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(write_xi2c_rel);
@@ -404,14 +404,14 @@ int write_xi2c_abs (int chn,    ///< sensor port
 	if (tb_data.tbl_mode !=2) return -EBADR;
 	len = (tb_data.rnw )? 1:((tb_data.nbwr + 5) >> 2); // read mode - always 1 DWORD, write - 1..3
 	if (len > 1) {
-		spin_lock(&lock);
+		spin_lock_bh(&lock);
 		for (i = 0; i <len; i++){
 			x393_sensi2c_abs (data[i], chn, offs);
 		}
 	} else {
 		x393_sensi2c_abs (data[0], chn, offs);
 	}
-	spin_unlock(&lock);
+	spin_unlock_bh(&lock);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(write_xi2c_abs);
@@ -493,6 +493,30 @@ void  read_xi2c_sa7 (int chn,   ///< sensor port
 }
 EXPORT_SYMBOL_GPL(read_xi2c_sa7);
 
+/** Read i2c sequencer frame number (4 bits). Make sure it is equal to the cmdseq one */
+int read_xi2c_frame(int chn) ///< sensor port number
+                             ///< @return i2c sequencer frame number (4 bits)
+{
+    int i;
+    x393_status_sens_i2c_t  status;
+    x393_status_ctrl_t status_ctrl = get_x393_sensi2c_status_ctrl(chn); /* last written data to status_cntrl */
+    if (status_ctrl.mode != 3){
+        spin_lock_bh(&lock);
+        status =  x393_sensi2c_status (chn);
+        status_ctrl.mode = 3;
+        status_ctrl.seq_num = status.seq_num ^ 0x20;
+        set_x393_sensi2c_status_ctrl(status_ctrl, chn);
+        for (i = 0; i < 10; i++) {
+            status = x393_sensi2c_status(chn);
+            if (likely(status.seq_num = status_ctrl.seq_num)) break;
+        }
+        spin_unlock_bh(&lock);
+        dev_dbg(sdev, "read_xi2c_frame(%d): mode set to 3, status updated to 0x%08x\n",chn, (int) status.d32);
+    }
+    status =  x393_sensi2c_status (chn);
+    return (int) status.frame_num;
+}
+EXPORT_SYMBOL_GPL(read_xi2c_frame);
 
 /** Read next byte from the channel i2c read FIFO.
  * Sensor channel status will be set  to auto update mode (3) if it was in different mode */
@@ -504,6 +528,7 @@ int read_xi2c_fifo(int chn) ///< sensor port
 	x393_status_sens_i2c_t  status;
 	x393_status_ctrl_t status_ctrl = get_x393_sensi2c_status_ctrl(chn); /* last written data to status_cntrl */
 	if (status_ctrl.mode != 3){
+	    spin_lock_bh(&lock);
 		status =  x393_sensi2c_status (chn);
 		status_ctrl.mode = 3;
 		status_ctrl.seq_num = status.seq_num ^ 0x20;
@@ -512,6 +537,7 @@ int read_xi2c_fifo(int chn) ///< sensor port
 			status = x393_sensi2c_status(chn);
 			if (likely(status.seq_num = status_ctrl.seq_num)) break;
 		}
+	    spin_unlock_bh(&lock);
 		dev_dbg(sdev, "read_xi2c_fifo(%d): mode set to 3, status updated to 0x%08x\n",chn, (int) status.d32);
 	}
 	status =  x393_sensi2c_status (chn);
@@ -1194,9 +1220,51 @@ static ssize_t get_i2c_help(struct device *dev,              ///< Linux kernel b
 			           "Read/write i2c register (for the pre-configured device classes), sa7_affset is added to class device slave address\n"
 			           "[<data>] is used for register write, without - register read. Reading i2c* returns result of last i2c read operation\n"
 					   "i2c*:    read - last read data, write: <class_name> <sa7_offset> <reg_addr> [<data>]\n"
+                       "i2c_frame*:    read - i2c sequencer frame number (4 bit), write: 0 - stop, 1 - run, 2 - reset, 3 - reset+run\n"
 			);
 }
 
+
+/** Sysfs function - read i2c sequencer frame number (4 bits) */
+static ssize_t i2c_frame_show(struct device *dev,              ///< Linux kernel basic device structure
+                              struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                              char *buf)                       ///< 4K buffer to receive response
+                                                               ///< @return offset to the end of the output data in the *buf buffer
+{
+    return sprintf(buf,"%d\n",read_xi2c_frame(get_channel_from_name(attr)));
+}
+/** Sysfs function - stop(0)/run(1)/reset(2)/reset+run(3) i2c sequencer */
+static ssize_t i2c_frame_store(struct device *dev,              ///< Linux kernel basic device structure
+                               struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+                               const char *buf,                 ///< 4K buffer with what was written
+                               size_t count)                    ///< offset to the end of buffer data
+                                                                ///< @return new offset to the end of buffer data
+{
+    int cmd;
+    int chn = get_channel_from_name(attr) ;
+    if (sscanf(buf, "%i", &cmd)>0) {
+        switch (cmd){
+        case 0:
+            i2c_stop_run_reset      (chn, I2C_CMD_STOP);
+            break;
+        case 1:
+            i2c_stop_run_reset      (chn, I2C_CMD_RUN);
+            break;
+        case 2:
+            i2c_stop_run_reset      (chn, I2C_CMD_RESET);
+            break;
+        case 3:
+            i2c_stop_run_reset      (chn, I2C_CMD_RESET);
+            i2c_stop_run_reset      (chn, I2C_CMD_RUN);
+            break;
+        default:
+            return - EINVAL;
+        }
+
+    }
+
+    return count;
+}
 
 // Sysfs top
 /* alloc*: read - allocate and return page, write (any data) - free page */
@@ -1226,6 +1294,10 @@ static DEVICE_ATTR(i2c0 ,          SYSFS_PERMISSIONS                 ,    i2c_sh
 static DEVICE_ATTR(i2c1 ,          SYSFS_PERMISSIONS                 ,    i2c_show,              i2c_store);
 static DEVICE_ATTR(i2c2 ,          SYSFS_PERMISSIONS                 ,    i2c_show,              i2c_store);
 static DEVICE_ATTR(i2c3 ,          SYSFS_PERMISSIONS                 ,    i2c_show,              i2c_store);
+static DEVICE_ATTR(i2c_frame0 ,    SYSFS_PERMISSIONS                 ,    i2c_frame_show,        i2c_frame_store);
+static DEVICE_ATTR(i2c_frame1 ,    SYSFS_PERMISSIONS                 ,    i2c_frame_show,        i2c_frame_store);
+static DEVICE_ATTR(i2c_frame2 ,    SYSFS_PERMISSIONS                 ,    i2c_frame_show,        i2c_frame_store);
+static DEVICE_ATTR(i2c_frame3 ,    SYSFS_PERMISSIONS                 ,    i2c_frame_show,        i2c_frame_store);
 static DEVICE_ATTR(help,           SYSFS_PERMISSIONS & SYSFS_READONLY,    get_i2c_help,          NULL);
 
 /** Contains entries for the root node (directory) of the sysfs representation for sensor-port i2c devices */
@@ -1255,6 +1327,10 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_i2c1.attr,
 		&dev_attr_i2c2.attr,
 		&dev_attr_i2c3.attr,
+		&dev_attr_i2c_frame0.attr,
+        &dev_attr_i2c_frame1.attr,
+        &dev_attr_i2c_frame2.attr,
+        &dev_attr_i2c_frame3.attr,
         &dev_attr_help.attr,
         NULL
 };

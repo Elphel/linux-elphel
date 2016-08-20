@@ -180,7 +180,7 @@ int get_cache_index(unsigned int chn)
 void reset_qtables(unsigned int chn)
 {
 	int ind = get_cache_index(chn);
-	qtables_set[ind].qtable_fpga_initialized = 0;
+	qtables_set[ind].qtable_cache_initialized = 0;
 	qtables_set[ind].qtable_fpga_initialized = 0;
 }
 

@@ -180,6 +180,7 @@
 */
 
 // TODO:remove unneeded
+#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
 #include <linux/types.h> // for div 64
 #include <asm/div64.h>   // for div 64
 
@@ -192,6 +193,8 @@
 #include <linux/string.h>
 #include <linux/init.h>
 #include <linux/vmalloc.h>
+//#include <linux/platform_device.h>
+#include <linux/device.h> // for dev_dbg, platform_device.h is OK too
 
 #include <asm/byteorder.h> // endians
 #include <asm/io.h>
@@ -242,6 +245,14 @@
   #define MD1(x)
 #endif
 
+static struct device *g_dev_ptr=NULL; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
+void pgm_functions_set_device(struct device *dev)
+{
+    g_dev_ptr = dev;
+    mt9x001_set_device(dev);
+    multi10359_set_device(dev);
+}
+//dev_info(g_dev_ptr,
 
   int pgm_recalcseq     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
   int pgm_detectsensor  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
@@ -279,10 +290,11 @@
 
 /** Initialize array of functions that program different acquisition parameters (some are sensor dependent)
  * @return always 0 */
-int init_pgm_proc(void)
+int init_pgm_proc(int sensor_port)
 {
     int i;
-    MDF1(printk("\n"));
+    struct sensorproc_t * sensorproc = &asensorproc[sensor_port];
+    dev_dbg(g_dev_ptr,"Initializing generic parameter-triggered function, port=%d\n",sensor_port); // OK NULL device here (not yet set)
     for (i=0;i<64;i++) sensorproc->pgm_func[i]=NULL;
     sensorproc->pgm_func[onchange_recalcseq]=    &pgm_recalcseq;     // recalculate sequences/latencies, according to P_SKIP, P_TRIG
     sensorproc->pgm_func[onchange_detectsensor]= &pgm_detectsensor;  // detect sensor type, sets sensor structure (capabilities), function pointers
@@ -319,16 +331,15 @@ int init_pgm_proc(void)
 
     return 0;
 }
-
-/**
- * @brief add sensor-specific processing function (executes after the non-specific function with the same index)
- * @param index function index (internally 32 is added to distinguish from the common (not sensor-specific) functions
- * @param sens_func pointer to a sensor-specific function
- * @return always 0 */
-int add_sensor_proc(int index, int (*sens_func)(int sensor_port, struct sensor_t * ,  struct framepars_t * , struct framepars_t *, int ))
+/** Add sensor-specific processing function (executes after the non-specific function with the same index) */
+int add_sensor_proc(int port,   ///< sensor port
+                    int index,  ///< index function index (internally 32 is added to distinguish from the common (not sensor-specific) functions
+                    int (*sens_func)(int sensor_port, struct sensor_t * ,  struct framepars_t * , struct framepars_t *, int ))
+                                ///< sens_func pointer to a sensor-specific function
+                                ///< @return always 0
 {
-    MDF1(printk("index=0x%x\n",index));
-    sensorproc->pgm_func[32+(index & 0x1f)]=       sens_func;
+    dev_dbg(g_dev_ptr,"add_sensor_proc(%d, 0x%x,...)\n", port, index);
+    asensorproc[port].pgm_func[32+(index & 0x1f)]=       sens_func;
     return 0;
 }
 
@@ -343,32 +354,41 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         int frame16)                   ///< 4-bit (hardware) frame number parameters should
 ///< be applied to,  negative - ASAP
 ///< @return OK - 0, <0 - error
-
 {
     x393_camsync_mode_t camsync_mode = {.d32=0};
     int was_sensor_freq;
     int qperiod;
     int i2cbytes;
     int phase;
-    int mux;
-
-    MDF3(printk(" frame16=%d\n",frame16));
+    int mux,sens;
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= 0) return -1; // can only work in ASAP mode
-    if (thispars->pars[P_SENSOR]) return 0; // Sensor is already detected - do not bother (to re-detect it P_SENSOR should be set to 0)
-    // no other initializations, just the sensor-related stuff (starting with lowest sensor clock)
-    // stop hardware i2c controller, so it will not get stuck when waiting for !busy
-#ifndef NC353
+    if (thispars->pars[P_SENSOR]) {
+        dev_dbg(g_dev_ptr,"{%d}  frame16=%d, SENSOR ALREADY DETECTED = %d\n",sensor_port,frame16, (int) thispars->pars[P_SENSOR]);
+        return 0; // Sensor is already detected - do not bother (to re-detect it P_SENSOR should be set to 0)
+    }
+    // no other initializations, just the sensor-related stuff (starting with lowest sensor clock)    // stop hardware i2c controller, so it will not get stuck when waiting for !busy
+
+
+
+    #ifndef NC353
     // NC393 - nothing to do here - use a separate module for sensor setup: DT, sysfs, something else (add pin pullup/down)
     // currently assign same sensor to all subchannles (first present)
-    thispars->pars[P_SENSOR] = get_detected_sensor_code(sensor_port, -1); // "-1" - first detected sensor
+//    thispars->pars[P_SENSOR] = get_detected_sensor_code(sensor_port, -1); // "-1" - first detected sensor
+    sens=get_detected_sensor_code(sensor_port, -1); // "-1" - first detected sensor
+//    setFramePar(sensor_port, thispars, P_SENSOR,  sens); //  FIXME: NC393
     GLOBALPARS(sensor_port, G_SUBCHANNELS) = get_subchannels(sensor_port);
     mux = get_detected_mux_code(sensor_port); // none/detect/10359
-    if ((mux == SENSOR_NONE) && (thispars->pars[P_SENSOR] == SENSOR_NONE))
+    dev_dbg(g_dev_ptr,"port = %d, mux = %d, sens= %d\n",sensor_port, mux, sens);
+//    if ((mux == SENSOR_NONE) && (thispars->pars[P_SENSOR] == SENSOR_NONE))
+    if ((mux == SENSOR_NONE) && (sens == SENSOR_NONE))
         return 0; // no sensor/mux enabled on this port
     //TODO NC393: turn on both sequencers why MRST is active, then i2c frame will definitely match ? Or is it already done in FPGA?
+    dev_dbg(g_dev_ptr,"Restarting both command and i2c sequencers for port %d\n",sensor_port);
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RESET);
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RUN);  // also programs status update
     i2c_stop_run_reset      (sensor_port, I2C_CMD_RESET);
+    dev_dbg(g_dev_ptr,"Setting i2c drive mode for port %d\n",sensor_port);
     i2c_drive_mode          (sensor_port, SDA_DRIVE_HIGH, SDA_RELEASE);
     i2c_stop_run_reset      (sensor_port, I2C_CMD_RUN); // also programs status update
 
@@ -378,24 +398,31 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     camsync_mode.ext_set =  1;
     x393_camsync_mode (camsync_mode);
 
-    //     printk("trying MT9P001\n");
+    //     dev_dbg(g_dev_ptr,"trying MT9P001\n");
     //      mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
 
     if (mux != SENSOR_NONE) {
+        dev_dbg(g_dev_ptr,"Mux mode for port %d is %d, tryng 10359\n",sensor_port, mux);
         // try multisensor here (before removing MRST)
         multisensor_pgm_detectsensor (sensor_port, sensor,  thispars, prevpars, frame16);  // multisensor
+    } else {
+        dev_dbg(g_dev_ptr,"Mux mode for port %d SENSOR_NONE, skipping 10359 detection\n",sensor_port);
     }
-    if (thispars->pars[P_SENSOR]==0) { // multisensor not detected
-        printk("removing MRST from the sensor\n");
-        //             CCAM_MRST_OFF;
-        printk("trying MT9P001\n");
+//    if ((thispars->pars[P_SENSOR]==0) ||  // multisensor not detected
+//            ((thispars->pars[P_SENSOR] & SENSOR_MASK) == SENSOR_MT9X001)) { // or is (from DT) SENSOR_MT9X001
+    if ((thispars->pars[P_SENSOR]==0) &&                    // multisensor not detected
+            (((sens & SENSOR_MASK) == SENSOR_MT9X001) ||    // and from DT it is some SENSOR_MT9*001
+             ((sens & SENSOR_MASK) == SENSOR_MT9P006) )) {  // or SENSOR_MT9P006 or friends
+//        dev_dbg(g_dev_ptr,"removing MRST from the sensor\n");
+//        dev_info(g_dev_ptr,"pgm_detectsensor(%d): TRYING MT9P001\n",sensor_port);
+        dev_dbg(g_dev_ptr,"trying MT9P001, port=%d\n",sensor_port);
         mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
     }
-
-
+    setFramePar(sensor_port, thispars, P_CLK_FPGA,  200000000); //  FIXME: NC393
+    setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
     if (thispars->pars[P_SENSOR] == SENSOR_DETECT) {
         sensor->sensorType=SENSOR_NONE;                 // to prevent from initializing again
-        printk("No image sensor found\r\n");
+        dev_dbg(g_dev_ptr,"No image sensor found\n");
     }
     setFramePar(sensor_port, thispars, P_SENSOR_WIDTH,   sensor->imageWidth);  // Maybe get rid of duplicates?
     setFramePar(sensor_port, thispars, P_SENSOR_HEIGHT,  sensor->imageHeight); // Maybe get rid of duplicates?
@@ -420,35 +447,30 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     // NOTE: sensor detected - enabling camera interrupts here (actual interrupts will start later)
     // Here interrupts are disabled - with compressor_interrupts (0) earlier in this function)
 
-    compressor_interrupts (1,sensor_port);
+    compressor_interrupts (1,sensor_port); // FIXME: Should they already be set beforfe detection? If not - remove from framepars.php
     sensor_interrupts     (1,sensor_port);
     return 0;
-
 #else
-
     // NOTE: disabling interrupts here !!!
     compressor_interrupts (0);
-    MDF1(printk("Disabled camera interrupts\n"));
-
+    dev_dbg(g_dev_ptr,"%s Disabled camera interrupts\n",__func__);
     // This 3 initialization commands were not here, trying to temporarily fix problem when WP was 8/16 words higher than actual data in DMA buffer
     if (GLOBALPARS(sensor_port, G_TEST_CTL_BITS) & (1<< G_TEST_CTL_BITS_RESET_DMA_COMPRESSOR )) {
-        MDF1(printk("x313_dma_stop()\n"));
+        dev_dbg(g_dev_ptr,"%s x313_dma_stop()\n",__func__);
         ///    x313_dma_stop();
-        MDF1(printk("x313_dma_init()\n"));
+        dev_dbg(g_dev_ptr,"%s x313_dma_init()\n",__func__);
         ///    x313_dma_init();
-        MDF1(printk("reset_compressor()\n"));
+        dev_dbg(g_dev_ptr,"%s reset_compressor()\n",__func__);
         reset_compressor(sensor_port);
     }
-
     // TODO: Add 10347 detection here //   if (IS_KAI11000) return init_KAI11000();
     // Need to set slow clock
     //  f1=imageParamsR[P_CLK_SENSOR]=20000000; setClockFreq(1, imageParamsR[P_CLK_SENSOR]); X3X3_RSTSENSDCM;
-
     was_sensor_freq=getClockFreq(1); // using clock driver data, not thispars
     setFramePar(sensor_port, thispars, P_CLK_FPGA,  getClockFreq(0)); // just in case - read the actual fpga clock frequency and store it (no actions)
     setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
     setClockFreq(1, thispars->pars[P_CLK_SENSOR]);
-    printk("\nsensor clock set to %d\n",(int) thispars->pars[P_CLK_SENSOR]);
+    dev_dbg(g_dev_ptr,"\nsensor clock set to %d\n",(int) thispars->pars[P_CLK_SENSOR]);
     udelay (100);// 0.0001 sec to stabilize clocks
     X3X3_RSTSENSDCM; // FPGA DCM can fail after clock change, needs to be reset
     X3X3_SENSDCM_CLK2X_RESET; // reset pclk2x DCM also
@@ -465,19 +487,18 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     // try multisensor here (before removing MRST)
     if (thispars->pars[P_SENSOR]==0) multisensor_pgm_detectsensor (sensor_port, sensor,  thispars, prevpars, frame16);  // multisensor
     if (thispars->pars[P_SENSOR]==0) {
-        printk("removing MRST from the sensor\n");
+        dev_dbg(g_dev_ptr,"removing MRST from the sensor\n");
         CCAM_MRST_OFF;
     }
     if (thispars->pars[P_SENSOR]==0) {
         mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
-        printk("trying MT9P001\n");
+        dev_dbg(g_dev_ptr,"trying MT9P001\n");
     }
-
     // temporary - disabling old sensors
 #define ENABLE_OLD_SENSORS 1
 #ifdef ENABLE_OLD_SENSORS
     if (thispars->pars[P_SENSOR]==0)  { // no - it is not MT9P001)
-        printk("trying other MT9X001\n");
+        dev_dbg(g_dev_ptr,"trying other MT9X001\n");
         CCAM_CNVEN_ON;
         //     CCAM_ARST_ON; ///MT9P001 expects ARST==0 (STANDBY) - done inside mt9x001.c
         // enable output for power converter signals
@@ -486,33 +507,32 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         // turning on DC-DC converter may cause system to reboot because of a power spike, so start slow
 #ifdef NC353
         port_csp0_addr[X313_WA_DCDC] = 0x44; // 48 - enough, 41 - ok - was 0x61; //
-        printk ("sensor power set low\r\n ");
+        printk ("sensor power set low\n ");
         mdelay (10); // Wait voltage to come up (~10 ms)
-        printk ("will set to 0x41\r\n");
+        printk ("will set to 0x41\n");
         mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x41; // 
-        printk ("will set to 0x30\r\n");
+        printk ("will set to 0x30\n");
         mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x30; //
-        printk ("will set to 0x28\r\n");
+        printk ("will set to 0x28\n");
         mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x28; //
-        printk ("will set to 0x24\r\n");
+        printk ("will set to 0x24\n");
         mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x24; //
-        printk ("will set to 0x22\r\n");
+        printk ("will set to 0x22\n");
         mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x22; //
         mdelay (10); // to find the problem
         port_csp0_addr[X313_WA_DCDC] = 0x10; // now - full frequency (same as 0x21). Slow that down if the sensor clock is above 20MHz (i.e.0x22 for 40MHz)
-        printk (".. full\r\n");
+        printk (".. full\n");
         mdelay (10); // Wait voltage to stabilize
         CCAM_POSRST;  //set positive MRST polarity (default)
         udelay (100); // apply clock before removing MRST
         CCAM_MRST_OFF;
 #endif
     }
-
 #ifdef CONFIG_ETRAX_ELPHEL_KAC1310
     if (thispars->pars[P_SENSOR]==0) kac1310_pgm_detectsensor(sensor,  thispars, prevpars, frame16);  // try KAC-1310 (does not exist anymore)
 #endif
@@ -526,7 +546,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         udelay (100);
     }
 #ifdef CONFIG_ETRAX_ELPHEL_MT9X001
-    if (thispars->pars[P_SENSOR]==0)  printk("trying MT9X001\n");
+    if (thispars->pars[P_SENSOR]==0)  dev_dbg(g_dev_ptr,"trying MT9X001\n");
     if (thispars->pars[P_SENSOR]==0) mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 1.3/2.0/3.0 Mpixel
 #endif
 #ifdef CONFIG_ETRAX_ELPHEL_KAC1310
@@ -539,10 +559,9 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     if (thispars->pars[P_SENSOR]==0) zr32212_pgm_detectsensor(sensorsensor_port, sensor,  thispars, prevpars, frame16); // try ZR32212
 #endif
 #endif // ENABLE_OLD_SENSORS *************** temporary disabling other sensors ********************
-
     if (thispars->pars[P_SENSOR]==0) {
         sensor->sensorType=SENSOR_NONE;                 // to prevent from initializing again
-        printk("No image sensor found\r\n");
+        dev_dbg(g_dev_ptr,"No image sensor found\n");
     }
     setFramePar(sensor_port, thispars, P_SENSOR_WIDTH,   sensor->imageWidth);  // Maybe get rid of duplicates?
     setFramePar(sensor_port, thispars, P_SENSOR_HEIGHT,  sensor->imageHeight); // Maybe get rid of duplicates?
@@ -563,18 +582,12 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         setFramePar(sensor_port, thispars, P_SENSOR_PHASE | FRAMEPAIR_FORCE_NEWPROC,  phase); // will schedule clock/phase adjustment
     }
     setFramePar(sensor_port, thispars, P_IRQ_SMART | FRAMEPAIR_FORCE_NEWPROC,  3);        // smart IRQ mode programming (and enable interrupts)
-
     // NOTE: sensor detected - enabling camera interrupts here (actual interrupts will start later)
     // Here interrupts are disabled - with compressor_interrupts (0) earlier in this function)
-
     compressor_interrupts (1);
     return 0;
 #endif
 }
-
-
-
-
 /** Reset and initialize sensor (all is done in sensor-specific functions)
  *  - resets sensor,
  *  - reads sensor registers,
@@ -587,9 +600,8 @@ int pgm_initsensor     (int sensor_port,               ///< sensor port number (
 		int frame16)                   ///< 4-bit (hardware) frame number parameters should
 									   ///< be applied to,  negative - ASAP
 									   ///< @return always 0
-
 {
-  MDF3(printk(" frame16=%d\n",frame16));
+  dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
   if (frame16 >= 0) return -1; // should be ASAP
 //TODO: seems nothing to do here - all in the sensor-specific function:
   return 0;
@@ -609,7 +621,7 @@ int pgm_afterinit      (int sensor_port,               ///< sensor port number (
 {
     struct frameparspair_t pars_to_update[24]; // 20 needed, increase if more entries will be added
     int nupdate=0;
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     // If this is a multisensor camera, update composite sensor dimensions (will trigger other related changes)
     // For single sensors sensor size is updated only after initialization, with composite it needs to be updated after vertical gap  or number of active sesnors is changed
     //  if (GLOBALPARS(G_SENS_AVAIL) ) multisensor_pgm_afterinit0 (sensor, thispars, prevpars,frame16);
@@ -686,7 +698,7 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
 //        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim0, sensio_tim0);
         set_x393_sensio_tim0  (sensio_tim0, sensor_port); // write directly, sequencer may be not operational
         sensio_ctl.set_dly = 1;
-        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim0,  0x%x)\n", sensor_port, frame16, sensio_tim0.d32));
+        dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim0,  0x%x)\n",sensor_port, sensor_port, frame16, sensio_tim0.d32);
 
     }
     if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM1)) {
@@ -694,21 +706,21 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
 //        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim1, sensio_tim1);
         set_x393_sensio_tim1  (sensio_tim1, sensor_port); // write directly, sequencer may be not operational
         sensio_ctl.set_dly = 1;
-        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim1,  0x%x)\n", sensor_port, frame16, sensio_tim1 .d32));
+        dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim1,  0x%x)\n",sensor_port, sensor_port, frame16, sensio_tim1 .d32);
     }
     if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM2)) {
         sensio_tim2.d32 = thispars->pars[P_SENSOR_IFACE_TIM2];
 //        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim2, sensio_tim2);
         set_x393_sensio_tim2  (sensio_tim2, sensor_port); // write directly, sequencer may be not operational
         sensio_ctl.set_dly = 1;
-        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim2,  0x%x)\n", sensor_port, frame16, sensio_tim2.d32));
+        dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim2,  0x%x)\n",sensor_port, sensor_port, frame16, sensio_tim2.d32);
     }
     if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM3)) {
         sensio_tim3.d32 = thispars->pars[P_SENSOR_IFACE_TIM3];
 //        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim3, sensio_tim3);
         set_x393_sensio_tim3  (sensio_tim3, sensor_port); // write directly, sequencer may be not operational
         sensio_ctl.set_dly = 1;
-        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim3,  0x%x)\n", sensor_port, frame16, sensio_tim3.d32));
+        dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim3,  0x%x)\n",sensor_port, sensor_port, frame16, sensio_tim3.d32);
     }
 
     if (get_port_interface == PARALLEL12){
@@ -745,7 +757,7 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
     int px_delay90;
     uint64_t ull_result = 1000000000000LL;
 
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"%s  frame16=%d\n",__func__,frame16);
     if (frame16 >= 0) return -1; // can only work in ASAP mode
     //Can not change sensor frequency
     int was_sensor_freq=getClockFreq(1); // using clock driver data, not thispars
@@ -766,9 +778,9 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
         // Update (program) hact_shift only when the frequency is changed, not when just the phase is
         // adjustment range is 270 early to 360 late
         hact_shift= 0.004f * (((int)sensor->hact_delay)/(1000000000.0f/new_freq)) + 4.5f;
-        MDF16(printk ("hact_shift=%d-4\r\n",hact_shift));
+        MDF16(printk ("hact_shift=%d-4\n",hact_shift));
         hact_shift-=4;
-        MDF16(printk ("hact_shift=%d\r\n",hact_shift));
+        MDF16(printk ("hact_shift=%d\n",hact_shift));
         if (hact_shift>4) hact_shift=4;
         else if (hact_shift<-3) hact_shift=-3;
         X3X3_SENSDCM_HACT_ZERO;
@@ -786,12 +798,12 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
         do_div(ull_result,new_freq);
         clk_period= ull_result;
 
-        MDF16(printk ("cableDelay=%ld, FPGADelay=%ld, clk_period=%d\r\n",cableDelay[0], FPGADelay[0], clk_period));
+        MDF16(printk ("cableDelay=%ld, FPGADelay=%ld, clk_period=%d\n",cableDelay[0], FPGADelay[0], clk_period));
         px_delay=-(clk_period/2 - FPGADelay[0]- cableDelay[0] - ((int) sensor->sensorDelay)) ;
-        MDF16(printk ("px_delay=%d\r\n",px_delay));
+        MDF16(printk ("px_delay=%d\n",px_delay));
         px_delay90=(4*px_delay+clk_period/2)/clk_period;
         px_delay -= (px_delay90*clk_period)/4; // -clk_period/8<= now px_delay <= +clk_period/8
-        MDF16(printk ("px_delay=%d, px_delay90=%d\r\n",px_delay,px_delay90));
+        MDF16(printk ("px_delay=%d, px_delay90=%d\n",px_delay,px_delay90));
         px_delay/= FPGA_DCM_STEP; // in DCM steps
         thisPhase= (px_delay & 0xffff) | ((px_delay90 & 3) <<16) | 0x80000;
     }
@@ -811,9 +823,9 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
         diff_phase90=sensor_phase90-old_sensor_phase90;
         if (diff_phase90>2)diff_phase90-=4;
         else if (diff_phase90<-1)diff_phase90+=4;
-        MDF16(printk("old_sensor_phase=0x%x old_sensor_phase90=0x%x\r\n", old_sensor_phase, old_sensor_phase90 ));
-        MDF16(printk("sensor_phase=0x%x sensor_phase90=0x%x\r\n", sensor_phase, sensor_phase90 ));
-        MDF16(printk("diff_phase=0x%x diff_phase90=0x%x\r\n", diff_phase, diff_phase90 ));
+        dev_dbg(g_dev_ptr,"%s old_sensor_phase=0x%x old_sensor_phase90=0x%x\n",__func__, old_sensor_phase, old_sensor_phase90 );
+        dev_dbg(g_dev_ptr,"%s sensor_phase=0x%x sensor_phase90=0x%x\n",__func__, sensor_phase, sensor_phase90 );
+        dev_dbg(g_dev_ptr,"%s diff_phase=0x%x diff_phase90=0x%x\n",__func__, diff_phase, diff_phase90 );
         if      (diff_phase > 0) for (i=diff_phase; i > 0; i--) {X3X3_SENSDCM_INC ; udelay(1); }
         else if (diff_phase < 0) for (i=diff_phase; i < 0; i++) {X3X3_SENSDCM_DEC ; udelay(1); }
         if      (diff_phase90 > 0) for (i=diff_phase90; i > 0; i--) {X3X3_SENSDCM_INC90 ; udelay(1); }
@@ -835,7 +847,7 @@ int pgm_exposure   (int sensor_port,               ///< sensor port number (0..3
 												   ///< be applied to,  negative - ASAP
 												   ///< @return always 0
 {
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     return 0;
 }
 
@@ -848,14 +860,14 @@ int pgm_i2c        (int sensor_port,               ///< sensor port number (0..3
 												   ///< be applied to,  negative - ASAP
 												   ///< @return always 0
 {
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 #ifdef NC353
     int fpga_addr = frame16;
     X3X3_SEQ_SEND1(fpga_addr,   X313_I2C_CMD,  X3X3_SET_I2C_BYTES(thispars->pars[P_I2C_BYTES]+1) |
             X3X3_SET_I2C_DLY  (thispars->pars[P_I2C_QPERIOD]));
 #endif
-MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_I2C_CMD, (int) (X3X3_SET_I2C_BYTES(thispars->pars[P_I2C_BYTES]+1) | X3X3_SET_I2C_DLY  (thispars->pars[P_I2C_QPERIOD]))  ));
+//dev_dbg(g_dev_ptr,"%s   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",__func__, frame16,  (int) X313_I2C_CMD, (int) (X3X3_SET_I2C_BYTES(thispars->pars[P_I2C_BYTES]+1) | X3X3_SET_I2C_DLY  (thispars->pars[P_I2C_QPERIOD]))  );
 return 0;
 }
 
@@ -872,7 +884,7 @@ int pgm_window     (int sensor_port,               ///< sensor port number (0..3
 												   ///< @return always 0
 
 {
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     return pgm_window_common (sensor_port, sensor,  thispars, prevpars, frame16);
 }
 
@@ -886,7 +898,7 @@ int pgm_window_safe (int sensor_port,               ///< sensor port number (0..
 												    ///< @return always 0
 
 {
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     return pgm_window_common (sensor_port, sensor,  thispars, prevpars, frame16);
 }
 
@@ -904,8 +916,9 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     int sensor_height;
     struct frameparspair_t pars_to_update[18]; // 15 needed, increase if more entries will be added
     int nupdate=0;
-    MDF3(printk(" frame16=%d\n",frame16));
-    MDF23(printk("thispars->pars[P_WOI_HEIGHT]=%lx thispars->pars[P_WOI_WIDTH]=%lx\n",thispars->pars[P_WOI_HEIGHT], thispars->pars[P_WOI_WIDTH]));
+    int clearHeight;
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",            sensor_port,frame16);
+    dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_WOI_HEIGHT]=%lx thispars->pars[P_WOI_WIDTH]=%lx\n", sensor_port,thispars->pars[P_WOI_HEIGHT], thispars->pars[P_WOI_WIDTH]);
     //  if (GLOBALPARS(G_SENS_AVAIL) ) multisensor_pgm_window_common0 (sensor, thispars, prevpars, frame16);
 
     sensor_width= thispars->pars[P_SENSOR_WIDTH];
@@ -989,7 +1002,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
         pf_stripes = height / (pfh * dv);
         if(pf_stripes < 1) pf_stripes = 1;
         if (unlikely(thispars->pars[P_SENSOR_PIXV] != pfh)) {
-            MDF23(printk(" SETFRAMEPARS_SET(P_SENSOR_PIXV,  0x%x)\n",pfh));
+            dev_dbg(g_dev_ptr,"{%d}  SETFRAMEPARS_SET(P_SENSOR_PIXV,  0x%x)\n",sensor_port,pfh);
             SETFRAMEPARS_SET(P_SENSOR_PIXV,  pfh);
         }
     } else {
@@ -1005,18 +1018,18 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     }
     // update photofinish height P_PF_HEIGHT
     if (unlikely((thispars->pars[P_PF_HEIGHT] & 0xffff) != pfh)) {
-        MDF23(printk(" SETFRAMEPARS_SET(P_PF_HEIGHT,  0x%x)\n",(int) ((thispars->pars[P_PF_HEIGHT] & 0xffff0000 ) | pfh)));
+        dev_dbg(g_dev_ptr,"{%d}  SETFRAMEPARS_SET(P_PF_HEIGHT,  0x%x)\n", sensor_port,(int) ((thispars->pars[P_PF_HEIGHT] & 0xffff0000 ) | pfh));
         SETFRAMEPARS_SET(P_PF_HEIGHT, (thispars->pars[P_PF_HEIGHT] & 0xffff0000 ) | pfh );
     }
     // update WOI height [P_WOI_HEIGHT
     if (unlikely(thispars->pars[P_WOI_HEIGHT] != height)) {
-        MDF23(printk(" SETFRAMEPARS_SET(P_WOI_HEIGHT,  0x%x)\n",height));
+        dev_dbg(g_dev_ptr,"{%d}  SETFRAMEPARS_SET(P_WOI_HEIGHT,  0x%x)\n",sensor_port,height);
         SETFRAMEPARS_SET(P_WOI_HEIGHT, height); ///full height for the compressor (excluding margins)
     }
     // update P_ACTUAL_HEIGHT
     ah=height/dv;
     if (unlikely(thispars->pars[P_ACTUAL_HEIGHT] != ah)) {
-        MDF23(printk(" SETFRAMEPARS_SET(P_ACTUAL_HEIGHT,  0x%x)\n",ah));
+        dev_dbg(g_dev_ptr,"{%d}  SETFRAMEPARS_SET(P_ACTUAL_HEIGHT,  0x%x)\n",sensor_port,ah);
         SETFRAMEPARS_SET(P_ACTUAL_HEIGHT, ah); ///full height for the compressor (excluding margins)
     }
     // left margin
@@ -1031,13 +1044,13 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     }
     // update P_WOI_LEFT
     if (unlikely(thispars->pars[P_WOI_LEFT] != left)) {
-        MDF23(printk(" SETFRAMEPARS_SET(P_WOI_LEFT,  0x%x)\n",left));
+        dev_dbg(g_dev_ptr,"{%d}  SETFRAMEPARS_SET(P_WOI_LEFT,  0x%x)\n",sensor_port,left);
         SETFRAMEPARS_SET(P_WOI_LEFT, left);
     }
 
     // top margin
     top = thispars->pars[P_WOI_TOP];
-    int clearHeight=(sensor->clearHeight-sensor->imageHeight) + thispars->pars[P_SENSOR_HEIGHT];
+    clearHeight=(sensor->clearHeight-sensor->imageHeight) + thispars->pars[P_SENSOR_HEIGHT];
     if (!oversize) { // in oversize mode let user to specify any margin, including odd ones (bayer shifted)
         if (is_color)                    top &= 0xfffe;
         if ((top + ((pfh>0)?0:height) + (2 * COLOR_MARGINS)) > clearHeight) {
@@ -1048,7 +1061,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     }
     // update P_WOI_TOP
     if (unlikely(thispars->pars[P_WOI_TOP] != top)) {
-        MDF23(printk(" SETFRAMEPARS_SET(P_WOI_TOP,  0x%x)\n",top));
+        dev_dbg(g_dev_ptr,"{%d}  SETFRAMEPARS_SET(P_WOI_TOP,  0x%x)\n",sensor_port,top);
         SETFRAMEPARS_SET(P_WOI_TOP, top);
     }
     if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
@@ -1072,7 +1085,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
 
 {
     // Calculate minimal frame period compressor can handle, apply requested fps, limit/program the sequencer
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     struct frameparspair_t pars_to_update[8]; // 4 needed, increase if more entries will be added
     int nupdate=0;
@@ -1082,13 +1095,13 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     int period=0;
     int pfh;
     int n_stripes;
-
+    u32 clk_sensor = thispars->pars[P_CLK_SENSOR];
 #if USELONGLONG
     uint64_t ull_min_period;
     uint64_t ull_period;
 #endif
     cycles=thispars->pars[P_TILES]; // number of tiles
-    //  MDF9(printk(" tiles=%d(0x%x)\n",cycles,cycles));
+    //  dev_dbg(g_dev_ptr,"{%d}  tiles=%d(0x%x)\n",sensor_port,cycles,cycles);
     switch (thispars->pars[P_COLOR] & 0x0f){
     case COLORMODE_MONO6:
     case COLORMODE_COLOR:
@@ -1101,22 +1114,22 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
         cycles*=4;
     }
     cycles  *=64 *2; //cycles per frame (64 pixels/block, 2 clock cycles/pixel)
-    MDF9(printk(" cycles=%d(0x%x)\n",cycles,cycles));
+    dev_dbg(g_dev_ptr,"{%d}  cycles=%d(0x%x)\n",sensor_port,cycles,cycles);
     cycles += thispars->pars[P_FPGA_XTRA]; // extra cycles needed for the compressor to start/finish the frame;
-    MDF9(printk(" cycles with P_FPGA_XTRA =%d(0x%x)\n",cycles,cycles));
+    dev_dbg(g_dev_ptr,"{%d}  cycles with P_FPGA_XTRA =%d(0x%x)\n",sensor_port,cycles,cycles);
     // #define P_CLK_FPGA, #define P_CLK_SENSOR    27-28 bits, cycles - 24-25 bits
-    // TODO: fix long long
+    if (!clk_sensor) {clk_sensor=90000000;  dev_dbg(g_dev_ptr,"{%d}  clk_sensor is 0, setting to %d\n",sensor_port,(int)clk_sensor);}
 
 #if USELONGLONG
-    ull_min_period=(((long long) cycles) * ((long long) thispars->pars[P_CLK_SENSOR]));
+    ull_min_period=(((long long) cycles) * ((long long) clk_sensor));
 #ifdef __div64_32
     __div64_32(&ull_min_period, thispars->pars[P_CLK_FPGA]);
 #else
-    do_div(ull_min_period, thispars->pars[P_CLK_FPGA]);
+    do_div(ull_min_period, clk_sensor);
 //    ull_min_period/=thispars->pars[P_CLK_FPGA];
 #endif
     min_period= ull_min_period;
-    MDF9(printk("min_period =%d(0x%x)\n",min_period,min_period));
+    dev_dbg(g_dev_ptr,"{%d} min_period =%d(0x%x)\n",sensor_port,min_period,min_period);
     //  min_period = (((long long) cycles) * ((long long) thispars->pars[P_CLK_SENSOR])) / ((long long) thispars->pars[P_CLK_FPGA]);
 #else
     if (cycles <          (1<<16) ) {
@@ -1133,12 +1146,12 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
         min_period = (((cycles>>10) *(thispars->pars[P_CLK_SENSOR] >> 12)) / (thispars->pars[P_CLK_FPGA]>>12)) << 10 ;
     }
     ///? fp1000s= 10*sclk/(pix_period/100);
-    MDF9(printk("min_period =%d(0x%x)\n",min_period,min_period));
+    dev_dbg(sensor_port,"%s min_period =%d(0x%x)\n",sensor_port,min_period,min_period);
 #endif
     // is there limit set for the FPS?
     if (thispars->pars[P_FPSFLAGS]) {
 #if USELONGLONG
-        ull_period=(((long long) thispars->pars[P_CLK_SENSOR]) * (long long) 1000);
+        ull_period=(((long long) clk_sensor) * (long long) 1000);
 #ifdef __div64_32
         __div64_32(&ull_period, thispars->pars[P_FP1000SLIM]);
 #else
@@ -1146,14 +1159,14 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
 //        ull_period /= thispars->pars[P_FP1000SLIM];
 #endif
         period= ull_period;
-        MDF9(printk("period =%d(0x%x)\n",period,period));
-        //    period=(((long long) thispars->pars[P_CLK_SENSOR]) * (long long) 1000)/((long long) thispars->pars[P_FP1000SLIM]);
+        dev_dbg(g_dev_ptr,"{%d} period =%d(0x%x)\n",sensor_port,period,period);
+        //    period=(((long long) clk_sensor) * (long long) 1000)/((long long) thispars->pars[P_FP1000SLIM]);
 #else
         period=125*(( thispars->pars[P_CLK_SENSOR] << 3) / thispars->pars[P_FP1000SLIM]); // 125 <<3 = 1000
-        MDF9(printk("period =%d(0x%x)\n",period,period));
+        dev_dbg(g_dev_ptr,"{%d} period =%d(0x%x)\n",sensor_port,period,period);
 #endif
     }
-    MDF1(printk(" period=%d\n",period));
+    dev_dbg(g_dev_ptr,"{%d}  period=%d\n",sensor_port,period);
     if ((thispars->pars[P_FPSFLAGS] & 1) && (period>min_period)) min_period=period;
     // *********************************************************** P_PF_HEIGHT
     pfh=thispars->pars[P_PF_HEIGHT] &0xffff ;
@@ -1164,7 +1177,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
 
     if (min_period != thispars->pars[P_PERIOD_MIN]) {
         SETFRAMEPARS_SET(P_PERIOD_MIN, min_period);  // set it (and propagate to the later frames)
-        MDF9(printk(" SETFRAMEPARS_SET(P_PERIOD_MIN,  0x%x)\n",min_period));
+        dev_dbg(g_dev_ptr,"{%d}  SETFRAMEPARS_SET(P_PERIOD_MIN,  0x%x)\n",sensor_port,min_period);
     }
     if (((thispars->pars[P_FPSFLAGS] & 2)==0) || (period < min_period)) period=0x7fffffff; // no upper limit
     if (period != thispars->pars[P_PERIOD_MAX]) SETFRAMEPARS_SET(P_PERIOD_MAX, period);         // set it (and propagate to the later frames)
@@ -1193,7 +1206,7 @@ int pgm_gains          (int sensor_port,               ///< sensor port number (
 													   ///< be applied to,  negative - ASAP
 													   ///< @return always 0
 {
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     return 0;
 }
 
@@ -1208,7 +1221,7 @@ int pgm_triggermode(int sensor_port,               ///< sensor port number (0..3
 												   ///< @return OK - 0, <0 - error
 {
     x393_camsync_mode_t camsync_mode = {.d32=0};
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 #ifndef NC353
     camsync_mode.trig =     (thispars->pars[P_TRIG] & 4)?1:0;
@@ -1247,25 +1260,29 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     x393_sens_sync_mult_t sync_mult =    {.d32=0};
     x393_gamma_ctl_t      gamma_ctl =    {.d32=0};
     int n_scan_lines, n_ph_lines;
-    MDF3(printk(" frame16=%d\n",frame16));
+    int flips;
+    int bayer_modified;
+
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     if (FRAMEPAR_MODIFIED(P_BITS)){
         sens_mode.bit16 = thispars->pars[P_BITS];
         sens_mode.bit16_set = 1;
         X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_mode, sens_mode);
-        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, sens_mode.d32));
-        //TODO: not (yet) implemented
-        //(thispars->pars[P_FPGATEST]), \
-        //(thispars->pars[P_FPNS]),  \
-        //(thispars->pars[P_FPNM]),     \
-        //thispars->pars[P_SHIFTL]));
+        dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, sens_mode.d32);
+#if 0   //TODO: not (yet) implemented
+        (thispars->pars[P_FPGATEST]), \
+        (thispars->pars[P_FPNS]),  \
+        (thispars->pars[P_FPNM]),     \
+        thispars->pars[P_SHIFTL]));
+#endif
     }
     // Writing WOI width for internally generated HACT
     if (thispars->pars[P_FRAMESYNC_DLY] & 0x10000) { /// set enforced HACT length, if 0 - use HACT from sensor
         sensio_width.sensor_width = thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS);
     }
     X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_width, sensio_width);
-    MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_width,  0x%x)\n", sensor_port, frame16, sensio_width.d32));
+    dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_width,  0x%x)\n",sensor_port, sensor_port, frame16, sensio_width.d32);
 
     // Program number of scan lines to acquire
     // Is PhotoFinish mode enabled? // **************** TODO: use ACTUAL_HEIGHT (and update it) not WOI_HEIGHT
@@ -1277,25 +1294,25 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
         n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]+(2 * COLOR_MARGINS)+thispars->pars[P_OVERLAP];
     }
     X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_sync_mult, sync_mult);
-    MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_sync_mult,  0x%x)\n", sensor_port, frame16, x393_sens_sync_mult.d32));
+    dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_sync_mult,  0x%x)\n",sensor_port, sensor_port, frame16, sync_mult.d32);
     // See if NC393 has n_scan_lines - no
     /*
     n_scan_lines&=0xffff; // was 0x3fff in NC353 code
     X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, n_scan_lines);
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_NLINES, (int) n_scan_lines));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_NLINES, (int) n_scan_lines);
     */
 
     // Bayer phase changed?
 
-    int flips=(thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1)<<1);
-    int bayer_modified=FRAMEPAR_MODIFIED(P_BAYER) || FRAMEPAR_MODIFIED(P_FLIPH) || FRAMEPAR_MODIFIED(P_FLIPV) || FRAMEPAR_MODIFIED(P_MULTI_MODE);
-    MDF3(printk(" flips=%x\n", flips));
+    flips=(thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1)<<1);
+    bayer_modified=FRAMEPAR_MODIFIED(P_BAYER) || FRAMEPAR_MODIFIED(P_FLIPH) || FRAMEPAR_MODIFIED(P_FLIPV) || FRAMEPAR_MODIFIED(P_MULTI_MODE);
+    dev_dbg(g_dev_ptr,"{%d}  flips=%x\n",sensor_port, flips);
 
     if (thispars->pars[P_MULTI_MODE]) { // Modify flips in composite mode - should match flips of the top (direct) channel
         int this_bit=(1<<thispars->pars[P_MULTI_TOPSENSOR]);
         if (thispars->pars[P_MULTI_FLIPH] & this_bit) flips^=1;
         if (thispars->pars[P_MULTI_FLIPV] & this_bit) flips^=2;
-        MDF3(printk(" composite mode - adjusted flips=%x\n", flips));
+        dev_dbg(g_dev_ptr,"{%d}  composite mode - adjusted flips=%x\n",sensor_port, flips);
         bayer_modified=  bayer_modified || FRAMEPAR_MODIFIED(P_MULTI_FLIPH) || FRAMEPAR_MODIFIED(P_MULTI_FLIPV)  || FRAMEPAR_MODIFIED(P_MULTI_TOPSENSOR);
     }
 
@@ -1304,11 +1321,11 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
         gamma_ctl.bayer = thispars->pars[P_BAYER] ^ flips ^ sensor->bayer;
         gamma_ctl.bayer_set = 1;
         X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_gamma_ctrl, gamma_ctl);
-        MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n", sensor_port, frame16, gamma_ctl.d32));
+        dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n",sensor_port, sensor_port, frame16, gamma_ctl.d32);
     }
     return 0;
 #else
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
     // Set FPN mode (P_FPGATEST - currently only LSB is processed)
@@ -1319,7 +1336,7 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
             ((thispars->pars[P_BITS]>8)?1:0), \
             thispars->pars[P_SHIFTL]));
 
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SENSFPN, (int) (X313_SENSFPN_D( \
+    MDF3(dev_dbg(g_dev_ptr,"  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SENSFPN, (int) (X313_SENSFPN_D( \
             (thispars->pars[P_FPGATEST]), \
             (thispars->pars[P_FPNS]),  \
             (thispars->pars[P_FPNM]),     \
@@ -1331,13 +1348,13 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     // New - writing WOI width for internally generated HACT
     n_pixels=((thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS)) & 0x3fff) | 0x4000;
     X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, n_pixels);
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_NLINES, (int) n_pixels));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_NLINES, (int) n_pixels);
 
     // Program number of scan lines to acquire
     // Is PhotoFinish mode enabled? // **************** TODO: use ACTUAL_HEIGHT (and update it) not WOI_HEIGHT
     if (((thispars->pars[P_PF_HEIGHT] & 0xffff)>0) && (thispars->pars[P_PF_HEIGHT]<=thispars->pars[P_ACTUAL_HEIGHT])){
         n_ph_lines=  thispars->pars[P_ACTUAL_HEIGHT]/(thispars->pars[P_PF_HEIGHT] &  0x3fff);
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_NLINES, (int) (n_ph_lines-1) | 0x8000));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_NLINES, (int) (n_ph_lines-1) | 0x8000);
         X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, (n_ph_lines-1) | 0x8000);
         //    n_scan_lines= thispars->pars[P_PF_HEIGHT];
         n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]; // no margins here
@@ -1345,30 +1362,30 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     } else {
         // temporary hack trying to disable PH mode earlier
 
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", X313_SEQ_ASAP, X313_WA_NLINES, 0x8000));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, X313_SEQ_ASAP, X313_WA_NLINES, 0x8000);
         X3X3_SEQ_SEND1 (X313_SEQ_ASAP,  X313_WA_NLINES,  0x8000);
 
         n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]+(2 * COLOR_MARGINS)+thispars->pars[P_OVERLAP];
     }
     n_scan_lines&=0x3fff;
     X3X3_SEQ_SEND1 (fpga_addr,  X313_WA_NLINES, n_scan_lines);
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_NLINES, (int) n_scan_lines));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_NLINES, (int) n_scan_lines);
     // Bayer phase changed?
 
     int flips=(thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1)<<1);
     int bayer_modified=FRAMEPAR_MODIFIED(P_BAYER) || FRAMEPAR_MODIFIED(P_FLIPH) || FRAMEPAR_MODIFIED(P_FLIPV) || FRAMEPAR_MODIFIED(P_MULTI_MODE);
-    MDF3(printk(" flips=%x\n", flips));
+    dev_dbg(g_dev_ptr,"{%d}  flips=%x\n",sensor_port, flips);
 
     if (thispars->pars[P_MULTI_MODE]) { // Modify flips in composite mode - should match flips of the top (direct) channel
         int this_bit=(1<<thispars->pars[P_MULTI_TOPSENSOR]);
         if (thispars->pars[P_MULTI_FLIPH] & this_bit) flips^=1;
         if (thispars->pars[P_MULTI_FLIPV] & this_bit) flips^=2;
-        MDF3(printk(" composite mode - adjusted flips=%x\n", flips));
+        dev_dbg(g_dev_ptr,"{%d}  composite mode - adjusted flips=%x\n",sensor_port, flips);
         bayer_modified=  bayer_modified || FRAMEPAR_MODIFIED(P_MULTI_FLIPH) || FRAMEPAR_MODIFIED(P_MULTI_FLIPV)  || FRAMEPAR_MODIFIED(P_MULTI_TOPSENSOR);
     }
     if (bayer_modified) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_DCR0, X353_DCR0(BAYER_PHASE,thispars->pars[P_BAYER] ^ flips ^ sensor->bayer)); ///NOTE: hardware bayer
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int)X313_WA_DCR0, (int)X353_DCR0(BAYER_PHASE,thispars->pars[P_BAYER] ^ ((thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1)<<1)) ^ sensor->bayer) ));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int)X313_WA_DCR0, (int)X353_DCR0(BAYER_PHASE,thispars->pars[P_BAYER] ^ ((thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1)<<1)) ^ sensor->bayer) );
 
     }
     return 0;
@@ -1388,7 +1405,7 @@ int pgm_sensorrun  (int sensor_port,               ///< sensor port number (0..3
 
 {
 #ifndef NC353
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -EINVAL; // wrong frame
     control_sensor_memory (sensor_port,
                            thispars->pars[P_SENSOR_RUN] & 3,
@@ -1405,7 +1422,7 @@ int pgm_sensorrun  (int sensor_port,               ///< sensor port number (0..3
  */
 #else
     int fpga_data=0;
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     switch (thispars->pars[P_SENSOR_RUN] & 3) {
     case 1: fpga_data=4; break;
@@ -1417,7 +1434,7 @@ int pgm_sensorrun  (int sensor_port,               ///< sensor port number (0..3
     // only start/single, stopping will be handled by the pgm_sensorstop
     if (fpga_data) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_TRIG, fpga_data);
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_TRIG, (int) fpga_data));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_TRIG, (int) fpga_data);
     }
     return 0;
 #endif
@@ -1435,7 +1452,7 @@ int pgm_sensorstop (int sensor_port,               ///< sensor port number (0..3
 
 {
 #ifndef NC353
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -EINVAL; // wrong frame
     // Do we need to filter for stop only (    if ((thispars->pars[P_SENSOR_RUN] & 3)==0){... ) ?
     control_sensor_memory (sensor_port,
@@ -1445,7 +1462,7 @@ int pgm_sensorstop (int sensor_port,               ///< sensor port number (0..3
     return 0;
 #else
     int fpga_data=0;
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     switch (thispars->pars[P_SENSOR_RUN] & 3) {
     case 1: fpga_data=4; break;
@@ -1456,7 +1473,7 @@ int pgm_sensorstop (int sensor_port,               ///< sensor port number (0..3
     // only start/single, stopping will be handled by the pgm_sensorstop
     if ((thispars->pars[P_SENSOR_RUN] & 3)==0){
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_TRIG, fpga_data);
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_TRIG, (int) fpga_data));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_TRIG, (int) fpga_data);
     }
     return 0;
 #endif
@@ -1492,14 +1509,14 @@ int pgm_gamma      (int sensor_port,               ///< sensor port number (0..3
     unsigned long * pgamma32= (unsigned long *) & gamma32;
     // TODO: Add for multi-subchannel, for now using 0
 
-    MDF3(printk(" frame16=%d, (getThisFrameNumber() & PARS_FRAMES_MASK)= %ld\n",frame16, getThisFrameNumber() & PARS_FRAMES_MASK));
-    MDF3(printk(" frame16=%d, thispars->pars[P_GTAB_*]=0x%lx 0x%lx 0x%lx 0x%lx, thispars->pars[P_FRAME]=0x%lx"
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, (getThisFrameNumber() & PARS_FRAMES_MASK)= %ld\n",sensor_port,frame16, getThisFrameNumber(sensor_port) & PARS_FRAMES_MASK);
+    MDF3(dev_dbg(g_dev_ptr," frame16=%d, thispars->pars[P_GTAB_*]=0x%lx 0x%lx 0x%lx 0x%lx, thispars->pars[P_FRAME]=0x%lx"
             " get_locked_hash32(*)=0x%lx 0x%lx 0x%lx 0x%lx\n",
             frame16, thispars->pars[P_GTAB_R],thispars->pars[P_GTAB_R+1],thispars->pars[P_GTAB_R+2],thispars->pars[P_GTAB_R+3],thispars->pars[P_FRAME],
             get_locked_hash32(0),get_locked_hash32(1),get_locked_hash32(2),get_locked_hash32(3)));
 
 
-    MDF16(printk(" frame16=%d, thispars->pars[P_GTAB_*]=0x%lx 0x%lx 0x%lx 0x%lx, thispars->pars[P_FRAME]=0x%lx\n",frame16, thispars->pars[P_GTAB_R],thispars->pars[P_GTAB_R+1],thispars->pars[P_GTAB_R+2],thispars->pars[P_GTAB_R+3],thispars->pars[P_FRAME]));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, thispars->pars[P_GTAB_*]=0x%lx 0x%lx 0x%lx 0x%lx, thispars->pars[P_FRAME]=0x%lx\n",sensor_port,frame16, thispars->pars[P_GTAB_R],thispars->pars[P_GTAB_R+1],thispars->pars[P_GTAB_R+2],thispars->pars[P_GTAB_R+3],thispars->pars[P_FRAME]);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     // Not needed - now it can be done in advance (just prepare cache). Later it will be done again and actually programmed (1 frame ahead of time)
     // return if too early
@@ -1519,7 +1536,7 @@ int pgm_gamma      (int sensor_port,               ///< sensor port number (0..3
     }
     if (nupdate) {
         setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // restore failed components
-        MDF3(printk("had to restore back %d gamma tables (color components) \n",nupdate));
+        dev_dbg(g_dev_ptr,"{%d} had to restore back %d gamma tables (color components) \n",sensor_port,nupdate);
         return -1;
     }
     return 0;
@@ -1557,7 +1574,7 @@ int pgm_hist       (int sensor_port,               ///< sensor port number (0..3
             {P_HISTWND_HEIGHT, 0}
     };
     */
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     for (sub_chn =0; sub_chn < MAX_SENSORS; sub_chn++)  if (GLOBALPARS(sensor_port, G_SUBCHANNELS) & (1 << sub_chn)){
         poffs = HIST_SUBCHN_OFFSET * sub_chn;
@@ -1586,8 +1603,8 @@ int pgm_hist       (int sensor_port,               ///< sensor port number (0..3
             width_height.height_m1 = hist_setup_data.height-2;
             X393_SEQ_SEND1S (sensor_port, frame16, x393_histogram_lt, left_top, sub_chn);
             X393_SEQ_SEND1S (sensor_port, frame16, x393_histogram_wh, width_height,sub_chn);
-            MDF3(printk("  X393_SEQ_SEND1S(0x%x, 0x%x, x393_histogram_lt, 0x%x, %d)\n", sensor_port, frame16, left_top.d32, sub_chn));
-            MDF3(printk("  X393_SEQ_SEND1S(0x%x, 0x%x, x393_histogram_wh, 0x%x, %d)\n", sensor_port, frame16, width_height.d32, sub_chn));
+            dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1S(0x%x, 0x%x, x393_histogram_lt, 0x%x, %d)\n",sensor_port, sensor_port, frame16, left_top.d32, sub_chn);
+            dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1S(0x%x, 0x%x, x393_histogram_wh, 0x%x, %d)\n",sensor_port, sensor_port, frame16, width_height.d32, sub_chn);
             if ((nupdate == 0) || (HIST_SUBCHN_OFFSET > 0)) { // Update only once until there are per-subchannle parameters
                 SETFRAMEPARS_SET(P_HISTWND_LEFT + poffs,hist_setup_data.left);
                 SETFRAMEPARS_SET(P_HISTWND_WIDTH + poffs,hist_setup_data.width);
@@ -1600,10 +1617,10 @@ int pgm_hist       (int sensor_port,               ///< sensor port number (0..3
             X3X3_SEQ_SEND1(frame16,  X313_WA_HIST_WIDTH,  hist_setup_data.width-2);
             X3X3_SEQ_SEND1(frame16,  X313_WA_HIST_TOP,    hist_setup_data.top);
             X3X3_SEQ_SEND1(frame16,  X313_WA_HIST_HEIGHT, hist_setup_data.height-2);
-            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_LEFT,   (int) hist_setup_data.left));
-            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_WIDTH,  (int) hist_setup_data.width-2));
-            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_TOP,    (int) hist_setup_data.top));
-            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_HIST_HEIGHT, (int) hist_setup_data.height-2));
+            dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_HIST_LEFT,   (int) hist_setup_data.left);
+            dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_HIST_WIDTH,  (int) hist_setup_data.width-2);
+            dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_HIST_TOP,    (int) hist_setup_data.top);
+            dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_HIST_HEIGHT, (int) hist_setup_data.height-2);
             pars_to_update[0].val=hist_setup_data.left;
             pars_to_update[1].val=hist_setup_data.width;
             pars_to_update[2].val=hist_setup_data.top;
@@ -1628,7 +1645,7 @@ int pgm_aexp       (int sensor_port,               ///< sensor port number (0..3
 												   ///< @return OK - 0, <0 - error
 {
     //TODO:
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     return 0;
 }
 
@@ -1646,7 +1663,7 @@ int pgm_quality    (int sensor_port,               ///< sensor port number (0..3
     int y_coring_index;
     int c_coring_index;
     int composite_quality=(thispars->pars[P_QUALITY] & 0xff7f) | ((thispars->pars[P_PORTRAIT] & 1)<<7);
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     //  int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
     if (thispars->pars[P_CORING_INDEX]!= prevpars->pars[P_CORING_INDEX]) {
@@ -1667,7 +1684,7 @@ int pgm_quality    (int sensor_port,               ///< sensor port number (0..3
         cmprs_mode.qbank = thispars->pars[P_COMPMOD_QTAB];
         cmprs_mode.qbank_set = 1;
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
-        MDF3(printk("  X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32));
+        dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
         return 0;
     } else return -EFAULT;
 }
@@ -1684,7 +1701,7 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
 {
 #ifndef NC353
     int width_marg, height_marg, width_bursts;
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     width_marg = thispars->pars[P_ACTUAL_WIDTH];
     height_marg = thispars->pars[P_ACTUAL_WIDTH];
@@ -1709,14 +1726,14 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
 
 #else
     int ntilex,ntiley,goodEOL,padlen, imgsz,sa;
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
     //NC393 - use margins of 2 pixels from each side for color JPEG (even for JPEG18) to preserve Bayer
     ///programm channel1 (FPN). Will not enable if not needed (imageParamsR[P_FPN]==0)
     ntilex=((thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS)+7)>>3);
     ntiley=thispars->pars[P_ACTUAL_HEIGHT]+(((thispars->pars[P_PF_HEIGHT] & 0xffff)>0)?0:(2 * COLOR_MARGINS));
-    MDF3(printk("ntilex=0x%x ntiley=0x%x\n",ntilex,ntiley));
+    dev_dbg(g_dev_ptr,"{%d} ntilex=0x%x ntiley=0x%x\n",sensor_port,ntilex,ntiley);
     if ((thispars->pars[P_PF_HEIGHT] & 0xffff)==0) { // not a photofinish
         if(!thispars->pars[P_BGFRAME] && ((thispars->pars[P_FPNS]!=0) || (thispars->pars[P_FPNM]!=0))) {
             // program memory channel1
@@ -1725,18 +1742,18 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH1_CTL0, X313_SDCHAN_REG0(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1)));
             // enable channel1 for reading SDRAM
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_EN_D(1)); // wait ready later... ???
-            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH1_CTL1, (int) X313_SDCHAN_REG1(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1))));
-            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH1_CTL2, (int) X313_SDCHAN_REG2(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1))));
-            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH1_CTL0, (int) X313_SDCHAN_REG0(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1))));
-            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_EN_D(1)));
+            dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SDCH1_CTL1, (int) X313_SDCHAN_REG1(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1)));
+            dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SDCH1_CTL2, (int) X313_SDCHAN_REG2(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1)));
+            dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SDCH1_CTL0, (int) X313_SDCHAN_REG0(0,0,0, X313_MAP_FPN, (ntilex-1), (ntiley-1)));
+            dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_EN_D(1));
 
         } else  {
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_DIS_D(1));
-            MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_DIS_D(1)));
+            dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_DIS_D(1));
         }
     } else  {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_DIS_D(1));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_DIS_D(1)));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_DIS_D(1));
     }
     // Program channel 0 (sensor->memory)
     //       goodEOL=0; // last 8/16 blocks of pixels in each scanline are bad (only 2 are actually written)
@@ -1749,9 +1766,9 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
         ntilex=((thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS)+15)>>4);
         goodEOL=((thispars->pars[P_ACTUAL_WIDTH] & 0x0f) == 0) && ((thispars->pars[P_ACTUAL_WIDTH] & 0x1f0) != 0);
         if (goodEOL) ntilex--;
-        MDF3(printk("ntilex=0x%x ntiley=0x%x goodEOL=0x%x\n",ntilex,ntiley,goodEOL));
+        dev_dbg(g_dev_ptr,"{%d} ntilex=0x%x ntiley=0x%x goodEOL=0x%x\n",sensor_port,ntilex,ntiley,goodEOL);
     }
-    MDF3(printk("ntilex=0x%x ntiley=0x%x\n",ntilex,ntiley));
+    dev_dbg(g_dev_ptr,"{%d} ntilex=0x%x ntiley=0x%x\n",sensor_port,ntilex,ntiley);
 
     //       if (imageParamsR[P_OVERLAP]>=(imageParamsR[P_ACTUAL_HEIGHT]+2)) imageParamsR[P_OVERLAP]=imageParamsR[P_ACTUAL_HEIGHT]+1; rotten code, left as a comment
     if (thispars->pars[P_OVERLAP]>0) ntiley=(ntiley<<1); // ntiley will be twice bigger for synch. mode)
@@ -1759,17 +1776,17 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
     //TODO:fix it to be able to use two (or larger) frame buffer
     //  imgsz=((padlen * (thispars->pars[P_ACTUAL_HEIGHT]+(2 * COLOR_MARGINS)) * thispars->pars[P_PAGE_ACQ]) << ((thispars->pars(P_TRIG) & 1)?1:0)); // mostly rotten too
     imgsz=padlen * ntiley;
-    MDF3(printk("imgsz=0x%x, padlen=0x%x\n",imgsz,padlen));
+    dev_dbg(g_dev_ptr,"{%d} imgsz=0x%x, padlen=0x%x\n",sensor_port,imgsz,padlen);
     if (thispars->pars[P_IMGSZMEM]!= imgsz)  setFramePar(sensor_port, thispars, P_IMGSZMEM, imgsz);  // set it (and propagate to the later frames)
     sa=X313_MAP_FRAME + (imgsz * thispars->pars[P_PAGE_ACQ]);  // now - always X313_MAP_FRAME
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH0_CTL1, X313_SDCHAN_REG1(0,1,1, sa, (ntilex-1), (ntiley-1)));
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH0_CTL1, (int) X313_SDCHAN_REG1(0,1,1, sa, (ntilex-1), (ntiley-1))  ));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SDCH0_CTL1, (int) X313_SDCHAN_REG1(0,1,1, sa, (ntilex-1), (ntiley-1))  );
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH0_CTL2, X313_SDCHAN_REG2(0,1,1, sa, (ntilex-1), (ntiley-1)));
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH0_CTL2, (int) X313_SDCHAN_REG2(0,1,1, sa, (ntilex-1), (ntiley-1))  ));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SDCH0_CTL2, (int) X313_SDCHAN_REG2(0,1,1, sa, (ntilex-1), (ntiley-1))  );
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH0_CTL0, X313_SDCHAN_REG0(0,1,1, sa, (ntilex-1), (ntiley-1))); // dependency - source
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH0_CTL0, (int) X313_SDCHAN_REG0(0,1,1, sa, (ntilex-1), (ntiley-1))  ));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SDCH0_CTL0, (int) X313_SDCHAN_REG0(0,1,1, sa, (ntilex-1), (ntiley-1))  );
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_EN_D(0));
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_EN_D(0)  ));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",v, fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_EN_D(0)  );
     // number of scan lines to read from sensor - program in pgm_sensorin
     return 0;
 #endif
@@ -1797,7 +1814,7 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     int cmprs_top = 0; // 1 for JPEG18 only, 0 for others
     int tile_width; // in bursts, 2 for those with overlap (height>16), 4 with heigh==16
     int tile_height; // 16/18 (20 not yet implemented)
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     width_marg = thispars->pars[P_ACTUAL_WIDTH];
     height_marg = thispars->pars[P_ACTUAL_WIDTH];
@@ -1851,7 +1868,7 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
             {P_SDRAM_CHN22, 0},
             {P_TILES, 0}
     };
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     //  int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
     ntilex=((thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS)-1)>>4);
@@ -1859,9 +1876,9 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     sa=X313_MAP_FRAME + ( thispars->pars[P_IMGSZMEM] * thispars->pars[P_PAGE_READ]); // now - always X313_MAP_FRAME
     pf=((thispars->pars[P_PF_HEIGHT] & 0xffff)>0)?1:0; // when mode==1, wnr means "photofinish" in fpga
     int depend=((thispars->pars[P_SENSOR_RUN] & 3)==SENSOR_RUN_STOP) ? 0 : 1;
-    MDF23(printk("ntilex=0x%x ntiley=0x%x sa=0x%x pf=0x%x depend=%x\n",ntilex,ntiley,sa,pf,depend));
+    dev_dbg(g_dev_ptr,"{%d} ntilex=0x%x ntiley=0x%x sa=0x%x pf=0x%x depend=%x\n",sensor_port,ntilex,ntiley,sa,pf,depend);
     // will be programmed with "depend==1", so it will not be possible to re-read from memory this way
-    MDF9(printk(" thispars->pars[P_SENSOR_RUN]=0x%x,  depend=%d)\n", (int)thispars->pars[P_SENSOR_RUN], depend));
+    dev_dbg(g_dev_ptr,"{%d}  thispars->pars[P_SENSOR_RUN]=0x%x,  depend=%d)\n",sensor_port, (int)thispars->pars[P_SENSOR_RUN], depend);
     pars_to_update[1].val=X313_SDCHAN_REG1(1,pf,depend, sa, (ntilex-1), (ntiley-16));
     pars_to_update[2].val=X313_SDCHAN_REG2(1,pf,depend, sa, (ntilex-1), (ntiley-16));
     pars_to_update[0].val=X313_SDCHAN_REG0(1,pf,depend, sa, (ntilex-1), (ntiley-16));
@@ -1893,7 +1910,7 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     x393_cmprs_colorsat_t    cmprs_colorsat =    {.d32=0};
     x393_cmprs_coring_mode_t cmprs_coring_mode = {.d32=0};
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (!jpeg_htable_is_programmed(sensor_port)) jpeg_htable_fpga_pgm (sensor_port);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 //    x393cmd = (frame16<0)? ASAP: ABSOLUTE;
@@ -1945,9 +1962,9 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
         cmprs_mode.multiframe = (frames_in_buffer_minus_one(sensor_port)>0)? 1:0;
         cmprs_mode.multiframe_set = 1;
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
-        MDF3(printk("  X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32));
+        dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
     } else {
-        MDF3(printk("  comp_cmd.d32==0, does not need to be sent\n"));
+        dev_dbg(g_dev_ptr,"{%d}   comp_cmd.d32==0, does not need to be sent\n",sensor_port);
     }
     // color saturation changed?
     if (FRAMEPAR_MODIFIED(P_COLOR_SATURATION_BLUE) || FRAMEPAR_MODIFIED(P_COLOR_SATURATION_RED)) {
@@ -1964,21 +1981,21 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
         cmprs_colorsat.colorsat_blue = csb;
         cmprs_colorsat.colorsat_red =  csr;
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_color_saturation, cmprs_colorsat);
-        MDF9(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_cmprs_color_saturation, 0x%x)\n",sensor_port, frame16, cmprs_colorsat.d32));
+        dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_cmprs_color_saturation, 0x%x)\n",sensor_port,sensor_port, frame16, cmprs_colorsat.d32);
     }
     // compressor quantizer zero bin mode changed?
     // Quantizer tuning - bits 0..7 - zero bin, 15:8 - quantizer bias
     if (FRAMEPAR_MODIFIED(P_CORING_PAGE)) {
         cmprs_coring_mode.coring_table = thispars->pars[P_CORING_PAGE];
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_coring_mode, cmprs_coring_mode);
-        MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x, x393_cmprs_coring_mode,  0x%x)\n", sensor_port, frame16, cmprs_coring_mode.d32));
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_cmprs_coring_mode,  0x%x)\n",sensor_port, sensor_port, frame16, cmprs_coring_mode.d32);
     }
 
     if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
 
 
 #else
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (!jpeg_htable_is_programmed(sensor_port)) jpeg_htable_fpga_pgm (sensor_port);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     // QTAB is programmed separately
@@ -2000,7 +2017,7 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
         }
     }
 // TODO: Redo for NC393
-    MDF3(printk("comp_cmd=0x%x\n",comp_cmd));
+    dev_dbg(g_dev_ptr,"{%d} comp_cmd=0x%x\n",sensor_port,comp_cmd);
     // Bayer shift changed? (additional bayer shift, separate from the gamma-tables one)
     if (FRAMEPAR_MODIFIED(P_COMPMOD_BYRSH)) {
         comp_cmd |= COMPCMD_BAYERSHIFT(thispars->pars[P_COMPMOD_BYRSH]);
@@ -2025,9 +2042,9 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
     // enqueue it for the compressor
     if (comp_cmd) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COMP_CMD, comp_cmd);
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_COMP_CMD, (int) comp_cmd));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_COMP_CMD, (int) comp_cmd);
     } else {
-        MDF3(printk("  comp_cmd==0, does not need to be sent\n"));
+        dev_dbg(g_dev_ptr,"{%d}   comp_cmd==0, does not need to be sent\n",sensor_port);
     }
     // color saturation changed?
     if (FRAMEPAR_MODIFIED(P_COLOR_SATURATION_BLUE) || FRAMEPAR_MODIFIED(P_COLOR_SATURATION_RED)) {
@@ -2043,7 +2060,7 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
         }
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COLOR_SAT, ((DEFAULT_COLOR_SATURATION_BLUE*thispars->pars[P_COLOR_SATURATION_BLUE])/100) |
                 (((DEFAULT_COLOR_SATURATION_RED *thispars->pars[P_COLOR_SATURATION_RED])/100)<<12));
-        MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%lx)\n", (int)fpga_addr, (int) X313_WA_COLOR_SAT, (int)((DEFAULT_COLOR_SATURATION_BLUE*thispars->pars[P_COLOR_SATURATION_BLUE])/100) | (((DEFAULT_COLOR_SATURATION_RED *thispars->pars[P_COLOR_SATURATION_RED])/100)<<12)));
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%lx)\n",sensor_port, (int)fpga_addr, (int) X313_WA_COLOR_SAT, (int)((DEFAULT_COLOR_SATURATION_BLUE*thispars->pars[P_COLOR_SATURATION_BLUE])/100) | (((DEFAULT_COLOR_SATURATION_RED *thispars->pars[P_COLOR_SATURATION_RED])/100)<<12));
 
 
     }
@@ -2051,7 +2068,7 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
     // Quantizer tuning - bits 0..7 - zero bin, 15:8 - quantizer bias
     if (FRAMEPAR_MODIFIED(P_CORING_PAGE)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_QUANTIZER_MODE,thispars->pars[P_CORING_PAGE]);
-        MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int)X313_WA_QUANTIZER_MODE, (int)thispars->pars[P_CORING_PAGE]));
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n",sensor_port, (int)fpga_addr, (int)X313_WA_QUANTIZER_MODE, (int)thispars->pars[P_CORING_PAGE]);
     }
 
     if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
@@ -2091,7 +2108,7 @@ int pgm_focusmode  (int sensor_port,               ///< sensor port number (0..3
             {P_FOCUS_TOP, 0},
             {P_FOCUS_HEIGHT, 0}
     };
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= 0) return -1; // now can only programm in immediate mode by writing the table
     focus_setup_data.totalwidth=(thispars->pars[P_ACTUAL_WIDTH]& 0xfff0) -0x10; // anyway should be 16x
     focus_setup_data.show1=       thispars->pars[P_FOCUS_SHOW1];
@@ -2172,7 +2189,7 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
     x393_gpio_set_pins_t gpio_set_pins = {.d32=0};
     x393_camsync_mode_t camsync_mode =   {.d32=0};
     int update_master_channel = 0; // set if any of the common (not channel-specific) parameters is modified
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     if (frame16 >= 0) return -1; // ASAP only mode
     // Trigger condition changed? (0 - internal sequencer)
@@ -2180,30 +2197,30 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
         camsync_src.d32 =  thispars->pars[P_TRIG_CONDITION];
         x393_camsync_trig_src(camsync_src);
         update_master_channel=1;
-        MDF3(printk("  x393_camsync_trig_src(0x%x)\n",  camsync_src.d32));
+        dev_dbg(g_dev_ptr,"{%d}   x393_camsync_trig_src(0x%x)\n",sensor_port,  camsync_src.d32);
     }
     // Trigger delay changed?
     if (FRAMEPAR_MODIFIED(P_TRIG_DELAY)) { // individual per-channel parameters
         set_x393_camsync_trig_delay  (thispars->pars[P_TRIG_DELAY], sensor_port); // CAMSYNC trigger delay
-        MDF3(printk("  set_x393_camsync_trig_delay(0x%x, %d)\n",  camsync_src.d32, sensor_port));
+        dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_delay(0x%x, %d)\n",sensor_port,  camsync_src.d32, sensor_port);
     }
     // Sequencer output word changed? (to which outputs it is sent and what polarity)
     if (FRAMEPAR_MODIFIED(P_TRIG_OUT)) {
         camsync_dst.d32 =  thispars->pars[P_TRIG_OUT];
         x393_camsync_trig_dst(camsync_dst);
         update_master_channel=1;
-        MDF3(printk("  x393_camsync_trig_dst(0x%x)\n",  camsync_dst.d32));
-        MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCOUT, (int) thispars->pars[P_TRIG_OUT]));
+        dev_dbg(g_dev_ptr,"{%d}   x393_camsync_trig_dst(0x%x)\n",sensor_port,  camsync_dst.d32);
+//        dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_CAMSYNCOUT, (int) thispars->pars[P_TRIG_OUT]);
         // Enable connection from the trigger module to the FPGA GPIO pins
 
         if (thispars->pars[P_TRIG_OUT]!=0) {
             gpio_set_pins.chn_a = 3;  // Set dibit enable
             x393_gpio_set_pins(gpio_set_pins);
-            MDF3(printk("  x393_gpio_set_pins(0x%x)\n",  gpio_set_pins.d32));
+            dev_dbg(g_dev_ptr,"{%d}   x393_gpio_set_pins(0x%x)\n",sensor_port,  gpio_set_pins.d32);
         } else {
             //  Not needed, I think
             //      port_csp0_addr[X313_WA_IOPINS] = X313_WA_IOPINS_DIS_TRIG_OUT;
-            //      MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_IOPINS, (int) X313_WA_IOPINS_DIS_TRIG_OUT));
+            //      dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_IOPINS, (int) X313_WA_IOPINS_DIS_TRIG_OUT);
         }
     }
     // Sequencer period changed? (0 - stopped, 1 - single trigger, >=256 - start repetitive)
@@ -2213,7 +2230,7 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
         } else {
             set_x393_camsync_trig_period(thispars->pars[P_TRIG_PERIOD]);
             update_master_channel=1;
-            MDF3(printk("  set_x393_camsync_trig_period(0x%x)\n", thispars->pars[P_TRIG_PERIOD]));
+            dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%lx)\n",sensor_port, thispars->pars[P_TRIG_PERIOD]);
         }
     }
     // Bit length changed or not yet initialized?
@@ -2225,7 +2242,7 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
         }
         set_x393_camsync_trig_period(d);
         update_master_channel=1;
-        MDF3(printk("  set_x393_camsync_trig_period(0x%x) (bit length)\n", d));
+        dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%x) (bit length)\n",sensor_port, d);
     }
     // P_EXTERN_TIMESTAMP changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_EXTERN_TIMESTAMP)) {
@@ -2244,36 +2261,36 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
     }
     if (camsync_mode.d32){ // anything set?
         x393_camsync_mode (camsync_mode);
-        MDF3(printk("  x393_camsync_mode(0x%x)\n",  camsync_mode.d32));
+        dev_dbg(g_dev_ptr,"{%d}   x393_camsync_mode(0x%x)\n",sensor_port,  camsync_mode.d32);
     }
     if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
     return 0;
 #else
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     if (frame16 >= 0) return -1; // ASAP only mode
     // Trigger condition changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_TRIG_CONDITION)) {
         port_csp0_addr[X313_WA_CAMSYNCTRIG] = thispars->pars[P_TRIG_CONDITION];
-        MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCTRIG, (int)thispars->pars[P_TRIG_CONDITION]));
+        dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_CAMSYNCTRIG, (int)thispars->pars[P_TRIG_CONDITION]);
     }
     // Trigger delay changed?
     if (FRAMEPAR_MODIFIED(P_TRIG_DELAY)) {
         port_csp0_addr[X313_WA_CAMSYNCDLY] = thispars->pars[P_TRIG_DELAY];
-        MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCDLY, (int) thispars->pars[P_TRIG_DELAY]));
+        dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_CAMSYNCDLY, (int) thispars->pars[P_TRIG_DELAY]);
     }
     // Sequencer output word changed? (to which outputs it is sent and what polarity)
     if (FRAMEPAR_MODIFIED(P_TRIG_OUT)) {
         port_csp0_addr[X313_WA_CAMSYNCOUT] = thispars->pars[P_TRIG_OUT];
-        MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCOUT, (int) thispars->pars[P_TRIG_OUT]));
+        dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_CAMSYNCOUT, (int) thispars->pars[P_TRIG_OUT]);
         // Enable connection from the trigger module to the FPGA GPIO pins
         if (thispars->pars[P_TRIG_OUT]!=0) {
             port_csp0_addr[X313_WA_IOPINS] = X313_WA_IOPINS_EN_TRIG_OUT;
-            MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_IOPINS, (int) X313_WA_IOPINS_EN_TRIG_OUT));
+            dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_IOPINS, (int) X313_WA_IOPINS_EN_TRIG_OUT);
         } else {
             //  Not needed, I think
             //      port_csp0_addr[X313_WA_IOPINS] = X313_WA_IOPINS_DIS_TRIG_OUT;
-            //      MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_IOPINS, (int) X313_WA_IOPINS_DIS_TRIG_OUT));
+            //      dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_IOPINS, (int) X313_WA_IOPINS_DIS_TRIG_OUT);
         }
     }
     // Sequencer period changed? (0 - stopped, 1 - single trigger, >=256 - start repetitive)
@@ -2282,7 +2299,7 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
             SETFRAMEPARS_SET(P_TRIG_PERIOD,prevpars->pars[P_TRIG_PERIOD]);
         } else {
             port_csp0_addr[X313_WA_CAMSYNCPER] = thispars->pars[P_TRIG_PERIOD];
-            MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCPER, (int)thispars->pars[P_TRIG_PERIOD]));
+            dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_CAMSYNCPER, (int)thispars->pars[P_TRIG_PERIOD]);
         }
     }
     // Bit length changed or not yet initialized?
@@ -2293,17 +2310,17 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
             SETFRAMEPARS_SET(P_TRIG_BITLENGTH,d);
         }
         port_csp0_addr[X313_WA_CAMSYNCPER] = d;
-        MDF3(printk("writing bit length-1:  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_CAMSYNCPER, d));
+        dev_dbg(g_dev_ptr,"{%d} writing bit length-1:  port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_CAMSYNCPER, d);
     }
     // P_EXTERN_TIMESTAMP changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_EXTERN_TIMESTAMP)) {
         port_csp0_addr[X313_WA_DCR1]=X353_DCR1(EXTERNALTS,thispars->pars[P_EXTERN_TIMESTAMP]?1:0);
-        MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_DCR1, (int)X353_DCR1(EXTERNALTS,thispars->pars[P_EXTERN_TIMESTAMP]?1:0)));
+        dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_DCR1, (int)X353_DCR1(EXTERNALTS,thispars->pars[P_EXTERN_TIMESTAMP]?1:0));
     }
     // P_XMIT_TIMESTAMP changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_XMIT_TIMESTAMP)) {
         port_csp0_addr[X313_WA_DCR1]=X353_DCR1(OUTPUTTS,thispars->pars[P_XMIT_TIMESTAMP]?1:0);
-        MDF3(printk("  port_csp0_addr[0x%x]=0x%x\n",  (int) X313_WA_DCR1, (int)X353_DCR1(OUTPUTTS,thispars->pars[P_XMIT_TIMESTAMP]?1:0)));
+        dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_DCR1, (int)X353_DCR1(OUTPUTTS,thispars->pars[P_XMIT_TIMESTAMP]?1:0));
     }
     if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
     return 0;
@@ -2321,7 +2338,7 @@ int pgm_irq    (int sensor_port,               ///< sensor port number (0..3)
 											   ///< be applied to,  negative - ASAP
 											   ///< @return OK - 0, <0 - error
 {
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 #ifdef NC353
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
@@ -2333,7 +2350,7 @@ int pgm_irq    (int sensor_port,               ///< sensor port number (0..3)
     X3X3_SEQ_SEND1(fpga_addr,   X313_WA_SMART_IRQ,  (2 | ((thispars->pars[P_IRQ_SMART] & 1)?1:0)) | \
             (8 | ((thispars->pars[P_IRQ_SMART] & 2)?4:0)));
 #endif
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SMART_IRQ, (int) ( (2 | ((thispars->pars[P_IRQ_SMART] & 1)?1:0)) | \
+    MDF3(dev_dbg(g_dev_ptr,"  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SMART_IRQ, (int) ( (2 | ((thispars->pars[P_IRQ_SMART] & 1)?1:0)) | \
             (8 | ((thispars->pars[P_IRQ_SMART] & 2)?4:0)))));
     return 0;
 }
@@ -2357,7 +2374,7 @@ int pgm_recalcseq  (int sensor_port,               ///< sensor port number (0..3
             {G_CALLNEXT+3,0},
             {G_CALLNEXT+4,0},
             {G_CALLNASAP,0}};
-    MDF3(printk(" frame16=%d, safe=%d, async=%d, nooverlap=%d\n",frame16, safe, async, nooverlap));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, safe=%d, async=%d, nooverlap=%d\n",sensor_port,frame16, safe, async, nooverlap);
     for (i=0; i < (sizeof(ahead_tab)/sizeof(ahead_tab[0])); i+=7) {
         b=ahead_tab[i];
         d=ahead_tab[i+1+(nooverlap?5:(1+((async?2:0)+(safe?1:0))))]; ///continuous/safe - 1, continuous/no skip - 2, async/safe - 3, async/no skip - 4, nooverlap - 5
@@ -2396,10 +2413,10 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
 
 {
 #ifndef NC353
-    MDF3(printk(" frame16=%d\n",frame16));
     int extra_pages;
     int disable_need =  1; // TODO: Use some G_* parameter
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     // does it need to be be started (nothing do be done to stop)
     if (thispars->pars[P_COMPRESSOR_RUN]==0) return 0; // does not need compressor to be started
@@ -2430,10 +2447,10 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     }
     cmprs_mode.run_set = 1;
     X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
-    MDF3(printk("  X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32));
+    dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
     return 0;
 #else
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     // does it need to be be started (nothing do be done to stop)
     if (thispars->pars[P_COMPRESSOR_RUN]==0) return 0; // does not need compressor to be started
@@ -2442,19 +2459,19 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH2_CTL1,   thispars->pars[P_SDRAM_CHN21]);
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH2_CTL2,   thispars->pars[P_SDRAM_CHN22]);
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SDCH2_CTL0,   thispars->pars[P_SDRAM_CHN20]);
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH2_CTL1,   (int) thispars->pars[P_SDRAM_CHN21]));
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH2_CTL2,   (int) thispars->pars[P_SDRAM_CHN22]));
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SDCH2_CTL0,   (int) thispars->pars[P_SDRAM_CHN20]));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SDCH2_CTL1,   (int) thispars->pars[P_SDRAM_CHN21]);
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SDCH2_CTL2,   (int) thispars->pars[P_SDRAM_CHN22]);
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SDCH2_CTL0,   (int) thispars->pars[P_SDRAM_CHN20]);
 
     // enable memory channel2
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_EN_D(0));
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_EN_D(0)));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_SD_MODE, (int) X313_CHN_EN_D(0));
     // set number of tiles to compressor
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_MCUNUM, thispars->pars[P_TILES]-1);
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_MCUNUM, (int) thispars->pars[P_TILES]-1));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_MCUNUM, (int) thispars->pars[P_TILES]-1);
     // start the compressor
     X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COMP_CMD, (thispars->pars[P_COMPRESSOR_RUN]==2) ? COMPCMD_RUN : COMPCMD_SINGLE);
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_COMP_CMD, (int) ((thispars->pars[P_COMPRESSOR_RUN]==2) ? COMPCMD_RUN : COMPCMD_SINGLE)));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_COMP_CMD, (int) ((thispars->pars[P_COMPRESSOR_RUN]==2) ? COMPCMD_RUN : COMPCMD_SINGLE));
     return 0;
 #endif
 }
@@ -2474,7 +2491,7 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
     int extra_pages;
     int disable_need =  1; // TODO: Use some G_* parameter
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -EINVAL; // wrong frame
     switch(thispars->pars[P_COLOR]){
     case COLORMODE_COLOR:
@@ -2495,16 +2512,16 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
     cmprs_mode.run = X393_CMPRS_CBIT_RUN_DISABLE;
     cmprs_mode.run_set = 1;
     X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
-    MDF3(printk("  X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32));
+    dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
     return 0;
 
 #else
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     //  if (frame16 & ~PARS_FRAMES_MASK) return -1; // wrong frame (can be only -1 or 0..7)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame (can be only -1 or 0..7)
     X3X3_SEQ_SEND1(fpga_addr, X313_WA_COMP_CMD, COMPCMD_STOP);
-    MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int)  X313_WA_COMP_CMD, (int) COMPCMD_STOP));
+    dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int)  X313_WA_COMP_CMD, (int) COMPCMD_STOP);
     return 0;
 #endif
 }
@@ -2522,7 +2539,7 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     int extra_pages;
     int disable_need =  1; // TODO: Use some G_* parameter
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
-    MDF3(printk(" frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",frame16, (int) prevpars->pars[P_COMPRESSOR_RUN], (int) thispars->pars[P_COMPRESSOR_RUN]));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",sensor_port,frame16, (int) prevpars->pars[P_COMPRESSOR_RUN], (int) thispars->pars[P_COMPRESSOR_RUN]);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     if ((prevpars->pars[P_COMPRESSOR_RUN]==0) && (thispars->pars[P_COMPRESSOR_RUN]!=0)) { // just started
         // Was for NC353
@@ -2560,11 +2577,11 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     }
     cmprs_mode.run_set = 1;
     X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
-    MDF3(printk("  X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32));
+    dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
     return 0;
 
 #else
-    MDF3(printk(" frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",frame16, (int) prevpars->pars[P_COMPRESSOR_RUN], (int) thispars->pars[P_COMPRESSOR_RUN]));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",sensor_port,frame16, (int) prevpars->pars[P_COMPRESSOR_RUN], (int) thispars->pars[P_COMPRESSOR_RUN]);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
     if ((prevpars->pars[P_COMPRESSOR_RUN]==0) && (thispars->pars[P_COMPRESSOR_RUN]!=0)) { // just started
@@ -2576,28 +2593,28 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_SD_MODE, X313_CHN_EN_D(2));
         // set number of tiles to compressor
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_MCUNUM, thispars->pars[P_TILES]-1);
-        MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int)X313_WA_SDCH2_CTL1, (int)thispars->pars[P_SDRAM_CHN21]));
-        MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int)X313_WA_SDCH2_CTL2, (int)thispars->pars[P_SDRAM_CHN22]));
-        MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int)X313_WA_SDCH2_CTL0, (int)thispars->pars[P_SDRAM_CHN20]));
-        MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int)X313_WA_SD_MODE, (int) X313_CHN_EN_D(2)));
-        MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int)X313_WA_MCUNUM, (int)(thispars->pars[P_TILES]-1)));
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n",sensor_port, (int)fpga_addr, (int)X313_WA_SDCH2_CTL1, (int)thispars->pars[P_SDRAM_CHN21]);
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n",sensor_port, (int)fpga_addr, (int)X313_WA_SDCH2_CTL2, (int)thispars->pars[P_SDRAM_CHN22]);
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n",sensor_port, (int)fpga_addr, (int)X313_WA_SDCH2_CTL0, (int)thispars->pars[P_SDRAM_CHN20]);
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n",sensor_port, (int)fpga_addr, (int)X313_WA_SD_MODE, (int) X313_CHN_EN_D(2));
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n",sensor_port, (int)fpga_addr, (int)X313_WA_MCUNUM, (int)(thispars->pars[P_TILES]-1));
     }
     if ((prevpars->pars[P_COMPRESSOR_RUN] != thispars->pars[P_COMPRESSOR_RUN]) || (thispars->pars[P_COMPRESSOR_RUN]==COMPRESSOR_RUN_SINGLE))  // changed or single
         switch (thispars->pars[P_COMPRESSOR_RUN]) {
         case COMPRESSOR_RUN_STOP:
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COMP_CMD, COMPCMD_STOP);
-            MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int) X313_WA_COMP_CMD, (int) COMPCMD_STOP));
+            dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n",sensor_port, (int)fpga_addr, (int) X313_WA_COMP_CMD, (int) COMPCMD_STOP);
             break;
         case COMPRESSOR_RUN_SINGLE:
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COMP_CMD, COMPCMD_SINGLE);
             //TODO: Update for NC393
             if (!x313_is_dma_on()) x313_dma_start();
-            MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int) X313_WA_COMP_CMD, (int) COMPCMD_SINGLE));
+            dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n",sensor_port, (int)fpga_addr, (int) X313_WA_COMP_CMD, (int) COMPCMD_SINGLE);
             break;
         case COMPRESSOR_RUN_CONT:
             X3X3_SEQ_SEND1(fpga_addr,  X313_WA_COMP_CMD, COMPCMD_RUN);
             if (!x313_is_dma_on()) x313_dma_start();
-            MDF9(printk(" X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n", (int)fpga_addr, (int) X313_WA_COMP_CMD, (int) COMPCMD_RUN));
+            dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x,  0x%x)\n",sensor_port, (int)fpga_addr, (int) X313_WA_COMP_CMD, (int) COMPCMD_RUN);
             break;
         }
     return 0;
@@ -2620,15 +2637,7 @@ int pgm_gammaload  (int sensor_port,               ///< sensor port number (0..3
     int sub_chn;
     struct frameparspair_t pars_to_update[4]; // 4 needed, increase if more entries will be added
     int nupdate=0;
-    MDF3(printk(" frame16=%d, (getThisFrameNumber() & PARS_FRAMES_MASK)= %ld, thispars->pars[P_GTAB_R]=0x%lx, thispars->pars[P_FRAME]=0x%lx\n",frame16, getThisFrameNumber() & PARS_FRAMES_MASK, thispars->pars[P_GTAB_R],thispars->pars[P_FRAME]));
 
-#if ELPHEL_DEBUG
-    struct framepars_t * nextspars=&framepars[(thispars->pars[P_FRAME]+1) & PARS_FRAMES_MASK];
-#endif
-    MDF3(printk(" nextframe=%d, nextsparsd, nextspars->pars[P_GTAB_R]=0x%lx, nextspars->pars[P_FRAME]=0x%lx\n",(int) ((thispars->pars[P_FRAME]+1) & PARS_FRAMES_MASK), nextspars->pars[P_GTAB_R], nextspars->pars[P_FRAME]));
-    MDF16(printk(" nextframe=%d, nextspars->pars[P_GTAB_R]=0x%lx, nextspars->pars[P_FRAME]=0x%lx\n",(int) ((thispars->pars[P_FRAME]+1) & PARS_FRAMES_MASK), nextspars->pars[P_GTAB_R], nextspars->pars[P_FRAME]));
-    ///NOTE: Yes, ASAP, but - 1 frame ahead
-    if (frame16 >= 0) return -1; // only can work in ASAP mode
     int color, rslt;
     struct {
         unsigned short scale;
@@ -2637,6 +2646,18 @@ int pgm_gammaload  (int sensor_port,               ///< sensor port number (0..3
     unsigned long * pgamma32= (unsigned long *) & gamma32;
     unsigned long *gtable;
     int need_pgm=0;
+    int fpga_result=0;
+
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, (getThisFrameNumber() & PARS_FRAMES_MASK)= %ld, thispars->pars[P_GTAB_R]=0x%lx, thispars->pars[P_FRAME]=0x%lx\n",
+            sensor_port,      frame16,      getThisFrameNumber(sensor_port) & PARS_FRAMES_MASK,      thispars->pars[P_GTAB_R],     thispars->pars[P_FRAME]);
+
+    ///NOTE: Yes, ASAP, but - 1 frame ahead
+    if (frame16 >= 0) return -1; // only can work in ASAP mode
+#if ELPHEL_DEBUG
+    struct framepars_t * nextspars=&framepars[(thispars->pars[P_FRAME]+1) & PARS_FRAMES_MASK];
+    dev_dbg(g_dev_ptr,"{%d}  nextframe=%d, nextsparsd, nextspars->pars[P_GTAB_R]=0x%lx, nextspars->pars[P_FRAME]=0x%lx\n",sensor_port,(int) ((thispars->pars[P_FRAME]+1) & PARS_FRAMES_MASK), nextspars->pars[P_GTAB_R], nextspars->pars[P_FRAME]);
+    dev_dbg(g_dev_ptr,"{%d}  nextframe=%d, nextspars->pars[P_GTAB_R]=0x%lx, nextspars->pars[P_FRAME]=0x%lx\n",sensor_port,(int) ((thispars->pars[P_FRAME]+1) & PARS_FRAMES_MASK), nextspars->pars[P_GTAB_R], nextspars->pars[P_FRAME]);
+#endif
     for (color=0; color<4; color++) if (get_locked_hash32(color,sensor_port, 0)!=thispars->pars[P_GTAB_R+color]) need_pgm++;
     // code currently does not allow to overwrite just 1 table - only all 4
     if (need_pgm) {
@@ -2656,10 +2677,10 @@ int pgm_gammaload  (int sensor_port,               ///< sensor port number (0..3
 #ifndef NC353
                 if ((gtable= get_gamma_fpga(color,sensor_port,sub_chn))) // missing channels return NULL
                 {
-                    fpga_gamma_write_nice(color,         // Color (0..3)
-                                          sensor_port,   // sensor port (0..3)
-                                          sub_chn,       // sensor sub-channel (when several are connected through a multiplexer)
-                                          gtable);       // Gamma table (256 DWORDs) in encoded FPGA format
+                    fpga_result = fpga_gamma_write_nice(color,         // Color (0..3)
+                            sensor_port,   // sensor port (0..3)
+                            sub_chn,       // sensor sub-channel (when several are connected through a multiplexer)
+                            gtable);       // Gamma table (256 DWORDs) in encoded FPGA format
 
                 }
 #else
@@ -2667,15 +2688,20 @@ int pgm_gammaload  (int sensor_port,               ///< sensor port number (0..3
 #endif
                 if (rslt <= 0) SETFRAMEPARS_SET(P_GTAB_R+color, get_locked_hash32(color,sensor_port,0)); // restore to the locked table
             }
+            dev_dbg(g_dev_ptr,"{%d} need_pgm=%d, get_locked_hash32(*)=0x%lx 0x%lx 0x%lx 0x%lx\n",
+                    sensor_port,need_pgm,
+                    get_locked_hash32(0,sensor_port,sub_chn),
+                    get_locked_hash32(1,sensor_port,sub_chn),
+                    get_locked_hash32(2,sensor_port,sub_chn),
+                    get_locked_hash32(3,sensor_port,sub_chn));
         }
-        MDF3(printk("need_pgm=%d, get_locked_hash32(*)=0x%lx 0x%lx 0x%lx 0x%lx\n",need_pgm,get_locked_hash32(0),get_locked_hash32(1),get_locked_hash32(2),get_locked_hash32(3)));
     }
     if (nupdate)  {
         setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
-        MDF3(printk("had to restore back %d gamma tables (color components) \n",nupdate));
+        dev_dbg(g_dev_ptr,"{%d} had to restore back %d gamma tables (color components) \n",sensor_port,nupdate);
         return -1;
     }
-    return 0;
+    return fpga_result; // 0; fpga_result==0 if not used or OK, -ENODEV if FPGA is not programmed
 }
 
 /** Program sensor registers (probably just those that are manually set)
@@ -2688,7 +2714,7 @@ int pgm_sensorregs (int sensor_port,               ///< sensor port number (0..3
 												   ///< be applied to,  negative - ASAP
 												   ///< @return OK - 0, <0 - error
 {
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     return 0;
 }
 
@@ -2702,7 +2728,7 @@ int pgm_sensorregs (int sensor_port,               ///< sensor port number (0..3
 													   ///< be applied to,  negative - ASAP
 													   ///< @return OK - 0, <0 - error
   {
-      MDF3(printk("frame16=%d\n",frame16)); // nothing here, all in multisensor.c
+      dev_dbg(g_dev_ptr,"{%d} frame16=%d\n",sensor_port,frame16); // nothing here, all in multisensor.c
       return 0;
   }
 
@@ -2729,7 +2755,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
     // In 393 there can be multiple subchannels, with proportional offsets. Initially offset == 0, so the same parameters will
     // be applied to all active subchannels.
 
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     for (sub_chn = 0; sub_chn < MAX_SENSORS; sub_chn++) if (GLOBALPARS(sensor_port, G_SUBCHANNELS) & (1 << sub_chn)){
         poffs = VIGNET_SUBCHN_OFFSET * sub_chn;
@@ -2739,7 +2765,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr = X393_LENS_AX;
             lens_corr.ax = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_VIGNET_AY + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2747,7 +2773,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr = X393_LENS_AY;
             lens_corr.ay = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_VIGNET_C + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2755,7 +2781,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr = X393_LENS_C;
             lens_corr.c = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
 
         par_index = P_VIGNET_BX + poffs;
@@ -2764,7 +2790,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr = X393_LENS_BX;
             lens_corr.bx = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_VIGNET_BY + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2772,7 +2798,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr = X393_LENS_BY;
             lens_corr.by = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_SCALE_ZERO_IN + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2780,7 +2806,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_FAT0_IN;
             lens_corr.fatzero_in = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_SCALE_ZERO_OUT + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2788,7 +2814,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_FAT0_OUT;
             lens_corr.fatzero_out = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_VIGNET_SHL + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2796,7 +2822,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_POST_SCALE;
             lens_corr.post_scale = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
 
         par_index = P_DGAINR + poffs;
@@ -2805,7 +2831,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_SCALE0;
             lens_corr.scale =      thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
 
         par_index = P_DGAING + poffs;
@@ -2814,7 +2840,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_SCALE1;
             lens_corr.scale =      thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_DGAINGB + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2822,7 +2848,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_SCALE2;
             lens_corr.scale =      thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_DGAINB + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2830,63 +2856,63 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_SCALE3;
             lens_corr.scale =      thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            MDF3(printk(" X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n", sensor_port, frame16, lens_corr.d32));
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
     }
 
     return 0;
 
 #else
-    MDF3(printk(" frame16=%d\n",frame16));
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
     if (FRAMEPAR_MODIFIED(P_VIGNET_AX)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_AX(thispars->pars[P_VIGNET_AX]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_AX(thispars->pars[P_VIGNET_AX])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_AX(thispars->pars[P_VIGNET_AX]));
     }
     if (FRAMEPAR_MODIFIED(P_VIGNET_AY)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_AY(thispars->pars[P_VIGNET_AY]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_AY(thispars->pars[P_VIGNET_AY])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_AY(thispars->pars[P_VIGNET_AY]));
     }
     if (FRAMEPAR_MODIFIED(P_VIGNET_C)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_C(thispars->pars[P_VIGNET_C]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_C(thispars->pars[P_VIGNET_C])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_C(thispars->pars[P_VIGNET_C]));
     }
     if (FRAMEPAR_MODIFIED(P_VIGNET_BX)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_BX(thispars->pars[P_VIGNET_BX]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_BX(thispars->pars[P_VIGNET_BX])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_BX(thispars->pars[P_VIGNET_BX]));
     }
     if (FRAMEPAR_MODIFIED(P_VIGNET_BY)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_BY(thispars->pars[P_VIGNET_BY]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_BY(thispars->pars[P_VIGNET_BY])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_BY(thispars->pars[P_VIGNET_BY]));
     }
     if (FRAMEPAR_MODIFIED(P_SCALE_ZERO_IN)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_FATZERO_IN(thispars->pars[P_SCALE_ZERO_IN]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_FATZERO_IN(thispars->pars[P_SCALE_ZERO_IN])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_FATZERO_IN(thispars->pars[P_SCALE_ZERO_IN]));
     }
     if (FRAMEPAR_MODIFIED(P_SCALE_ZERO_OUT)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_FATZERO_OUT(thispars->pars[P_SCALE_ZERO_OUT]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_FATZERO_OUT(thispars->pars[P_SCALE_ZERO_OUT])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_FATZERO_OUT(thispars->pars[P_SCALE_ZERO_OUT]));
     }
     if (FRAMEPAR_MODIFIED(P_VIGNET_SHL)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_POSTSCALE(thispars->pars[P_VIGNET_SHL]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_POSTSCALE(thispars->pars[P_VIGNET_SHL])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_POSTSCALE(thispars->pars[P_VIGNET_SHL]));
     }
     if (FRAMEPAR_MODIFIED(P_DGAINR)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_SCALES(0, thispars->pars[P_DGAINR]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(0,thispars->pars[P_DGAINR])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(0,thispars->pars[P_DGAINR]));
     }
     if (FRAMEPAR_MODIFIED(P_DGAING)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_SCALES(1, thispars->pars[P_DGAING]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(1,thispars->pars[P_DGAING])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(1,thispars->pars[P_DGAING]));
     }
     if (FRAMEPAR_MODIFIED(P_DGAINGB)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_SCALES(2, thispars->pars[P_DGAINGB]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(2,thispars->pars[P_DGAINGB])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(2,thispars->pars[P_DGAINGB]));
     }
     if (FRAMEPAR_MODIFIED(P_DGAINB)) {
         X3X3_SEQ_SEND1(fpga_addr,  X313_WA_LENSCORR, X313_LENS_SCALES(3, thispars->pars[P_DGAINB]));
-        MDF3(printk("  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(3,thispars->pars[P_DGAINB])));
+        dev_dbg(g_dev_ptr,"{%d}   X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n",sensor_port, fpga_addr,  (int) X313_WA_LENSCORR, (int)X313_LENS_SCALES(3,thispars->pars[P_DGAINB]));
     }
     return 0;
 #endif

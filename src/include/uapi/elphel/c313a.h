@@ -509,11 +509,13 @@
 #define P_EXPOS          141 ///< P_RW_EXPOS  1   exposure time      - now in microseconds?
 #define P_VEXPOS         142 ///< video exposure (if 0 - use P_RW_EXPOS in ms)
 #define P_FOCUS_VALUE    143 ///< (readonly) - sum of all blocks focus values inside focus WOI
+#define P_COMPMOD_BYRSH  144 ///< Bayer shift in compressor
+#define P_PORTRAIT       145 ///< Quantization coefficients optimized for vertical scan lines
 
-/// 143 - last to copy ============
+// 145 (was 143 in NC353) - last to copy ============
 
-#define P_COMPMOD_BYRSH  160 ///< Bayer shift in compressor
-#define P_PORTRAIT       161 ///< Quantization coefficients optimized for vertical scan lines
+//#define P_COMPMOD_BYRSH  160 ///< Bayer shift in compressor
+//#define P_PORTRAIT       161 ///< Quantization coefficients optimized for vertical scan lines
 
 
 //TODO: rearrange, combine with other AUTOEXP
@@ -666,9 +668,9 @@
 #define P_MAX_GPAR      (NUM_GPAR - 1) ///< maximal # of global parameter - TODO: change name to NUM_GPAR and make it 2048
 
 #define PARS_SAVE_FROM   128 ///< PARS_SAVE_NUM parameters starting from PARS_SAVE_FROM from "this" frame will be saved in circular buffer, PASTPARS_SAVE_ENTRIES entries
-#define PARS_SAVE_COPY    16 ///< number of parameters copied from future (framepars) to the past (pastpars)
+#define PARS_SAVE_COPY    18 ///< number of parameters copied from future (framepars) to the past (pastpars)
 #define PARS_SAVE_NUM     32 ///< total size of previous parameter save page
-#define PP_PROFILE_START  16 ///< index of the first profile timestamp in pastpars
+#define PP_PROFILE_START  PARS_SAVE_COPY ///< index of the first profile timestamp in pastpars
 #define P_PROFILE        (PARS_SAVE_FROM + PP_PROFILE_START) ///< index to access profiles as pastpars (i.e. from PHP ELPHEL_PROFILE1,PHP ELPHEL_PROFILE2)
 
 #define FRAMEPAR_GLOBALS   0x01000  ///< start of global (not frame-related) parameters
@@ -758,6 +760,10 @@
 //#define G_HIST_Y_FRAME    (FRAMEPAR_GLOBALS + 57) // /< last frame for which Y histogram was calculated
 //#define G_HIST_C_FRAME    (FRAMEPAR_GLOBALS + 58) // /< last frame for which C histograms were calculated
 #define G_SUBCHANNELS     (FRAMEPAR_GLOBALS + 56) ///< subchannels used on this sensor port (bitmask)
+
+#define G_COMPRESSOR_FRAME (FRAMEPAR_GLOBALS + 57) ///< last compressed frame number
+//Gap 2 DWORDS
+
 #define G_SKIP_DIFF_FRAME (FRAMEPAR_GLOBALS + 59) ///< number of frames with different size to tolerate before producing POLLHUP in poll(circbuf)
 #define G_FTP_NEXT_TIME   (FRAMEPAR_GLOBALS + 60) ///< time of the next FTP upload (seconds from epoch)
 
@@ -925,40 +931,40 @@ struct framepars_t {
  *  TODO: Try to make room for some new ones.
  */
 enum onchange_functions_t {
-  onchange_recalcseq=0,    ///< recalculate sequences/latencies, according to P_SKIP, P_TRIG
-  onchange_detectsensor,   ///< detect sensor type, sets sensor structure (capabilities), function pointers
-  onchange_sensorphase,    ///<  program sensor clock/phase (needs to know maximal clock frequency)
-  onchange_i2c,            ///<  program i2c
-  onchange_sensorregs,     ///<  write sensor registers (only changed from outside the driver as they may have different latencies)?
-  onchange_initsensor,     ///<  resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers (stops/re-enables hardware i2c)
-  onchange_afterinit,      ///<  restore image size, decimation,... after sensor reset or set them according to sensor capabilities if none were specified
-  onchange_multisens,      ///<  chnages related to multiplexed sensors
-  onchange_window,         ///<  program sensor WOI and mirroring (flipping)
-  onchange_window_safe,    ///<  program sensor WOI and mirroring (flipping) - lower latency, no bad frames
+  onchange_recalcseq=0,    ///<  0 recalculate sequences/latencies, according to P_SKIP, P_TRIG
+  onchange_detectsensor,   ///<  1 detect sensor type, sets sensor structure (capabilities), function pointers
+  onchange_sensorphase,    ///<  2  program sensor clock/phase (needs to know maximal clock frequency)
+  onchange_i2c,            ///<  3  program i2c
+  onchange_sensorregs,     ///<  4  write sensor registers (only changed from outside the driver as they may have different latencies)?
+  onchange_initsensor,     ///<  5  resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers (stops/re-enables hardware i2c)
+  onchange_afterinit,      ///<  6  restore image size, decimation,... after sensor reset or set them according to sensor capabilities if none were specified
+  onchange_multisens,      ///<  7  chnages related to multiplexed sensors
+  onchange_window,         ///<  8  program sensor WOI and mirroring (flipping)
+  onchange_window_safe,    ///<  9  program sensor WOI and mirroring (flipping) - lower latency, no bad frames
 //  onchange_exposure,       ///<  program exposure
-  onchange_gains,          ///<  program analog gains
-  onchange_triggermode,    ///<  program sensor trigger mode
-  onchange_sensorin,       ///<  program sensor input in FPGA (Bayer, 8/16 bits, ??)
-  onchange_sensorstop,     ///<  Stop acquisition from the sensor to the FPGA (start has latency of 2)
-  onchange_sensorrun,      ///<  Start/single acquisition from the sensor to the FPGA (stop has latency of 1)
-  onchange_gamma,          ///<  program gamma table
-  onchange_hist,           ///<  program histogram window
-  onchange_aexp,           ///<  program autoexposure mode
-  onchange_quality,        ///<  program quantization table(s)
-  onchange_memsensor,      ///<  program memory channels 0 (sensor->memory) and 1 (memory->FPN)
-  onchange_memcompressor,  ///<  program memory channel 2 (memory->compressor)
-  onchange_limitfps,       ///<  check compressor will keep up, limit sensor FPS if needed
-  onchange_exposure,       ///<  program exposure - NOTE: was just after onchange_window
+  onchange_gains,          ///< 10 program analog gains
+  onchange_triggermode,    ///< 11 program sensor trigger mode
+  onchange_sensorin,       ///< 12 program sensor input in FPGA (Bayer, 8/16 bits, ??)
+  onchange_sensorstop,     ///< 13 Stop acquisition from the sensor to the FPGA (start has latency of 2)
+  onchange_sensorrun,      ///< 14 Start/single acquisition from the sensor to the FPGA (stop has latency of 1)
+  onchange_gamma,          ///< 15 program gamma table
+  onchange_hist,           ///< 16 program histogram window
+  onchange_aexp,           ///< 17 program autoexposure mode
+  onchange_quality,        ///< 18 program quantization table(s)
+  onchange_memsensor,      ///< 19 program memory channels 0 (sensor->memory) and 1 (memory->FPN)
+  onchange_memcompressor,  ///< 20 program memory channel 2 (memory->compressor)
+  onchange_limitfps,       ///< 21 check compressor will keep up, limit sensor FPS if needed
+  onchange_exposure,       ///< 22 program exposure - NOTE: was just after onchange_window
 
-  onchange_compmode,       ///<  program compressor modes (excluding start/stop/single)
-  onchange_focusmode,      ///<  program focus modes
-  onchange_trigseq,        ///<  program sequencer (int/ext)
-  onchange_irq,            ///<  program smart IRQ mode (needs to be on)
-  onchange_comprestart,    ///<  restart after changing geometry  (recognizes ASAP and programs memory channel 2 then)
-  onchange_compstop,       ///<  stop compressor when changing geometry
-  onchange_compctl,        ///<  only start/stop/single (after explicitly changed, not when geometry was changed)
-  onchange_gammaload,      ///<  write gamma tables (should be prepared). Maybe - just last byte, to activate?
-  onchange_prescal         ///<  change scales for per-color digital gains, apply vignetting correction
+  onchange_compmode,       ///< 23 program compressor modes (excluding start/stop/single)
+  onchange_focusmode,      ///< 24 program focus modes
+  onchange_trigseq,        ///< 25 program sequencer (int/ext)
+  onchange_irq,            ///< 26 program smart IRQ mode (needs to be on)
+  onchange_comprestart,    ///< 27 restart after changing geometry  (recognizes ASAP and programs memory channel 2 then)
+  onchange_compstop,       ///< 28 stop compressor when changing geometry
+  onchange_compctl,        ///< 29 only start/stop/single (after explicitly changed, not when geometry was changed)
+  onchange_gammaload,      ///< 30 write gamma tables (should be prepared). Maybe - just last byte, to activate?
+  onchange_prescal         ///< 31 change scales for per-color digital gains, apply vignetting correction
 //  onchange_sensorregs      /// write sensor registers (only changed from outside the driver as they may have different latencies)?
 // add others  - none left, all 32 bits used
 };
@@ -1325,6 +1331,7 @@ struct p_names_t {
           G_NAME_ENTRY(HIST_Y_FRAME), \
           G_NAME_ENTRY(HIST_C_FRAME), \
           G_NAME_ENTRY(SUBCHANNELS), \
+          G_NAME_ENTRY(COMPRESSOR_FRAME), \
           G_NAME_ENTRY(SKIP_DIFF_FRAME), \
           G_NAME_ENTRY(FTP_NEXT_TIME), \
           G_NAME_ENTRY(DAEMON_ERR), \

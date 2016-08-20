@@ -6,7 +6,9 @@
 #define _SENSOR_COMMON_H
 
 //extern struct sensor_t sensor; // current sensor (will be copied to by sensor driver), made external for the cc353.c to read/write i2c
-extern struct sensorproc_t * sensorproc;
+extern struct sensorproc_t * asensorproc;
+//extern struct sensorproc_t * sensorproc;
+
 /// IRQ-safe "nice" FPGA table write and histogram read functions - they split the data in chunks of fixed size,
 /// disable IRQ, transfer a chunk, then reenable interrupt before proceedg to the next chunk
 #define FPGA_TABLE_CHUNK 64 // up to 64 words to send to the table/from histogram on a single IRQ-off transfer
@@ -24,6 +26,8 @@ extern struct sensorproc_t * sensorproc;
 //int  camSeqGetJPEG_wp(void);
 //int  camSeqGetJPEG_rp(void);
 //void camSeqSetJPEG_rp(int p);
+u32 get_compressor_frame(unsigned int chn);
+int getHardFrameNumber(int sensor_port, int use_compressor);
 int camseq_get_jpeg_wp(unsigned int chn);
 int camseq_get_jpeg_rp(unsigned int chn);
 void camseq_set_jpeg_rp(unsigned int chn, int ptr);
