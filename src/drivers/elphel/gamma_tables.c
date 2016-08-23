@@ -945,7 +945,7 @@ int gammas_mmap (struct file *file, struct vm_area_struct *vma) {
                            ((unsigned long) virt_to_phys(gammas_p)) >> PAGE_SHIFT, // Should be page-aligned
                            vma->vm_end-vma->vm_start,
                            vma->vm_page_prot);
-    dev_dbg(g_dev_ptr,"remap_pfn_range returned=%x\r\n",result);
+    dev_dbg(g_dev_ptr,"remap_pfn_range returned=%x\n",result);
     if (result) return -EAGAIN;
     return 0;
     default: return -EINVAL;
