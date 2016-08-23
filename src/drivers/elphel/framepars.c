@@ -66,14 +66,18 @@
 #include "x393_macro.h"
 #include "x393.h"
 #include "sensor_i2c.h" // read_xi2c_frame()
+#include "klogger_393.h"
+
 /**
  * \def MDF1(x) optional debug output
  */
 
 #undef LOCK_BH_PROCESSPARS
 
-#undef LOCK_BH_FRAMEPARS
+//#undef LOCK_BH_FRAMEPARS
 #define LOCK_BH_FRAMEPARS
+
+#define USE_KLOG393
 
 
 
@@ -332,7 +336,8 @@ void initFramePars(int sensor_port)
 	initMultiPars(sensor_port);                                                                                // initialize structures for individual per-sensor parameters. Now only works for sensor registers using G_MULTI_REGSM. Should be called after/during sensor detection
 	frameParsInitialized[sensor_port] = 1;
 	UNLOCK_IBH(framepars_locks[sensor_port]);
-    dev_dbg(g_devfp_ptr,"%s port %d: DONE, frameParsInitialized[%d]=%ld\n",__func__, sensor_port, sensor_port, frameParsInitialized[sensor_port]);
+    dev_dbg(g_devfp_ptr,"%s port %d: DONE, frameParsInitialized[%d]=%d\n",
+            __func__, sensor_port, sensor_port, frameParsInitialized[sensor_port]);
 }
 
 /**
@@ -806,35 +811,75 @@ inline void _processParsSeq(int sensor_port,                   ///< sensor port 
 //#define P_CALLASAP       107 // bitmask - what functions work only in the current frame (ASAP) mode
 void _processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16, int maxahead)
 {
+#ifdef USE_KLOG393
+    char klog393_str [256];
+#endif
     frame16 &= PARS_FRAMES_MASK;
-    if (debug_flags)
+    if (debug_flags) {
         dev_dbg(g_devfp_ptr,"port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
+#ifdef USE_KLOG393
+        sprintf(klog393_str,
+                "%s:%d:%s: "
+                "port= %d,  frame16=%d, maxahead=%d\n",
+                __FILE__, __LINE__, __FUNCTION__,
+                sensor_port, frame16, maxahead);
+        klog393_ts(klog393_str);
+#endif
+    }
     dev_dbg(g_devfp_ptr,"port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     if (!sensorproc){
         dev_err(g_devfp_ptr,"port=%d frame16=%d sensorproc==NULL !!!! \n", sensor_port,  frame16);
         return;
     }
-//    int spin_trylock(spinlock_t *lock);
-// first - do all ASAP tasks (they should not be done ahead of the corresponding interrupt!)
-//   dev_dbg(g_devfp_ptr,"%s before first _processParsASAP\n",__func__);
+    //    int spin_trylock(spinlock_t *lock);
+    // first - do all ASAP tasks (they should not be done ahead of the corresponding interrupt!)
+    //   dev_dbg(g_devfp_ptr,"%s before first _processParsASAP\n",__func__);
     _processParsASAP(sensor_port, sensorproc, frame16); // NC393: never gets here ? Only after _processParsSeq?
-    if (debug_flags)
+    if (debug_flags) {
+#ifdef USE_KLOG393
+        sprintf(klog393_str,
+                "%s:%d:%s: "
+                "port= %d (after first _processParsASAP),  frame16=%d, maxahead=%d\n",
+                __FILE__, __LINE__, __FUNCTION__,
+                sensor_port, frame16, maxahead);
+        klog393_ts(klog393_str);
+#endif
         dev_dbg(g_devfp_ptr,"port= %d (after first _processParsASAP),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
+    }
     dev_dbg(g_devfp_ptr,"port= %d (after first _processParsASAP),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
 
-// now - the rest commands that use FPGA queues for the i2c/sequencer commands, executed at frame syncs
-// for jobahead =0 it is still possible to have some functions in ASAP mode with non-zero latency
-//   dev_dbg(g_devfp_ptr,"%s before _processParsSeq\n",__func__);
+    // now - the rest commands that use FPGA queues for the i2c/sequencer commands, executed at frame syncs
+    // for jobahead =0 it is still possible to have some functions in ASAP mode with non-zero latency
+    //   dev_dbg(g_devfp_ptr,"%s before _processParsSeq\n",__func__);
     _processParsSeq(sensor_port, sensorproc, frame16, maxahead);
-    if (debug_flags)
+    if (debug_flags) {
+#ifdef USE_KLOG393
+        sprintf(klog393_str,
+                "%s:%d:%s: "
+                "port= %d (after _processParsSeq),  frame16=%d, maxahead=%d\n",
+                __FILE__, __LINE__, __FUNCTION__,
+                sensor_port, frame16, maxahead);
+        klog393_ts(klog393_str);
+#endif
         dev_dbg(g_devfp_ptr,"port= %d (after _processParsSeq),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
+    }
     dev_dbg(g_devfp_ptr,"port= %d (after _processParsSeq),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
 
-// re-test ASAP tasks - they might appear as a result of other commands executed
-//   dev_dbg(g_devfp_ptr,"%s before second _processParsASAP\n",__func__);
+    // re-test ASAP tasks - they might appear as a result of other commands executed
+    //   dev_dbg(g_devfp_ptr,"%s before second _processParsASAP\n",__func__);
     _processParsASAP(sensor_port, sensorproc, frame16);
-    if (debug_flags)
+    if (debug_flags) {
+#ifdef USE_KLOG393
+        sprintf(klog393_str,
+                "%s:%d:%s: "
+                "port= %d (after second _processParsASAP),  frame16=%d, maxahead=%d\n",
+                __FILE__, __LINE__, __FUNCTION__,
+                sensor_port, frame16, maxahead);
+        klog393_ts(klog393_str);
+#endif
+
         dev_dbg(g_devfp_ptr,"port= %d (after second _processParsASAP),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
+    }
     dev_dbg(g_devfp_ptr,"port= %d (after second _processParsASAP),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     if (debug_flags)    debug_flags--;
 
@@ -870,8 +915,23 @@ void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16,
 #else
 void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16, int maxahead)
 {
+#ifdef USE_KLOG393
+    char klog393_str [256];
+#endif
     FLAGS_IBH
     frame16 &= PARS_FRAMES_MASK;
+    if (debug_flags) {
+#ifdef USE_KLOG393
+        sprintf(klog393_str,
+                "%s:%d:%s: "
+                "==from tasklet: port= %d,  frame16=%d, maxahead=%d\n",
+                __FILE__, __LINE__, __FUNCTION__,
+                sensor_port, frame16, maxahead);
+        klog393_ts(klog393_str);
+#endif
+        dev_dbg(g_devfp_ptr,"==from tasklet: port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
+    }
+
     dev_dbg(g_devfp_ptr,"port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     if (!sensorproc){
         dev_err(g_devfp_ptr,"%s port=%d frame16=%d sensorproc==NULL !!!! \n",  __func__, sensor_port,  frame16);
@@ -880,6 +940,17 @@ void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16,
     LOCK_IBH(framepars_locks[sensor_port]);
     _processPars(sensor_port, sensorproc, frame16, maxahead);
     UNLOCK_IBH(framepars_locks[sensor_port]);
+    if (debug_flags) {
+#ifdef USE_KLOG393
+        sprintf(klog393_str,
+                "%s:%d:%s: "
+                "==Done from tasklet: port= %d,  frame16=%d, maxahead=%d\n",
+                __FILE__, __LINE__, __FUNCTION__,
+                sensor_port, frame16, maxahead);
+        klog393_ts(klog393_str);
+#endif
+        dev_dbg(g_devfp_ptr,"== Done from tasklet: port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
+    }
 }
 #endif
 
@@ -961,8 +1032,19 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 	int findex_this, findex_prev, findex_future, frame16;
-    dev_dbg(g_devfp_ptr,"port= %d, frameno=0x%lx, findex_this=%ld (0x%lx) maxLatency=%d, numPars=%d, frameParsInitialized[%d]=%d\n",
+#ifdef USE_KLOG393
+	char klog393_str [256];
+	sprintf(klog393_str,
+	        "%s:%d:%s: "
+	        "frameno=0x%lx, findex_this=%ld (0x%lx) maxLatency=%d, numPars=%d, frameParsInitialized[%d]=%d\n",
+	        __FILE__, __LINE__, __FUNCTION__,
             sensor_port, frameno, findex_this, thisFrameNumber(sensor_port), maxLatency, numPars, sensor_port, frameParsInitialized[sensor_port]);
+	klog393_ts(klog393_str);
+#endif
+    dev_dbg(g_devfp_ptr,"port= %d, frameno=0x%lx, findex_this=%d (0x%lx) maxLatency=%d, numPars=%d, frameParsInitialized[%d]=%d\n",
+            sensor_port, frameno, findex_this, thisFrameNumber(sensor_port), maxLatency, numPars, sensor_port, frameParsInitialized[sensor_port]);
+    //int klog393_ts(const char * str);
+
 	if (!frameParsInitialized[sensor_port]) {
 		initSequencers(sensor_port); // Will call  initFramePars(); and initialize functions
 	}
@@ -1056,13 +1138,30 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 // Try to process parameters immediately after written. If 0, only non-ASAP will be processed to prevent
 // effects of uncertainty of when was it called relative to frame sync
 // Changed to all (don't care about uncertainty - they will trigger only if it is too late or during sensor detection/initialization)
-	debug_flags = 5; // enable debug print several times
+	debug_flags = 20; // enable debug print several times
 	if (!(get_globalParam(sensor_port, G_TASKLET_CTL) & (1 << TASKLET_CTL_NOSAME))) {
 //    _processParsSeq (sensorproc, thisFrameNumber & PARS_FRAMES_MASK, 0); //maxahead=0, the rest will be processed after frame sync, from the tasklet
 		dev_dbg(g_devfp_ptr,"G_TASKLET_CTL -> 0x%x (port = %d )\n", (int) get_globalParam(sensor_port, G_TASKLET_CTL),sensor_port);
 //		processPars(sensor_port, &asensorproc[sensor_port], thisFrameNumber(sensor_port) & PARS_FRAMES_MASK, 0); //maxahead=0, the rest will be processed after frame sync, from the tasklet
 		// Already having lock, call inner function. When called from tasklet, it will have to acquire lock
+#ifdef USE_KLOG393
+    sprintf(klog393_str,
+            "%s:%d:%s: "
+            "G_TASKLET_CTL -> 0x%x (port = %d )\n",
+            __FILE__, __LINE__, __FUNCTION__,
+            (int) get_globalParam(sensor_port, G_TASKLET_CTL),sensor_port);
+    klog393_ts(klog393_str);
+#endif
+
         _processPars(sensor_port, &asensorproc[sensor_port], thisFrameNumber(sensor_port) & PARS_FRAMES_MASK, 0); //maxahead=0, the rest will be processed after frame sync, from the tasklet
+#ifdef USE_KLOG393
+    sprintf(klog393_str,
+            "%s:%d:%s: "
+            "kthread _processPars(%d, .., 0x%x) DONE\n",
+            __FILE__, __LINE__, __FUNCTION__,
+            sensor_port, thisFrameNumber(sensor_port));
+    klog393_ts(klog393_str);
+#endif
         dev_dbg(g_devfp_ptr,"kthread _processPars(%d, .., 0x%x) DONE\n",sensor_port, thisFrameNumber(sensor_port));
 	} else {
         dev_dbg(g_devfp_ptr,"kthread: NOT calling _processPars(%d, .., 0x%lx) DONE\n",sensor_port, thisFrameNumber(sensor_port));

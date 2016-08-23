@@ -4579,7 +4579,7 @@ static void si5338_init_of(struct i2c_client *client)
 				return;
 			}
 			init_type=1;
-			/* falling to initialization */
+			// no break : falling to initialization */
 		case 1:
 			pre_init(client,1); // clear outputs and muxes - they will be programmed later
 			break;

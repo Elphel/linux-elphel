@@ -59,7 +59,7 @@ struct x393_i2c_device_list {
     x393_i2c_device_t i2c_dev;
     struct list_head  list;
 };
-const char of_prop_name[] = "elphel393-sensor-i2c,i2c_devices";
+const char sensor_i2c_of_prop_name[] = "elphel393-sensor-i2c,i2c_devices";
 const char group_name[] =   "i2c_classes";
 const int max_buf_len =     4096-256; ///< stop output when only 256 bytes are left in the caller's buffer
 const int max_i2c_classes = 256;
@@ -190,7 +190,7 @@ int i2c_page_alloc(int chn)
 #else
     spin_unlock_irqrestore(sensori2c_locks[chn],flags);
 #endif
-    dev_dbg(sdev, "Allocated page= %d for port %d, is RESET(chn=%d, group= 0x%08x bits = 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x )\n",
+    dev_dbg(sdev, "Allocated page= %d for port %d, is RESET(group= 0x%08x bits = 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x )\n",
             (g << 5) + b, chn,free_i2c_groups[chn],
             free_i2c_pages[chn][0],free_i2c_pages[chn][1],free_i2c_pages[chn][2],free_i2c_pages[chn][3],
             free_i2c_pages[chn][4],free_i2c_pages[chn][5],free_i2c_pages[chn][6],free_i2c_pages[chn][7]);
@@ -1592,9 +1592,9 @@ static void elphel393_sensor_i2c_init_of(struct platform_device *pdev) ///< Plat
     struct device *dev =&pdev->dev;
     if (node) {
         /*TODO: Configure some i2c devices here (slaves, formats, speeds) to be used by names*/
-        num_devs = of_property_count_strings(node,of_prop_name);
+        num_devs = of_property_count_strings(node,sensor_i2c_of_prop_name);
         for (nd=0; nd <num_devs; nd++){
-            if (of_property_read_string_index(node, of_prop_name, nd, &config_string)) {
+            if (of_property_read_string_index(node, sensor_i2c_of_prop_name, nd, &config_string)) {
                 pr_err("%s: No data for selected i2c device\n", __func__);
                 BUG();
             }

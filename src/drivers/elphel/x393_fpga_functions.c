@@ -48,6 +48,11 @@ sec_usec_t * get_fpga_rtc(sec_usec_t * ts) ///< Pointer to a sec/usec structure 
 //    x393_rtc_sec_t     sec;
     int i;
     if (!ts) return NULL;
+    if (!is_fpga_programmed()) {
+        ts->sec = 0;
+        ts->usec = 0;
+        return ts;
+    }
     spin_lock_bh(&fpga_time_lock);
     stat = x393_rtc_status();
     stat_ctrl.mode = 1;
@@ -72,11 +77,14 @@ void set_fpga_rtc (sec_usec_t ts) ///< timestamp providing seconds and microseco
     x393_rtc_sec_t     sec;
     usec.usec = ts.usec;
     sec.sec =   ts.sec;
+    if (!is_fpga_programmed())
+        return;
     spin_lock_bh(&fpga_time_lock);
     set_x393_rtc_usec(usec);
     set_x393_rtc_sec_set(sec);  // And apply
     spin_unlock_bh(&fpga_time_lock);
 }
+
 /** Check if bitstream is loaded */
 int is_fpga_programmed(void) ///< @return 0 - bitstream is NOT loaded, 1 - bitsteam IS loaded, -ENOMEM - error in ioremap
 {

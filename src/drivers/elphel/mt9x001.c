@@ -2197,7 +2197,7 @@ int mt9x001_init(struct platform_device *pdev)
 {
     int res;
     struct device *dev = &pdev->dev;
-    const struct of_device_id *match;
+//    const struct of_device_id *match;
     int sensor_port;
 
     for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {

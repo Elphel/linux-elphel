@@ -34,3 +34,4 @@ obj-$(CONFIG_ELPHEL393)           += cxi2c.o
 obj-$(CONFIG_ELPHEL393)           += x393_videomem.o
 obj-$(CONFIG_ELPHEL393)           += detect_sensors.o
 obj-$(CONFIG_ELPHEL393)           += x393_fpga_functions.o
+obj-$(CONFIG_ELPHEL393)           += klogger_393.o
