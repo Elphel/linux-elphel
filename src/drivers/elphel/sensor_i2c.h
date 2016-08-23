@@ -34,7 +34,7 @@ typedef struct{
 	      u8                           data_bytes;    ///< Number of data bytes (1..10), for writes it includes register address bytes
 	      int                          scl_khz;       ///< maximal SCL frequency in KHz (currently limited by 200KHz slowest)
 } x393_i2c_device_t;
-
+void i2c_page_alloc_init( int chn); // reset page allocation for selscted channel
 int i2c_stop_run_reset(int chn, int cmd);
 int i2c_drive_mode    (int chn, int sda_drive_high, int sda_release);
 int read_xi2c_frame   (int chn);

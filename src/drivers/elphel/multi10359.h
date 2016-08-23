@@ -131,11 +131,3 @@ each dibit:
 //#define I2C359_CLK_NUMBER         4 // system clock number for the 10359A on-board clock generator
 void multi10359_set_device(struct device *dev);
 int multisensor_pgm_detectsensor   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
-//int legacy_i2c  (int ports);
-/*
-  struct frameparspair_t  pars_to_update[8];
-  int nupdate=0;
-...
-   if (nupdate)  setFramePars(thispars, nupdate, pars_to_update);  /// save changes to sensor register shadows
-
-*/

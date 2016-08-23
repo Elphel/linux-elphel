@@ -344,6 +344,9 @@
 #include <asm/delay.h>
 #include <asm/uaccess.h>
 #include <uapi/elphel/c313a.h>
+#include <uapi/elphel/x393_devices.h> // For sysfs
+#include <linux/platform_device.h> // For sysfs
+
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
 //#include "x3x3.h" // detect sensor
 //#include "cci2c.h"
@@ -388,9 +391,9 @@
 #endif
 
 static struct device *g_dev_ptr=NULL; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
-void mt9x001_set_device(struct device *dev)
+void mt9x001_set_device(struct device *dev) // do nothing, now it has it's own device
 {
-    g_dev_ptr = dev;
+    //g_dev_ptr = dev;
 }
 
 
@@ -547,6 +550,14 @@ struct sensor_t mt9p001={
         .sensorDelay = 2460,     ///< Dealy from sensor clock at FPGA output to pixel data transition (FPGA input), short cable (ps)
         .needReset=    SENSOR_NEED_RESET_CLK | SENSOR_NEED_RESET_PHASE   ///< bit 0 - need reset after clock frequency change, bit 1 - need reset after phase change
 };
+
+// Sysfs Interface for debugging the driver
+static int first_sensor_sa7 [SENSOR_PORTS] = {0,0,0,0};
+static unsigned int debug_delays = 0x0; // 0x6464; // udelay() values for mrst (low 8 - mrst on), [15:8] - after mrst
+static unsigned int debug_modes =  3;
+static unsigned short sensor_reg_copy[SENSOR_PORTS][256]; ///< Read all 256 sensor registers here - during initialization and on demand
+                                                 ///< Later may increase to include multiple subchannels on 10359
+
 
 // a place to add some general purpose register writes to sensors during init
 
@@ -885,7 +896,6 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     int nupdate=0;
     int i,color;
     int regval, regnum, mreg, j;
-    dev_dbg(g_dev_ptr,"Resetting MT9X001 sensor\n");
     // reset sensor by applying MRST (low):
 #ifdef NC353
     CCAM_MRST_ON;
@@ -918,24 +928,31 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     }
 #else
 //    CCAM_MRST_ON;
-    sensio_ctl.mrst = 0;
-    sensio_ctl.mrst_set = 1;
-    x393_sensio_ctrl(sensio_ctl,sensor_port);
-    udelay (100);
-//    CCAM_MRST_OFF;
-    sensio_ctl.mrst = 1;
-    x393_sensio_ctrl(sensio_ctl,sensor_port);
-    sensio_ctl.d32=0;
+    if (debug_delays & 0xff) {
+        dev_dbg(g_dev_ptr,"Resetting MT9X001 sensor, port=%d\n",sensor_port);
+        sensio_ctl.mrst = 0;
+        sensio_ctl.mrst_set = 1;
+        x393_sensio_ctrl(sensio_ctl,sensor_port);
+        udelay (debug_delays & 0xff) ; // 100);
+        //    CCAM_MRST_OFF;
+        sensio_ctl.mrst = 1;
+        x393_sensio_ctrl(sensio_ctl,sensor_port);
+        sensio_ctl.d32=0;
+    }
     // NC393: both sequencers started in pgm_detectsensor
-    udelay (100);
-    dev_dbg(g_dev_ptr,"Reading sensor registers to the shadows:\n");
+    if (debug_delays & 0xff00) {
+        udelay ((debug_delays >> 8) & 0xff); // 100);
+    }
     first_sensor_i2c=sensor->i2c_addr;
     if (GLOBALPARS(sensor_port, G_SENS_AVAIL)) {
         first_sensor_i2c+= I2C359_INC * ((GLOBALPARS(sensor_port, G_SENS_AVAIL) & 1)?1:((GLOBALPARS(sensor_port, G_SENS_AVAIL) & 2)?2:3));
     }
+    dev_dbg(g_dev_ptr,"Reading sensor (port=%d) registers to the shadows, sa7=0x%x:\n",sensor_port,first_sensor_i2c);
+    first_sensor_sa7[sensor_port] = first_sensor_i2c;
     for (i=0; i<256; i++) { // read all registers, one at a time (slower than in 353)
         X3X3_I2C_RCV2(sensor_port, first_sensor_i2c, i, &(i2c_read_data_dw[i]));
     }
+    dev_dbg(g_dev_ptr,"Read 256 registers (port=%d) ID=0x%x:\n",sensor_port,i2c_read_data_dw[0]);
     for (i=0; i<256; i++) { // possible to modify register range to save (that is why nupdate is separate from i)
         regval=i2c_read_data_dw[i];
         regnum=P_SENSOR_REGS+i;
@@ -944,6 +961,10 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
             SETFRAMEPARS_SET(mreg+j,regval);
         }
     }
+    for (i=0;i<256;i++) {
+        sensor_reg_copy[sensor_port][i] = i2c_read_data_dw[i];
+    }
+
 #endif
     if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
     dev_dbg(g_dev_ptr,"Initializing MT9X001 registers with default values:\n");
@@ -2070,10 +2091,147 @@ int mt9x001_pgm_sensorregs     (int sensor_port,               ///< sensor port 
     return 0;
 } 
 
-//#define MAX_SENSORS 3 // maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
-//#define G_MULTI_NUM     (FRAMEPAR_GLOBALS + 34) // Actual number of parameters that are individual for different channels (limited by P_MULTI_NUMREGS)
-//#define P_MULTI_NUMREGS  32  // up to 32 sensor register may have individual values
-//#define P_MULTI_REGS          (P_SENSOR_REGS + P_SENSOR_NUMREGS) // 32-words aligned
-//I2C359_INC
-//#define FRAMEPAR_MODIFIED(x) (thispars->mod[(x) >> 5] & (1<<((x) & 0x1f)))
-// #define MULTIRVRSREG(x) (multiSensRvrsIndex[x])
+//static short sensor_reg_copy[SENSOR_PORTS][256]; // Read all 256 sensor registers here - during initialization and on demand
+//                                                 // Later may increase to include multiple subchannels on 10359
+
+// SysFS interface to mt9x001
+#define SYSFS_PERMISSIONS           0644 /* default permissions for sysfs files */
+#define SYSFS_READONLY              0444
+#define SYSFS_WRITEONLY             0222
+/** Sysfs helper function - get channel number from the last character of the attribute name*/
+static int get_channel_from_name(struct device_attribute *attr) ///< Linux kernel interface for exporting device attributes
+                                                                ///< @return channel number
+{
+    int reg = 0;
+    sscanf(attr->attr.name + (strlen(attr->attr.name)-1), "%du", &reg);
+    return reg;
+}
+// Dump 256 16-bit sensor registers */
+static ssize_t show_sensor_regs(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    int chn =  get_channel_from_name(attr);
+    char * cp = buf;
+    int i,j, ij=0;
+    for (i=0; i < 16; i++){
+        cp += sprintf(cp,"%02x:",i*16);
+        for (j=0;j<16;j++) cp += sprintf(cp," %04x", sensor_reg_copy[chn][ij++]);
+        cp += sprintf(cp,"\n");
+    }
+    return cp - buf;
+}
+
+/** Ignore data, re-read 256 sensor registers */
+static ssize_t store_sensor_regs(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int chn =  get_channel_from_name(attr);
+    u32 datai2c;
+    int i;
+    if (first_sensor_sa7[chn]) for (i = 0; i< 256;i++) {
+        X3X3_I2C_RCV2(chn, first_sensor_sa7[chn], i, &datai2c);
+        sensor_reg_copy[chn][i] = datai2c;
+    }
+    return count;
+}
+
+static ssize_t show_debug_delays(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"0x%08x\n", debug_delays);
+}
+
+
+static ssize_t store_debug_delays(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    if (!sscanf(buf, "%x", &debug_delays)) {
+        return - EINVAL;
+    }
+    return count;
+}
+static ssize_t show_debug_modes(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"0x%08x\n", debug_modes);
+}
+
+
+static ssize_t store_debug_modes(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    if (!sscanf(buf, "%x", &debug_modes)) {
+        return - EINVAL;
+    }
+    return count;
+}
+
+static DEVICE_ATTR(sensor_regs0,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
+static DEVICE_ATTR(sensor_regs1,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
+static DEVICE_ATTR(sensor_regs2,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
+static DEVICE_ATTR(sensor_regs3,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
+static DEVICE_ATTR(debug_delays,               SYSFS_PERMISSIONS,     show_debug_delays,               store_debug_delays);
+static DEVICE_ATTR(debug_modes,                SYSFS_PERMISSIONS,     show_debug_modes,                store_debug_modes);
+
+static struct attribute *root_dev_attrs[] = {
+        &dev_attr_sensor_regs0.attr,
+        &dev_attr_sensor_regs1.attr,
+        &dev_attr_sensor_regs2.attr,
+        &dev_attr_sensor_regs3.attr,
+        &dev_attr_debug_delays.attr,
+        &dev_attr_debug_modes.attr,
+        NULL
+};
+
+static const struct attribute_group dev_attr_root_group = {
+    .attrs = root_dev_attrs,
+    .name  = NULL,
+};
+
+
+static int elphel393_mt9x001_sysfs_register(struct platform_device *pdev)
+{
+    int retval=0;
+    struct device *dev = &pdev->dev;
+    if (&dev->kobj) {
+        if (((retval = sysfs_create_group(&dev->kobj, &dev_attr_root_group)))<0) return retval;
+    }
+    return retval;
+}
+
+int mt9x001_init(struct platform_device *pdev)
+{
+    int res;
+    struct device *dev = &pdev->dev;
+    const struct of_device_id *match;
+    int sensor_port;
+
+    for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
+        first_sensor_sa7[sensor_port] = 0;
+    }
+    elphel393_mt9x001_sysfs_register(pdev);
+    dev_info(dev, DEV393_NAME(DEV393_MT9X001)": registered sysfs\n");
+    g_dev_ptr = dev;
+    return 0;
+}
+
+int mt9x001_remove(struct platform_device *pdev)
+{
+    unregister_chrdev(DEV393_MAJOR(DEV393_MT9X001), DEV393_NAME(DEV393_MT9X001));
+    return 0;
+}
+
+static const struct of_device_id elphel393_mt9x001_of_match[] = {
+    { .compatible = "elphel,elphel393-mt9x001-1.00" },
+    { /* end of list */ }
+};
+MODULE_DEVICE_TABLE(of, elphel393_mt9x001_of_match);
+
+static struct platform_driver elphel393_mt9x001 = {
+    .probe          = mt9x001_init,
+    .remove         = mt9x001_remove,
+    .driver         = {
+        .name       = DEV393_NAME(DEV393_MT9X001),
+        .of_match_table = elphel393_mt9x001_of_match,
+    },
+};
+
+module_platform_driver(elphel393_mt9x001);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
+MODULE_DESCRIPTION("Driver for parallel interface image sensors Micron/Aptina/On Semi MT9M*, MT9D*, MT9T* and MT9P* in Elphel cameras");

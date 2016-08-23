@@ -79,6 +79,9 @@ int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
    window_width_height.height =           window_height;
    window_left_top.left =                 window_left;
    window_left_top.top =                  window_top;
+   dev_dbg(g_dev_ptr,"{%d}  frame16=%d, command=%d\n",num_sensor,frame16, (int) x393cmd);
+   dev_dbg(g_dev_ptr,"sa=0x%08x sa_inc=0x%08x lfn=0x%08x fw=0x%08x wh=0x%08x lt=0x%08x\n",
+           window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num, window_full_width.d32,window_width_height.d32,window_left_top.d32);
 
    switch (x393cmd){
    case ASAP:
@@ -209,6 +212,10 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
    window_tile_whs.tile_width =           tile_width;
    window_tile_whs.vert_step =            tile_vstep;
    window_tile_whs.tile_height =          tile_height;
+
+   dev_dbg(g_dev_ptr,"{%d}  frame16=%d, command=%d\n",num_sensor,frame16, (int) x393cmd);
+   dev_dbg(g_dev_ptr,"sa=0x%08x sa_inc=0x%08x lfn=0x%08x fw=0x%08x wh=0x%08x lt=0x%08x whs=0x%08x\n",
+           window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num.d32, window_full_width.d32,window_width_height.d32,window_left_top.d32, window_tile_whs.d32);
 
    switch (x393cmd){
    case ASAP:

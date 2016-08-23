@@ -391,7 +391,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     dev_dbg(g_dev_ptr,"Setting i2c drive mode for port %d\n",sensor_port);
     i2c_drive_mode          (sensor_port, SDA_DRIVE_HIGH, SDA_RELEASE);
     i2c_stop_run_reset      (sensor_port, I2C_CMD_RUN); // also programs status update
-
+    legacy_i2c(1<<sensor_port);// Setup i2c pages for legacy i2c commands. TODO NC393: update for compatibility with 14MPix
     camsync_mode.trig =     0;
     camsync_mode.trig_set = 1;
     camsync_mode.ext =      1; // use external timestamp (default)

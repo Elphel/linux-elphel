@@ -209,7 +209,8 @@ struct sensorproc_t * asensorproc = NULL;
 //wait_queue_head_t image_acq_wait_queue;  // queue for the sensor frame interrupts
 
 
-void tasklet_fpga_function(unsigned long arg);
+void tasklet_cmdseq_function(unsigned long arg);
+void tasklet_compressor_function(unsigned long arg);
 
 /**
  * @brief Copy #sensorproc structure, needed for multisensor board to be able
@@ -241,12 +242,18 @@ struct sensorproc_t * copy_sensorproc (int sensor_port, struct sensorproc_t * co
 //
 int init_acq_sensor(void); // Never used?
 
-//DECLARE_TASKLET(tasklet_fpga, tasklet_fpga_function, 0); // 0 - no arguments for now
-DECLARE_TASKLET(tasklet_fpga_0, tasklet_fpga_function, 0); // 0 - no arguments for now
-DECLARE_TASKLET(tasklet_fpga_1, tasklet_fpga_function, 1); // 0 - no arguments for now
-DECLARE_TASKLET(tasklet_fpga_2, tasklet_fpga_function, 2); // 0 - no arguments for now
-DECLARE_TASKLET(tasklet_fpga_3, tasklet_fpga_function, 3); // 0 - no arguments for now
-static struct tasklet_struct *tasklets[SENSOR_PORTS] = {&tasklet_fpga_0, &tasklet_fpga_1, &tasklet_fpga_2, &tasklet_fpga_3};
+//DECLARE_TASKLET(tasklet_cmdseq, tasklet_cmdseq_function, 0); // 0 - no arguments for now
+DECLARE_TASKLET(tasklet_cmdseq_0, tasklet_cmdseq_function, 0); // 0 - no arguments for now
+DECLARE_TASKLET(tasklet_cmdseq_1, tasklet_cmdseq_function, 1); // 0 - no arguments for now
+DECLARE_TASKLET(tasklet_cmdseq_2, tasklet_cmdseq_function, 2); // 0 - no arguments for now
+DECLARE_TASKLET(tasklet_cmdseq_3, tasklet_cmdseq_function, 3); // 0 - no arguments for now
+static struct tasklet_struct *tasklet_cmdseq[SENSOR_PORTS] = {&tasklet_cmdseq_0, &tasklet_cmdseq_1, &tasklet_cmdseq_2, &tasklet_cmdseq_3};
+
+DECLARE_TASKLET(tasklet_compressor_0, tasklet_compressor_function, 0); // 0 - no arguments for now
+DECLARE_TASKLET(tasklet_compressor_1, tasklet_compressor_function, 1); // 0 - no arguments for now
+DECLARE_TASKLET(tasklet_compressor_2, tasklet_compressor_function, 2); // 0 - no arguments for now
+DECLARE_TASKLET(tasklet_compressor_3, tasklet_compressor_function, 3); // 0 - no arguments for now
+static struct tasklet_struct *tasklets_compressor[SENSOR_PORTS] = {&tasklet_compressor_0, &tasklet_compressor_1, &tasklet_compressor_2, &tasklet_compressor_3};
 
 
 /**
@@ -363,18 +370,17 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 }
 
 /**
- * @brief Calculate/update CIRCBUF parameters available after compressor interrupt
+ * Calculate/update CIRCBUF parameters available after compressor interrupt
  */
 inline void update_irq_circbuf(struct jpeg_ptr_t *jptr) {
-	/*set_globalParam (G_CIRCBUFWP, JPEG_wp<<2);
-     set_globalParam (G_FREECIRCBUF, (((get_globalParam (G_CIRCBUFRP) <= get_globalParam (G_CIRCBUFWP))? get_globalParam (G_CIRCBUFSIZE):0)+ 
+	/*set_globalParam (G_CIRCBUFWP, JPEG_wp<<2);set_globalParam (G_FREECIRCBUF, (((get_globalParam (G_CIRCBUFRP) <= get_globalParam (G_CIRCBUFWP))? get_globalParam (G_CIRCBUFSIZE):0)+
                                      get_globalParam (G_CIRCBUFRP)) -    get_globalParam (G_CIRCBUFWP));*/
 	/* the concept of global parameters will be changed, use one channel only for testing */
 	set_globalParam(jptr->chn_num, G_CIRCBUFWP, jptr->jpeg_wp);
-	set_globalParam (jptr->chn_num, G_FREECIRCBUF, (((get_globalParam (jptr->chn_num, G_CIRCBUFRP) <= get_globalParam (jptr->chn_num, G_CIRCBUFWP))? get_globalParam (jptr->chn_num, G_CIRCBUFSIZE):0)+
+	set_globalParam (jptr->chn_num, G_FREECIRCBUF,
+	        (((get_globalParam (jptr->chn_num, G_CIRCBUFRP) <= get_globalParam (jptr->chn_num, G_CIRCBUFWP))?get_globalParam (jptr->chn_num, G_CIRCBUFSIZE):0)+
 			get_globalParam (jptr->chn_num, G_CIRCBUFRP)) -    get_globalParam (jptr->chn_num, G_CIRCBUFWP));
 }
-
 /**
  * @brief Calculate/update focus parameters available after compressor interrupt
  * NOTE: currently global (latest), not per-frame
@@ -432,7 +438,7 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 	interframe->signffff = 0xffff;
 
 	/* debug code follows */
-	set_default_interframe(interframe);
+	set_default_interframe(interframe); // TODO: Production NC393:  should be removed?
 	/* end of debug code */
 
 	set_globalParam(jptr->chn_num, G_FRAME_SIZE, jpeg_len);
@@ -588,7 +594,7 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr,                ///< pointer 
    }
    PROFILE_NOW(1);
    wake_up_interruptible(&framepars_wait_queue); // all interrupts, not just frames acquired
-   tasklet_schedule(&tasklet_fpga); // trigger software interrupt
+   tasklet_schedule(&tasklet_cmdseq); // trigger software interrupt
 
    EN_INTERRUPT(SMART);
 
@@ -616,8 +622,8 @@ static irqreturn_t frame_sync_irq_handler(int irq, void *dev_id)
     updateFramePars     (jptr->chn_num,
                          frame16);
 	wake_up_interruptible(&aframepars_wait_queue[jptr->chn_num]);
-	//	tasklet_schedule(&tasklet_fpga);
-	tasklet_schedule(tasklets[jptr->chn_num]);
+	//	tasklet_schedule(&tasklet_cmdseq);
+	tasklet_schedule(tasklet_cmdseq[jptr->chn_num]);
 	x393_cmdframeseq_ctrl(cmdframeseq_mode, jptr->chn_num);
     local_irq_restore(flags);
 	return IRQ_HANDLED;
@@ -640,21 +646,27 @@ static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
 	unsigned long flags;
 
 	local_irq_save(flags);
-	if (updateIRQJPEG_wp(jptr)) {
-		update_irq_circbuf(jptr);
-		updateIRQFocus(jptr);
-		interframe = updateIRQ_interframe(jptr);
-		updateIRQ_Exif(jptr, interframe);
+	if (updateIRQJPEG_wp(jptr)) {                // Updates write pointer, invalidates cache, calculates absolute frame number (compressed)
+		update_irq_circbuf(jptr);                // Update global parameters (accessible over mmap): G_CIRCBUFWP, G_FREECIRCBUF (depends on user-set G_CIRCBUFRP)
+		updateIRQFocus(jptr);                    // Reads FPGA and updates both G_GFOCUS_VALUE and P_FOCUS_VALUE
+		interframe = updateIRQ_interframe(jptr); // updates SOME data in the 32-byte gaps between the images:
+		                                         // Calculates frame size, adds 0xffff signature to detect buffer overrun
+		                                         // invalidates cache
+
+		updateIRQ_Exif(jptr, interframe);        // Updates Exif data for compressed frame (separate ring buffer), extending interframe data
+
 	    frame16 = getHardFrameNumber(jptr->chn_num, 1); // Use compressor frame number
+	    // Updarte G_COMPRESSOR_FRAME (from jptr->frame, set other interframe data from past parameters (subset of all parameters preserved after the frame)
 	    updateInterFrame(jptr->chn_num, // Sensor port number (0..3)
-	                     frame16,       // number of frame just compressed (lower 4 bits, from FPGA), always >= sensor frame number,
+	                     jptr->frame,   // absolute compressed frame number, updated in updateIRQJPEG_wp
 	                                    // interrupt should be processed after frame sync interrupt
 	                     interframe);   // pointer to the area in circbuf to save parameters
-		wake_up_interruptible(&circbuf_wait_queue);
+	    tasklet_schedule(tasklets_compressor[jptr->chn_num]);
+//		wake_up_interruptible(&circbuf_wait_queue); // should be done in tasklet (after cache invalidation)
 	}
 	//wake_up_interruptible(&framepars_wait_queue);
-	//	tasklet_schedule(&tasklet_fpga);
-	tasklet_schedule(tasklets[jptr->chn_num]);
+	//	tasklet_schedule(&tasklet_cmdseq);
+//	tasklet_schedule(tasklets_compressor[jptr->chn_num]);
 	irq_ctrl.interrupt_cmd = IRQ_CLEAR;
 	x393_cmprs_interrupts(irq_ctrl, jptr->chn_num);
 	local_irq_restore(flags);
@@ -668,40 +680,13 @@ static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
  * @param arg not used
  */
 
-/*!TODO:
-
-implement 2 modes of controlling when to calculate histograms:
-1 - add mask to 3 frame number LSB (i.e. - 0/10000000/10001000/10101010/11111111) - 3 contol bits - en/dis and mode
-2 - requested in advance (i.e. by autoexposure when writing new exposure or white balance - when writing balance
-
-mode 1 will provide easy way to display histograms (no need to repetively request them),
-mode 2 - useful for autoexposure
-
-Modify waiting (LSEEK_*) for histogrames so they will only unfreeze if the histogram is available (skipping multiple frames))
-For displaying histograms - try use latest available - not waiting fro a particular frame.
-
-
- */
-
-// HISTOGRAMS_WAKEUP_ALWAYS if 0 will only wakeup processes waiting for histograms when they become available, maybe never if they are disabled
-// if defined 1 - will wakeup each frame, regardless of the availability of the histograms
-//#define HISTOGRAMS_WAKEUP_ALWAYS 0
-void tasklet_fpga_function(unsigned long arg)
+void tasklet_compressor_function(unsigned long arg)
 {
-//    int is_compressor_irq = 1; // TODO: add interrupts from frame sync if compressor is off
-    int hist_en;
-    int sensor_port = image_acq_priv.jpeg_ptr[arg].chn_num; // == arg & 3
-    int tasklet_disable=get_globalParam(sensor_port, G_TASKLET_CTL);
-    unsigned long thisFrameNumber=getThisFrameNumber(sensor_port);
-    unsigned long prevFrameNumber=thisFrameNumber-1;
-    unsigned long * hash32p=&(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]); // same gamma for all sub-channels
-    unsigned long * framep= &(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
-    const struct jpeg_ptr_t *jptr = &image_acq_priv.jpeg_ptr[arg];
     dma_addr_t phys_addr_start, phys_addr_end;
     void *virt_addr_start;
+    int sensor_port = image_acq_priv.jpeg_ptr[arg].chn_num; // == arg & 3
+    const struct jpeg_ptr_t *jptr = &image_acq_priv.jpeg_ptr[arg];
     unsigned int sz;
-    int subchn,hist_indx;
-
     /* invalidate L2 cache lines in the beginning of current frame */
     phys_addr_start = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->fpga_cntr_prev);
     virt_addr_start = circbuf_priv_ptr[jptr->chn_num].buf_ptr + jptr->fpga_cntr_prev;
@@ -721,6 +706,43 @@ void tasklet_fpga_function(unsigned long arg)
         outer_inv_range(phys_addr_start, phys_addr_end);
         __cpuc_flush_dcache_area(virt_addr_start, sz - CCAM_DMA_SIZE);
     }
+    wake_up_interruptible(&circbuf_wait_queue); // should be done in here (after cache invalidation), not in ISR
+}
+
+/*!TODO:
+
+implement 2 modes of controlling when to calculate histograms:
+1 - add mask to 3 frame number LSB (i.e. - 0/10000000/10001000/10101010/11111111) - 3 contol bits - en/dis and mode
+2 - requested in advance (i.e. by autoexposure when writing new exposure or white balance - when writing balance
+
+mode 1 will provide easy way to display histograms (no need to repetively request them),
+mode 2 - useful for autoexposure
+
+Modify waiting (LSEEK_*) for histogrames so they will only unfreeze if the histogram is available (skipping multiple frames))
+For displaying histograms - try use latest available - not waiting fro a particular frame.
+
+
+ */
+
+// HISTOGRAMS_WAKEUP_ALWAYS if 0 will only wakeup processes waiting for histograms when they become available, maybe never if they are disabled
+// if defined 1 - will wakeup each frame, regardless of the availability of the histograms
+//#define HISTOGRAMS_WAKEUP_ALWAYS 0
+void tasklet_cmdseq_function(unsigned long arg)
+{
+//    int is_compressor_irq = 1; // TODO: add interrupts from frame sync if compressor is off
+    int hist_en;
+    int sensor_port = image_acq_priv.jpeg_ptr[arg].chn_num; // == arg & 3
+    int tasklet_disable=get_globalParam(sensor_port, G_TASKLET_CTL);
+    unsigned long thisFrameNumber=getThisFrameNumber(sensor_port);
+    unsigned long prevFrameNumber=thisFrameNumber-1;
+    unsigned long * hash32p=&(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]); // same gamma for all sub-channels
+    unsigned long * framep= &(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
+//    const struct jpeg_ptr_t *jptr = &image_acq_priv.jpeg_ptr[arg];
+//    dma_addr_t phys_addr_start, phys_addr_end;
+//    void *virt_addr_start;
+//    unsigned int sz;
+    int subchn,hist_indx;
+
 
     // Time is out?
     if ((getThisFrameNumber(sensor_port) ^ getHardFrameNumber(sensor_port, 0))  & PARS_FRAMES_MASK) {
@@ -878,7 +900,7 @@ void compressor_interrupts (int on,   ///< 0 -interrupt disable, 1 - interrupt e
 	x393_cmprs_interrupts_t irq_ctrl =         {.d32=0};
 
 	//MDF2(printk ("compressor_interrupts(%d)\n",on));
-	dev_dbg(g_dev_ptr, "set camera interrupts status: %d\n", on);
+	dev_dbg(g_dev_ptr, "Set compressor interrupts for channel %d: %d\n",chn, on);
 #ifdef TEST_DISABLE_CODE
 	if (on) {
 		EN_INTERRUPT(SMART);
@@ -1054,7 +1076,6 @@ int image_acq_stop(struct platform_device *pdev)
 {
 	return 0;
 }
-
 //#define I2C359_INC                    2   ///< slave address increment between sensors in 10359A board (broadcast, 1,2,3)
 /** Register i2c pages equal to slave address,
  * Use to convert 353 code  */
@@ -1068,7 +1089,9 @@ int legacy_i2c(int ports) ///< bitmask of the sensor ports to use
     class_sensor= xi2c_dev_get(name_sensor);
     BUG_ON(!class_sensor);
     memcpy(&dev_sensor, class_sensor, sizeof(x393_i2c_device_t));
-    for (sensor_port=1; sensor_port< SENSOR_PORTS; sensor_port++) if (ports & (1 << sensor_port)) {
+    dev_dbg(g_dev_ptr, "Initializing sensor i2c for legacy commands, ports bit-mask= 0x%x\n",ports);
+    for (sensor_port=0; sensor_port< SENSOR_PORTS; sensor_port++) if (ports & (1 << sensor_port)) {
+        i2c_page_alloc_init(sensor_port); // reset all pages allocation
         i2c_page_register(sensor_port, class_10359->slave7);
         set_xi2c_wrc(class_10359, sensor_port, class_10359->slave7, 0);
         for (subchn = 0; subchn <4; subchn++){ // subchn == 0 - broadcast
@@ -1078,9 +1101,12 @@ int legacy_i2c(int ports) ///< bitmask of the sensor ports to use
         }
         // Now register one page for reading 10359 and the sensor using sensor speed data
         memcpy(&dev_sensor, class_sensor, sizeof(x393_i2c_device_t)); // dev_sensor));
+        i2c_page_register(sensor_port, LEGACY_READ_PAGE2);
         set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE2);
+        i2c_page_register(sensor_port, LEGACY_READ_PAGE4);
         dev_sensor.data_bytes=4; // for reading 10359 in 32-bit mode
         set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE4);
+        dev_dbg(g_dev_ptr, "Initialized sensor i2c for legacy commands, sensor_port= 0x%x\n",sensor_port);
     }
     return 0;
 /*
@@ -1092,9 +1118,6 @@ int legacy_i2c(int ports) ///< bitmask of the sensor ports to use
 invalid type argument of unary '*' (have 'x393_i2c_device_t {aka struct <anonymous>}')
  */
 }
-
-
-
 //static const struct of_device_id elphel393_sensor_of_match[] = {
 //		{ .compatible = "elphel,elphel393-sensor-1.00" },
 //		{ /* end of list */ }

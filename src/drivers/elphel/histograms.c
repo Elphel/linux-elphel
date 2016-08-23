@@ -622,11 +622,11 @@ loff_t histograms_lseek (struct file * file,
                 }
                 // request histogram(s)
                 //             setFramePar(&framepars[reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
-                setFramePar(privData->port, &aframepars[privData->port][reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
+                setFrameParLocked(privData->port, &aframepars[privData->port][reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
                 // make sure (harmful) interrupt did not happen since getThisFrameNumber()
                 if (reqFrame < getThisFrameNumber(privData->port)) {
                     //               setFramePar(&framepars[getThisFrameNumber() & PARS_FRAMES_MASK], reqAddr, 1);
-                    setFramePar(privData->port, &aframepars[privData->port][getThisFrameNumber(privData->port) & PARS_FRAMES_MASK], reqAddr, 1);
+                    setFrameParLocked(privData->port, &aframepars[privData->port][getThisFrameNumber(privData->port) & PARS_FRAMES_MASK], reqAddr, 1);
 
                 }
             }

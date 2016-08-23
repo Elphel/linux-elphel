@@ -37,6 +37,7 @@
 //#include <linux/autoconf.h>
 #include <linux/vmalloc.h>
 #include <linux/platform_device.h>
+#include <linux/spinlock.h>
 #include <linux/delay.h>
 
 //#include <asm/system.h>
@@ -122,7 +123,7 @@
 
 /* 393: sFrameParsAll is an array of 4per-port structures */
 static struct framepars_all_t sFrameParsAll[SENSOR_PORTS] __attribute__ ((aligned(PAGE_SIZE)));  ///< Sensor Parameters, currently 16 pages all and 2048 pages some, static struct
-unsigned long frameParsInitialized[SENSOR_PORTS];                                                     // set to 0 at startup, 1 after initialization that is triggered by setParsAtomic()
+unsigned int frameParsInitialized[SENSOR_PORTS];                                                     // set to 0 at startup, 1 after initialization that is triggered by setParsAtomic()
 #define  thisFrameNumber(p)            GLOBALPARS(p,G_THIS_FRAME)                       // Current frame number (may lag from the hardware)
 #define  thisCompressorFrameNumber(p)  GLOBALPARS(p,G_COMPRESSOR_FRAME)                 // Current compressed frame number (lags from thisFrameNumber)
 
@@ -145,6 +146,16 @@ unsigned long           *aglobalPars[SENSOR_PORTS];          // parameters that 
 unsigned long           *amultiSensIndex[SENSOR_PORTS];      // index for per-sensor alternatives
 unsigned long           *amultiSensRvrsIndex[SENSOR_PORTS];  // reverse index (to parent) for the multiSensIndex
 wait_queue_head_t       aframepars_wait_queue[SENSOR_PORTS];// used to wait for the frame to be acquired
+
+static DEFINE_SPINLOCK(framepars_lock_0); ///<
+static DEFINE_SPINLOCK(framepars_lock_1); ///<
+static DEFINE_SPINLOCK(framepars_lock_2); ///<
+static DEFINE_SPINLOCK(framepars_lock_3); ///<
+/** Define array of pointers to locks - hardware allows concurrent writes to different ports tables */
+spinlock_t * framepars_locks[4] = {&framepars_lock_0, &framepars_lock_1, &framepars_lock_2, &framepars_lock_3};
+
+
+
 
 /* Remove after compilation OK */
 //struct sensorproc_t * sensorproc = NULL;
@@ -184,7 +195,7 @@ struct framepars_pd {
 // something else to be added here?
 };
 
-
+static u32 debug_flags = 0;
 
 /**
  * @brief assign non-static pointers to static data to be used as extern
@@ -232,7 +243,6 @@ void resetFrameNumber(int sensor_port, ///< sensor_port sensor port number (0..3
                       int hreset)      ///< Reset hardware sequencer itself
 {
 	int i;
-	// Setup update mode for
 	x393_cmdseqmux_status_t stat;
 	x393_status_ctrl_t      stat_ctrl;
 	x393_cmdframeseq_mode_t cmdframeseq_mode = {.d32=0};
@@ -245,6 +255,7 @@ void resetFrameNumber(int sensor_port, ///< sensor_port sensor port number (0..3
         cmdframeseq_mode.d32 =     0;
         cmdframeseq_mode.run_cmd = 3; // Run
         x393_cmdframeseq_ctrl(cmdframeseq_mode, sensor_port);
+        dev_dbg(g_devfp_ptr,"Reset command sequencer (all channels !): port= %d,  thisFrameNumber=0x%lx\n", sensor_port, thisFrameNumber(sensor_port));
 	}
 
 	/* Check if the status update mode for command sequencer is not 3 (auto), set/wait if needed */
@@ -274,7 +285,7 @@ void resetFrameNumber(int sensor_port, ///< sensor_port sensor port number (0..3
 #ifdef NC353
 	thisFrameNumber(sensor_port) = X3X3_I2C_FRAME;
 #endif
-	dev_dbg(g_devfp_ptr,"%s : port= %d,  thisFrameNumber=0x%lx\n",__func__, sensor_port, thisFrameNumber(sensor_port));
+	dev_dbg(g_devfp_ptr,"Resetting frame number, port= %d,  thisFrameNumber=0x%lx\n", sensor_port, thisFrameNumber(sensor_port));
 // write absolute frame numbers
 //    for (i = thisFrameNumber(sensor_port); i < (thisFrameNumber(sensor_port) + PARS_FRAMES); i++) aframepars[sensor_port][i & PARS_FRAMES_MASK].pars[P_FRAME] = i;
     for (i = 0; i <  PARS_FRAMES; i++) aframepars[sensor_port][(i+frame16) & PARS_FRAMES_MASK].pars[P_FRAME] = thisFrameNumber(sensor_port) + i;
@@ -287,6 +298,7 @@ void resetFrameNumber(int sensor_port, ///< sensor_port sensor port number (0..3
 void initFramePars(int sensor_port)
 {
 	int i;
+    spin_lock_bh(framepars_locks[sensor_port]);
 	memset(aframepars[sensor_port], 0, sizeof(struct framepars_t) * PARS_FRAMES);
 	resetFrameNumber(sensor_port, 0, 1);
 // initialize frameParsDeps.pars masks:
@@ -300,7 +312,8 @@ void initFramePars(int sensor_port)
 
 	initMultiPars(sensor_port);                                                                                // initialize structures for individual per-sensor parameters. Now only works for sensor registers using G_MULTI_REGSM. Should be called after/during sensor detection
 	frameParsInitialized[sensor_port] = 1;
-    dev_dbg(g_devfp_ptr,"%s port %d: DONE, frameParsInitialized[%d]=%d\n",__func__, sensor_port, sensor_port, frameParsInitialized[sensor_port]);
+    spin_unlock_bh(framepars_locks[sensor_port]);
+    dev_dbg(g_devfp_ptr,"%s port %d: DONE, frameParsInitialized[%d]=%ld\n",__func__, sensor_port, sensor_port, frameParsInitialized[sensor_port]);
 }
 
 /**
@@ -437,20 +450,21 @@ inline void          set_imageParamsR_all(int sensor_port, int n, unsigned long 
  * @param interframe_pars
  */
 
-void updateInterFrame(int sensor_port,     ///< Sensor port number (0..3)
-                      int frame16,         ///< number of frame just compressed (lower 4 bits, from FPGA), always >= sensor frame number,
-                                           ///< interrupt should be processed after frame sync interrupt
+void updateInterFrame(int sensor_port,      ///< Sensor port number (0..3)
+                      u32 compressed_frame, ///< number of frame just compressed
+                                            ///< interrupt should be processed after frame sync interrupt
                       struct interframe_params_t * interframe_pars) ///< pointer to the area in circbuf to save parameters
 {
-    int findex_this, findex_prev, findex_future, findex_next;
-    int index, index32;
-    unsigned long bmask, bmask32;
+//    int findex_this, findex_prev, findex_future, findex_next;
+//    int index;
+//    int index32;
+//    unsigned long bmask, bmask32;
     int pastParsIndex;
-    struct framepars_t *framepars = aframepars[sensor_port];
-    u32 compressed_frame; ///< absolute number of compressed frame , matching frame16
-    compressed_frame  = (thisFrameNumber(sensor_port)  & ~PARS_FRAMES_MASK) | (frame16 & PARS_FRAMES_MASK);
-    if (compressed_frame > thisFrameNumber(sensor_port)) // compressor frame number can never be higher than sesnor one
-        compressed_frame -= PARS_FRAMES;
+//    struct framepars_t *framepars = aframepars[sensor_port];
+//    u32 compressed_frame; ///< absolute number of compressed frame , matching frame16
+//    compressed_frame  = (thisFrameNumber(sensor_port)  & ~PARS_FRAMES_MASK) | (frame16 & PARS_FRAMES_MASK);
+//    if (compressed_frame > thisFrameNumber(sensor_port)) // compressor frame number can never be higher than sesnor one
+//        compressed_frame -= PARS_FRAMES;
     thisCompressorFrameNumber(sensor_port) = compressed_frame;
 //  pastParsIndex = (thisFrameNumber(sensor_port) - 1) & PASTPARS_SAVE_ENTRIES_MASK; // copying from what was past frame that might include histogram data
     pastParsIndex = compressed_frame & PASTPARS_SAVE_ENTRIES_MASK; // copying from what was past frame that might include histogram data
@@ -566,14 +580,12 @@ void updateFramePars(int sensor_port, int frame16)
 	}
 }
 
-/**
- * @brief process parameters that are overdue or due in ASAP mode (not through the sequencer)
+/** Process parameters that are overdue or due in ASAP mode (not through the sequencer)
  * Called twice from processPars - at the beginning and at the end to finish off any derivatives (needed?)
- * @param sensor_port sensor port number (0..3)
- * @param sensorproc
- * @param frame16
- */
-inline void processParsASAP(int sensor_port, struct sensorproc_t * sensorproc, int frame16)
+ * Should never be called from outside processPars() where there is a per-port lock */
+inline void _processParsASAP(int sensor_port,                   ///< sensor port number (0..3)
+                             struct sensorproc_t * sensorproc,  ///< per-port array of sensor capabilities and 32+32 on-change functions
+                             int frame16)                       ///< Hardware sequencer frame number, or -1 for ASAP
 {
 	unsigned long todo, mask, remain;
 	int pars_ahead;                 // considering parameter "pars_ahead" of the (frame16+job_ahead) mod 8
@@ -591,9 +603,13 @@ inline void processParsASAP(int sensor_port, struct sensorproc_t * sensorproc, i
 			framepars[1].functions, framepars[2].functions, framepars[3].functions, framepars[4].functions, framepars[5].functions,
 			framepars[6].functions, framepars[7].functions));
 #endif
-    dev_dbg(g_devfp_ptr,"%s port=%d frame16=%d\n",  __func__, sensor_port,  frame16);
+	if (debug_flags)
+	    dev_dbg(g_devfp_ptr,"ASAP: port=%d frame16=%d\n",   sensor_port,  frame16);
+	else
+        dev_dbg(g_devfp_ptr,"ASAP: port=%d frame16=%d\n",   sensor_port,  frame16);
+
     if (!sensorproc){
-        dev_err(g_devfp_ptr,"%s port=%d frame16=%d sensorproc==NULL !!!! \n",  __func__, sensor_port,  frame16);
+        dev_err(g_devfp_ptr,"sensorproc==NULL !!!! port=%d frame16=%d \n", sensor_port,  frame16);
         return;
     }
 
@@ -606,6 +622,20 @@ inline void processParsASAP(int sensor_port, struct sensorproc_t * sensorproc, i
 		i = 0;
 		mask = 1;
 		remain = 0xffffffff;
+
+	    if (debug_flags) {
+	        todo = (pars_ahead) ?
+	                           (p_nasap[pars_ahead] & (procpars->functions) & remain) :
+	                           (procpars->functions & remain);
+	        dev_dbg(g_devfp_ptr,"port=%d frame16=%d todo=0x%08lx,p_nasap[%d]=0x%08x procpars->functions=0x%08lx\n",
+	                sensor_port,  frame16, todo, pars_ahead, procpars->functions);
+	    } else {
+            todo = (pars_ahead) ?
+                               (p_nasap[pars_ahead] & (procpars->functions) & remain) :
+                               (procpars->functions & remain);
+            dev_dbg(g_devfp_ptr,"port=%d frame16=%d todo=0x%08lx,p_nasap[%d]=0x%08x procpars->functions=0x%08lx\n",
+                    sensor_port,  frame16, todo, pars_ahead, procpars->functions);
+	    }
 		while ((todo = (pars_ahead) ?
 			       (p_nasap[pars_ahead] & (procpars->functions) & remain) :
 			       (procpars->functions & remain) )) {      //none, *1, *2,*3,*4
@@ -616,13 +646,23 @@ inline void processParsASAP(int sensor_port, struct sensorproc_t * sensorproc, i
 				remain <<= 1;
 			}
 // now (todo & mask) !=0
-			dev_dbg(g_devfp_ptr,"port= %d, todo=0x%08lx (curr=0x%08lx) frame16=%d, pars_ahead=%d, frame_proc=%d i=%d, mask=0x%08lx func=0x%08x\n",
-			        sensor_port, todo, procpars->functions, frame16, pars_ahead, frame_proc, i, mask, (int)sensorproc->pgm_func[i]);
+	        if (debug_flags) {
+	            dev_dbg(g_devfp_ptr,"port= %d, todo=0x%08lx (curr=0x%08lx) frame16=%d, pars_ahead=%d, frame_proc=%d i=%d, mask=0x%08lx func=0x%08x\n",
+	                    sensor_port, todo, procpars->functions, frame16, pars_ahead, frame_proc, i, mask, (int)sensorproc->pgm_func[i]);
 
-			dev_dbg(g_devfp_ptr,"port= %d, %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
-			        sensor_port,
-			        framepars[0].functions, framepars[1].functions, framepars[2].functions, framepars[3].functions,
-					framepars[4].functions, framepars[5].functions, framepars[6].functions, framepars[7].functions);
+	            dev_dbg(g_devfp_ptr,"port= %d, %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
+	                    sensor_port,
+	                    framepars[0].functions, framepars[1].functions, framepars[2].functions, framepars[3].functions,
+	                    framepars[4].functions, framepars[5].functions, framepars[6].functions, framepars[7].functions);
+	        } else {
+	            dev_dbg(g_devfp_ptr,"port= %d, todo=0x%08lx (curr=0x%08lx) frame16=%d, pars_ahead=%d, frame_proc=%d i=%d, mask=0x%08lx func=0x%08x\n",
+	                    sensor_port, todo, procpars->functions, frame16, pars_ahead, frame_proc, i, mask, (int)sensorproc->pgm_func[i]);
+
+	            dev_dbg(g_devfp_ptr,"port= %d, %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
+	                    sensor_port,
+	                    framepars[0].functions, framepars[1].functions, framepars[2].functions, framepars[3].functions,
+	                    framepars[4].functions, framepars[5].functions, framepars[6].functions, framepars[7].functions);
+	        }
 			if (sensorproc->pgm_func[i]) {
 	            dev_dbg(g_devfp_ptr,"port= %d, Calling GENERIC pgm_func[%d] ASAP\n",sensor_port,i);
 				rslt = sensorproc->pgm_func[i]    (sensor_port, &(sensorproc->sensor), procpars, prevpars, -1);
@@ -649,8 +689,14 @@ inline void processParsASAP(int sensor_port, struct sensorproc_t * sensorproc, i
 //#define G_CALLNEXT3      122 // bitmask of actions to be three or more frames ahead of the programmed one (OR-ed with G_CALLNEXT4)
 //#define G_CALLNEXT4      123 // bitmask of actions to be four  or more frames ahead of the programmed one
 
+/** Process parameters that are overdue or due in ASAP mode (not through the sequencer)
+ * Called twice from processPars - at the beginning and at the end to finish off any derivatives (needed?)
+ * Should never be called from outside processPars() where there is a per-port lock */
 
-inline void processParsSeq(int sensor_port, struct sensorproc_t * sensorproc, int frame16, int maxahead)
+inline void _processParsSeq(int sensor_port,                   ///< sensor port number (0..3)
+                            struct sensorproc_t * sensorproc,  ///< per-port array of sensor capabilities and 32+32 on-change functions
+                            int frame16,                       ///< Hardware sequencer frame number, or -1 for ASAP
+                            int maxahead)                      ///< Maximal number of frames ahead to process. TODO NC393: Set G_MAXAHEAD >0 (max latency, was 2 in NC353!),
 {
 	unsigned long todo, mask, remain;
 	int job_ahead;                  // doing job "job_ahead" ahead of needed
@@ -665,14 +711,14 @@ inline void processParsSeq(int sensor_port, struct sensorproc_t * sensorproc, in
 	int rslt;
 	int max_par_ahead;
 	int this_ahead;
-    dev_dbg(g_devfp_ptr,"%s port=%d frame16=%d,  maxahead=0 %d\n",  __func__, sensor_port,  frame16, maxahead);
+    dev_dbg(g_devfp_ptr,"%s port=%d frame16=%d,  maxahead=%d\n",  __func__, sensor_port,  frame16, maxahead);
 
 	if (maxahead > (PARS_FRAMES - 3)) maxahead = PARS_FRAMES - 3;  // use 5 if maxahead >5
 // commands that use FPGA queues for the i2c/sequencer commands, executed at frame syncs
 // Modifying - as soon as found the frame to process with non-zero masked .functions - process all functions for that
 // frame with appropriate sequencer frame.
 // For now - scan p_nasap[i] to find latency - improve that later
-	for (job_ahead = 0; job_ahead <= maxahead; job_ahead++ ) {
+	for (job_ahead = 0; job_ahead <= maxahead; job_ahead++ ) { // If have some time - do future job (not required just now)
 		max_par_ahead = min(5, (PARS_FRAMES - 3) - job_ahead);
 		for (pars_ahead = 0; pars_ahead < max_par_ahead; pars_ahead++ ) {
 			frame_proc = (frame16 + job_ahead + pars_ahead + 1) & PARS_FRAMES_MASK; //
@@ -730,7 +776,7 @@ inline void processParsSeq(int sensor_port, struct sensorproc_t * sensorproc, in
 
 /**
  * @brief Program image acquisition, according to the parameters changed
- * Called from ISR?
+ * Called from tasklet and user (setFrameParsAtomic) and LSEEK_SENSORPROC
  * @param sensor_port sensor port number (0..3)
  * @param sensorproc pointer to sensor static parameters and functions
  * @param frame16     current hardware frame number
@@ -739,30 +785,61 @@ inline void processParsSeq(int sensor_port, struct sensorproc_t * sensorproc, in
  */
 //TODO: "Do it later" should be the only reason not to erase todo bit
 //#define P_CALLASAP       107 // bitmask - what functions work only in the current frame (ASAP) mode
-
-void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16, int maxahead)
+void _processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16, int maxahead)
 {
-	frame16 &= PARS_FRAMES_MASK;
-    dev_dbg(g_devfp_ptr,"%s : port= %d,  frame16=%d, maxahead=%d\n",__func__, sensor_port, frame16, maxahead);
+    frame16 &= PARS_FRAMES_MASK;
+    dev_dbg(g_devfp_ptr,"port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     if (!sensorproc){
         dev_err(g_devfp_ptr,"%s port=%d frame16=%d sensorproc==NULL !!!! \n",  __func__, sensor_port,  frame16);
         return;
     }
-
+//    int spin_trylock(spinlock_t *lock);
 // first - do all ASAP tasks (they should not be done ahead of the corresponding interrupt!)
-//   dev_dbg(g_devfp_ptr,"%s before first processParsASAP\n",__func__);
-	processParsASAP(sensor_port, sensorproc, frame16);
-    dev_dbg(g_devfp_ptr,"%s : port= %d (after first processParsASAP),  frame16=%d, maxahead=%d\n",__func__, sensor_port, frame16, maxahead);
+//   dev_dbg(g_devfp_ptr,"%s before first _processParsASAP\n",__func__);
+    _processParsASAP(sensor_port, sensorproc, frame16); // NC393: never gets here ? Only after _processParsSeq?
+    dev_dbg(g_devfp_ptr,"%s : port= %d (after first _processParsASAP),  frame16=%d, maxahead=%d\n",__func__, sensor_port, frame16, maxahead);
 // now - the rest commands that use FPGA queues for the i2c/sequencer commands, executed at frame syncs
 // for jobahead =0 it is still possible to have some functions in ASAP mode with non-zero latency
-//   dev_dbg(g_devfp_ptr,"%s before processParsSeq\n",__func__);
-	processParsSeq(sensor_port, sensorproc, frame16, maxahead);
-    dev_dbg(g_devfp_ptr,"%s : port= %d (after processParsSeq),  frame16=%d, maxahead=%d\n",__func__, sensor_port, frame16, maxahead);
+//   dev_dbg(g_devfp_ptr,"%s before _processParsSeq\n",__func__);
+    _processParsSeq(sensor_port, sensorproc, frame16, maxahead);
+    dev_dbg(g_devfp_ptr,"%s : port= %d (after _processParsSeq),  frame16=%d, maxahead=%d\n",__func__, sensor_port, frame16, maxahead);
 // re-test ASAP tasks - they might appear as a result of other commands executed
-//   dev_dbg(g_devfp_ptr,"%s before second processParsASAP\n",__func__);
-	processParsASAP(sensor_port, sensorproc, frame16);
-    dev_dbg(g_devfp_ptr,"%s : port= %d (after second processParsASAP),  frame16=%d, maxahead=%d\n",__func__, sensor_port, frame16, maxahead);
+//   dev_dbg(g_devfp_ptr,"%s before second _processParsASAP\n",__func__);
+    _processParsASAP(sensor_port, sensorproc, frame16);
+    dev_dbg(g_devfp_ptr,"%s : port= %d (after second _processParsASAP),  frame16=%d, maxahead=%d\n",__func__, sensor_port, frame16, maxahead);
+    if (debug_flags)    debug_flags--;
+
 }
+
+#undef LOCK_BH_PROCESSPARS
+void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16, int maxahead)
+{
+    frame16 &= PARS_FRAMES_MASK;
+    dev_dbg(g_devfp_ptr,"port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
+    if (!sensorproc){
+        dev_err(g_devfp_ptr,"%s port=%d frame16=%d sensorproc==NULL !!!! \n",  __func__, sensor_port,  frame16);
+        return;
+    }
+#ifdef LOCK_BH_PROCESSPARS
+    spin_lock_bh(framepars_locks[sensor_port]);
+    // WARNING: CPU: 1 PID: 2329 at /home/eyesis/git/elphel393/poky/build/tmp/work-shared/elphel393/kernel-source/kernel/softirq.c:150 __local_bh_enable_ip+0xb0/0x100()
+#else
+    // Here we can get from both a tasklet and from LSEEK_SENSORPROC. We do not need to do this twice - if processPars() is ran by
+    // somebody else - that is OK not to do it again (what about maxahead?)
+    if (!spin_trylock(framepars_locks[sensor_port])) {
+        dev_dbg(g_devfp_ptr,"framepars_locks[%d] is locked, we do not need to re-run it. frame16=%d maxahead=%d \n",  sensor_port,  frame16, maxahead);
+        return;
+    }
+#endif
+    _processPars(sensor_port, sensorproc, frame16, maxahead);
+#ifdef    LOCK_BH_PROCESSPARS
+    spin_unlock_bh(framepars_locks[sensor_port]); // removed, see above
+#else
+    spin_unlock(framepars_locks[sensor_port]);
+#endif
+}
+
+
 
 /**
  * @brief schedule pgm_func to be executed for selected frame (frame16)
@@ -823,18 +900,16 @@ int setFrameParsStatic(int sensor_port, int numPars, struct frameparspair_t * pa
 	return 0;
 }
 
-/**
- * @brief set parameters for the specified frame  (atomic, with interrupts off). Used from applications through driver write
- * @param sensor_port sensor port number (0..3)
- * @param frameno absolute (full) frame number parameters should be applied to
- * @param maxLatency maximal command latency (parameters should be set not less than maxLatency ahead of the current frame)
- * maxLatency < 0 - don't check latency (i.e.only commands that are not releted to particular frames)
- * @param numPars number of parameters to set (0 is OK to just test if it is too early/too late)
- * @param pars array of parameters (number/value pairs). FRAMEPAIR_FORCE_NEW modifier to parameter number
- * @return 0 - OK, -ERR_FRAMEPARS_TOOEARLY, -ERR_FRAMEPARS_TOOLATE
- */
-//TODO: Check that writes never to the future or past frame (only 6 of 8 are allowed). Have seen just_this to flood all
-int setFrameParsAtomic(int sensor_port, unsigned long frameno, int maxLatency, int numPars, struct frameparspair_t * pars)
+/** Set parameters for the specified frame  (atomic, with interrupts off). Used from applications through driver write */
+//TODO: Check that writes never to the future or past frame (only 6 of 8 are allowed -> 14 of 16). Have seen just_this to flood all
+int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0..3)
+                       unsigned long frameno,         ///< absolute (full) frame number parameters should be applied to
+                       int maxLatency,                ///< maximal command latency (parameters should be set not less than maxLatency ahead of the current frame)
+                                                      ///< maxLatency < 0 - don't check latency (i.e. only commands that are not releted to particular frames),
+                                                      ///< with negative and frameno< current frame will make it current, to use with ASAP
+                       int numPars,                   ///< number of parameters to set (0 is OK to just test if it is too early/too late)
+                       struct frameparspair_t * pars) ///< array of parameters (number/value pairs). FRAMEPAIR_FORCE_NEW modifier to parameter number
+                                                      ///< @return 0 - OK, -ERR_FRAMEPARS_TOOEARLY, -ERR_FRAMEPARS_TOOLATE
 {
 	unsigned long flags;
 	int npar, nframe;
@@ -843,37 +918,52 @@ int setFrameParsAtomic(int sensor_port, unsigned long frameno, int maxLatency, i
 	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 	int findex_this, findex_prev, findex_future, frame16;
-    dev_dbg(g_devfp_ptr,"%s : port= %d, frameno=0x%lx, findex_this=%d (0x%lx) maxLatency=%d, numPars=%d, frameParsInitialized[%d]=%d\n",
-            __func__, sensor_port, frameno, findex_this, thisFrameNumber(sensor_port), maxLatency, numPars, sensor_port, frameParsInitialized[sensor_port]);
+    dev_dbg(g_devfp_ptr,"port= %d, frameno=0x%lx, findex_this=%ld (0x%lx) maxLatency=%d, numPars=%d, frameParsInitialized[%d]=%d\n",
+            sensor_port, frameno, findex_this, thisFrameNumber(sensor_port), maxLatency, numPars, sensor_port, frameParsInitialized[sensor_port]);
 	if (!frameParsInitialized[sensor_port]) {
 		initSequencers(sensor_port); // Will call  initFramePars(); and initialize functions
 	}
 	findex_this =  thisFrameNumber(sensor_port) & PARS_FRAMES_MASK;
 	findex_prev = (findex_this - 1)  & PARS_FRAMES_MASK;
 	findex_future = (findex_this - 2)  & PARS_FRAMES_MASK; // actually - fartherst in the future??
-	D1I(local_irq_save(flags));
+//	D1I(local_irq_save(flags));
+	spin_lock_irqsave(framepars_locks[sensor_port], flags);
 	PROFILE_NOW(5); // Was 6, but no 7 in NC393
 	if (maxLatency >= 0) {
 		if (frameno <= (thisFrameNumber(sensor_port) + maxLatency)) {
-			D1I(local_irq_restore(flags));
+//			D1I(local_irq_restore(flags));
+		    spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
+            dev_dbg(g_devfp_ptr,"port=%d, ERR_FRAMEPARS_TOOLATE, frameno = 0x%x\n",sensor_port, (int)frameno);
 			return -ERR_FRAMEPARS_TOOLATE;
 		}else if (frameno >= (thisFrameNumber(sensor_port) + (PARS_FRAMES - 1))) {
-			D1I(local_irq_restore(flags));
+//			D1I(local_irq_restore(flags));
+            spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
+            dev_dbg(g_devfp_ptr,"port=%d, ERR_FRAMEPARS_TOOEARLY, frameno = 0x%x\n",sensor_port, (int)frameno);
 			return -ERR_FRAMEPARS_TOOEARLY;
 		}
+	} else {
+        dev_dbg(g_devfp_ptr,"port=%d, Using negative maxLatency, frameno = 0x%x, thisFrameNumber(%d) = 0x%x\n",
+                sensor_port, (int)frameno, sensor_port, (int) thisFrameNumber(sensor_port));
+        if (frameno < thisFrameNumber(sensor_port)){
+            dev_dbg(g_devfp_ptr,"port=%d, Replacing earlier supplied frame number = 0x%x with the current one= 0x%x\n",
+                    sensor_port, (int)frameno, (int) thisFrameNumber(sensor_port));
+            frameno = thisFrameNumber(sensor_port);
+        }
 	}
-	// not too late, not too early, go ahead
+	// not too late, not too early, go ahead (or maxlatency <0 - ASAP only)
 	for (npar = 0; npar < numPars; npar++) {
-		D5(printk(" --pars[%d].num=0x%lx, pars[%d].val=0x%lx", npar, pars[npar].num, npar, pars[npar].val));
+	    dev_dbg(g_devfp_ptr,"port= %d,  --pars[%d].num=0x%lx, pars[%d].val=0x%lx", sensor_port, npar, pars[npar].num, npar, pars[npar].val);
 //    frame16=      (pars[npar].num & FRAMEPAR_GLOBALS)? -1: (frameno  & PARS_FRAMES_MASK);
 		frame16 =      frameno  & PARS_FRAMES_MASK;
 		val = pars[npar].val;
 		index = pars[npar].num & 0xffff;
 		if (index > ((index >= FRAMEPAR_GLOBALS) ? (P_MAX_GPAR + FRAMEPAR_GLOBALS) : P_MAX_PAR)) {
-			D1I(local_irq_restore(flags));
+//			D1I(local_irq_restore(flags));
+            spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
+            dev_dbg(g_devfp_ptr,"port=%d, ERR_FRAMEPARS_BADINDEX, frameno = 0x%x\n",sensor_port, (int)frameno);
 			return -ERR_FRAMEPARS_BADINDEX;
 		}
-		D5(printk(" index=0x%x, val=0x%lx", index, val));
+		dev_dbg(g_devfp_ptr,"port= %d, ndex=0x%x, val=0x%lx", index, val, sensor_port);
 		if (index >= FRAMEPAR_GLOBALS) {                        // ignore frame logic, set "static" parameters to frame 0
 			if (pars[npar].num & FRAMEPAIR_MASK_BYTES) {    // combine new value with the old one
 				val = FRAMEPAIR_FRAME_MASK_NEW(pars[npar].num, GLOBALPARS(sensor_port,index), val);
@@ -882,14 +972,14 @@ int setFrameParsAtomic(int sensor_port, unsigned long frameno, int maxLatency, i
 			D5(printk(" set GLOBALPARS(0x%x)=0x%lx\n", index, val));
 		} else if (pars[npar].num  & FRAMEPAIR_FRAME_FUNC) {
 			funcs2call[index] = val;
-			D5(printk(" set funcs2call[0x%x]=0x%lx\n", index, val));
+			dev_dbg(g_devfp_ptr,"port= %d, set funcs2call[0x%x]=0x%lx\n", index, val, sensor_port);
 //    } else if ((frameno !=findex_prev) && (frameno != findex_future)) { // do not write parameters in the future otherwise
 		} else if ((frame16 != findex_future) || ((pars[npar].num & FRAMEPAIR_JUST_THIS) == 0)) {        // do not write "JUST_THIS" parameters in the future otherwise they'll stick
 			if (pars[npar].num & FRAMEPAIR_MASK_BYTES) {                                            // combine new value with the old one
 				val = FRAMEPAIR_FRAME_MASK_NEW(pars[npar].num, framepars[frame16].pars[index], val);
 			}
 //TODO: optimize to use mask several parameters together
-			D5(printk(" frame16=0x%x\n", frame16));
+			dev_dbg(g_devfp_ptr,"port= %d, frame16=0x%x\n", frame16, sensor_port);
 			if ((framepars[frame16].pars[index] != val) || (pars[npar].num & FRAMEPAIR_FORCE_NEW)) {
 				bmask =   1 << (index & 31);
 				bindex = index >> 5;
@@ -899,16 +989,16 @@ int setFrameParsAtomic(int sensor_port, unsigned long frameno, int maxLatency, i
 				framepars[frame16].mod[bindex]      |= bmask;
 				framepars[frame16].mod32            |= bmask32;
 				framepars[frame16].functions        |= funcs2call[index]; //Mark which functions will be needed to process the parameters
-				D5(printk(" bindex=0x%x, bmask=0x%08lx, bmask32=0x%08lx, functions=0x%08lx\n", bindex, bmask, bmask32, framepars[frame16].functions));
+				dev_dbg(g_devfp_ptr,"port= %d,  bindex=0x%x, bmask=0x%08lx, bmask32=0x%08lx, functions=0x%08lx\n", sensor_port, bindex, bmask, bmask32, framepars[frame16].functions);
 // Write parameter to the next frames up to the one that have the same parameter already modified (only if not FRAMEPAIR_JUST_THIS)
 				if ((pars[npar].num & FRAMEPAIR_JUST_THIS) == 0) {
-					MDF5(printk(":        ---   setting next frames"));
+					dev_dbg(g_devfp_ptr,"port= %d,       ---   setting next frames\n",sensor_port);
 					for (nframe = (frame16 + 1) & PARS_FRAMES_MASK; (nframe != findex_prev) && (!(framepars[nframe].mod[bindex] & bmask)); nframe = (nframe + 1) & PARS_FRAMES_MASK) {
 						framepars[nframe].pars[index] = val;
-						D5(printk(" %d", nframe));
+						dev_dbg(g_devfp_ptr,"port= %d, %d", sensor_port, nframe);
 					}
 					frame16 = (frame16 - 1) & PARS_FRAMES_MASK; // for " regular parameters "modified since" do not include the target frame itself, for "JUST_THIS" - does
-					D5(printk("\n"));
+//					D5(printk("\n"));
 				}
 // Mark this parameter in all previous frames as "modified since"
 // TODO: consider alternative way - first iterate through all parameters, build masks, then apply them
@@ -918,38 +1008,46 @@ int setFrameParsAtomic(int sensor_port, unsigned long frameno, int maxLatency, i
 				}
 			}
 		} else { // error - trying to write "just this" to the "future" - that would stick if allowed
-			D1I(local_irq_restore(flags));
-			ELP_KERR(printk("Tried to write JUST_THIS parameter (0x%lx) too far in the future", pars[npar].num));
+//			D1I(local_irq_restore(flags));
+            spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
+            dev_dbg(g_devfp_ptr,"port= %d, Tried to write JUST_THIS parameter (0x%lx) too far in the future", sensor_port, pars[npar].num);
+            dev_err(g_devfp_ptr,"port= %d, Tried to write JUST_THIS parameter (0x%lx) too far in the future", sensor_port, pars[npar].num);
 			return -ERR_FRAMEPARS_TOOEARLY;
 		}
 	}
 // Try to process parameters immediately after written. If 0, only non-ASAP will be processed to prevent
 // effects of uncertainty of when was it called relative to frame sync
 // Changed to all (don't care about uncertainty - they will trigger only if it is too late or during sensor detection/initialization)
+	debug_flags = 5; // enable debug print several times
 	if (!(get_globalParam(sensor_port, G_TASKLET_CTL) & (1 << TASKLET_CTL_NOSAME))) {
-//    processParsSeq (sensorproc, thisFrameNumber & PARS_FRAMES_MASK, 0); //maxahead=0, the rest will be processed after frame sync, from the tasklet
-		dev_dbg(g_devfp_ptr,"%s port=%d, G_TASKLET_CTL -> 0x%x \n",__func__, sensor_port, (int) get_globalParam(sensor_port, G_TASKLET_CTL));
-		processPars(sensor_port, &asensorproc[sensor_port], thisFrameNumber(sensor_port) & PARS_FRAMES_MASK, 0); //maxahead=0, the rest will be processed after frame sync, from the tasklet
+//    _processParsSeq (sensorproc, thisFrameNumber & PARS_FRAMES_MASK, 0); //maxahead=0, the rest will be processed after frame sync, from the tasklet
+		dev_dbg(g_devfp_ptr,"G_TASKLET_CTL -> 0x%x (port = %d )\n", (int) get_globalParam(sensor_port, G_TASKLET_CTL),sensor_port);
+//		processPars(sensor_port, &asensorproc[sensor_port], thisFrameNumber(sensor_port) & PARS_FRAMES_MASK, 0); //maxahead=0, the rest will be processed after frame sync, from the tasklet
+		// Already having lock, call inner function. When called from tasklet, it will have to acquire lock
+        _processPars(sensor_port, &asensorproc[sensor_port], thisFrameNumber(sensor_port) & PARS_FRAMES_MASK, 0); //maxahead=0, the rest will be processed after frame sync, from the tasklet
+        dev_dbg(g_devfp_ptr,"kthread _processPars(%d, .., 0x%x) DONE\n",sensor_port, thisFrameNumber(sensor_port));
+	} else {
+        dev_dbg(g_devfp_ptr,"kthread: NOT calling _processPars(%d, .., 0x%lx) DONE\n",sensor_port, thisFrameNumber(sensor_port));
 	}
 	PROFILE_NOW(6); // 7); // no (7) in NC393
-	D1I(local_irq_restore(flags));
+//	D1I(local_irq_restore(flags));
+    spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
 	return 0;
 }
 //#define FRAMEPAIR_JUST_THIS     0x40000 // write only to this frame, don't propagate
 // (like "single frame" - compressor, sensor) first write "stop", then - "single" with FRAMEPAIR_JUST_THIS
-/**
- * @brief set a single output (calculated) parameter for the frame referenced by this_framepars structure.
+
+/** Set a single output (calculated) parameter for the frame referenced by this_framepars structure.
  * Schedules action only if the FRAMEPAIR_FORCE_PROC modifier bit is set in mindex
- * @param sensor_port sensor port number (0..3)
- * @param this_framepars pointer to the current parameters structure
- * @param mindex parameter number (with optional modifiers in high bits)
- * @param val parameter value to set
- * @return 0 - OK, -ERR_FRAMEPARS_BADINDEX
- */
-int setFramePar(int sensor_port, struct framepars_t * this_framepars, unsigned long mindex, unsigned long val)
+ * Should only be called when IRQ (just bh preferrably) is off and lock on framepars_locks[sensor_port] (all pgm_* have that)  */
+int setFramePar(int sensor_port,                     ///< sensor port number (0..3)
+                struct framepars_t * this_framepars, ///< pointer to the current parameters structure
+                unsigned long mindex,                ///< parameter number (with optional modifiers in high bits)
+                unsigned long val)                   ///< parameter value to set
+                                                     ///< @return 0 - OK, -ERR_FRAMEPARS_BADINDEX
 {
 	int frame16 =  (this_framepars->pars[P_FRAME]) & PARS_FRAMES_MASK;
-	unsigned long flags;
+	//  unsigned long flags; should only be called when interruypts disabled and lock obtained
 	int nframe;
 	unsigned long bmask, bmask32, bindex;
 	int findex_this =  thisFrameNumber(sensor_port) & PARS_FRAMES_MASK;
@@ -960,10 +1058,13 @@ int setFramePar(int sensor_port, struct framepars_t * this_framepars, unsigned l
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 
 	dev_dbg(g_devfp_ptr, "%s: port=%d, thisFrameNumber=0x%lx frame16=%d index= %d (0x%lx), val=0x%lx\n",__func__, sensor_port, thisFrameNumber(sensor_port), frame16, index, mindex, val);
-	D1I(local_irq_save(flags));
+//	D1I(local_irq_save(flags));
+//    spin_lock_irqsave(framepars_locks[sensor_port], flags);
+
 //  if (index > P_MAX_PAR) {
 	if (index > ((index >= FRAMEPAR_GLOBALS) ? (P_MAX_GPAR + FRAMEPAR_GLOBALS) : P_MAX_PAR)) {
-		D1I(local_irq_restore(flags));
+//		D1I(local_irq_restore(flags));
+//        spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
 		return -ERR_FRAMEPARS_BADINDEX;
 	}
 //TODO: optimize to use mask several parameters together
@@ -1015,26 +1116,52 @@ int setFramePar(int sensor_port, struct framepars_t * this_framepars, unsigned l
 			D8(printk("\n"));
 		}
 	} else { // error - trying to write "just this" to the "future" - that would stick if allowed
-		D1I(local_irq_restore(flags));
+//	    D1I(local_irq_restore(flags));
+//        spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
+        dev_dbg(g_devfp_ptr, "Tried to write JUST_THIS parameter (0x%lx) too far in the future", mindex);
 		dev_err(g_devfp_ptr, "Tried to write JUST_THIS parameter (0x%lx) too far in the future", mindex);
 		return -ERR_FRAMEPARS_TOOEARLY;
 	}
-	D1I(local_irq_restore(flags));
+//	D1I(local_irq_restore(flags));
+//    spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
 	return 0;
 }
-/**
- * @brief set multiple output (calculated) parameters for the frame referenced by this_framepars structure.
+
+/** Set a single output (calculated) parameter for the frame referenced by this_framepars structure from the user program
+ * Obtain lock, disable IRQ and  call setFramePar
+ * Schedules action only if the FRAMEPAIR_FORCE_PROC modifier bit is set in mindex
+ * Should only be called when IRQ (just bh preferrably) is off and lock on framepars_locks[sensor_port] (all pgm_* have that)  */
+int setFrameParLocked(int sensor_port,                     ///< sensor port number (0..3)
+                      struct framepars_t * this_framepars, ///< pointer to the current parameters structure
+                      unsigned long mindex,                ///< parameter number (with optional modifiers in high bits)
+                      unsigned long val)                   ///< parameter value to set
+                                                           ///< @return 0 - OK, -ERR_FRAMEPARS_BADINDEX
+{
+    unsigned long flags;
+    int rslt;
+    spin_lock_irqsave(framepars_locks[sensor_port], flags);
+    rslt =  setFramePar(sensor_port,    // sensor port number (0..3)
+                        this_framepars, // pointer to the current parameters structure
+                        mindex,         // parameter number (with optional modifiers in high bits)
+                        val);           // parameter value to set
+                                        // @return 0 - OK, -ERR_FRAMEPARS_BADINDEX
+    spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
+    return rslt;
+}
+
+/** Set multiple output (calculated) parameters for the frame referenced by this_framepars structure.
  * Schedules action only if the FRAMEPAIR_FORCE_PROC modifier bit is set in the particular parameter index
- * @param sensor_port sensor port number (0..3)
- * @param this_framepars pointer to the current parameters structure
- * @param numPars number of parameters to set
- * @param pars  array of parameters (number/value pairs). Parameter numbers accept modifiers
- * @return  0 - OK, -ERR_FRAMEPARS_BADINDEX
- */
-int setFramePars(int sensor_port, struct framepars_t * this_framepars, int numPars, struct frameparspair_t * pars)
+ * Called from tasklets (while executing (*_)pgm_* functions
+ * Should only be called when IRQ (just bh preferrably) is off and lock on framepars_locks[sensor_port] (all pgm_* have that)  */
+
+int setFramePars(int sensor_port,                     ///< sensor port number (0..3)
+                 struct framepars_t * this_framepars, ///< this_framepars pointer to the current parameters structure
+                 int numPars,                         ///< number of parameters to set
+                 struct frameparspair_t * pars)       ///<array of parameters (number/value pairs). Parameter numbers accept modifiers
+                                                      ///< @return  0 - OK, -ERR_FRAMEPARS_BADINDEX
 {
 	int frame16;
-	unsigned long flags;
+//	unsigned long flags; should only be called when interruypts disabled and lock obtained
 	int npar, nframe;
 	unsigned long val, bmask, bmask32;
 	int index, bindex;
@@ -1045,7 +1172,8 @@ int setFramePars(int sensor_port, struct framepars_t * this_framepars, int numPa
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 
 	dev_dbg(g_devfp_ptr, "%s : port= %d, this_framepars=0x%x numPars=%d\n",__func__, sensor_port, (int)this_framepars, numPars);
-	D1I(local_irq_save(flags));
+//	D1I(local_irq_save(flags));
+//    spin_lock_irqsave(framepars_locks[sensor_port], flags);
 	for (npar = 0; npar < numPars; npar++) {
 		frame16 = (this_framepars->pars[P_FRAME]) & PARS_FRAMES_MASK;
 		val = pars[npar].val;
@@ -1053,7 +1181,8 @@ int setFramePars(int sensor_port, struct framepars_t * this_framepars, int numPa
 		dev_dbg(g_devfp_ptr, ":    ---   frame16=%d index=%d (0x%x) val=0x%x\n", frame16, index, (int)pars[npar].num, (int)val);
 		// remark: code below looks similar to setFramePar function, call it instead
 		if (index > ((index >= FRAMEPAR_GLOBALS) ? (P_MAX_GPAR + FRAMEPAR_GLOBALS) : P_MAX_PAR)) {
-			D1I(local_irq_restore(flags));
+//			D1I(local_irq_restore(flags));
+//	        spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
 			dev_err(g_devfp_ptr, " bad index=%d > %d\n", index, P_MAX_PAR);
 			return -ERR_FRAMEPARS_BADINDEX;
 		}
@@ -1100,12 +1229,14 @@ int setFramePars(int sensor_port, struct framepars_t * this_framepars, int numPa
 				}
 			}
 		} else { // error - trying to write "just this" to the "future" - that would stick if allowed
-			D1I(local_irq_restore(flags));
+//			D1I(local_irq_restore(flags));
+//	        spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
 			dev_err(g_devfp_ptr, "Tried to write JUST_THIS parameter (0x%lx) too far in the future", pars[npar].num);
 			return -ERR_FRAMEPARS_TOOEARLY;
 		}
 	}
-	D1I(local_irq_restore(flags));
+//	D1I(local_irq_restore(flags));
+//    spin_unlock_irqrestore(framepars_locks[sensor_port], flags);
 	return 0;
 }
 
@@ -1371,9 +1502,9 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 				}
 				last = first + 1;
 				while ((last < count) && ((pars[last].num & 0xff00) != 0xff00)) last++;  // skip to the end or next special instructions
+                dev_dbg(g_devfp_ptr, "%s 0x%x: setFrameParsAtomic(%ld, %d, %d)\n",
+                        __func__, (int) privData->minor, frame, latency, last - first);
 				result = setFrameParsAtomic(sensor_port,frame, latency, last - first, &pars[first]);
-				dev_dbg(g_devfp_ptr, "%s 0x%x: setFrameParsAtomic(%ld, %d, %d)\n",
-				        __func__, (int) privData->minor, frame, latency, last - first);
 				if (result < 0) {
 					if (count > sizeof(pars_static)) kfree(pars);
 					return -EFAULT;
@@ -1385,7 +1516,7 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 		return count << 3; // *sizeof(struct frameparspair_t);
 	default: return -EINVAL;
 	}
-}
+} // the frame size of 2080 bytes is larger than 1024 bytes [-Wframe-larger-than=]
 
 /**
  * @brief Driver MMAP method (should be used read only)
@@ -1461,9 +1592,9 @@ static ssize_t store_fpga_time(struct device *dev, struct device_attribute *attr
 {
     sec_usec_t sec_usec={.sec=0, .usec=0};
     // avoiding floating point calcualtions in the kernel
-    char *cp;
+    char *cp = buf;
     int i;
-    if (sscanf(buf, "%u.%s", &sec_usec.sec, cp)>0){
+    if (sscanf(buf, "%lu.%s", &sec_usec.sec, cp)>0){
         sscanf(cp,"%lu",&sec_usec.usec);
         for (i=strlen(cp); i<6;i++)
             sec_usec.usec *=10;

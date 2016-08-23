@@ -173,10 +173,7 @@ static DEFINE_SPINLOCK(gamma_lock_1); ///<
 static DEFINE_SPINLOCK(gamma_lock_2); ///<
 static DEFINE_SPINLOCK(gamma_lock_3); ///<
 /** Define array of pointers to locks - hardware allows concurrent writes to different ports tables */
-spinlock_t * gamma_locks[4] = {&gamma_lock_0,
-        &gamma_lock_1,
-        &gamma_lock_2,
-        &gamma_lock_3};
+spinlock_t * gamma_locks[4] = {&gamma_lock_0, &gamma_lock_1, &gamma_lock_2, &gamma_lock_3};
 
 static struct gamma_stuct_t gammas[GAMMA_CACHE_NUMBER] __attribute__ ((aligned (PAGE_SIZE)));
 struct gamma_stuct_t * gammas_p; // to use with mmap
