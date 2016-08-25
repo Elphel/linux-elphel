@@ -34,6 +34,8 @@
 
 #define VIDEOMEM_MODULE_DESCRIPTION "Video buffer driver"
 //#define VIDEOMEM_DRIVER_NAME        "video_mem"
+// NC393 debug macros
+#include "debug393.h"
 
 static const struct of_device_id elphel393_videomem_of_match[];
 static struct device *g_dev_ptr; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
@@ -82,6 +84,10 @@ int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, command=%d\n",num_sensor,frame16, (int) x393cmd);
    dev_dbg(g_dev_ptr,"sa=0x%08x sa_inc=0x%08x lfn=0x%08x fw=0x%08x wh=0x%08x lt=0x%08x\n",
            window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num, window_full_width.d32,window_width_height.d32,window_left_top.d32);
+   MDP(DBGB_VM,num_sensor,"frame16=%d, command=%d\n", frame16, (int) x393cmd)
+   MDP(DBGB_VM,num_sensor,"sa=0x%08x sa_inc=0x%08x lfn=0x%08x fw=0x%08x wh=0x%08x lt=0x%08x\n",
+           window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num, window_full_width.d32,window_width_height.d32,window_left_top.d32)
+
 
    switch (x393cmd){
    case ASAP:
@@ -153,6 +159,18 @@ int  control_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
        return -EINVAL;
    }
 
+   dev_dbg(g_dev_ptr,"{%d}  frame16=%d, cmd=%d, x393cms=%d\n",num_sensor,frame16, cmd, (int) x393cmd);
+   dev_dbg(g_dev_ptr,"mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, reset_frame=%d, single=%d,repetitive=%d, disable_need=%d,skip_too_late=%d )\n",
+           mcntrl_mode.d32, mcntrl_mode.enable, mcntrl_mode.chn_nreset, mcntrl_mode.write_mem, mcntrl_mode.extra_pages,
+           mcntrl_mode.keep_open, mcntrl_mode.byte32, mcntrl_mode.reset_frame, mcntrl_mode.single, mcntrl_mode.repetitive,
+           mcntrl_mode.disable_need, mcntrl_mode.skip_too_late);
+   MDP(DBGB_VM,num_sensor,"frame16=%d, cmd=%d, x393cms=%d\n",frame16, cmd, (int) x393cmd)
+   MDP(DBGB_VM,num_sensor,"mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, reset_frame=%d, single=%d,repetitive=%d, disable_need=%d,skip_too_late=%d )\n",
+           mcntrl_mode.d32, mcntrl_mode.enable, mcntrl_mode.chn_nreset, mcntrl_mode.write_mem, mcntrl_mode.extra_pages,
+           mcntrl_mode.keep_open, mcntrl_mode.byte32, mcntrl_mode.reset_frame, mcntrl_mode.single, mcntrl_mode.repetitive,
+           mcntrl_mode.disable_need, mcntrl_mode.skip_too_late)
+
+
    switch (x393cmd){
    case ASAP:
        frame16 = 0;
@@ -215,7 +233,16 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
 
    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, command=%d\n",num_sensor,frame16, (int) x393cmd);
    dev_dbg(g_dev_ptr,"sa=0x%08x sa_inc=0x%08x lfn=0x%08x fw=0x%08x wh=0x%08x lt=0x%08x whs=0x%08x\n",
-           window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num.d32, window_full_width.d32,window_width_height.d32,window_left_top.d32, window_tile_whs.d32);
+           window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num.d32, window_full_width.d32,
+           window_width_height.d32,window_left_top.d32, window_tile_whs.d32);
+
+   MDP(DBGB_VM,num_sensor,"frame16=%d, command=%d\n", frame16, (int) x393cmd)
+   MDP(DBGB_VM,num_sensor,"sa=0x%08x sa_inc=0x%08x lfn=0x%08x fw=0x%08x wh=0x%08x lt=0x%08x whs=0x%08x\n",
+           window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num, window_full_width.d32,
+           window_width_height.d32,window_left_top.d32, window_tile_whs.d32)
+
+
+
 
    switch (x393cmd){
    case ASAP:
@@ -294,6 +321,16 @@ int control_compressor_memory (int num_sensor,       ///< sensor port number (0.
    default:
        return -EINVAL;
    }
+   dev_dbg(g_dev_ptr,"{%d}  frame16=%d, cmd=%d, x393cms=%d\n",num_sensor,frame16, cmd, (int) x393cmd);
+   dev_dbg(g_dev_ptr,"mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, reset_frame=%d, single=%d,repetitive=%d, disable_need=%d,skip_too_late=%d )\n",
+           mcntrl_mode.d32, mcntrl_mode.enable, mcntrl_mode.chn_nreset, mcntrl_mode.write_mem, mcntrl_mode.extra_pages,
+           mcntrl_mode.keep_open, mcntrl_mode.byte32, mcntrl_mode.reset_frame, mcntrl_mode.single, mcntrl_mode.repetitive,
+           mcntrl_mode.disable_need, mcntrl_mode.skip_too_late);
+   MDP(DBGB_VM,num_sensor,"frame16=%d, cmd=%d, x393cms=%d\n",frame16, cmd, (int) x393cmd)
+   MDP(DBGB_VM,num_sensor,"mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, reset_frame=%d, single=%d,repetitive=%d, disable_need=%d,skip_too_late=%d )\n",
+           mcntrl_mode.d32, mcntrl_mode.enable, mcntrl_mode.chn_nreset, mcntrl_mode.write_mem, mcntrl_mode.extra_pages,
+           mcntrl_mode.keep_open, mcntrl_mode.byte32, mcntrl_mode.reset_frame, mcntrl_mode.single, mcntrl_mode.repetitive,
+           mcntrl_mode.disable_need, mcntrl_mode.skip_too_late)
 
    switch (x393cmd){
    case ASAP:

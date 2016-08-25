@@ -323,7 +323,7 @@
 //
  */
 
-#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
+//#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
 /****************** INCLUDE FILES SECTION ***********************************/
 #include <linux/types.h> // for div 64
 #include <asm/div64.h>   // for div 64

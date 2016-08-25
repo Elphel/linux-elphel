@@ -21,7 +21,7 @@
 
 //copied from cxi2c.c - TODO:remove unneeded
 
-#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
+//#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
 #include <linux/types.h>        // div for 64
 #include <asm/div64.h>          // div for 64
 
@@ -77,7 +77,7 @@
 //#undef LOCK_BH_FRAMEPARS
 #define LOCK_BH_FRAMEPARS
 
-#define USE_KLOG393
+//#define USE_KLOG393
 
 
 
@@ -92,10 +92,17 @@
 #endif
 
 
+#include "debug393.h"
+
+
+#define ELPHEL_DEBUG 0
+
+
+
+// Below are old NC353 debug macros, remove them
+
 #if ELPHEL_DEBUG
-/* 393: program G_DEBUG through sensor port 0 */
- #define MDF(x) { printk("%s:%d:%s ", __FILE__, __LINE__, __FUNCTION__); x; }
- #define MDF2(x) { if (GLOBALPARS(0,G_DEBUG) & (1 << 2)) { printk("%s:%d:%s ", __FILE__, __LINE__, __FUNCTION__); x; } }
+// #define MDF2(x) { if (GLOBALPARS(0,G_DEBUG) & (1 << 2)) { printk("%s:%d:%s ", __FILE__, __LINE__, __FUNCTION__); x; } }
 // setFrameParsAtomic
  #define MDF5(x) { if (GLOBALPARS(0,G_DEBUG) & (1 << 5)) { printk("%s:%d:%s ", __FILE__, __LINE__, __FUNCTION__); x; } }
  #define   D5(x) { if (GLOBALPARS(0,G_DEBUG) & (1 << 5)) { x; } }
@@ -108,10 +115,14 @@
 // setFramePar[s]
  #define MDF8(x) { if (GLOBALPARS(0,G_DEBUG) & (1 << 8)) { printk("%s:%d:%s ", __FILE__, __LINE__, __FUNCTION__); x; } }
  #define   D8(x) { if (GLOBALPARS(0,G_DEBUG) & (1 << 8)) { x; } }
+ #define D5(chn,...)
+ #define D6(chn,...)
+ #define D7(chn,...)
+ #define D8(chn,...)
+
  #define ELPHEL_DEBUG_THIS 0
 // #define ELPHEL_DEBUG_THIS 1
 #else
- #define MDF(x)
  #define MDF2(x)
  #define MDF5(x)
  #define D5(x)
@@ -175,8 +186,6 @@ static DEFINE_SPINLOCK(framepars_lock_2); ///<
 static DEFINE_SPINLOCK(framepars_lock_3); ///<
 /** Define array of pointers to locks - hardware allows concurrent writes to different ports tables */
 spinlock_t * framepars_locks[4] = {&framepars_lock_0, &framepars_lock_1, &framepars_lock_2, &framepars_lock_3};
-
-
 
 
 /* Remove after compilation OK */
@@ -620,7 +629,8 @@ inline void _processParsASAP(int sensor_port,                   ///< sensor port
 	unsigned long * p_nasap = &GLOBALPARS(sensor_port, G_CALLNASAP);
 	int i;
 	int rslt;
-#if ELPHEL_DEBUG
+
+#if ELPHEL_DEBUG_0
 	unsigned long allfunctions = framepars[0].functions  | framepars[1].functions | framepars[2].functions | framepars[3].functions |
 				     framepars[4].functions | framepars[5].functions | framepars[6].functions | framepars[7].functions;
 	if (allfunctions) MDF6(printk("frame16=%d, functions: %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n", frame16, framepars[0].functions,
@@ -652,13 +662,16 @@ inline void _processParsASAP(int sensor_port,                   ///< sensor port
 	                           (p_nasap[pars_ahead] & (procpars->functions) & remain) :
 	                           (procpars->functions & remain);
 	        dev_dbg(g_devfp_ptr,"port=%d frame16=%d todo=0x%08lx,p_nasap[%d]=0x%08x procpars->functions=0x%08lx\n",
-	                sensor_port,  frame16, todo, pars_ahead, procpars->functions);
+	                sensor_port,  frame16, todo, pars_ahead, p_nasap[pars_ahead], procpars->functions);
+            MDP(DBGB_FASAP,sensor_port,"frame16=%d todo=0x%08lx,p_nasap[%d]=0x%08x procpars->functions=0x%08lx\n",
+                    frame16, todo, pars_ahead, p_nasap[pars_ahead], procpars->functions)
+
 	    } else {
             todo = (pars_ahead) ?
                                (p_nasap[pars_ahead] & (procpars->functions) & remain) :
                                (procpars->functions & remain);
             dev_dbg(g_devfp_ptr,"port=%d frame16=%d todo=0x%08lx,p_nasap[%d]=0x%08x procpars->functions=0x%08lx\n",
-                    sensor_port,  frame16, todo, pars_ahead, procpars->functions);
+                    sensor_port,  frame16, todo, pars_ahead, p_nasap[pars_ahead], procpars->functions);
 	    }
 		while ((todo = (pars_ahead) ?
 			       (p_nasap[pars_ahead] & (procpars->functions) & remain) :
@@ -673,11 +686,18 @@ inline void _processParsASAP(int sensor_port,                   ///< sensor port
 	        if (debug_flags) {
 	            dev_dbg(g_devfp_ptr,"port= %d, todo=0x%08lx (curr=0x%08lx) frame16=%d, pars_ahead=%d, frame_proc=%d i=%d, mask=0x%08lx func=0x%08x\n",
 	                    sensor_port, todo, procpars->functions, frame16, pars_ahead, frame_proc, i, mask, (int)sensorproc->pgm_func[i]);
+	            MDP(DBGB_FASAP,sensor_port,"todo=0x%08lx (curr=0x%08lx) frame16=%d, pars_ahead=%d, frame_proc=%d i=%d, mask=0x%08lx func=0x%08x\n",
+	                    todo, procpars->functions, frame16, pars_ahead, frame_proc, i, mask, (int)sensorproc->pgm_func[i])
 
 	            dev_dbg(g_devfp_ptr,"port= %d, %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
 	                    sensor_port,
 	                    framepars[0].functions, framepars[1].functions, framepars[2].functions, framepars[3].functions,
 	                    framepars[4].functions, framepars[5].functions, framepars[6].functions, framepars[7].functions);
+                MDP(DBGB_FASAP,sensor_port,"%08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
+                        framepars[ 0].functions, framepars[ 1].functions, framepars[ 2].functions, framepars[ 3].functions,
+                        framepars[ 4].functions, framepars[ 5].functions, framepars[ 6].functions, framepars[ 7].functions,
+                        framepars[ 8].functions, framepars[ 9].functions, framepars[10].functions, framepars[11].functions,
+                        framepars[12].functions, framepars[13].functions, framepars[14].functions, framepars[15].functions)
 	        } else {
 	            dev_dbg(g_devfp_ptr,"port= %d, todo=0x%08lx (curr=0x%08lx) frame16=%d, pars_ahead=%d, frame_proc=%d i=%d, mask=0x%08lx func=0x%08x\n",
 	                    sensor_port, todo, procpars->functions, frame16, pars_ahead, frame_proc, i, mask, (int)sensorproc->pgm_func[i]);
@@ -689,10 +709,12 @@ inline void _processParsASAP(int sensor_port,                   ///< sensor port
 	        }
 			if (sensorproc->pgm_func[i]) {
 	            dev_dbg(g_devfp_ptr,"port= %d, Calling GENERIC pgm_func[%d] ASAP\n",sensor_port,i);
+	            MDP(DBGB_FASAP,sensor_port,"Calling GENERIC pgm_func[%d] ASAP\n",i)
 				rslt = sensorproc->pgm_func[i]    (sensor_port, &(sensorproc->sensor), procpars, prevpars, -1);
 			} else rslt = 0;                                        // only sensor-specific function, nothing to do common to all sensors
 			if ((rslt >= 0) && (sensorproc->pgm_func[i + 32])) {    // sensor - specific functions, called after the main ones
                 dev_dbg(g_devfp_ptr,"port= %d, Calling SENSOR-SPECIFIC  pgm_func[%d] ASAP\n",sensor_port,i);
+                MDP(DBGB_FASAP,sensor_port,"Calling SENSOR-SPECIFIC  pgm_func[%d] ASAP\n",i)
 				rslt = sensorproc->pgm_func[i + 32] (sensor_port, &(sensorproc->sensor), procpars, prevpars, -1);
 			}
 			if (rslt < 0) dev_warn(g_devfp_ptr,"%s:%d:%s - error=%d", __FILE__, __LINE__, __FUNCTION__, rslt);// Nothing to do with errors here - just report?
@@ -778,10 +800,12 @@ inline void _processParsSeq(int sensor_port,                   ///< sensor port 
 					if (sensorproc->pgm_func[i]) {
 						// NOTE: Was (frame16+job_ahead +1) & PARS_FRAMES_MASK
                         dev_dbg(g_devfp_ptr,"port= %d, Calling GENERIC pgm_func[%d], seq_frame = %d\n",sensor_port,i,seq_frame);
+                        MDP(DBGB_FSEQ,sensor_port,"Calling GENERIC pgm_func[%d], seq_frame = %d\n",i,seq_frame)
 						rslt = sensorproc->pgm_func[i]    (sensor_port, &(sensorproc->sensor), procpars, prevpars, seq_frame);
 					} else rslt = 0;                                        // only sensor-specific function, nothing to do common to all sensors
 					if ((rslt >= 0) && (sensorproc->pgm_func[i + 32])) {    // sensor - specific functions, called after the main ones
                         dev_dbg(g_devfp_ptr,"port= %d, Calling SENSOR-SPECIFIC pgm_func[%d], seq_frame = %d\n",sensor_port,i,seq_frame);
+                        MDP(DBGB_FSEQ,sensor_port,"Calling SENSOR-SPECIFIC pgm_func[%d], seq_frame = %d\n",i,seq_frame)
 					    rslt = sensorproc->pgm_func[i + 32] (sensor_port, &(sensorproc->sensor), procpars, prevpars, seq_frame);
 					}
 					if (rslt >= 0) {
@@ -811,20 +835,11 @@ inline void _processParsSeq(int sensor_port,                   ///< sensor port 
 //#define P_CALLASAP       107 // bitmask - what functions work only in the current frame (ASAP) mode
 void _processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16, int maxahead)
 {
-#ifdef USE_KLOG393
-    char klog393_str [256];
-#endif
     frame16 &= PARS_FRAMES_MASK;
     if (debug_flags) {
         dev_dbg(g_devfp_ptr,"port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
-#ifdef USE_KLOG393
-        sprintf(klog393_str,
-                "%s:%d:%s: "
-                "port= %d,  frame16=%d, maxahead=%d\n",
-                __FILE__, __LINE__, __FUNCTION__,
-                sensor_port, frame16, maxahead);
-        klog393_ts(klog393_str);
-#endif
+        MDP(DBGB_FPPI,sensor_port,"frame16=%d, maxahead=%d\n",
+                frame16, maxahead)
     }
     dev_dbg(g_devfp_ptr,"port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     if (!sensorproc){
@@ -836,14 +851,8 @@ void _processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16
     //   dev_dbg(g_devfp_ptr,"%s before first _processParsASAP\n",__func__);
     _processParsASAP(sensor_port, sensorproc, frame16); // NC393: never gets here ? Only after _processParsSeq?
     if (debug_flags) {
-#ifdef USE_KLOG393
-        sprintf(klog393_str,
-                "%s:%d:%s: "
-                "port= %d (after first _processParsASAP),  frame16=%d, maxahead=%d\n",
-                __FILE__, __LINE__, __FUNCTION__,
-                sensor_port, frame16, maxahead);
-        klog393_ts(klog393_str);
-#endif
+        MDP(DBGB_FPPI,sensor_port,"(after first _processParsASAP),  frame16=%d, maxahead=%d\n",
+                frame16, maxahead)
         dev_dbg(g_devfp_ptr,"port= %d (after first _processParsASAP),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     }
     dev_dbg(g_devfp_ptr,"port= %d (after first _processParsASAP),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
@@ -853,14 +862,8 @@ void _processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16
     //   dev_dbg(g_devfp_ptr,"%s before _processParsSeq\n",__func__);
     _processParsSeq(sensor_port, sensorproc, frame16, maxahead);
     if (debug_flags) {
-#ifdef USE_KLOG393
-        sprintf(klog393_str,
-                "%s:%d:%s: "
-                "port= %d (after _processParsSeq),  frame16=%d, maxahead=%d\n",
-                __FILE__, __LINE__, __FUNCTION__,
-                sensor_port, frame16, maxahead);
-        klog393_ts(klog393_str);
-#endif
+        MDP(DBGB_FPPI,sensor_port,"(after _processParsSeq),  frame16=%d, maxahead=%d\n",
+                frame16, maxahead)
         dev_dbg(g_devfp_ptr,"port= %d (after _processParsSeq),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     }
     dev_dbg(g_devfp_ptr,"port= %d (after _processParsSeq),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
@@ -869,15 +872,8 @@ void _processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16
     //   dev_dbg(g_devfp_ptr,"%s before second _processParsASAP\n",__func__);
     _processParsASAP(sensor_port, sensorproc, frame16);
     if (debug_flags) {
-#ifdef USE_KLOG393
-        sprintf(klog393_str,
-                "%s:%d:%s: "
-                "port= %d (after second _processParsASAP),  frame16=%d, maxahead=%d\n",
-                __FILE__, __LINE__, __FUNCTION__,
-                sensor_port, frame16, maxahead);
-        klog393_ts(klog393_str);
-#endif
-
+        MDP(DBGB_FPPI,sensor_port,"(after second _processParsASAP),  frame16=%d, maxahead=%d\n",
+                frame16, maxahead)
         dev_dbg(g_devfp_ptr,"port= %d (after second _processParsASAP),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     }
     dev_dbg(g_devfp_ptr,"port= %d (after second _processParsASAP),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
@@ -915,20 +911,11 @@ void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16,
 #else
 void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16, int maxahead)
 {
-#ifdef USE_KLOG393
-    char klog393_str [256];
-#endif
     FLAGS_IBH
     frame16 &= PARS_FRAMES_MASK;
     if (debug_flags) {
-#ifdef USE_KLOG393
-        sprintf(klog393_str,
-                "%s:%d:%s: "
-                "==from tasklet: port= %d,  frame16=%d, maxahead=%d\n",
-                __FILE__, __LINE__, __FUNCTION__,
-                sensor_port, frame16, maxahead);
-        klog393_ts(klog393_str);
-#endif
+        MDP(DBGB_FPPT,sensor_port,"==from tasklet: frame16=%d, maxahead=%d\n",
+                frame16, maxahead)
         dev_dbg(g_devfp_ptr,"==from tasklet: port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     }
 
@@ -941,14 +928,8 @@ void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16,
     _processPars(sensor_port, sensorproc, frame16, maxahead);
     UNLOCK_IBH(framepars_locks[sensor_port]);
     if (debug_flags) {
-#ifdef USE_KLOG393
-        sprintf(klog393_str,
-                "%s:%d:%s: "
-                "==Done from tasklet: port= %d,  frame16=%d, maxahead=%d\n",
-                __FILE__, __LINE__, __FUNCTION__,
-                sensor_port, frame16, maxahead);
-        klog393_ts(klog393_str);
-#endif
+        MDP(DBGB_FPPT,sensor_port,"==Done from tasklet: frame16=%d, maxahead=%d\n",
+                frame16, maxahead)
         dev_dbg(g_devfp_ptr,"== Done from tasklet: port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     }
 }
@@ -958,13 +939,17 @@ void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16,
 /**
  * @brief schedule pgm_func to be executed for selected frame (frame16)
  * @param sensor_port sensor port number (0..3)
- * @param frame16 frame number (3-bit) to schedule a function for
+ * @param frame16 frame number (4-bit) to schedule a function for
  * @param func_num function number to schedule
  */
 void schedule_pgm_func(int sensor_port, int frame16, int func_num)
 {
-	dev_dbg(g_devfp_ptr,"%s port= %d, frame16=%d, func_num=%d\n",__func__, sensor_port, frame16, func_num);
 	aframepars[sensor_port][frame16 & PARS_FRAMES_MASK].functions |= 1 << func_num;
+    dev_dbg(g_devfp_ptr,"func_num=%d, aframepars[%d][%d].functions=0x08lx\n",
+            func_num, sensor_port, frame16, aframepars[sensor_port][frame16 & PARS_FRAMES_MASK].functions);
+    MDP(DBGB_FSCF,sensor_port,"func_num=%d, aframepars[%d][%d].functions=0x08lx\n",
+            func_num, sensor_port, frame16,aframepars[sensor_port][frame16 & PARS_FRAMES_MASK].functions)
+
 }
 
 /**
@@ -976,9 +961,11 @@ void schedule_pgm_func(int sensor_port, int frame16, int func_num)
 void schedule_this_pgm_func(int sensor_port, struct framepars_t * this_framepars, int func_num)
 {
 	int frame16 = this_framepars->pars[P_FRAME] & PARS_FRAMES_MASK;
-
-	dev_dbg(g_devfp_ptr,"%s port= %d, frame16=%d, func_num=%d\n",__func__, sensor_port, frame16, func_num);
 	aframepars[sensor_port][frame16].functions |= 1 << func_num;
+    dev_dbg(g_devfp_ptr,"func_num=%d, aframepars[%d][%d].functions=0x08lx\n",
+            func_num, sensor_port, frame16, aframepars[sensor_port][frame16 & PARS_FRAMES_MASK].functions);
+    MDP(DBGB_FSCF,sensor_port,"func_num=%d, aframepars[%d][%d].functions=0x08lx\n",
+            func_num, sensor_port, frame16,aframepars[sensor_port][frame16 & PARS_FRAMES_MASK].functions)
 }
 
 
@@ -1032,15 +1019,8 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 	int findex_this, findex_prev, findex_future, frame16;
-#ifdef USE_KLOG393
-	char klog393_str [256];
-	sprintf(klog393_str,
-	        "%s:%d:%s: "
-	        "frameno=0x%lx, findex_this=%ld (0x%lx) maxLatency=%d, numPars=%d, frameParsInitialized[%d]=%d\n",
-	        __FILE__, __LINE__, __FUNCTION__,
-            sensor_port, frameno, findex_this, thisFrameNumber(sensor_port), maxLatency, numPars, sensor_port, frameParsInitialized[sensor_port]);
-	klog393_ts(klog393_str);
-#endif
+	MDP(DBGB_FSFA,sensor_port,"frameno=0x%lx, findex_this=%ld (0x%lx) maxLatency=%d, numPars=%d, frameParsInitialized[%d]=%d\n",
+            frameno, findex_this, thisFrameNumber(sensor_port), maxLatency, numPars, sensor_port, frameParsInitialized[sensor_port])
     dev_dbg(g_devfp_ptr,"port= %d, frameno=0x%lx, findex_this=%d (0x%lx) maxLatency=%d, numPars=%d, frameParsInitialized[%d]=%d\n",
             sensor_port, frameno, findex_this, thisFrameNumber(sensor_port), maxLatency, numPars, sensor_port, frameParsInitialized[sensor_port]);
     //int klog393_ts(const char * str);
@@ -1084,7 +1064,7 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
             dev_dbg(g_devfp_ptr,"port=%d, ERR_FRAMEPARS_BADINDEX, frameno = 0x%x\n",sensor_port, (int)frameno);
 			return -ERR_FRAMEPARS_BADINDEX;
 		}
-		dev_dbg(g_devfp_ptr,"port= %d, ndex=0x%x, val=0x%lx", index, val, sensor_port);
+		dev_dbg(g_devfp_ptr,"port= %d, index=0x%x, val=0x%lx", sensor_port, index, val);
 		if (index >= FRAMEPAR_GLOBALS) {                        // ignore frame logic, set "static" parameters to frame 0
 			if (pars[npar].num & FRAMEPAIR_MASK_BYTES) {    // combine new value with the old one
 				val = FRAMEPAIR_FRAME_MASK_NEW(pars[npar].num, GLOBALPARS(sensor_port,index), val);
@@ -1093,14 +1073,14 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 			D5(printk(" set GLOBALPARS(0x%x)=0x%lx\n", index, val));
 		} else if (pars[npar].num  & FRAMEPAIR_FRAME_FUNC) {
 			funcs2call[index] = val;
-			dev_dbg(g_devfp_ptr,"port= %d, set funcs2call[0x%x]=0x%lx\n", index, val, sensor_port);
+			dev_dbg(g_devfp_ptr,"port= %d, set funcs2call[0x%x]=0x%lx\n", sensor_port, index, val);
 //    } else if ((frameno !=findex_prev) && (frameno != findex_future)) { // do not write parameters in the future otherwise
 		} else if ((frame16 != findex_future) || ((pars[npar].num & FRAMEPAIR_JUST_THIS) == 0)) {        // do not write "JUST_THIS" parameters in the future otherwise they'll stick
 			if (pars[npar].num & FRAMEPAIR_MASK_BYTES) {                                            // combine new value with the old one
 				val = FRAMEPAIR_FRAME_MASK_NEW(pars[npar].num, framepars[frame16].pars[index], val);
 			}
 //TODO: optimize to use mask several parameters together
-			dev_dbg(g_devfp_ptr,"port= %d, frame16=0x%x\n", frame16, sensor_port);
+			dev_dbg(g_devfp_ptr,"port= %d, frame16=0x%x\n", sensor_port, frame16);
 			if ((framepars[frame16].pars[index] != val) || (pars[npar].num & FRAMEPAIR_FORCE_NEW)) {
 				bmask =   1 << (index & 31);
 				bindex = index >> 5;
@@ -1144,25 +1124,12 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 		dev_dbg(g_devfp_ptr,"G_TASKLET_CTL -> 0x%x (port = %d )\n", (int) get_globalParam(sensor_port, G_TASKLET_CTL),sensor_port);
 //		processPars(sensor_port, &asensorproc[sensor_port], thisFrameNumber(sensor_port) & PARS_FRAMES_MASK, 0); //maxahead=0, the rest will be processed after frame sync, from the tasklet
 		// Already having lock, call inner function. When called from tasklet, it will have to acquire lock
-#ifdef USE_KLOG393
-    sprintf(klog393_str,
-            "%s:%d:%s: "
-            "G_TASKLET_CTL -> 0x%x (port = %d )\n",
-            __FILE__, __LINE__, __FUNCTION__,
-            (int) get_globalParam(sensor_port, G_TASKLET_CTL),sensor_port);
-    klog393_ts(klog393_str);
-#endif
-
+		MDP(DBGB_FSFA,sensor_port,"G_TASKLET_CTL -> 0x%x\n",
+	            (int) get_globalParam(sensor_port, G_TASKLET_CTL))
         _processPars(sensor_port, &asensorproc[sensor_port], thisFrameNumber(sensor_port) & PARS_FRAMES_MASK, 0); //maxahead=0, the rest will be processed after frame sync, from the tasklet
-#ifdef USE_KLOG393
-    sprintf(klog393_str,
-            "%s:%d:%s: "
-            "kthread _processPars(%d, .., 0x%x) DONE\n",
-            __FILE__, __LINE__, __FUNCTION__,
-            sensor_port, thisFrameNumber(sensor_port));
-    klog393_ts(klog393_str);
-#endif
-        dev_dbg(g_devfp_ptr,"kthread _processPars(%d, .., 0x%x) DONE\n",sensor_port, thisFrameNumber(sensor_port));
+        MDP(DBGB_FSFA,sensor_port,"kthread _processPars( .., 0x%x) DONE\n",
+                thisFrameNumber(sensor_port))
+        dev_dbg(g_devfp_ptr,"kthread _processPars(%d, .., 0x%lx) DONE\n",sensor_port, thisFrameNumber(sensor_port));
 	} else {
         dev_dbg(g_devfp_ptr,"kthread: NOT calling _processPars(%d, .., 0x%lx) DONE\n",sensor_port, thisFrameNumber(sensor_port));
 	}
@@ -1193,7 +1160,11 @@ int setFramePar(int sensor_port,                     ///< sensor port number (0.
 	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 
-	dev_dbg(g_devfp_ptr, "%s: port=%d, thisFrameNumber=0x%lx frame16=%d index= %d (0x%lx), val=0x%lx\n",__func__, sensor_port, thisFrameNumber(sensor_port), frame16, index, mindex, val);
+	dev_dbg(g_devfp_ptr, "port=%d, thisFrameNumber=0x%lx frame16=%d index= %d (0x%lx), val=0x%lx\n",
+	        sensor_port, thisFrameNumber(sensor_port), frame16, index, mindex, val);
+    MDP(DBGB_FSFP,sensor_port,"thisFrameNumber=0x%lx frame16=%d index= %d (0x%lx), val=0x%lx\n",
+            thisFrameNumber(sensor_port), frame16, index, mindex, val)
+
 
 //  if (index > P_MAX_PAR) {
 	if (index > ((index >= FRAMEPAR_GLOBALS) ? (P_MAX_GPAR + FRAMEPAR_GLOBALS) : P_MAX_PAR)) {
@@ -1210,6 +1181,9 @@ int setFramePar(int sensor_port,                     ///< sensor port number (0.
 	} else if ((frame16 != findex_future) || ((mindex & FRAMEPAIR_JUST_THIS) == 0)) {        // do not write "JUST_THIS" parameters in the future otherwise they'll stick
 		if (mindex & FRAMEPAIR_MASK_BYTES) {                                            // combine new value with the old one
 			val = FRAMEPAIR_FRAME_MASK_NEW(mindex, framepars[frame16].pars[index], val);
+		    dev_dbg(g_devfp_ptr, "val updated to 0x%lx\n", val);
+		    MDP(DBGB_FSFP,sensor_port,"val updated to 0x%lx\n", val)
+
 		}
 		if ((framepars[frame16].pars[index] != val) || (mindex & (FRAMEPAIR_FORCE_NEW | FRAMEPAIR_FORCE_PROC))) {
 			bmask =   1 << (index & 31);
@@ -1222,32 +1196,41 @@ int setFramePar(int sensor_port,                     ///< sensor port number (0.
 			if (mindex & FRAMEPAIR_FORCE_PROC) {
 				framepars[frame16].functions        |= funcs2call[index]; //Mark which functions will be needed to process the parameters
 			}
-			dev_dbg(g_devfp_ptr, " bindex=0x%lx, bmask=0x%08lx, bmask32=0x%08lx, functions=0x%08lx\n", bindex, bmask, bmask32, framepars[frame16].functions);
+			dev_dbg(g_devfp_ptr, " bindex=0x%lx, bmask=0x%08lx, bmask32=0x%08lx, functions=0x%08lx\n",
+			        bindex, bmask, bmask32, framepars[frame16].functions);
+            MDP(DBGB_FSFP,sensor_port," bindex=0x%lx, bmask=0x%08lx, bmask32=0x%08lx, functions=0x%08lx\n",
+                    bindex, bmask, bmask32, framepars[frame16].functions)
 // Write parameter to the next frames up to the one that have the same parameter already modified
 			if ((mindex & FRAMEPAIR_JUST_THIS) == 0) {
-				MDF8(printk(":        ---   setting next frames"));
+//				MDF8(printk(":        ---   setting next frames"));
 //        for (nframe=(frame16+1) & PARS_FRAMES_MASK; (nframe != findex_prev) && (!(framepars[frame16].mod[bindex] & bmask)); nframe=(nframe+1) & PARS_FRAMES_MASK) {
 				for (nframe = (frame16 + 1) & PARS_FRAMES_MASK; (nframe != findex_prev) && (!(framepars[nframe].mod[bindex] & bmask)); nframe = (nframe + 1) & PARS_FRAMES_MASK) {
 					framepars[nframe].pars[index] = val;
-					D8(printk(" %d", nframe));
+//					D8(printk(" %d", nframe));
+				    MDP(DBGB_FSFV,sensor_port,"framepars[%d].pars[%d] <- 0x%08x  ", nframe, index, val)
 				}
 				frame16 = (frame16 - 1) & PARS_FRAMES_MASK; // for " regular parameters "modified since" do not include the target frame itself, for "JUST_THIS" - does
+                MDP(DBGB_FSFV,sensor_port,"%s\n","")
 			}
 //      dev_dbg(g_devfp_ptr,"%s \n",__func__);
 // Mark this parameter in all previous frames as "modified since"
 // TODO: consider alternative way - first iterate through all parameters, build masks, then apply them
-			MDF8(printk(":        >>>   setting modsince"));
+//			MDF8(printk(":        >>>   setting modsince"));
 //    for (nframe=(frame16-1) & PARS_FRAMES_MASK; nframe != findex_future; nframe=(nframe-1) & PARS_FRAMES_MASK) {
 			for (nframe = frame16; nframe != findex_future; nframe = (nframe - 1) & PARS_FRAMES_MASK) { //NOTE: frame16 is modified here
 				framepars[nframe].modsince[bindex] |= bmask;
 				framepars[nframe].modsince32       |= bmask32;
-				D8(printk(" %d", nframe));
+                MDP(DBGB_FSFV,sensor_port,"framepars[%d].modsince[%d] |= 0x%08x, framepars[%d].modsince32 |= 0x%08x  ",
+                        nframe, bindex, bmask, nframe, bmask32)
+//				D8(printk(" %d", nframe));
 			}
-			D8(printk("\n"));
+            MDP(DBGB_FSFV,sensor_port,"%s\n", "")
+//			D8(printk("\n"));
 		}
 	} else { // error - trying to write "just this" to the "future" - that would stick if allowed
         dev_dbg(g_devfp_ptr, "Tried to write JUST_THIS parameter (0x%lx) too far in the future", mindex);
 		dev_err(g_devfp_ptr, "Tried to write JUST_THIS parameter (0x%lx) too far in the future", mindex);
+        MDP(DBGB_FSFP,sensor_port,"Tried to write JUST_THIS parameter (0x%lx) too far in the future", mindex)
 		return -ERR_FRAMEPARS_TOOEARLY;
 	}
 	return 0;
@@ -1266,12 +1249,14 @@ int setFrameParLocked(int sensor_port,                     ///< sensor port numb
     FLAGS_IBH
     int rslt;
     LOCK_IBH(framepars_locks[sensor_port]);
+    MDP(DBGB_FSFP,sensor_port,"mindex=0x%08lx, val=0x%08lx", mindex,val)
     rslt =  setFramePar(sensor_port,    // sensor port number (0..3)
                         this_framepars, // pointer to the current parameters structure
                         mindex,         // parameter number (with optional modifiers in high bits)
                         val);           // parameter value to set
                                         // @return 0 - OK, -ERR_FRAMEPARS_BADINDEX
     UNLOCK_IBH(framepars_locks[sensor_port]);
+    MDP(DBGB_FSFP,sensor_port,"DONE: mindex=0x%08lx, val=0x%08lx", mindex,val)
     return rslt;
 }
 
@@ -1297,12 +1282,15 @@ int setFramePars(int sensor_port,                     ///< sensor port number (0
 	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 
-	dev_dbg(g_devfp_ptr, "%s : port= %d, this_framepars=0x%x numPars=%d\n",__func__, sensor_port, (int)this_framepars, numPars);
+	dev_dbg(g_devfp_ptr, "port= %d, this_framepars=0x%x numPars=%d\n", sensor_port, (int)this_framepars, numPars);
+    MDP(DBGB_FSFP,sensor_port,"this_framepars=0x%x numPars=%d\n", (int)this_framepars, numPars)
+
 	for (npar = 0; npar < numPars; npar++) {
 		frame16 = (this_framepars->pars[P_FRAME]) & PARS_FRAMES_MASK;
 		val = pars[npar].val;
 		index = pars[npar].num & 0xffff;
 		dev_dbg(g_devfp_ptr, ":    ---   frame16=%d index=%d (0x%x) val=0x%x\n", frame16, index, (int)pars[npar].num, (int)val);
+	    MDP(DBGB_FSFV,sensor_port,"  ---   frame16=%d index=%d (0x%x) val=0x%x\n", frame16, index, (int)pars[npar].num, (int)val)
 		// remark: code below looks similar to setFramePar function, call it instead
 		if (index > ((index >= FRAMEPAR_GLOBALS) ? (P_MAX_GPAR + FRAMEPAR_GLOBALS) : P_MAX_PAR)) {
 			dev_err(g_devfp_ptr, " bad index=%d > %d\n", index, P_MAX_PAR);
@@ -1333,13 +1321,16 @@ int setFramePars(int sensor_port,                     ///< sensor port number (0
 				}
 // Write parameter to the next frames up to the one that have the same parameter already modified (only if not FRAMEPAIR_JUST_THIS)
 				if ((pars[npar].num & FRAMEPAIR_JUST_THIS) == 0) {
-					MDF8(printk(":        ---   setting next frames"));
+//					MDF8(printk(":        ---   setting next frames"));
 					for (nframe = (frame16 + 1) & PARS_FRAMES_MASK; (nframe != findex_prev) && (!(framepars[nframe].mod[bindex] & bmask)); nframe = (nframe + 1) & PARS_FRAMES_MASK) {
-						D8(printk(" %d", nframe));
 						framepars[nframe].pars[index] = val;
+//                        D8(printk(" %d", nframe));
+	                    MDP(DBGB_FSFV,sensor_port,"framepars[%d].pars[%d] <- 0x%08x  ", nframe, index, val)
+
 					}
 					frame16 = (frame16 - 1) & PARS_FRAMES_MASK; // for " regular parameters "modified since" do not include the target frame itself, for "JUST_THIS" - does
-					D8(printk("\n"));
+                    MDP(DBGB_FSFV,sensor_port,"%s\n", "")
+//					D8(printk("\n"));
 				}
 // Mark this parameter in all previous frames as "modified since"
 // TODO: consider alternative way - first iterate through all parameters, build masks, then apply them
@@ -1347,7 +1338,10 @@ int setFramePars(int sensor_port,                     ///< sensor port number (0
 				for (nframe = frame16; nframe != findex_future; nframe = (nframe - 1) & PARS_FRAMES_MASK) { //NOTE: frame16 is modified here
 					framepars[nframe].modsince[bindex] |= bmask;
 					framepars[nframe].modsince32       |= bmask32;
+	                MDP(DBGB_FSFV,sensor_port,"framepars[%d].modsince[%d] |= 0x%08x, framepars[%d].modsince32 |= 0x%08x  ",
+	                        nframe, bindex, bmask, nframe, bmask32)
 				}
+                MDP(DBGB_FSFV,sensor_port,"%s\n", "")
 			}
 		} else { // error - trying to write "just this" to the "future" - that would stick if allowed
 			dev_err(g_devfp_ptr, "Tried to write JUST_THIS parameter (0x%lx) too far in the future", pars[npar].num);
@@ -1394,12 +1388,13 @@ int framepars_open(struct inode *inode, struct file *filp)
 	if (!privData) return -ENOMEM;
 	filp->private_data = privData;
 	privData->minor = MINOR(inode->i_rdev);
-	dev_dbg(g_devfp_ptr,"%s : minor=0x%x\n",__func__, privData->minor);
+	dev_dbg(g_devfp_ptr,"minor=0x%x\n",__func__, privData->minor);
 	switch (privData->minor) {
 	case  DEV393_MINOR(DEV393_FRAMEPARS0):
 	case  DEV393_MINOR(DEV393_FRAMEPARS1):
 	case  DEV393_MINOR(DEV393_FRAMEPARS2):
 	case  DEV393_MINOR(DEV393_FRAMEPARS3):
+	    MDP(DBGB_FFOP,privData->minor-DEV393_MINOR(DEV393_FRAMEPARS0),"minor=0x%x\n",privData->minor)
 		inode->i_size = 0; //or return 8 - number of frame pages?
 		return 0;
 	default:
@@ -1426,6 +1421,7 @@ int framepars_release(struct inode *inode, struct file *filp)
 	case  DEV393_MINOR(DEV393_FRAMEPARS1):
 	case  DEV393_MINOR(DEV393_FRAMEPARS2):
 	case  DEV393_MINOR(DEV393_FRAMEPARS3):
+	    MDP(DBGB_FFOP,p-DEV393_MINOR(DEV393_FRAMEPARS0),"minor=0x%x\n",p)
 		break;
 	default:
 		return -EINVAL; //! do not need to free anything - "wrong number"
@@ -1455,6 +1451,7 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
     sec_usec_t sec_usec;
 //	struct framepars_t *framepars = aframepars[sensor_port];
     dev_dbg(g_devfp_ptr, "(framepars_lseek)  offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port);
+    MDP(DBGB_FFOP, sensor_port, "(framepars_lseek)  offset=0x%x, orig=0x%x\n", (int)offset, (int)orig)
 
 	switch (orig) {
 	case SEEK_SET:
@@ -1570,8 +1567,12 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 	int result;
 	sec_usec_t sec_usec;
 //	dev_dbg(g_devfp_ptr,"%s : file->f_pos=0x%x, *off=0x%x, count=0x%x\n",__func__, (int)file->f_pos, (int)*off, (int)count);
-    dev_dbg(g_devfp_ptr, "%s: file->f_pos=0x%x, *off=0x%x, count=0x%x, minor=0x%x\n",
-            __func__, (int)file->f_pos, (int)*off, (int)count, (int) privData->minor);
+    dev_dbg(g_devfp_ptr, "file->f_pos=0x%x, *off=0x%x, count=0x%x, minor=0x%x\n",
+            (int)file->f_pos, (int)*off, (int)count, (int) privData->minor);
+
+    MDP(DBGB_FFOP, sensor_port, "file->f_pos=0x%x, *off=0x%x, count=0x%x, minor=0x%x\n",
+            (int)file->f_pos, (int)*off, (int)count, (int) privData->minor)
+
 	count &= ~7; // sizeof (struct frameparspair_t)==8
 	switch (privData->minor) {
 	case DEV393_MINOR(DEV393_FRAMEPARS0):
@@ -1619,8 +1620,10 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 				}
 				last = first + 1;
 				while ((last < count) && ((pars[last].num & 0xff00) != 0xff00)) last++;  // skip to the end or next special instructions
-                dev_dbg(g_devfp_ptr, "%s 0x%x: setFrameParsAtomic(%ld, %d, %d)\n",
-                        __func__, (int) privData->minor, frame, latency, last - first);
+                dev_dbg(g_devfp_ptr, "0x%x: setFrameParsAtomic(%ld, %d, %d)\n",
+                        (int) privData->minor, frame, latency, last - first);
+                MDP(DBGB_FFOP, sensor_port, "0x%x: setFrameParsAtomic(%ld, %d, %d)\n",
+                        (int) privData->minor, frame, latency, last - first)
 				result = setFrameParsAtomic(sensor_port,frame, latency, last - first, &pars[first]);
 				if (result < 0) {
 					if (count > sizeof(pars_static)) kfree(pars);
@@ -1661,6 +1664,8 @@ int framepars_mmap(struct file *file, struct vm_area_struct *vma)
 	        vma->vm_end - vma->vm_start,
 	        vma->vm_page_prot);
 	dev_dbg(g_devfp_ptr, "remap_pfn_range returned=%x\n", result);
+	MDP(DBGB_FFOP, sensor_port, "remap_pfn_range returned=%x\n", result)
+
 	if (result) return -EAGAIN;
 	return 0;
 	default: return -EINVAL;

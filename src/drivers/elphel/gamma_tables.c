@@ -91,7 +91,7 @@
 */
 
 //copied from cxi2c.c - TODO:remove unneeded 
-#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
+//#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/sched.h>

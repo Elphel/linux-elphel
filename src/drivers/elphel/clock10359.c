@@ -16,7 +16,7 @@
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
 /****************** INCLUDE FILES SECTION ***********************************/
-#define DEBUG /* should be before linux/module.h - enables dev_dbg at boot in this file */
+//#define DEBUG /* should be before linux/module.h - enables dev_dbg at boot in this file */
 
 #include <linux/module.h>
 #include <linux/sched.h>

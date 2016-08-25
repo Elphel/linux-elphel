@@ -18,6 +18,9 @@
  */
 #ifndef KLOGGER_393_H
 #define KLOGGER_393_H
+//int print_klog393(const int mode, const char *fmt, ...);
+int print_klog393(const int mode, const char *file, const char *function, const int line, const char *fmt, ...);
+
 int klog393_puts(const char * str);
 int klog393_ts(const char * str);
 

@@ -18,9 +18,12 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <linux/module.h>
+#include <linux/spinlock.h>
 #include <linux/io.h>
 #include <linux/errno.h>
 #include <linux/platform_device.h> // For sysfs
+#include <linux/slab.h> //kzalloc
+
 #include <linux/fs.h>
 #include <asm/uaccess.h> // copy_*_user
 #include <linux/of.h>  // Device Tree
@@ -39,6 +42,7 @@
 
 //#define DEV393_KLOGGER        ("klogger_393",      "klogger_393",    144,  1, "0666", "c")  ///< kernel event logger to memory (no i/o)
 
+static DEFINE_SPINLOCK(klogger_lock);
 
 static struct device *g_dev_ptr=NULL; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
 static u32 buffer_size = 0;
@@ -46,22 +50,81 @@ static u32 buffer_size = 0;
     static u32 buffer_size_order = 0;
 #endif
 
+
+static u32 klog_mode=0xff;
 static u32 buffer_wp = 0;
+static u32 num_writes = 0;
 static loff_t file_size = 0; // write pointer, 64 bits
 static char * klog393_buf = NULL;
-const char klogger393_of_prop_name[] = "klogger-393,buffer_size";
+const char klogger393_of_prop_bufsize_name[] = "klogger-393,buffer_size";
 const static u32 max_string_len = PAGE_SIZE; ///< maximal string length
 
 int        klogger393_open(struct inode *inode, struct file *filp);
 int        klogger393_release(struct inode *inode, struct file *filp);
 loff_t     klogger393_llseek(struct file * file, loff_t offset, int orig);
 ssize_t    klogger393_read   (struct file * file, char * buf, size_t count, loff_t *off);
+
+//        printk();
+int print_klog393(const int mode,       ///< bits 0: timestamp, 1 - file, 2 - function, 3 - line number, 4 - lock, irq & disable. all 0 - disabled
+                  const char *file,      /// file path to show
+                  const char *function,  /// function name to show
+                  const int line,       // line number to show
+                  const char *fmt, ...) ///< Format and argumants as in printf
+
+{
+    char buf[1024];
+    const char * cp;
+    sec_usec_t ts;
+    va_list args;
+    int mmode= mode & klog_mode;
+    if (!mmode){
+        return 0;
+    }
+    if (mmode & 16){
+        spin_lock_bh(&klogger_lock);
+    }
+    if (mmode & 1) {
+        get_fpga_rtc(&ts);
+        snprintf(buf,sizeof(buf),"%ld.%06ld:",ts.sec,ts.usec);
+        klog393_puts(buf);
+    }
+    if ((mmode & 2) && file) {
+        cp = strrchr(file,'/');
+        cp = cp? (cp+1):file;
+        snprintf(buf,sizeof(buf),"%s:",cp);
+        klog393_puts(buf);
+    }
+    if ((mmode & 4) && function) {
+        snprintf(buf,sizeof(buf),"%s:",function);
+        klog393_puts(buf);
+    }
+    if ((mmode & 8) && line) {
+        snprintf(buf,sizeof(buf),"%d:",line);
+        klog393_puts(buf);
+    }
+    va_start(args, fmt);
+    vsnprintf(buf,sizeof(buf),fmt,args);
+    va_end(args);
+    klog393_puts(buf);
+    if (mmode & 16){
+        spin_unlock_bh(&klogger_lock);
+    }
+
+    return 0;
+}
+
+
+
+
 /** Put string into the logger buffer*/
 int klog393_puts(const char * str) ///< String to log, limited by max_string_len (currently 4096 bytes)
                                    ///< @return 0 - OK,  -EMSGSIZE - string too long
 {
     int sl =    strlen(str);
     u32 new_wp= buffer_wp+sl;
+    if (!(klog_mode & 0x80)){
+        return 0; // DEBUGGING: Do nothing if bit 7 == 0
+    }
 //    u32 pl;
     if (sl > max_string_len){
         dev_err(g_dev_ptr,"%s: String too long (%d >%d)\n",
@@ -78,6 +141,7 @@ int klog393_puts(const char * str) ///< String to log, limited by max_string_len
         buffer_wp = new_wp - buffer_size;
     }
     file_size += sl;
+    num_writes++;
     return 0;
 }
 /** Put string into the logger buffer, preceded by a timestamp "<sec>.<usec>: "*/
@@ -236,6 +300,54 @@ ssize_t klogger393_read   (struct file * file, ///< file structure pointer
     }
 }
 
+// SysFS interface to read/modify video memory map
+#define SYSFS_PERMISSIONS           0644 /* default permissions for sysfs files */
+#define SYSFS_READONLY              0444
+#define SYSFS_WRITEONLY             0222
+
+static ssize_t show_mode(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"0x%x\n", klog_mode);
+}
+static ssize_t store_mode(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    sscanf(buf, "%i", &klog_mode);
+    return count;
+}
+static ssize_t show_stats(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"Number of writes:     0x%x\n"
+                       "Buffer size:          0x%x (%d)\n"
+                       "Buffer write pointer: 0x%x (%d)\n"
+                       "File size:            0x%llx (%lld)\n"
+                       "Mode:                 0x%x\n",
+                       num_writes, buffer_size, buffer_size, buffer_wp, buffer_wp, file_size, file_size, klog_mode);
+}
+static DEVICE_ATTR(klogger_mode,    SYSFS_PERMISSIONS,     show_mode,                store_mode);
+static DEVICE_ATTR(klogger_stats,   SYSFS_READONLY,        show_stats,                NULL);
+static struct attribute *root_dev_attrs[] = {
+        &dev_attr_klogger_mode.attr,
+        &dev_attr_klogger_stats.attr,
+        NULL
+};
+
+static const struct attribute_group dev_attr_root_group = {
+    .attrs = root_dev_attrs,
+    .name  = NULL,
+};
+
+static int klogger_393_sysfs_register(struct platform_device *pdev)
+{
+    int retval=0;
+    struct device *dev = &pdev->dev;
+    if (&dev->kobj) {
+        if (((retval = sysfs_create_group(&dev->kobj, &dev_attr_root_group)))<0) return retval;
+    }
+    return retval;
+}
+
+
+
 
 int klogger_393_probe(struct platform_device *pdev)
 {
@@ -243,19 +355,34 @@ int klogger_393_probe(struct platform_device *pdev)
     struct device *dev = &pdev->dev;
     const   char * config_string;
     struct device_node *node = pdev->dev.of_node;
+    const __be32 *bufsize_be;
+
     g_dev_ptr = dev;
     buffer_wp = 0;
     if (node) {
-        if (of_property_read_string(node, klogger393_of_prop_name, &config_string)) {
+#if 0
+        if (of_property_read_string(node, klogger393_of_prop_bufsize_name, &config_string)) {
             dev_err(dev,"%s: Device tree has entry for "DEV393_NAME(DEV393_KLOGGER)", but no '%s' property is provided\n",
-                    __func__,klogger393_of_prop_name);
+                    __func__,klogger393_of_prop_bufsize_name);
             return -EINVAL;
         }
+
         if (!sscanf(config_string,"%i", &buffer_size)){
             dev_err(dev,"%s: Invalid buffer size for "DEV393_NAME(DEV393_KLOGGER)".%s - %s\n",
-                    __func__,klogger393_of_prop_name,config_string);
+                    __func__,klogger393_of_prop_bufsize_name,config_string);
             return -EINVAL;
         }
+#endif
+
+        bufsize_be = (__be32 *)of_get_property(node, klogger393_of_prop_bufsize_name, NULL);
+        if (!bufsize_be) {
+            dev_err(dev,"%s: Device tree has entry for "DEV393_NAME(DEV393_KLOGGER)", but no '%s' property is provided\n",
+                    __func__,klogger393_of_prop_bufsize_name);
+            return -EINVAL;
+        }
+
+        buffer_size = be32_to_cpup(bufsize_be);
+
         //__builtin_clz
 #ifndef KLOGGER_BUFFER_ANY_SIZE
         buffer_size_order = 31 - __builtin_clz(buffer_size);
@@ -266,17 +393,23 @@ int klogger_393_probe(struct platform_device *pdev)
                     __func__,buffer_size,buffer_size);
         }
 #endif
-        klog393_buf = devm_kzalloc(dev, buffer_size, GFP_KERNEL);
+        dev_info(dev,"%s: Setting up buffer for logging "DEV393_NAME(DEV393_KLOGGER)" of %d(0x%x) bytes\n",
+                __func__,buffer_size,buffer_size);
+
+//        klog393_buf = devm_kzalloc(dev, buffer_size, GFP_KERNEL);
+        klog393_buf = kzalloc(buffer_size, GFP_KERNEL);
         if (!klog393_buf){
             buffer_size = 0;
             dev_err(dev,"%s: Failed to create buffer for "DEV393_NAME(DEV393_KLOGGER)" of %d(0x%x) bytes\n",
                     __func__,buffer_size,buffer_size);
             return -ENOMEM;
         }
-        res = register_chrdev(DEV393_MAJOR(DEV393_FRAMEPARS0), DEV393_NAME(DEV393_FRAMEPARS0), &framepars_fops);
+        dev_info(dev,"%s: Set up buffer for logging "DEV393_NAME(DEV393_KLOGGER)" of %d(0x%x) bytes @0x%08x\n",
+                __func__,buffer_size,buffer_size, (int) klog393_buf);
+        res = register_chrdev(DEV393_MAJOR(DEV393_KLOGGER), DEV393_NAME(DEV393_KLOGGER), &framepars_fops);
         if (res < 0) {
-            dev_err(dev, "framepars_init: couldn't get a major number %d (DEV393_MAJOR(DEV393_FRAMEPARS0)).\n",
-                    DEV393_MAJOR(DEV393_FRAMEPARS0));
+            dev_err(dev, "framepars_init: couldn't get a major number %d (DEV393_MAJOR(DEV393_KLOGGER)).\n",
+                    DEV393_MAJOR(DEV393_KLOGGER));
             return res;
         }
 
@@ -288,15 +421,16 @@ int klogger_393_probe(struct platform_device *pdev)
 
 
 
-    //    klogger_393_sysfs_register(pdev);
-//    dev_info(dev, DEV393_NAME(DEV393_KLOGGER)": registered sysfs\n");
+    res = klogger_393_sysfs_register(pdev);
+    dev_info(dev, DEV393_NAME(DEV393_KLOGGER)": registered sysfs, result = %d\n", res);
     return 0;
 }
 
 int klogger_393_remove(struct platform_device *pdev)
 {
-    if (klog393_buf)
-        devm_kfree(&pdev->dev, klog393_buf);
+    if (klog393_buf) {
+//        devm_kfree(&pdev->dev, klog393_buf); // actually not needed
+    }
 
     unregister_chrdev(DEV393_MAJOR(DEV393_KLOGGER), DEV393_NAME(DEV393_KLOGGER));
     return 0;
