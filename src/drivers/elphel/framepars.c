@@ -1019,6 +1019,9 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 	int findex_this, findex_prev, findex_future, frame16;
+    findex_this =  thisFrameNumber(sensor_port) & PARS_FRAMES_MASK;
+    findex_prev = (findex_this - 1)  & PARS_FRAMES_MASK;
+    findex_future = (findex_this - 2)  & PARS_FRAMES_MASK; // actually - fartherst in the future??
 	MDP(DBGB_FSFA,sensor_port,"frameno=0x%lx, findex_this=%ld (0x%lx) maxLatency=%d, numPars=%d, frameParsInitialized[%d]=%d\n",
             frameno, findex_this, thisFrameNumber(sensor_port), maxLatency, numPars, sensor_port, frameParsInitialized[sensor_port])
     dev_dbg(g_devfp_ptr,"port= %d, frameno=0x%lx, findex_this=%d (0x%lx) maxLatency=%d, numPars=%d, frameParsInitialized[%d]=%d\n",
@@ -1028,9 +1031,6 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 	if (!frameParsInitialized[sensor_port]) {
 		initSequencers(sensor_port); // Will call  initFramePars(); and initialize functions
 	}
-	findex_this =  thisFrameNumber(sensor_port) & PARS_FRAMES_MASK;
-	findex_prev = (findex_this - 1)  & PARS_FRAMES_MASK;
-	findex_future = (findex_this - 2)  & PARS_FRAMES_MASK; // actually - fartherst in the future??
 	LOCK_IBH(framepars_locks[sensor_port]);
 	PROFILE_NOW(5); // Was 6, but no 7 in NC393
 	if (maxLatency >= 0) {
@@ -1054,7 +1054,9 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 	}
 	// not too late, not too early, go ahead (or maxlatency <0 - ASAP only)
 	for (npar = 0; npar < numPars; npar++) {
-	    dev_dbg(g_devfp_ptr,"port= %d,  --pars[%d].num=0x%lx, pars[%d].val=0x%lx", sensor_port, npar, pars[npar].num, npar, pars[npar].val);
+	    dev_dbg(g_devfp_ptr,"port= %d,  --pars[%d].num=0x%lx, pars[%d].val=0x%lx\n", sensor_port, npar, pars[npar].num, npar, pars[npar].val);
+        MDP(DBGB_FSFA,sensor_port,"  --pars[%d].num=0x%lx, pars[%d].val=0x%lx\n", npar, pars[npar].num, npar, pars[npar].val)
+
 //    frame16=      (pars[npar].num & FRAMEPAR_GLOBALS)? -1: (frameno  & PARS_FRAMES_MASK);
 		frame16 =      frameno  & PARS_FRAMES_MASK;
 		val = pars[npar].val;
@@ -1081,6 +1083,8 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 			}
 //TODO: optimize to use mask several parameters together
 			dev_dbg(g_devfp_ptr,"port= %d, frame16=0x%x\n", sensor_port, frame16);
+	        MDP(DBGB_FSFA,sensor_port,"framepars[%d].pars[%d]=0x%lx =?= val = 0x%lx, pars[%d].num=0x%08lx & 0x%08x\n",
+	                frame16, index, framepars[frame16].pars[index], val, npar, pars[npar].num, FRAMEPAIR_FORCE_NEW)
 			if ((framepars[frame16].pars[index] != val) || (pars[npar].num & FRAMEPAIR_FORCE_NEW)) {
 				bmask =   1 << (index & 31);
 				bindex = index >> 5;
@@ -1090,15 +1094,24 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 				framepars[frame16].mod[bindex]      |= bmask;
 				framepars[frame16].mod32            |= bmask32;
 				framepars[frame16].functions        |= funcs2call[index]; //Mark which functions will be needed to process the parameters
-				dev_dbg(g_devfp_ptr,"port= %d,  bindex=0x%x, bmask=0x%08lx, bmask32=0x%08lx, functions=0x%08lx\n", sensor_port, bindex, bmask, bmask32, framepars[frame16].functions);
+				dev_dbg(g_devfp_ptr,"port= %d,  bindex=0x%x, bmask=0x%08lx, bmask32=0x%08lx, functions=0x%08lx\n",
+				        sensor_port, bindex, bmask, bmask32, framepars[frame16].functions);
+                MDP(DBGB_FSFA,sensor_port,"bindex=0x%x, bmask=0x%08lx, bmask32=0x%08lx, functions=0x%08lx\n",
+                        bindex, bmask, bmask32, framepars[frame16].functions)
+
 // Write parameter to the next frames up to the one that have the same parameter already modified (only if not FRAMEPAIR_JUST_THIS)
 				if ((pars[npar].num & FRAMEPAIR_JUST_THIS) == 0) {
-					dev_dbg(g_devfp_ptr,"port= %d,       ---   setting next frames\n",sensor_port);
+					dev_dbg(g_devfp_ptr,"port= %d,       ---   setting next frames, pars[%d].num=0x%lx\n",sensor_port,npar,pars[npar].num);
+                    MDP(DBGB_FSFA,sensor_port,"    ---   setting next frames, pars[%d].num=0x%lx\n",npar,pars[npar].num)
+
 					for (nframe = (frame16 + 1) & PARS_FRAMES_MASK; (nframe != findex_prev) && (!(framepars[nframe].mod[bindex] & bmask)); nframe = (nframe + 1) & PARS_FRAMES_MASK) {
 						framepars[nframe].pars[index] = val;
-						dev_dbg(g_devfp_ptr,"port= %d, %d", sensor_port, nframe);
+						dev_dbg(g_devfp_ptr,"framepars[%d].pars[%d] <- 0x%08x  ", nframe, index, val);
+	                    MDP(DBGB_FSFA,sensor_port,"framepars[%d].pars[%d] <- 0x%08x  ", nframe, index, val)
 					}
 					frame16 = (frame16 - 1) & PARS_FRAMES_MASK; // for " regular parameters "modified since" do not include the target frame itself, for "JUST_THIS" - does
+                    dev_dbg(g_devfp_ptr,"\n");
+	                MDP(DBGB_FSFA,sensor_port,"%s\n","")
 //					D5(printk("\n"));
 				}
 // Mark this parameter in all previous frames as "modified since"
@@ -1106,7 +1119,10 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 				for (nframe = frame16; nframe != findex_future; nframe = (nframe - 1) & PARS_FRAMES_MASK) { //NOTE: frame16 is modified here
 					framepars[nframe].modsince[bindex] |= bmask;
 					framepars[nframe].modsince32       |= bmask32;
+	                MDP(DBGB_FSFA,sensor_port,"framepars[%d].modsince[%d] |= 0x%08x, framepars[%d].modsince32 |= 0x%08x  ",
+	                        nframe, bindex, bmask, nframe, bmask32)
 				}
+                MDP(DBGB_FSFA,sensor_port,"%s\n","")
 			}
 		} else { // error - trying to write "just this" to the "future" - that would stick if allowed
             UNLOCK_IBH(framepars_locks[sensor_port]);

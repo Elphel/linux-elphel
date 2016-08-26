@@ -1473,10 +1473,12 @@ int pgm_sensorrun  (int sensor_port,               ///< sensor port number (0..3
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -EINVAL; // wrong frame
-    control_sensor_memory (sensor_port,
-                           thispars->pars[P_SENSOR_RUN] & 3,
-                           (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
-                           frame16);
+    if (thispars->pars[P_SENSOR_RUN] & 3) {
+        control_sensor_memory (sensor_port,
+                thispars->pars[P_SENSOR_RUN] & 3,
+                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                        frame16);
+    }
     // Is it OK to process stop here too?
     return 0;
 /*
@@ -1522,10 +1524,12 @@ int pgm_sensorstop (int sensor_port,               ///< sensor port number (0..3
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -EINVAL; // wrong frame
     // Do we need to filter for stop only (    if ((thispars->pars[P_SENSOR_RUN] & 3)==0){... ) ?
-    control_sensor_memory (sensor_port,
-                           thispars->pars[P_SENSOR_RUN] & 3,
-                           (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
-                           frame16);
+    if ((thispars->pars[P_SENSOR_RUN] & 3)==0){
+        control_sensor_memory (sensor_port,
+                thispars->pars[P_SENSOR_RUN] & 3,
+                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                        frame16);
+    }
     return 0;
 #else
     int fpga_data=0;
@@ -1900,15 +1904,22 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
 #ifndef NC353
     int width_marg, height_marg;
     int overlap = 0; // tile overlap (total - 2 for JPEG18, 4 - for JPEG20, 0 otherwise
-    int width_bursts;
-    int cmprs_top = 0; // 1 for JPEG18 only, 0 for others
+    int width_bursts; // width in 16-pixel bursts
+    int cmprs_top = 0; // 1 for JPEG18 only, 0 for others (also is used for compressor left)
     int tile_width; // in bursts, 2 for those with overlap (height>16), 4 with heigh==16
     int tile_height; // 16/18 (20 not yet implemented)
+    x393_cmprs_frame_format_t cmprs_frame_format ={.d32=0};
+
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     width_marg = thispars->pars[P_ACTUAL_WIDTH];
     height_marg = thispars->pars[P_ACTUAL_WIDTH];
+    // NC393: maybe add later monochrome mode with small tiles?
+    cmprs_frame_format.num_macro_cols_m1 = (width_marg>> 4) - 1; // before adding margins
+    cmprs_frame_format.num_macro_rows_m1 = (height_marg>> 4) - 1; // before adding margins;
+
+
     switch(thispars->pars[P_COLOR]){
     case COLORMODE_COLOR:
         overlap = 2;
@@ -1927,6 +1938,8 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     } else {
         tile_width = 4;
     }
+    cmprs_frame_format.left_margin = cmprs_top; // same as top - only for 18x18 tiles to keep Bayer shift (0/1)
+
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
     // Adjusting for tile width. TODO: probably not needed, handled in FPGA - verify (and remove 2 next lines)
     if (width_bursts & 1)                     width_bursts++;
@@ -1944,6 +1957,7 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
                              (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
                              frame16);          // Frame number the command should be applied to (if not immediate mode)
 
+    X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_format, cmprs_frame_format);
     return 0;
 // TODO: Do we need to maintain P_IMGSZMEM ?
 // #define P_PAGE_ACQ      18 ///< Number of image page buffer to acquire to (0.1?)
@@ -2541,7 +2555,11 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     // does it need to be be started (nothing do be done to stop)
-    if (thispars->pars[P_COMPRESSOR_RUN]==0) return 0; // does not need compressor to be started
+    if (thispars->pars[P_COMPRESSOR_RUN]==0) {
+        MDP(DBGB_PADD, sensor_port,"thispars->pars[P_COMPRESSOR_RUN] = %d, does not need compressor to be started\n",
+                (int)thispars->pars[P_COMPRESSOR_RUN])
+        return 0; // does not need compressor to be started
+    }
     // NC393: memory controller already set by pgm_memcompressor, but we'll need to setup dependent/from memory here
     switch(thispars->pars[P_COLOR]){
     case COLORMODE_COLOR:
@@ -2690,7 +2708,7 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
         extra_pages = 0;
     }
     control_compressor_memory (sensor_port,
-            thispars->pars[P_SENSOR_RUN] & 3, // stop/single/run(/reset)
+            thispars->pars[P_COMPRESSOR_RUN] & 3, // stop/single/run(/reset)
             extra_pages,
             disable_need,
             (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
@@ -2702,12 +2720,13 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
         break;
     case COMPRESSOR_RUN_SINGLE:
     case COMPRESSOR_RUN_CONT:
-        cmprs_mode.run = ((thispars->pars[P_SENSOR_RUN] & 3)==SENSOR_RUN_CONT)? X393_CMPRS_CBIT_RUN_ENABLE : X393_CMPRS_CBIT_RUN_STANDALONE;
+        cmprs_mode.run = ((thispars->pars[P_COMPRESSOR_RUN] & 3)==COMPRESSOR_RUN_CONT)? X393_CMPRS_CBIT_RUN_ENABLE : X393_CMPRS_CBIT_RUN_STANDALONE;
         break;
     }
     cmprs_mode.run_set = 1;
     X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
     dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
+    MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32)
     return 0;
 
 #else

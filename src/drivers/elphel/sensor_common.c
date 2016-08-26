@@ -52,6 +52,9 @@
 
 #include <asm/delay.h> // just for usleep1000()
 
+// NC393 debug macros
+#include "debug393.h"
+
 /* Driver name to display in log messages.*/
 //#define IMAGEACQ_DRIVER_DESCRIPTION      "Elphel (R) Model 393 Image Acquisition device driver"
 
@@ -956,7 +959,7 @@ int sequencer_stop_run_reset(int chn,  ///< Sensor port
 {
     x393_cmdframeseq_mode_t cmdframeseq_mode = {.d32 = 0};
     x393_status_ctrl_t status_ctrl = {.d32=0};
-
+    MDP(DBGB_SCRST,chn,"cmd = %d\n",cmd)
     switch (cmd){
     case SEQ_CMD_STOP:
         cmdframeseq_mode.run_cmd = 2;
@@ -974,6 +977,9 @@ int sequencer_stop_run_reset(int chn,  ///< Sensor port
         udelay(1);
     if (status_ctrl.mode)
         set_x393_cmdseqmux_status_ctrl(status_ctrl);
+    // debug
+    udelay(1);
+    MDP(DBGB_SCRST,chn,"status_ctrl.d32 = 0x%x\n",status_ctrl.d32)
     return 0;
 }
 

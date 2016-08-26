@@ -34,6 +34,9 @@
 #define DBGB_PADD  11 ///< additional details
 // x393_vidoemem.c
 #define DBGB_VM    12 ///<  vidoemem all debug
+#define DBGB_SCRST 13 ///<  vidoemem all debug
+
+
 // 13
 // 14
 // 15
@@ -58,6 +61,8 @@
 
 #include "klogger_393.h"
 #include "framepars.h" // for aglobals
+#include "sensor_common.h"// for int getHardFrameNumber(int sensor_port, int use_compressor);
+
 #ifndef ELPHEL_DEBUG393
     #define ELPHEL_DEBUG393 1
     #if ELPHEL_DEBUG393
@@ -65,7 +70,8 @@
          /// log unconditionally, for any channel
         #define MDG(...)    print_klog393(klog_mode, __FILE__, __FUNCTION__, __LINE__, __VA_ARGS__);
          /// log only if specified bit in G_DEBUG global parameter for the specified sensor port is set
-        #define MDP(bit,port,fmt,...) { if (GLOBALPARS(port,G_DEBUG) & (1 << bit)) print_klog393(klog_mode, __FILE__, __FUNCTION__, __LINE__,"%d: "fmt,port,__VA_ARGS__); }
+//        #define MDP(bit,port,fmt,...) { if (GLOBALPARS(port,G_DEBUG) & (1 << bit)) print_klog393(klog_mode, __FILE__, __FUNCTION__, __LINE__,"%d: "fmt,port,__VA_ARGS__); }
+        #define MDP(bit,port,fmt,...) { if (GLOBALPARS(port,G_DEBUG) & (1 << bit)) print_klog393(klog_mode, __FILE__, __FUNCTION__, __LINE__,"%d:%d "fmt,port,getHardFrameNumber(port, 0),__VA_ARGS__); }
     #else
         #define MDF(x)
         #define MDP(bit,port,fmt,...)

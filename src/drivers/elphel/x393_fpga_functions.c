@@ -37,6 +37,51 @@ int init_command_sequencer(int sensor_port)
     return 0;
 }
 #endif
+
+int compressor_dma_setup (int port_afi,      ///< number of AFI port (0 - afi 1, 1 - afi2) (currently only 0 is routed)
+                          int chn_mask,      ///< compressor channels to use, bitmask
+                          int status_mode,   ///< status update mode status mode (3 for auto)
+                          int report_mode,   ///< readback mode:
+                                             ///< * 0 - show EOF pointer, internal
+                                             ///< * 1 - show EOF pointer, confirmed written to the system memory
+                                             ///< * 2 - show show current pointer, internal (debug mode)
+                                             ///< * 3 - show current pointer, confirmed written to the system memory (debug mode)
+                          u32 cmprs0_sa,     ///< input channel 0 start address, 32-bytes aligned
+                          u32 cmprs0_len,    ///< input channel 0 buffer length, 32-byte aligned
+                          u32 cmprs1_sa,     ///< input channel 1 start address, 32-bytes aligned
+                          u32 cmprs1_len,    ///< input channel 1 buffer length, 32-byte aligned
+                          u32 cmprs2_sa,     ///< input channel 2 start address, 32-bytes aligned
+                          u32 cmprs2_len,    ///< input channel 2 buffer length, 32-byte aligned
+                          u32 cmprs3_sa,     ///< input channel 3 start address, 32-bytes aligned
+                          u32 cmprs3_len)    ///< input channel 3 buffer length, 32-byte aligned
+{
+    if ((cmprs0_sa | cmprs0_len | cmprs1_sa | cmprs1_len | cmprs2_sa | cmprs2_len | cmprs3_sa | cmprs3_len) & 0x1f){
+        return -EINVAL;
+    }
+
+    return 0;
+}
+/*
+         Set mode of selected input channel of the selected AFI multiplexer
+        @param port_afi -       number of AFI port (0 - afi 1, 1 - afi2)
+        @param chn  -           number of afi input channel to program
+        @param status_mode -    status mode (3 for auto)
+        @param report_mode  -    readback mode:
+                            mode == 0 - show EOF pointer, internal
+                            mode == 1 - show EOF pointer, confirmed written to the system memory
+                            mode == 2 - show current pointer, internal
+                            mode == 3 - show current pointer, confirmed written to the system memory
+        @param afi_cmprs0_sa -  input channel 0 start address in 32-byte chunks
+        @param afi_cmprs0_len - input channel 0 buffer length in 32-byte chunks
+        @param afi_cmprs1_sa -  input channel 0 start address in 32-byte chunks
+        @param afi_cmprs1_len - input channel 0 buffer length in 32-byte chunks
+        @param afi_cmprs2_sa -  input channel 0 start address in 32-byte chunks
+        @param afi_cmprs2_len - input channel 0 buffer length in 32-byte chunks
+        @param afi_cmprs3_sa -  input channel 0 start address in 32-byte chunks
+        @param afi_cmprs3_len - input channel 0 buffer length in 32-byte chunks
+        @param verbose - verbose level
+
+ */
 /** Read time (seconds and microseconds) from the FPGA RTC */
 sec_usec_t * get_fpga_rtc(sec_usec_t * ts) ///< Pointer to a sec/usec structure to fill in
                                            ///< @return structure link to a passed structure

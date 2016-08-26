@@ -187,6 +187,7 @@ int  control_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
    }
    if (mcntrl_mode.enable){
        memchan_enable(num_sensor + VIDEOMEM_SENSOR_CHANNEL0, 1); // just enable - nothing will change if it was already enabled. Never disabled
+       MDP(DBGB_VM,num_sensor,"memchan_enable(%d,1)\n",num_sensor + VIDEOMEM_SENSOR_CHANNEL0)
    }
    return 0;
 }
@@ -305,14 +306,14 @@ int control_compressor_memory (int num_sensor,       ///< sensor port number (0.
    mcntrl_mode.disable_need = disable_need; // non-constant parameter
    mcntrl_mode.extra_pages =  extra_pages;  // non-constant parameter
    switch (cmd){
-   case SENSOR_RUN_STOP:
+   case COMPRESSOR_RUN_STOP:
        mcntrl_mode.enable = 0;
        break;
-   case SENSOR_RUN_SINGLE:
+   case COMPRESSOR_RUN_SINGLE:
        mcntrl_mode.single = 1;
        mcntrl_mode.repetitive = 0;
        break;
-   case SENSOR_RUN_CONT:
+   case COMPRESSOR_RUN_CONT:
        break;
    case SENSOR_RUN_RESET:
        mcntrl_mode.chn_nreset = 0;
@@ -348,6 +349,7 @@ int control_compressor_memory (int num_sensor,       ///< sensor port number (0.
    }
    if (mcntrl_mode.enable){
        memchan_enable(num_sensor + VIDEOMEM_COMPRESSOR_CHANNEL0, 1); // just enable - nothing will change if it was already enabled. Never disabled
+       MDP(DBGB_VM,num_sensor,"memchan_enable(%d,1)\n",num_sensor + VIDEOMEM_COMPRESSOR_CHANNEL0)
    }
    return 0;
 }
