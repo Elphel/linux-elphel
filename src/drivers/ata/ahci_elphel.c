@@ -397,16 +397,19 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 /** Exclude REM buffer from total size calculation */
 #define EXCLUDE_REM               0
 
-#define DEBUG_DONT_WRITE
+//#define DEBUG_DONT_WRITE
 
 unsigned char app15[ALIGNMENT_SIZE] = {0xff, 0xef};
 
 /* this should be placed to system includes directory*/
+#define DRV_CMD_WRITE             0
+#define DRV_CMD_FINISH            1
 struct frame_data {
 	unsigned int sensor_port;
 	int cirbuf_ptr;
 	int jpeg_len;
 	int meta_index;
+	int cmd;
 };
 /* end of system includes */
 
@@ -813,7 +816,7 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 
 	/* align common buffer to ALIGNMENT boundary */
 	len = align_bytes_num(cbuff->iov_len, ALIGNMENT_SIZE);
-	if (len < JPEG_MARKER_LEN + JPEG_SIZE_LEN) {
+	if (len < JPEG_MARKER_LEN + JPEG_SIZE_LEN && len != 0) {
 		/* the number of bytes needed for alignment is less than the length of the marker itself, increase the number of stuffing bytes */
 		len += ALIGNMENT_SIZE;
 	}
@@ -878,6 +881,7 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 	} else {
 		/* the frame is aligned to sector boundary but some buffers may be not */
 		chunks[CHUNK_ALIGN].iov_base = vectrpos(cbuff, 0);
+		chunks[CHUNK_ALIGN].iov_dma = cbuff->iov_dma + cbuff->iov_len;
 		chunks[CHUNK_ALIGN].iov_len = 0;
 		if (chunks[CHUNK_DATA_1].iov_len == 0) {
 			data_len = chunks[CHUNK_DATA_0].iov_len % ALIGNMENT_SIZE;
@@ -1132,7 +1136,7 @@ static inline struct elphel_ahci_priv *dev_get_dpriv(struct device *dev)
 static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port)
 {
 	int num;
-	struct fvec *cbuff = &dpriv->data_chunks[CHUNK_COMMON];
+	struct fvec *cbuff = &dpriv->fbuffs.common_buff;
 	size_t max_sz = (MAX_LBA_COUNT + 1) * PHY_BLOCK_SIZE;
 	size_t rem_sz = get_size_from(dpriv->data_chunks, dpriv->curr_data_chunk, dpriv->curr_data_offset, EXCLUDE_REM);
 
@@ -1189,18 +1193,19 @@ static void finish_rec(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 {
 	size_t stuff_len;
 	struct fvec *src;
-	struct fvec *cbuff = &dpriv->data_chunks[CHUNK_COMMON];
-	struct fvec *rbuff = &dpriv->data_chunks[CHUNK_REM];
+	struct fvec *cvect = &dpriv->data_chunks[CHUNK_COMMON];
+	struct fvec *rvect = &dpriv->data_chunks[CHUNK_REM];
 
-	if (rbuff->iov_len == 0)
+	if (rvect->iov_len == 0)
 		return;
 
-	dev_dbg(dev, "write last chunk of data, size: %u\n", rbuff->iov_len);
-	stuff_len = PHY_BLOCK_SIZE - rbuff->iov_len;
-	src = vectrpos(rbuff, stuff_len);
+	dev_dbg(dev, "write last chunk of data, size: %u\n", rvect->iov_len);
+	stuff_len = PHY_BLOCK_SIZE - rvect->iov_len;
+	src = vectrpos(rvect, stuff_len);
 	memset(src->iov_base, 0, stuff_len);
-	vectcpy(cbuff, rbuff->iov_base, rbuff->iov_len);
-	vectshrink(rbuff, rbuff->iov_len);
+	rvect->iov_len += stuff_len;
+	vectcpy(cvect, rvect->iov_base, rvect->iov_len);
+	vectshrink(rvect, rvect->iov_len);
 
 	dpriv->flags |= LAST_BLOCK;
 	process_cmd(dev, dpriv, port);
@@ -1234,10 +1239,14 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 		return -EAGAIN;
 
 	if (buff_sz != sizeof(struct frame_data)) {
-		dev_err(dev, "the size of the data buffer is incorrect, should be equal to sizeof(struct data_page)\n");
+		dev_err(dev, "the size of the data buffer is incorrect, should be equal to sizeof(struct frame_data)\n");
 		return -EINVAL;
 	}
 	memcpy(&fdata, buff, sizeof(struct frame_data));
+	if (fdata.cmd == DRV_CMD_FINISH) {
+		finish_rec(dev, dpriv, port);
+		return buff_sz;
+	}
 
 	/* debug code follows */
 	printk(KERN_DEBUG ">>> data pointers received:\n");
