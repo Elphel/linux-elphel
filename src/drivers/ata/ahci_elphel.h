@@ -41,13 +41,11 @@
  * trailing marker, and pointer to a buffer containing the remainder of a
  * frame. Ten chunks of data in total.
  * @todo Fix description */
-#define MAX_DATA_CHUNKS           10
+#define MAX_DATA_CHUNKS           9
 /** Default port number */
 #define DEFAULT_PORT_NUM          0
 /** Align buffers length to this amount of bytes */
 #define ALIGNMENT_SIZE            32
-/** Address alignment boundary */
-#define ALIGNMENT_ADDR            2
 
 /** This structure holds raw device buffer pointers */
 struct drv_pointers {
@@ -88,10 +86,9 @@ enum {
 	CHUNK_HEADER,
 	CHUNK_COMMON,
 	CHUNK_DATA_0,
-	CHUNK_ALIGN_0,
 	CHUNK_DATA_1,
-	CHUNK_ALIGN_1,
 	CHUNK_TRAILER,
+	CHUNK_ALIGN,
 	CHUNK_REM
 };
 

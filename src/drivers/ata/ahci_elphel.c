@@ -389,6 +389,8 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 #define PHY_BLOCK_SIZE            512
 //#define PHY_BLOCK_SIZE            4096
 #define JPEG_MARKER_LEN           2
+/** The size in bytes of JPEG marker length field */
+#define JPEG_SIZE_LEN             2
 #define SG_TBL_SZ                 256
 /** Include REM buffer to total size calculation */
 #define INCLUDE_REM               1
@@ -477,13 +479,17 @@ static int circbuf_get_ptr_tst(int sensor_port, size_t offset, size_t len, struc
 	if (use_preset == 0) {
 		if (jpg_0_sz != 0)
 			jpg_0_sz = jpg_0_sz % (DATA_BUFF_SIZE - 1);
-		if (jpg_1_sz != 0)
+		if (jpg_1_sz != 0) {
+			jpg_0_sz -= (jpg_0_sz % ALIGNMENT_SIZE);
 			jpg_1_sz = jpg_1_sz % (DATA_BUFF_SIZE - 1);
+		}
 	} else if (use_preset == 1) {
 		if (g_jpg_0_sz != 0)
 			jpg_0_sz = jpg_0_sz % g_jpg_0_sz;
-		if (g_jpg_1_sz != 0)
+		if (g_jpg_1_sz != 0) {
+			jpg_0_sz -= (jpg_0_sz % ALIGNMENT_SIZE);
 			jpg_1_sz = jpg_1_sz % g_jpg_1_sz;
+		}
 	} else if (use_preset == 2) {
 		jpg_0_sz = g_jpg_0_sz;
 		jpg_1_sz = g_jpg_1_sz;
@@ -536,14 +542,6 @@ static int check_chunks(struct fvec *vects)
 				dev_err(NULL, "ERROR: unaligned write from slot %d, length %u\n", i, vects[i].iov_len);
 				ret = -1;
 			}
-			if ((vects[i].iov_dma % ALIGNMENT_ADDR) != 0) {
-				dev_err(NULL, "ERROR: unaligned DMA address in slot %d: 0x%x\n", i, vects[i].iov_dma);
-				ret = -1;
-			}
-		}
-		if ((i == CHUNK_ALIGN_0 || i == CHUNK_ALIGN_1) && vects[i].iov_len > 2 * ALIGNMENT_SIZE) {
-			dev_err(NULL, "ERROR: alignment buffer %d overflow\n", i);
-			ret = -1;
 		}
 	}
 	if ((sz % PHY_BLOCK_SIZE) != 0) {
@@ -688,37 +686,9 @@ static inline unsigned char *vectrpos(struct fvec *vec, size_t offset)
 {
 	return (unsigned char *)vec->iov_base + (vec->iov_len - offset);
 }
-/** Check if bus address will be properly aligned after moving vector forward by @e len bytes */
-static inline int is_addr_aligned(const struct fvec *vec, size_t len)
-{
-	int ret = 0;
-
-	if (vec->iov_len >= len) {
-		if (((vec->iov_dma + len) % ALIGNMENT_ADDR) == 0)
-			ret = 1;
-	}
-
-	return ret;
-}
-static size_t align_address(struct fvec *dest, struct fvec *src, size_t len)
-{
-	size_t cut_bytes = (src->iov_dma + len) % ALIGNMENT_ADDR;
-	size_t pad_len = ALIGNMENT_SIZE - cut_bytes;
-	if (pad_len <= len) {
-		len -= pad_len;
-	}
-	if (len != 0) {
-		len += cut_bytes;
-	}
-	/* set marker length */
-	app15[3] = pad_len - JPEG_MARKER_LEN;
-	printk(KERN_DEBUG ">>> copy %u bytes from APP15 to other buffer\n", pad_len);
-	vectcpy(dest, app15, pad_len);
-
-	return len;
-}
 static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 {
+	int i;
 	int is_delayed = 0;
 	unsigned char *src;
 	size_t len, total_sz, data_len;
@@ -778,332 +748,153 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 	vectcpy(cbuff, chunks[CHUNK_HEADER].iov_base, len);
 	vectshrink(&chunks[CHUNK_HEADER], chunks[CHUNK_HEADER].iov_len);
 
-	/* check if we have enough data for further processing */
-	len = chunks[CHUNK_DATA_0].iov_len + chunks[CHUNK_DATA_1].iov_len + chunks[CHUNK_TRAILER].iov_len;
+	/* check if there is enough data to continue - JPEG data length can be too short */
+	len = get_size_from(chunks, CHUNK_DATA_0, 0, EXCLUDE_REM);
 	if (len < PHY_BLOCK_SIZE) {
-		data_len = cbuff->iov_len % PHY_BLOCK_SIZE;
-		dev_dbg(dev, "JPEG data size is too small: %u; unaligned data length: %u\n", len, data_len);
-		if (data_len + len <= fbuffs->rem_buff.iov_len) {
-			/* place data to REM buffer and continue */
-			src = vectrpos(cbuff, data_len);
-	printk(KERN_DEBUG ">>> 5.0.1 copy %u bytes from COMMON to REM buffer \n", len);
-			vectcpy(&chunks[CHUNK_REM], src, data_len);
-			vectshrink(cbuff, data_len);
-	printk(KERN_DEBUG ">>> 5.0.1 copy %u bytes from DATA_0 to REM buffer \n", len);
-			vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len);
-			vectshrink(&chunks[CHUNK_DATA_0], chunks[CHUNK_DATA_0].iov_len);
-	printk(KERN_DEBUG ">>> 5.0.1 copy %u bytes from DATA_1 to REM buffer \n", len);
-			vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
-			vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
-	printk(KERN_DEBUG ">>> 5.0.1 copy %u bytes from TRAILER to REM buffer \n", len);
-			vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
-			vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
-		} else {
-			/* the REM buffer is too short, process some buffers to align COMMON buffer to sector boundary */
-			dev_dbg(dev, "REM buffer is too short, align COMMON to sector boundary\n");
-			data_len = PHY_BLOCK_SIZE - data_len;
-			if (data_len >= chunks[CHUNK_DATA_0].iov_len) {
-				/* copy whole DATA_0 to COMMON */
-	printk(KERN_DEBUG ">>> 5.0.2 copy %u bytes from DATA_0 to COMMON buffer \n", chunks[CHUNK_DATA_0].iov_len);
+		size_t num = align_bytes_num(cbuff->iov_len, PHY_BLOCK_SIZE);
+		if (len >= num) {
+			/* there is enough data to align common buffer to sector boundary */
+			if (num >= chunks[CHUNK_DATA_0].iov_len) {
+	printk(KERN_DEBUG ">>> copy %u bytes from DATA_0 to common buffer\n", chunks[CHUNK_DATA_0].iov_len);
 				vectcpy(cbuff, chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len);
-				data_len -= chunks[CHUNK_DATA_0].iov_len;
+				num -= chunks[CHUNK_DATA_0].iov_len;
 				vectshrink(&chunks[CHUNK_DATA_0], chunks[CHUNK_DATA_0].iov_len);
 			} else {
-				/* copy a part of DATA_0 to COMMON */
-	printk(KERN_DEBUG ">>> 5.0.2 copy %u bytes from DATA_0 to COMMON buffer \n", data_len);
-				src = vectrpos(&chunks[CHUNK_DATA_0], data_len);
-				vectcpy(cbuff, src, data_len);
-				vectshrink(&chunks[CHUNK_DATA_0], data_len);
-				data_len = 0;
+	printk(KERN_DEBUG ">>> copy %u bytes from DATA_0 to common buffer\n", num);
+				src = vectrpos(&chunks[CHUNK_DATA_0], num);
+				vectcpy(cbuff, chunks[CHUNK_DATA_0].iov_base, num);
+				vectshrink(&chunks[CHUNK_DATA_0], num);
+				num = 0;
 			}
-			if (data_len != 0) {
-				if (data_len >= chunks[CHUNK_DATA_1].iov_len) {
-					/* copy whole DATA_1 to COMMON */
-	printk(KERN_DEBUG ">>> 5.0.2 copy %u bytes from DATA_1 to COMMON buffer \n", chunks[CHUNK_DATA_1].iov_len);
-					vectcpy(cbuff, chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
-					data_len -= chunks[CHUNK_DATA_1].iov_len;
-					vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
-				} else {
-					/* copy a part of DATA_1 to COMMON */
-	printk(KERN_DEBUG ">>> 5.0.2 copy %u bytes from DATA_1 to COMMON buffer \n", data_len);
-					src = vectrpos(&chunks[CHUNK_DATA_1], data_len);
-					vectcpy(cbuff, src, data_len);
-					vectshrink(&chunks[CHUNK_DATA_1], data_len);
-					data_len = 0;
-				}
-				if (data_len != 0) {
-					/* copy a part of TRAILER to COMMON */
-	printk(KERN_DEBUG ">>> 5.0.2 copy %u bytes from TRAILER to COMMON buffer \n", data_len);
-					src = vectrpos(&chunks[CHUNK_TRAILER], data_len);
-					vectcpy(cbuff, src, data_len);
-					vectshrink(&chunks[CHUNK_TRAILER], data_len);
-					data_len = 0;
-				}
-			}
-			/* COMMON buffer is aligned to sector boundary, copy all other data to REM buffer */
-			if (chunks[CHUNK_DATA_0].iov_len != 0) {
-	printk(KERN_DEBUG ">>> 5.0.3 copy %u bytes from DATA_0 to REM buffer \n", chunks[CHUNK_DATA_0].iov_len);
-				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len);
-				vectshrink(&chunks[CHUNK_DATA_0], chunks[CHUNK_DATA_0].iov_len);
-			}
-			if (chunks[CHUNK_DATA_1].iov_len != 0) {
-	printk(KERN_DEBUG ">>> 5.0.3 copy %u bytes from DATA_1 to REM buffer \n", chunks[CHUNK_DATA_1].iov_len);
-				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
+			if (num >= chunks[CHUNK_DATA_1].iov_len) {
+	printk(KERN_DEBUG ">>> copy %u bytes from DATA_1 to common buffer\n", chunks[CHUNK_DATA_1].iov_len);
+				vectcpy(cbuff, chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
+				num -= chunks[CHUNK_DATA_1].iov_len;
 				vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
+			} else {
+	printk(KERN_DEBUG ">>> copy %u bytes from DATA_1 to common buffer\n", num);
+				src = vectrpos(&chunks[CHUNK_DATA_1], num);
+				vectcpy(cbuff, chunks[CHUNK_DATA_1].iov_base, num);
+				vectshrink(&chunks[CHUNK_DATA_1], num);
+				num = 0;
 			}
-			if (chunks[CHUNK_TRAILER].iov_len != 0) {
-	printk(KERN_DEBUG ">>> 5.0.3 copy %u bytes from TRAILER to REM buffer \n", chunks[CHUNK_TRAILER].iov_len);
-				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
+			if (num >= chunks[CHUNK_TRAILER].iov_len) {
+	printk(KERN_DEBUG ">>> copy %u bytes from TRAILER to common buffer\n", chunks[CHUNK_TRAILER].iov_len);
+				vectcpy(cbuff, chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
+				num -= chunks[CHUNK_TRAILER].iov_len;
 				vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
+			} else {
+	printk(KERN_DEBUG ">>> copy %u bytes from TRAILER to common buffer\n", num);
+				src = vectrpos(&chunks[CHUNK_TRAILER], num);
+				vectcpy(cbuff, chunks[CHUNK_TRAILER].iov_base, num);
+				vectshrink(&chunks[CHUNK_TRAILER], num);
+				num = 0;
 			}
+		} else {
+			/* there is not enough data to align common buffer to sector boundary, truncate common buffer */
+			data_len = cbuff->iov_len % PHY_BLOCK_SIZE;
+			src = vectrpos(cbuff, data_len);
+	printk(KERN_DEBUG ">>> copy %u bytes from COMMON to REM buffer\n", data_len);
+			vectcpy(&chunks[CHUNK_REM], src, data_len);
+			vectshrink(cbuff, data_len);
 		}
+	printk(KERN_DEBUG ">>> copy %u bytes from DATA_0 to REM buffer\n", chunks[CHUNK_DATA_0].iov_len);
+		vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len);
+		vectshrink(&chunks[CHUNK_DATA_0], chunks[CHUNK_DATA_0].iov_len);
+	printk(KERN_DEBUG ">>> copy %u bytes from DATA_1 to REM buffer\n", chunks[CHUNK_DATA_1].iov_len);
+		vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
+		vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
+	printk(KERN_DEBUG ">>> copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
+		vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
+		vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
 
 		return;
 	}
 
-	/* there is enough data in data buffers, align common buffer */
+	/* align common buffer to ALIGNMENT boundary */
 	len = align_bytes_num(cbuff->iov_len, ALIGNMENT_SIZE);
-	if (likely(len != 0)) {
-		dev_dbg(dev, "align COMMON buffer, add %u bytes from other buffers\n", len);
-		if ((len + ALIGNMENT_ADDR) <= chunks[CHUNK_DATA_0].iov_len) {
-	printk(KERN_DEBUG ">>> check alignment of DMA address: 0x%x\n", chunks[CHUNK_DATA_0].iov_dma);
-			if (is_addr_aligned(&chunks[CHUNK_DATA_0], len) == 0) {
-				/* we are going to copy =len= bytes from DATA_0 buffer to align COMMON buffer to
-				 * ALIGNMNET_SIZE boundary which will make the starting address of DATA_0 buffer
-				 * unaligned to ALIGNMENT_ADDR boundary, fix this by moving additional bytes from
-				 * the beginning of DATA_0 buffer and padding COMMON buffer with APP15 marker */
-				len = align_address(cbuff, &chunks[CHUNK_DATA_0], len);
-			}
-	printk(KERN_DEBUG ">>> 5.1.1 copy %u bytes from DATA_0 to common buffer \n", len);
-			vectcpy(cbuff, chunks[CHUNK_DATA_0].iov_base, len);
-			vectmov(&chunks[CHUNK_DATA_0], len);
-		} else {
-			/* handle special case: JPEG data rolls over circular buffer boundary and the
-			 * data chunk in the end of the buffer is less than we need for alignment; copy
-			 * all data from first chunk, discard it, copy remainder from second chunk
-			 * and from trailer if needed
-			 */
-			if (len <= (chunks[CHUNK_DATA_0].iov_len + chunks[CHUNK_DATA_1].iov_len + chunks[CHUNK_TRAILER].iov_len + ALIGNMENT_ADDR)) {
-	printk(KERN_DEBUG ">>> 5.2 copy %u bytes from DATA_0 to common buffer\n", chunks[CHUNK_DATA_0].iov_len);
-				vectcpy(cbuff, chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len);
-				len -= chunks[CHUNK_DATA_0].iov_len;
-				vectshrink(&chunks[CHUNK_DATA_0], chunks[CHUNK_DATA_0].iov_len);
-				if (chunks[CHUNK_DATA_1].iov_len >= len) {
-	printk(KERN_DEBUG ">>> check alignment of DMA address: 0x%x\n", chunks[CHUNK_DATA_1].iov_dma);
-					if (is_addr_aligned(&chunks[CHUNK_DATA_1], len) == 0) {
-						len = align_address(cbuff, &chunks[CHUNK_DATA_1], len);
-					}
-	printk(KERN_DEBUG ">>> 5.2.4 copy %u bytes from DATA_1 to common buffer\n", len);
-					vectcpy(cbuff, chunks[CHUNK_DATA_1].iov_base, len);
-					vectmov(&chunks[CHUNK_DATA_1], len);
-					len = 0;
-				} else {
-	printk(KERN_DEBUG ">>> 5.2.5 copy %u bytes from DATA_1 to common buffer\n", chunks[CHUNK_DATA_1].iov_len);
-					vectcpy(cbuff, chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
-					len -= chunks[CHUNK_DATA_1].iov_len;
-					vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
-				}
-				if (chunks[CHUNK_TRAILER].iov_len >= len) {
-	printk(KERN_DEBUG ">>> 5.2.6 copy %u bytes from TRAILER to common buffer\n", len);
-					vectcpy(cbuff, chunks[CHUNK_TRAILER].iov_base, len);
-					vectmov(&chunks[CHUNK_TRAILER], len);
-					len = 0;
-				} else {
-	printk(KERN_DEBUG ">>> 5.2.7 copy %u bytes from TRAILER to common buffer\n", chunks[CHUNK_TRAILER].iov_len);
-					vectcpy(cbuff, chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
-					len -= chunks[CHUNK_TRAILER].iov_len;
-					vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
-				}
-			} else {
-				/* JPEG data is too short, place all to remainder buffer */
-				data_len = cbuff->iov_len % PHY_BLOCK_SIZE;
-				src = vectrpos(cbuff, data_len);
-	printk(KERN_DEBUG ">>> 5.2.1 copy %u bytes from COMMON to REM buffer\n", data_len);
-				vectcpy(&chunks[CHUNK_REM], src, data_len);
-				vectshrink(cbuff, data_len);
-	printk(KERN_DEBUG ">>> 5.2.1 copy %u bytes from DATA_0 to REM buffer\n", chunks[CHUNK_DATA_0].iov_len);
-				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len);
-				vectshrink(&chunks[CHUNK_DATA_0], chunks[CHUNK_DATA_0].iov_len);
-	printk(KERN_DEBUG ">>> 5.2.1 copy %u bytes from DATA_1 to REM buffer\n", chunks[CHUNK_DATA_1].iov_len);
-				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
-				vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
-	printk(KERN_DEBUG ">>> 5.2.1 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
-				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
-				vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
-			}
-		}
+	if (len < JPEG_MARKER_LEN + JPEG_SIZE_LEN) {
+		/* the number of bytes needed for alignment is less than the length of the marker itself, increase the number of stuffing bytes */
+		len += ALIGNMENT_SIZE;
 	}
+	dev_dbg(dev, "total number of stuffing bytes in APP15 marker: %u\n", len);
+	app15[3] = len - JPEG_MARKER_LEN;
+	vectcpy(cbuff, app15, len);
 
-	/* JPEG header and Exif data is aligned to ALIGNMENT_SIZE boundary in a common buffer now,
-	 * the entire frame should be aligned to physical sector boundary and remainder should be
-	 * copied to a buffer for recording during next frame */
+	/* align frame to sector size boundary; total size could have changed by the moment - recalculate */
 	total_sz = get_size_from(chunks, 0, 0, INCLUDE_REM);
 	len = total_sz % PHY_BLOCK_SIZE;
-	chunks[CHUNK_ALIGN_0].iov_base = (unsigned char *)cbuff->iov_base + cbuff->iov_len;
-	chunks[CHUNK_ALIGN_0].iov_len = 0;
-	dev_dbg(dev, "total frame size: %u, unaligned bytes to sector boundary: %u\n", total_sz, len);
-	if (likely(chunks[CHUNK_DATA_1].iov_len == 0)) {
-		/* JPEG data is not split, align just one buffer to physical sector boundary if it is not already aligned */
-		if (chunks[CHUNK_DATA_0].iov_len + chunks[CHUNK_TRAILER].iov_len >= len) {
-			if (likely(len >= chunks[CHUNK_TRAILER].iov_len)) {
-				data_len = len - chunks[CHUNK_TRAILER].iov_len;
-				src = vectrpos(&chunks[CHUNK_DATA_0], data_len);
-		printk(KERN_DEBUG ">>> 6.1 copy %u bytes from DATA_0 to remainder buffer\n", data_len);
-				vectcpy(&chunks[CHUNK_REM], src, data_len);
-				vectshrink(&chunks[CHUNK_DATA_0], data_len);
-		printk(KERN_DEBUG ">>> 6.1 copy %u bytes from TRAILER to remainder buffer\n", chunks[CHUNK_TRAILER].iov_len);
-				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
-				vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
-			} else {
-				/* align DATA_0 buffer, break trailing marker and place first part to ALIGN_0 buffer and second part to REM */
-				data_len = chunks[CHUNK_DATA_0].iov_len % ALIGNMENT_SIZE;
-		printk(KERN_DEBUG ">>> 6.1.2 copy %u bytes from DATA_0 to ALIGN_0 buffer\n", data_len);
-				src = vectrpos(&chunks[CHUNK_DATA_0], data_len);
-				vectcpy(&chunks[CHUNK_ALIGN_0], src, data_len);
-				vectshrink(&chunks[CHUNK_DATA_0], data_len);
-				if (len == 0)
-					len = chunks[CHUNK_TRAILER].iov_len;
-		printk(KERN_DEBUG ">>> 6.1.2 copy %u bytes from TRAILER to ALIGN_0 buffer\n", len);
-				vectcpy(&chunks[CHUNK_ALIGN_0], chunks[CHUNK_TRAILER].iov_base, len);
-				vectmov(&chunks[CHUNK_TRAILER], len);
-		printk(KERN_DEBUG ">>> 6.1.2 copy %u bytes from TRAILER to remainder buffer\n", chunks[CHUNK_TRAILER].iov_len);
-				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
-				vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
-			}
-		} else {
-			/* the number of bytes needed to align to sector boundary is greater than the number of bytes left
-			 * in DATA_0 and TRAILER buffers, realign COMMON buffer and delay DATA_0 and TRAILING buffers recording */
-			data_len = cbuff->iov_len % PHY_BLOCK_SIZE;
-		printk(KERN_DEBUG ">>> 6.1.3 copy %u bytes from COMMON to remainder buffer\n", data_len);
-			vectcpy(&chunks[CHUNK_REM], cbuff->iov_base, data_len);
-			vectshrink(cbuff, data_len);
-		printk(KERN_DEBUG ">>> 6.1.3 copy %u bytes from DATA_0 to remainder buffer\n", chunks[CHUNK_DATA_0].iov_len);
-			vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len);
-			vectshrink(&chunks[CHUNK_DATA_0], chunks[CHUNK_DATA_0].iov_len);
-		printk(KERN_DEBUG ">>> 6.1.3 copy %u bytes from TRAILER to remainder buffer\n", chunks[CHUNK_TRAILER].iov_len);
-			vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
-			vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
-		}
-	} else {
-	printk(KERN_DEBUG ">>> 6.2 <<<\n");
-		/* JPEG data rolls over circular buffer boundary */
-		struct kvec data_rem;
-		data_len = chunks[CHUNK_DATA_0].iov_len % ALIGNMENT_SIZE;
-		size_t align_len = ALIGNMENT_SIZE - data_len;
-
-		chunks[CHUNK_ALIGN_1].iov_base = (unsigned char *)chunks[CHUNK_ALIGN_0].iov_base + chunks[CHUNK_ALIGN_0].iov_len;
-		chunks[CHUNK_ALIGN_1].iov_len = 0;
-
-		if (chunks[CHUNK_DATA_1].iov_len >= len + align_len) {
-			/* DATA_1 buffer contains enough bytes to align frame to sector boundary,
-			 * align DATA_0 buffer to ALIGNMENT_SIZE boundary only */
-			if (data_len != 0) {
-	printk(KERN_DEBUG ">>> 6.2 copy %u bytes from DATA_0 to ALIGN_0 buffer\n", data_len);
-				src = vectrpos(&chunks[CHUNK_DATA_0], data_len);
-				vectcpy(&chunks[CHUNK_ALIGN_0], src, data_len);
-				vectshrink(&chunks[CHUNK_DATA_0], data_len);
-	printk(KERN_DEBUG ">>> check alignment of DMA address: 0x%x\n", chunks[CHUNK_DATA_1].iov_dma);
-				if (is_addr_aligned(&chunks[CHUNK_DATA_1], align_len) == 0) {
-					align_len = align_address(&chunks[CHUNK_ALIGN_0], &chunks[CHUNK_DATA_1], align_len);
-				}
-	printk(KERN_DEBUG ">>> 6.2 copy %u bytes from DATA_1 to ALIGN_0 buffer\n", align_len);
-				vectcpy(&chunks[CHUNK_ALIGN_0], chunks[CHUNK_DATA_1].iov_base, align_len);
-				vectmov(&chunks[CHUNK_DATA_1], align_len);
-				/* adjust ALIGN_1 position */
-				chunks[CHUNK_ALIGN_1].iov_base = (unsigned char *)chunks[CHUNK_ALIGN_0].iov_base + chunks[CHUNK_ALIGN_0].iov_len;
-				chunks[CHUNK_ALIGN_1].iov_len = 0;
-			}
-		} else {
-			/* there is no enough data in the second JPEG data buffer, delay its recording and
-			 * align first buffer to physical sector boundary */
-			data_len = (cbuff->iov_len + chunks[CHUNK_DATA_0].iov_len) % PHY_BLOCK_SIZE;
-	printk(KERN_DEBUG ">>> 6.2.2 align to data_len: %u\n", data_len);
-			if (data_len <= chunks[CHUNK_DATA_0].iov_len) {
-				src = vectrpos(&chunks[CHUNK_DATA_0], data_len);
-	printk(KERN_DEBUG ">>> 6.2.2 copy %u bytes from DATA_0 to REM buffer\n", data_len);
-				vectcpy(&chunks[CHUNK_REM], src, data_len);
-				vectshrink(&chunks[CHUNK_DATA_0], data_len);
-			} else {
-				data_len -= chunks[CHUNK_DATA_0].iov_len;
-				src = vectrpos(cbuff, data_len);
-	printk(KERN_DEBUG ">>> 6.2.2 copy %u bytes from COMMON to REM buffer\n", data_len);
-				vectcpy(&chunks[CHUNK_REM], cbuff->iov_base, data_len);
-				vectshrink(cbuff, data_len);
-	printk(KERN_DEBUG ">>> 6.2.2 copy %u bytes from DATA_0 to REM buffer\n", chunks[CHUNK_DATA_0].iov_len);
-				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len);
-				vectshrink(&chunks[CHUNK_DATA_0], chunks[CHUNK_DATA_0].iov_len);
-				/* COMMON buffer has been updated, adjust ALIGN_0 and ALIGN_1 position */
-				chunks[CHUNK_ALIGN_1].iov_base = (unsigned char *)chunks[CHUNK_ALIGN_0].iov_base + chunks[CHUNK_ALIGN_0].iov_len;
-				chunks[CHUNK_ALIGN_1].iov_len = 0;
-				chunks[CHUNK_ALIGN_1].iov_base = (unsigned char *)chunks[CHUNK_ALIGN_0].iov_base + chunks[CHUNK_ALIGN_0].iov_len;
-				chunks[CHUNK_ALIGN_1].iov_len = 0;
-			}
-	printk(KERN_DEBUG ">>> 6.2.2 copy %u bytes from DATA_1 to REM buffer\n", chunks[CHUNK_DATA_1].iov_len);
+	dev_dbg(dev, "number of bytes crossing sector boundary: %u\n", len);
+	if (len != 0) {
+		if (len >= (chunks[CHUNK_DATA_1].iov_len + chunks[CHUNK_TRAILER].iov_len)) {
+			/* current frame is not split or the second part of JPEG data is too short */
+			data_len = len - chunks[CHUNK_DATA_1].iov_len - chunks[CHUNK_TRAILER].iov_len;
+			src = vectrpos(&chunks[CHUNK_DATA_0], data_len);
+	printk(KERN_DEBUG ">>> 5.1 copy %u bytes from DATA_0 to REM buffer\n", data_len);
+			vectcpy(&chunks[CHUNK_REM], src, data_len);
+			vectshrink(&chunks[CHUNK_DATA_0], data_len);
+	printk(KERN_DEBUG ">>> 5.1 copy %u bytes from DATA_1 to REM buffer\n", chunks[CHUNK_DATA_1].iov_len);
 			vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
 			vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
-	printk(KERN_DEBUG ">>> 6.2.2 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
+	printk(KERN_DEBUG ">>> 5.1 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
 			vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
 			vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
-		}
-
-	printk(KERN_DEBUG ">>> 6.3 <<<\n");
-		/* the total length could have changed by the moment, recalculate */
-		total_sz = get_size_from(chunks, 0, 0, INCLUDE_REM);
-		len = total_sz % PHY_BLOCK_SIZE;
-		dev_dbg(dev, "total frame size: %u, unaligned bytes to sector boundary: %u\n", total_sz, len);
-		if (chunks[CHUNK_DATA_1].iov_len + chunks[CHUNK_TRAILER].iov_len > len) {
-			if (len >= chunks[CHUNK_TRAILER].iov_len) {
-				/* DATA_1 and TRAILER buffers contain enough data to align the current frame to sector boundary */
-				data_len = len - chunks[CHUNK_TRAILER].iov_len;
-	printk(KERN_DEBUG ">>> 6.3.1 copy %u bytes from DATA_1 to REM buffer\n", data_len);
-				src = vectrpos(&chunks[CHUNK_DATA_1], data_len);
-				vectcpy(&chunks[CHUNK_REM], src, data_len);
-				vectshrink(&chunks[CHUNK_DATA_1], data_len);
-	printk(KERN_DEBUG ">>> 6.3.1 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
-				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
-				vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
-			} else if (len != 0) {
-				/* break trailing marker and copy the remaining data to REM buffer, align DATA_1 and TRAILER parts in
-				 * ALIGN_1 buffer */
-				data_len = chunks[CHUNK_DATA_1].iov_len % ALIGNMENT_SIZE;
-	printk(KERN_DEBUG ">>> 6.3.2 copy %u bytes from DATA_1 to ALIGN_1 buffer\n", data_len);
-				src = vectrpos(&chunks[CHUNK_DATA_1], data_len);
-				vectcpy(&chunks[CHUNK_ALIGN_1], chunks[CHUNK_DATA_1].iov_base, data_len);
-				vectshrink(&chunks[CHUNK_DATA_1], data_len);
-	printk(KERN_DEBUG ">>> 6.3.2 copy %u bytes from TRAILER to ALIGN_1 buffer\n", len);
-				vectcpy(&chunks[CHUNK_ALIGN_1], chunks[CHUNK_TRAILER].iov_base, len);
-				vectmov(&chunks[CHUNK_TRAILER], len);
-	printk(KERN_DEBUG ">>> 6.3.2 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
+		} else if (len >= chunks[CHUNK_TRAILER].iov_len) {
+			/* there is enough data in second part to align the frame */
+			data_len = len - chunks[CHUNK_TRAILER].iov_len;
+			src = vectrpos(&chunks[CHUNK_DATA_1], data_len);
+	printk(KERN_DEBUG ">>> 5.2 copy %u bytes from DATA_1 to REM buffer\n", data_len);
+			vectcpy(&chunks[CHUNK_REM], src, data_len);
+			vectshrink(&chunks[CHUNK_DATA_1], data_len);
+	printk(KERN_DEBUG ">>> 5.2 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
+			vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
+			vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
+		} else {
+			/* the trailing marker is split by sector boundary, copy (PHY_BLOCK_SIZE - 1) bytes from
+			 * JPEG data block(s) to remainder buffer and then add trailing marker */
+			data_len = PHY_BLOCK_SIZE - (chunks[CHUNK_TRAILER].iov_len - len);
+			if (data_len >= chunks[CHUNK_DATA_1].iov_len) {
+				size_t cut_len = data_len - chunks[CHUNK_DATA_1].iov_len;
+				src = vectrpos(&chunks[CHUNK_DATA_0], cut_len);
+	printk(KERN_DEBUG ">>> 5.3 copy %u bytes from DATA_0 to REM buffer\n", cut_len);
+				vectcpy(&chunks[CHUNK_REM], src, cut_len);
+				vectshrink(&chunks[CHUNK_DATA_0], cut_len);
+	printk(KERN_DEBUG ">>> 5.3 copy %u bytes from DATA_1 to REM buffer\n", chunks[CHUNK_DATA_1].iov_len);
+				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
+				vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
+	printk(KERN_DEBUG ">>> 5.3 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
 				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
 				vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
 			} else {
-				/* the frame is aligned to sector boundary, but DATA_1 and TRAILER buffers may be
-				 * unaligned to ALIGNMENT_SIZE boundary */
-				data_len = chunks[CHUNK_DATA_1].iov_len % ALIGNMENT_SIZE;
-				if (data_len >= chunks[CHUNK_TRAILER].iov_len) {
-		printk(KERN_DEBUG ">>> 6.3.3 copy %u bytes from DATA_1 to ALIGN_1 buffer\n", data_len);
-					src = vectrpos(&chunks[CHUNK_DATA_1], data_len);
-					vectcpy(&chunks[CHUNK_ALIGN_1], src, data_len);
-					vectshrink(&chunks[CHUNK_DATA_1], data_len);
-		printk(KERN_DEBUG ">>> 6.3.3 copy %u bytes from TRAILER to ALIGN_1 buffer\n", chunks[CHUNK_TRAILER].iov_len);
-					vectcpy(&chunks[CHUNK_ALIGN_1], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
-					vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
-				} else {
-					/* break trailing marker and copy the remaining data to REM buffer */
-					data_len = chunks[CHUNK_DATA_1].iov_len % ALIGNMENT_SIZE - len;
-		printk(KERN_DEBUG ">>> 6.3.4 copy %u bytes from DATA_1 to ALIGN_1 buffer\n", data_len);
-					src = vectrpos(&chunks[CHUNK_DATA_1], data_len);
-					vectcpy(&chunks[CHUNK_ALIGN_1], chunks[CHUNK_DATA_1].iov_base, data_len);
-					vectshrink(&chunks[CHUNK_DATA_1], data_len);
-		printk(KERN_DEBUG ">>> 6.3.4 copy %u bytes from TRAILER to ALIGN_1 buffer\n", len);
-					vectcpy(&chunks[CHUNK_ALIGN_1], chunks[CHUNK_TRAILER].iov_base, len);
-					vectmov(&chunks[CHUNK_TRAILER], len);
-		printk(KERN_DEBUG ">>> 6.3.4 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
-					vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
-					vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
-				}
+				src = vectrpos(&chunks[CHUNK_DATA_1], data_len);
+	printk(KERN_DEBUG ">>> 5.3 copy %u bytes from DATA_1 to REM buffer\n", data_len);
+				vectcpy(&chunks[CHUNK_REM], src, data_len);
+				vectshrink(&chunks[CHUNK_DATA_1], data_len);
+	printk(KERN_DEBUG ">>> 5.3 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
+				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
+				vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
 			}
 		}
+	} else {
+		/* the frame is aligned to sector boundary but some buffers may be not */
+		chunks[CHUNK_ALIGN].iov_base = vectrpos(cbuff, 0);
+		chunks[CHUNK_ALIGN].iov_len = 0;
+		if (chunks[CHUNK_DATA_1].iov_len == 0) {
+			data_len = chunks[CHUNK_DATA_0].iov_len % ALIGNMENT_SIZE;
+			src = vectrpos(&chunks[CHUNK_DATA_0], data_len);
+	printk(KERN_DEBUG ">>> 5.4 copy %u bytes from DATA_0 to ALIGN buffer\n", data_len);
+			vectcpy(&chunks[CHUNK_ALIGN], src, data_len);
+			vectshrink(&chunks[CHUNK_DATA_0], data_len);
+		} else {
+			data_len = chunks[CHUNK_DATA_1].iov_len % ALIGNMENT_SIZE;
+			src = vectrpos(&chunks[CHUNK_DATA_1], data_len);
+	printk(KERN_DEBUG ">>> 5.4 copy %u bytes from DATA_1 to ALIGN buffer\n", data_len);
+			vectcpy(&chunks[CHUNK_ALIGN], src, data_len);
+			vectshrink(&chunks[CHUNK_DATA_1], data_len);
+		}
+	printk(KERN_DEBUG ">>> 5.4 copy %u bytes from TRAILER to ALIGN buffer\n", chunks[CHUNK_TRAILER].iov_len);
+		vectcpy(&chunks[CHUNK_ALIGN], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
+		vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
 	}
 
 	/* debug sanity check, should not happen */
@@ -1252,10 +1043,10 @@ static int init_buffers(struct device *dev, struct frame_buffers *buffs)
 	if (dma_mapping_error(dev, buffs->common_buff.iov_dma))
 		goto err_common_dma;
 
-	buffs->rem_buff.iov_base = kmalloc(PHY_BLOCK_SIZE, GFP_KERNEL);
+	buffs->rem_buff.iov_base = kmalloc(2 * PHY_BLOCK_SIZE, GFP_KERNEL);
 	if (!buffs->rem_buff.iov_base)
 		goto err_remainder;
-	buffs->rem_buff.iov_len = PHY_BLOCK_SIZE;
+	buffs->rem_buff.iov_len = 2 * PHY_BLOCK_SIZE;
 
 	/* debug code follows */
 	g_jpg_data_0 = kzalloc(DATA_BUFF_SIZE, GFP_KERNEL);
@@ -1460,7 +1251,6 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	printk(KERN_DEBUG ">>> bytes received from exif driver: %u\n", rcvd);
 	if (rcvd > 0 && rcvd < buffs->exif_buff.iov_len)
 //		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buffs->exif_buff.iov_base, rcvd);
-		printk(KERN_DEBUG ">>>\tskipped");
 	chunks[CHUNK_EXIF].iov_len = rcvd;
 
 //	rcvd = jpeghead_get_data(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
