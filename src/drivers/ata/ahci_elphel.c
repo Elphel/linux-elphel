@@ -140,8 +140,8 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		writel(host_irq_stat, hpriv->mmio + HOST_IRQ_STAT);
 		handled = IRQ_HANDLED;
 
-//		if (proc_cmd(host->dev, dpriv, host->ports[0]) == 0)
-//			finish_cmd(host->dev, dpriv);
+		if (process_cmd(host->dev, dpriv, host->ports[0]) == 0)
+			finish_cmd(host->dev, dpriv);
 	} else {
 		/* pass handling to AHCI level */
 		handled = ahci_single_irq_intr(irq, dev_instance);
@@ -720,8 +720,8 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 	}
 
 	dma_sync_single_for_cpu(dev, fbuffs->common_buff.iov_dma, fbuffs->common_buff.iov_len, DMA_TO_DEVICE);
-	dma_sync_single_for_cpu(dev, chunks[CHUNK_DATA_0].iov_dma, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
-	dma_sync_single_for_cpu(dev, chunks[CHUNK_DATA_1].iov_dma, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
+//	dma_sync_single_for_cpu(dev, chunks[CHUNK_DATA_0].iov_dma, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
+//	dma_sync_single_for_cpu(dev, chunks[CHUNK_DATA_1].iov_dma, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
 
 	/* copy remainder of previous frame to the beginning of common buffer */
 	if (likely(chunks[CHUNK_REM].iov_len != 0)) {
@@ -1159,10 +1159,10 @@ static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 		dpriv->lba_ptr.wr_count = get_blocks_num(dpriv->sgl, dpriv->sg_elems);
 		printk(KERN_DEBUG ">>> trying to write data from sg list %u blocks, LBA: %llu\n", dpriv->lba_ptr.wr_count, dpriv->lba_ptr.lba_write);
 		dma_sync_single_for_device(dev, cbuff->iov_dma, cbuff->iov_len, DMA_TO_DEVICE);
-		if (dpriv->data_chunks[CHUNK_DATA_0].iov_len != 0)
-			dma_sync_single_for_device(dev, dpriv->data_chunks[CHUNK_DATA_0].iov_dma, dpriv->data_chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
-		if (dpriv->data_chunks[CHUNK_DATA_1].iov_len != 0)
-			dma_sync_single_for_device(dev, dpriv->data_chunks[CHUNK_DATA_1].iov_dma, dpriv->data_chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
+//		if (dpriv->data_chunks[CHUNK_DATA_0].iov_len != 0)
+//			dma_sync_single_for_device(dev, dpriv->data_chunks[CHUNK_DATA_0].iov_dma, dpriv->data_chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
+//		if (dpriv->data_chunks[CHUNK_DATA_1].iov_len != 0)
+//			dma_sync_single_for_device(dev, dpriv->data_chunks[CHUNK_DATA_1].iov_dma, dpriv->data_chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
 		elphel_cmd_issue(port, dpriv->lba_ptr.lba_write, dpriv->lba_ptr.wr_count, dpriv->sgl, dpriv->sg_elems, dpriv->curr_cmd);
 	}
 
@@ -1192,7 +1192,7 @@ static void finish_cmd(struct device *dev, struct elphel_ahci_priv *dpriv)
 static void finish_rec(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port)
 {
 	size_t stuff_len;
-	struct fvec *src;
+	unsigned char *src;
 	struct fvec *cvect = &dpriv->data_chunks[CHUNK_COMMON];
 	struct fvec *rvect = &dpriv->data_chunks[CHUNK_REM];
 
@@ -1201,9 +1201,10 @@ static void finish_rec(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 
 	dev_dbg(dev, "write last chunk of data, size: %u\n", rvect->iov_len);
 	stuff_len = PHY_BLOCK_SIZE - rvect->iov_len;
-	src = vectrpos(rvect, stuff_len);
-	memset(src->iov_base, 0, stuff_len);
+	src = vectrpos(rvect, 0);
+	memset(src, 0, stuff_len);
 	rvect->iov_len += stuff_len;
+	dma_sync_single_for_cpu(dev, dpriv->fbuffs.common_buff.iov_dma, dpriv->fbuffs.common_buff.iov_len, DMA_TO_DEVICE);
 	vectcpy(cvect, rvect->iov_base, rvect->iov_len);
 	vectshrink(rvect, rvect->iov_len);
 
@@ -1255,18 +1256,18 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	printk(KERN_DEBUG ">>> meta_index: %d\n", fdata.meta_index);
 	printk(KERN_DEBUG "\n");
 
-//	rcvd = exif_get_data(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len);
-	rcvd = exif_get_data_tst(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len, 1);
+	rcvd = exif_get_data(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len);
+//	rcvd = exif_get_data_tst(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len, 1);
 	printk(KERN_DEBUG ">>> bytes received from exif driver: %u\n", rcvd);
 	if (rcvd > 0 && rcvd < buffs->exif_buff.iov_len)
-//		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buffs->exif_buff.iov_base, rcvd);
+		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buffs->exif_buff.iov_base, rcvd);
 	chunks[CHUNK_EXIF].iov_len = rcvd;
 
-//	rcvd = jpeghead_get_data(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
-	rcvd = jpeghead_get_data_tst(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
+	rcvd = jpeghead_get_data(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
+//	rcvd = jpeghead_get_data_tst(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
 	printk(KERN_DEBUG ">>> bytes received from jpeghead driver: %u\n", rcvd);
 	if (rcvd > 0 && rcvd < buffs->jpheader_buff.iov_len) {
-//		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buffs->jpheader_buff.iov_base, rcvd);
+		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buffs->jpheader_buff.iov_base, rcvd);
 		chunks[CHUNK_LEADER].iov_len = JPEG_MARKER_LEN;
 		chunks[CHUNK_TRAILER].iov_len = JPEG_MARKER_LEN;
 		chunks[CHUNK_HEADER].iov_len = rcvd - chunks[CHUNK_LEADER].iov_len;
@@ -1278,18 +1279,18 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	}
 
 	rcvd = 0;
-//	rcvd = circbuf_get_ptr(fdata.sensor_port, fdata.cirbuf_ptr, fdata.jpeg_len, &chunks[CHUNK_DATA_0], &chunks[CHUNK_DATA_1]);
-	rcvd = circbuf_get_ptr_tst(fdata.sensor_port, fdata.cirbuf_ptr, fdata.jpeg_len, &chunks[CHUNK_DATA_0], &chunks[CHUNK_DATA_1]);
+	rcvd = circbuf_get_ptr(fdata.sensor_port, fdata.cirbuf_ptr, fdata.jpeg_len, &chunks[CHUNK_DATA_0], &chunks[CHUNK_DATA_1]);
+//	rcvd = circbuf_get_ptr_tst(fdata.sensor_port, fdata.cirbuf_ptr, fdata.jpeg_len, &chunks[CHUNK_DATA_0], &chunks[CHUNK_DATA_1]);
 	if (rcvd > 0) {
 		printk(KERN_DEBUG ">>> number of jpeg data pointers: %d\n", rcvd);
 		printk(KERN_DEBUG ">>> bytes received from circbuf driver, chunk 0: %u\n", chunks[CHUNK_DATA_0].iov_len);
 		if (rcvd == 2)
 			printk(KERN_DEBUG ">>> bytes received from circbuf driver, chunk 1: %u\n", chunks[CHUNK_DATA_1].iov_len);
 	}
-	if (chunks[CHUNK_DATA_0].iov_len != 0)
-		chunks[CHUNK_DATA_0].iov_dma = dma_map_single(dev, chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
-	if (chunks[CHUNK_DATA_1].iov_len != 0)
-		chunks[CHUNK_DATA_1].iov_dma = dma_map_single(dev, chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
+//	if (chunks[CHUNK_DATA_0].iov_len != 0)
+//		chunks[CHUNK_DATA_0].iov_dma = dma_map_single(dev, chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
+//	if (chunks[CHUNK_DATA_1].iov_len != 0)
+//		chunks[CHUNK_DATA_1].iov_dma = dma_map_single(dev, chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
 
 	printk(KERN_DEBUG ">>> unaligned frame dump:\n");
 	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
@@ -1306,183 +1307,22 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	}
 
 	process_cmd(dev, dpriv, port);
-	while (dpriv->flags & PROC_CMD) {
-#ifndef DEBUG_DONT_WRITE
-		while (dpriv->flags & IRQ_SIMPLE) {
-			printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
-			msleep_interruptible(1);
-		}
-#endif
-		printk(KERN_DEBUG ">>> proceeding to next cmd chunk\n");
-		sg_elems = process_cmd(dev, dpriv, port);
-		if (sg_elems == 0)
-			finish_cmd(dev, dpriv);
-	}
-	if (chunks[CHUNK_DATA_0].iov_len != 0)
-		dma_unmap_single(dev, chunks[CHUNK_DATA_0].iov_dma, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
-	if (chunks[CHUNK_DATA_1].iov_len != 0)
-		dma_unmap_single(dev, chunks[CHUNK_DATA_1].iov_dma, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
-
-//	chunks[CHUNK_STUFFING].iov_base = buffs->stuff_buff.iov_base;
-//	stuff_frame(chunks);
-//
-//	/* copy data to common buffer */
-//	struct fvec vec = {0};
-//	vec.iov_base = buffs->common_buff.iov_base;
-//	memcpy(vec.iov_base, chunks[CHUNK_LEADER].iov_base, chunks[CHUNK_LEADER].iov_len);
-//	vec.iov_len += chunks[CHUNK_LEADER].iov_len;
-//	chunks[CHUNK_LEADER].iov_len = 0;
-//
-//	memcpy(vec.iov_base + vec.iov_len, chunks[CHUNK_EXIF].iov_base, chunks[CHUNK_EXIF].iov_len);
-//	vec.iov_len += chunks[CHUNK_EXIF].iov_len;
-//	chunks[CHUNK_EXIF].iov_len = 0;
-//
-//	memcpy(vec.iov_base + vec.iov_len, chunks[CHUNK_HEADER].iov_base, chunks[CHUNK_HEADER].iov_len);
-//	vec.iov_len += chunks[CHUNK_HEADER].iov_len;
-//	chunks[CHUNK_HEADER].iov_len = 0;
-//
-//	memcpy(vec.iov_base + vec.iov_len, chunks[CHUNK_STUFFING].iov_base, chunks[CHUNK_STUFFING].iov_len);
-//	vec.iov_len += chunks[CHUNK_STUFFING].iov_len;
-//	chunks[CHUNK_STUFFING].iov_len = 0;
-//
-//	chunks[CHUNK_HEADER] = vec;
-
-	/* end of debug code */
-
-//	start_cmd(dev, dpriv, port);
 //	while (dpriv->flags & PROC_CMD) {
+//#ifndef DEBUG_DONT_WRITE
 //		while (dpriv->flags & IRQ_SIMPLE) {
 //			printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
 //			msleep_interruptible(1);
 //		}
+//#endif
 //		printk(KERN_DEBUG ">>> proceeding to next cmd chunk\n");
-////		if (proc_cmd(dev, dpriv, port) == 0)
+//		sg_elems = process_cmd(dev, dpriv, port);
+//		if (sg_elems == 0)
 //			finish_cmd(dev, dpriv);
 //	}
-
-
-
-//	/* prepare buffer and fill it with markers */
-//	sgl = kmalloc(sizeof(struct scatterlist) * SG_TBL_SZ, GFP_KERNEL);
-//	if (!sgl)
-//		return ENOMEM;
-//	sg_init_table(sgl, SG_TBL_SZ);
-//	for_each_sg(sgl, sg_ptr, SG_TBL_SZ, n_elem) {
-//		test_buff = kmalloc(TEST_BUFF_SZ, GFP_KERNEL);
-//		if (!test_buff)
-//			return ENOMEM;
-//		buffers[n_elem] = test_buff;
-//		memset(test_buff, 0xa5, TEST_BUFF_SZ);
-//		sg_set_buf(sg_ptr, (void *)test_buff, TEST_BUFF_SZ);
-//		sg_elems++;
-//	}
-//
-//	printk(KERN_DEBUG ">>> mapped %d SG elemets\n", sg_elems);
-//	printk(KERN_DEBUG ">>>\n");
-//
-//	/* write test #2 */
-//	if (dpriv->lba_ptr.lba_write & ~ADDR_MASK_28_BIT) {
-//		dpriv->curr_cmd = ATA_CMD_WRITE_EXT;
-//		dpriv->max_data_sz = (0xffff + 1) * PHY_BLOCK_SIZE;
-//	} else {
-//		dpriv->curr_cmd = ATA_CMD_WRITE;
-//		dpriv->max_data_sz = (0xff + 1) * PHY_BLOCK_SIZE;
-//	}
-//	dpriv->flags |= PROC_CMD;
-//	blocks_num = get_blocks_num(sgl, sg_elems);
-//	i = dma_map_sg(dev, sgl, sg_elems, DMA_TO_DEVICE);
-//	printk(KERN_DEBUG ">>> dma mapped %d elements\n", i);
-//	printk(KERN_DEBUG ">>> trying to write data from sg list, %u blocks, LBA: %llu\n", blocks_num, dpriv->lba_ptr.lba_write);
-//	elphel_cmd_issue(port, dpriv->lba_ptr.lba_write, blocks_num, sgl, sg_elems, dpriv->curr_cmd);
-//
-//	while (dpriv->flags & IRQ_SIMPLE) {
-//		printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
-//		msleep_interruptible(1);
-//	}
-//	dma_unmap_sg(dev, sgl, sg_elems, DMA_TO_DEVICE);
-//	dpriv->lba_ptr.lba_write += blocks_num;
-//	dpriv->flags &= ~PROC_CMD;
-//	/* end of write test #2 */
-//
-//	for (i = 0; i < sg_elems; i++) {
-//		kfree(buffers[i]);
-//	}
-//	kfree(sgl);
-
-
-//
-//	/* read test */
-//	dma_map_sg(dev, sgl, sg_elems, DMA_FROM_DEVICE);
-//
-//	printk(KERN_DEBUG ">>> trying to read data to sg list\n");
-//	if (lba_addr & ~ADDR_MASK_28_BIT)
-//		cmd = ATA_CMD_READ_EXT;
-//	else
-//		cmd = ATA_CMD_READ;
-//	elphel_cmd_issue(port, lba_addr, sg_elems, sgl, sg_elems, cmd);
-//	printk(KERN_DEBUG ">>> command has been issued\n");
-//
-//	while (dpriv->flags & IRQ_SIMPLE) {
-//		printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
-//		msleep(1);
-//	}
-//
-//	printk(KERN_DEBUG ">>> dump test buffer after reading: %d bytes\n", TEST_BUFF_SZ);
-//	dma_unmap_sg(dev, sgl, sg_elems, DMA_FROM_DEVICE);
-//	for (i = 0; i < sg_elems; i++) {
-//		dev_dbg(dev, ">>> sector %i\n", i);
-//		u8 buff[TEST_BUFF_SZ];
-//		sg_copy_to_buffer(&sgl[i], 1, buff, TEST_BUFF_SZ);
-//		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buff, TEST_BUFF_SZ);
-//	}
-//	/* end of read test */
-//
-//	printk(KERN_DEBUG ">>> *** proceeding to write test *** <<<\n");
-//
-//	/* write test */
-//	for_each_sg(sgl, sg_ptr, SG_TBL_SZ, n_elem) {
-//		uint8_t pattern_buff[TEST_BUFF_SZ];
-//		memset(pattern_buff, 0xb6, TEST_BUFF_SZ);
-//		sg_copy_from_buffer(sg_ptr, 1, pattern_buff, TEST_BUFF_SZ);
-//	}
-
-//	if (lba_addr & ~ADDR_MASK_28_BIT) {
-//		dpriv->curr_cmd = ATA_CMD_WRITE_EXT;
-//		dpriv->max_data_sz = (0xffff + 1) * PHY_BLOCK_SIZE;
-//	} else {
-//		dpriv->curr_cmd = ATA_CMD_WRITE;
-//		dpriv->max_data_sz = (0xff + 1) * PHY_BLOCK_SIZE;
-//	}
-//	sg_elems = map_vectors(sgl, dpriv, dpriv->max_data_sz);
-//	dump_sg_list(sgl, sg_elems);
-//	while (sg_elems != 0) {
-//		dma_map_sg(dev, sgl, sg_elems, DMA_TO_DEVICE);
-//		lba_addr = dpriv->lba_ptr.lba_write;
-//		blocks_num = get_blocks_num(sgl, sg_elems);
-//		printk(KERN_DEBUG ">>> trying to write data from sg list %u blocks, LBA: %llu\n", blocks_num, lba_addr);
-//		elphel_cmd_issue(port, lba_addr, blocks_num, sgl, sg_elems, cmd);
-//		printk(KERN_DEBUG ">>> command has been issued, wrting %u LBAs\n", blocks_num);
-//
-//		while (dpriv->flags & IRQ_SIMPLE) {
-//			printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
-//			msleep(1);
-//		}
-//		dma_unmap_sg(dev, sgl, sg_elems, DMA_TO_DEVICE);
-//		dpriv->lba_ptr.lba_write += blocks_num;
-//
-//		sg_elems = map_vectors(sgl, dpriv, dpriv->max_data_sz);
-//		dump_sg_list(sgl, sg_elems);
-//	}
-//	finish_cmd(dpriv);
-
-//	printk(KERN_DEBUG ">>> dump test buffer after writing: %d bytes\n", TEST_BUFF_SZ);
-//	for (i = 0; i < sg_elems; i++) {
-//		dev_dbg(dev, ">>> sector %i\n", i);
-//		u8 buff[TEST_BUFF_SZ];
-//		sg_copy_to_buffer(&sgl[i], 1, buff, TEST_BUFF_SZ);
-//		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buff, TEST_BUFF_SZ);
-//	}
-	/* end of write test */
+//	if (chunks[CHUNK_DATA_0].iov_len != 0)
+//		dma_unmap_single(dev, chunks[CHUNK_DATA_0].iov_dma, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
+//	if (chunks[CHUNK_DATA_1].iov_len != 0)
+//		dma_unmap_single(dev, chunks[CHUNK_DATA_1].iov_dma, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
 
 	return buff_sz;
 }
