@@ -745,6 +745,17 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 		vectshrink(&chunks[CHUNK_EXIF], chunks[CHUNK_EXIF].iov_len);
 	}
 
+	/* align common buffer to ALIGNMENT boundary, APP15 marker should be placed before header data */
+	data_len = cbuff->iov_len + chunks[CHUNK_HEADER].iov_len;
+	len = align_bytes_num(data_len, ALIGNMENT_SIZE);
+	if (len < JPEG_MARKER_LEN + JPEG_SIZE_LEN && len != 0) {
+		/* the number of bytes needed for alignment is less than the length of the marker itself, increase the number of stuffing bytes */
+		len += ALIGNMENT_SIZE;
+	}
+	dev_dbg(dev, "total number of stuffing bytes in APP15 marker: %u\n", len);
+	app15[3] = len - JPEG_MARKER_LEN;
+	vectcpy(cbuff, app15, len);
+
 	/* copy JPEG header */
 	len = chunks[CHUNK_HEADER].iov_len;
 	printk(KERN_DEBUG ">>> copy %u bytes from HEADER to common buffer\n", len);
@@ -813,16 +824,6 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 
 		return;
 	}
-
-	/* align common buffer to ALIGNMENT boundary */
-	len = align_bytes_num(cbuff->iov_len, ALIGNMENT_SIZE);
-	if (len < JPEG_MARKER_LEN + JPEG_SIZE_LEN && len != 0) {
-		/* the number of bytes needed for alignment is less than the length of the marker itself, increase the number of stuffing bytes */
-		len += ALIGNMENT_SIZE;
-	}
-	dev_dbg(dev, "total number of stuffing bytes in APP15 marker: %u\n", len);
-	app15[3] = len - JPEG_MARKER_LEN;
-	vectcpy(cbuff, app15, len);
 
 	/* align frame to sector size boundary; total size could have changed by the moment - recalculate */
 	total_sz = get_size_from(chunks, 0, 0, INCLUDE_REM);
@@ -1259,15 +1260,16 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	rcvd = exif_get_data(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len);
 //	rcvd = exif_get_data_tst(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len, 1);
 	printk(KERN_DEBUG ">>> bytes received from exif driver: %u\n", rcvd);
-	if (rcvd > 0 && rcvd < buffs->exif_buff.iov_len)
-		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buffs->exif_buff.iov_base, rcvd);
+	if (rcvd > 0 && rcvd < buffs->exif_buff.iov_len) {
+//		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buffs->exif_buff.iov_base, rcvd);
+	}
 	chunks[CHUNK_EXIF].iov_len = rcvd;
 
 	rcvd = jpeghead_get_data(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
 //	rcvd = jpeghead_get_data_tst(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
 	printk(KERN_DEBUG ">>> bytes received from jpeghead driver: %u\n", rcvd);
 	if (rcvd > 0 && rcvd < buffs->jpheader_buff.iov_len) {
-		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buffs->jpheader_buff.iov_base, rcvd);
+//		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buffs->jpheader_buff.iov_base, rcvd);
 		chunks[CHUNK_LEADER].iov_len = JPEG_MARKER_LEN;
 		chunks[CHUNK_TRAILER].iov_len = JPEG_MARKER_LEN;
 		chunks[CHUNK_HEADER].iov_len = rcvd - chunks[CHUNK_LEADER].iov_len;
