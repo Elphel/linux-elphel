@@ -33,6 +33,7 @@
 #include "../elphel/exifa.h"
 #include "../elphel/jpeghead.h"
 //#include "../elphel/circbuf.h"
+#include "../elphel/x393_helpers.h"
 
 #include <elphel/elphel393-mem.h>
 
@@ -132,16 +133,16 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		dpriv->flags &= ~IRQ_SIMPLE;
 		irq_stat = readl(port_mmio + PORT_IRQ_STAT);
 
-		printk(KERN_DEBUG "irq_stat = 0x%x, host irq_stat = 0x%x\n", irq_stat, host_irq_stat);
+		dev_dbg(host->dev, "irq_stat = 0x%x, host irq_stat = 0x%x\n", irq_stat, host_irq_stat);
 
-//		writel(irq_stat, port_mmio + PORT_IRQ_STAT);
-		writel(0xffffffff, port_mmio + PORT_IRQ_STAT);
+		writel(irq_stat, port_mmio + PORT_IRQ_STAT);
+//		writel(0xffffffff, port_mmio + PORT_IRQ_STAT);
 
 		writel(host_irq_stat, hpriv->mmio + HOST_IRQ_STAT);
 		handled = IRQ_HANDLED;
 
-		if (process_cmd(host->dev, dpriv, host->ports[0]) == 0)
-			finish_cmd(host->dev, dpriv);
+//		if (process_cmd(host->dev, dpriv, host->ports[0]) == 0)
+//			finish_cmd(host->dev, dpriv);
 	} else {
 		/* pass handling to AHCI level */
 		handled = ahci_single_irq_intr(irq, dev_instance);
@@ -401,6 +402,16 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 
 unsigned char app15[ALIGNMENT_SIZE] = {0xff, 0xef};
 
+/* used for performance measurements */
+struct time_mark {
+	uint32_t size;
+	uint32_t usec;
+	uint32_t sec;
+};
+struct time_mark prev_mark;
+struct time_mark curr_mark;
+uint32_t total_datarate;
+
 /* this should be placed to system includes directory*/
 #define DRV_CMD_WRITE             0
 #define DRV_CMD_FINISH            1
@@ -592,11 +603,16 @@ static ssize_t hdr_write(struct device *dev, struct device_attribute *attr, cons
 
 	return buff_sz;
 }
+static ssize_t datarate_read(struct device *dev, struct device_attribute *attr, char *buff)
+{
+	return sprintf(buff, "Total data rate: %u Mb/s\n", total_datarate);
+}
 static DEVICE_ATTR(data_0_sz, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, NULL, data_0_write);
 static DEVICE_ATTR(data_1_sz, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, NULL, data_1_write);
 static DEVICE_ATTR(data_proc, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, NULL, data_write);
 static DEVICE_ATTR(exif_sz, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, NULL, exif_write);
 static DEVICE_ATTR(jpg_hdr_sz, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, NULL, hdr_write);
+static DEVICE_ATTR(datarate_mbs, S_IRUSR | S_IRGRP, datarate_read, NULL);
 /* End of debug functions*/
 
 /** Map buffer vectors to S/G list and return the number of vectors mapped */
@@ -635,7 +651,6 @@ static int map_vectors(struct elphel_ahci_priv *dpriv)
 			dpriv->curr_data_offset = chunks[i].iov_len;
 			finish = 1;
 		}
-		printk(KERN_DEBUG "mapping data chunk number %d: total_sz = %u, vect.iov_len = %u\n", i, total_sz, vect.iov_len);
 		if (vect.iov_len != 0) {
 			dpriv->sgl[index++] = vect;
 		}
@@ -1180,6 +1195,22 @@ static void finish_rec(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 	process_cmd(dev, dpriv, port);
 }
 
+/** Return time difference in microseconds between two time stamps */
+#define USEC                      1000000
+static uint32_t timediff(struct time_mark *start, struct time_mark *end)
+{
+	uint32_t ret = 0;
+
+	if (end->sec >= start->sec) {
+		if (end->usec >= start->usec) {
+			ret = USEC * (end->sec - start->sec) + (end->usec - start->usec);
+		} else {
+			ret = USEC * (end->sec - start->sec - 1) + (USEC + end->usec - start->usec);
+		}
+	}
+
+	return ret;
+}
 static ssize_t rawdev_write(struct device *dev,  ///<
 		struct device_attribute *attr,           ///<
 		const char *buff,                        ///<
@@ -1203,9 +1234,11 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	size_t blocks_num;
 	static int dont_process = 0;
 
-	if ((dpriv->flags & PROC_CMD) || dont_process)
+	if ((dpriv->flags & PROC_CMD) || dont_process) {
 		// we are not ready yet
+		printk(KERN_DEBUG ">>> not ready: flags = %u\n", dpriv->flags);
 		return -EAGAIN;
+	}
 
 	if (buff_sz != sizeof(struct frame_data)) {
 		dev_err(dev, "the size of the data buffer is incorrect, should be equal to sizeof(struct frame_data)\n");
@@ -1261,6 +1294,18 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 //	if (chunks[CHUNK_DATA_1].iov_len != 0)
 //		chunks[CHUNK_DATA_1].iov_dma = dma_map_single(dev, chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
 
+	/* performance calculations */
+	curr_mark.size = get_size_from(chunks, 0, 0, EXCLUDE_REM);
+	curr_mark.usec = get_rtc_usec();
+	curr_mark.sec = get_rtc_sec();
+	printk(KERN_DEBUG "current size: %u bytes\n", curr_mark.size);
+	printk(KERN_DEBUG "time diff: %u us\n", timediff(&prev_mark, &curr_mark));
+	printk(KERN_DEBUG "prev time stamp: sec = %u, usec = %u; curr time stamp: sec = %u, usec = %u\n", prev_mark.sec, prev_mark.usec, curr_mark.sec, curr_mark.usec);
+	if (prev_mark.sec != 0 && prev_mark.usec != 0)
+		total_datarate = prev_mark.size / timediff(&prev_mark, &curr_mark);
+	prev_mark = curr_mark;
+	/* end of performance calculations */
+
 	printk(KERN_DEBUG ">>> unaligned frame dump:\n");
 	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
 		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, dpriv->data_chunks[i].iov_len);
@@ -1276,18 +1321,18 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	}
 
 	process_cmd(dev, dpriv, port);
-//	while (dpriv->flags & PROC_CMD) {
-//#ifndef DEBUG_DONT_WRITE
-//		while (dpriv->flags & IRQ_SIMPLE) {
-//			printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
-//			msleep_interruptible(1);
-//		}
-//#endif
-//		printk(KERN_DEBUG ">>> proceeding to next cmd chunk\n");
-//		sg_elems = process_cmd(dev, dpriv, port);
-//		if (sg_elems == 0)
-//			finish_cmd(dev, dpriv);
-//	}
+	while (dpriv->flags & PROC_CMD) {
+#ifndef DEBUG_DONT_WRITE
+		while (dpriv->flags & IRQ_SIMPLE) {
+			printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
+			msleep_interruptible(1);
+		}
+#endif
+		printk(KERN_DEBUG ">>> proceeding to next cmd chunk\n");
+		sg_elems = process_cmd(dev, dpriv, port);
+		if (sg_elems == 0)
+			finish_cmd(dev, dpriv);
+	}
 //	if (chunks[CHUNK_DATA_0].iov_len != 0)
 //		dma_unmap_single(dev, chunks[CHUNK_DATA_0].iov_dma, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
 //	if (chunks[CHUNK_DATA_1].iov_len != 0)
@@ -1503,6 +1548,7 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_data_proc.attr,
 		&dev_attr_exif_sz.attr,
 		&dev_attr_jpg_hdr_sz.attr,
+		&dev_attr_datarate_mbs.attr,
 		NULL
 };
 static const struct attribute_group dev_attr_root_group = {

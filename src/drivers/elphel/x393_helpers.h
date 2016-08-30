@@ -30,5 +30,6 @@
 #define REPEAT_READ               10
 
 u32 get_rtc_usec(void);
+u32 get_rtc_sec(void);
 
 #endif /* _X393_HELPERS_H */
