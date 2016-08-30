@@ -720,13 +720,11 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 	}
 
 	dma_sync_single_for_cpu(dev, fbuffs->common_buff.iov_dma, fbuffs->common_buff.iov_len, DMA_TO_DEVICE);
-//	dma_sync_single_for_cpu(dev, chunks[CHUNK_DATA_0].iov_dma, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
-//	dma_sync_single_for_cpu(dev, chunks[CHUNK_DATA_1].iov_dma, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
 
 	/* copy remainder of previous frame to the beginning of common buffer */
 	if (likely(chunks[CHUNK_REM].iov_len != 0)) {
 		len = chunks[CHUNK_REM].iov_len;
-	printk(KERN_DEBUG ">>> copy %u bytes from REM to common buffer\n", len);
+		dev_dbg(dev, "copy %u bytes from REM to common buffer\n", len);
 		vectcpy(cbuff, chunks[CHUNK_REM].iov_base, len);
 		vectshrink(&chunks[CHUNK_REM], chunks[CHUNK_REM].iov_len);
 	}
@@ -740,7 +738,7 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 	/* copy Exif if present */
 	if (chunks[CHUNK_EXIF].iov_len != 0) {
 		len = chunks[CHUNK_EXIF].iov_len;
-	printk(KERN_DEBUG ">>> copy %u bytes from EXIF to common buffer\n", len);
+		dev_dbg(dev, "copy %u bytes from EXIF to common buffer\n", len);
 		vectcpy(cbuff, chunks[CHUNK_EXIF].iov_base, len);
 		vectshrink(&chunks[CHUNK_EXIF], chunks[CHUNK_EXIF].iov_len);
 	}
@@ -758,47 +756,42 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 
 	/* copy JPEG header */
 	len = chunks[CHUNK_HEADER].iov_len;
-	printk(KERN_DEBUG ">>> copy %u bytes from HEADER to common buffer\n", len);
+	dev_dbg(dev, "copy %u bytes from HEADER to common buffer\n", len);
 	vectcpy(cbuff, chunks[CHUNK_HEADER].iov_base, len);
 	vectshrink(&chunks[CHUNK_HEADER], chunks[CHUNK_HEADER].iov_len);
 
 	/* check if there is enough data to continue - JPEG data length can be too short */
 	len = get_size_from(chunks, CHUNK_DATA_0, 0, EXCLUDE_REM);
 	if (len < PHY_BLOCK_SIZE) {
+		dev_dbg(dev, "jpeg data is too short, delay this frame\n");
 		size_t num = align_bytes_num(cbuff->iov_len, PHY_BLOCK_SIZE);
 		if (len >= num) {
 			/* there is enough data to align common buffer to sector boundary */
 			if (num >= chunks[CHUNK_DATA_0].iov_len) {
-	printk(KERN_DEBUG ">>> copy %u bytes from DATA_0 to common buffer\n", chunks[CHUNK_DATA_0].iov_len);
 				vectcpy(cbuff, chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len);
 				num -= chunks[CHUNK_DATA_0].iov_len;
 				vectshrink(&chunks[CHUNK_DATA_0], chunks[CHUNK_DATA_0].iov_len);
 			} else {
-	printk(KERN_DEBUG ">>> copy %u bytes from DATA_0 to common buffer\n", num);
 				src = vectrpos(&chunks[CHUNK_DATA_0], num);
 				vectcpy(cbuff, chunks[CHUNK_DATA_0].iov_base, num);
 				vectshrink(&chunks[CHUNK_DATA_0], num);
 				num = 0;
 			}
 			if (num >= chunks[CHUNK_DATA_1].iov_len) {
-	printk(KERN_DEBUG ">>> copy %u bytes from DATA_1 to common buffer\n", chunks[CHUNK_DATA_1].iov_len);
 				vectcpy(cbuff, chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
 				num -= chunks[CHUNK_DATA_1].iov_len;
 				vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
 			} else {
-	printk(KERN_DEBUG ">>> copy %u bytes from DATA_1 to common buffer\n", num);
 				src = vectrpos(&chunks[CHUNK_DATA_1], num);
 				vectcpy(cbuff, chunks[CHUNK_DATA_1].iov_base, num);
 				vectshrink(&chunks[CHUNK_DATA_1], num);
 				num = 0;
 			}
 			if (num >= chunks[CHUNK_TRAILER].iov_len) {
-	printk(KERN_DEBUG ">>> copy %u bytes from TRAILER to common buffer\n", chunks[CHUNK_TRAILER].iov_len);
 				vectcpy(cbuff, chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
 				num -= chunks[CHUNK_TRAILER].iov_len;
 				vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
 			} else {
-	printk(KERN_DEBUG ">>> copy %u bytes from TRAILER to common buffer\n", num);
 				src = vectrpos(&chunks[CHUNK_TRAILER], num);
 				vectcpy(cbuff, chunks[CHUNK_TRAILER].iov_base, num);
 				vectshrink(&chunks[CHUNK_TRAILER], num);
@@ -808,17 +801,13 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 			/* there is not enough data to align common buffer to sector boundary, truncate common buffer */
 			data_len = cbuff->iov_len % PHY_BLOCK_SIZE;
 			src = vectrpos(cbuff, data_len);
-	printk(KERN_DEBUG ">>> copy %u bytes from COMMON to REM buffer\n", data_len);
 			vectcpy(&chunks[CHUNK_REM], src, data_len);
 			vectshrink(cbuff, data_len);
 		}
-	printk(KERN_DEBUG ">>> copy %u bytes from DATA_0 to REM buffer\n", chunks[CHUNK_DATA_0].iov_len);
 		vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len);
 		vectshrink(&chunks[CHUNK_DATA_0], chunks[CHUNK_DATA_0].iov_len);
-	printk(KERN_DEBUG ">>> copy %u bytes from DATA_1 to REM buffer\n", chunks[CHUNK_DATA_1].iov_len);
 		vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
 		vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
-	printk(KERN_DEBUG ">>> copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
 		vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
 		vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
 
@@ -834,23 +823,18 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 			/* current frame is not split or the second part of JPEG data is too short */
 			data_len = len - chunks[CHUNK_DATA_1].iov_len - chunks[CHUNK_TRAILER].iov_len;
 			src = vectrpos(&chunks[CHUNK_DATA_0], data_len);
-	printk(KERN_DEBUG ">>> 5.1 copy %u bytes from DATA_0 to REM buffer\n", data_len);
 			vectcpy(&chunks[CHUNK_REM], src, data_len);
 			vectshrink(&chunks[CHUNK_DATA_0], data_len);
-	printk(KERN_DEBUG ">>> 5.1 copy %u bytes from DATA_1 to REM buffer\n", chunks[CHUNK_DATA_1].iov_len);
 			vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
 			vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
-	printk(KERN_DEBUG ">>> 5.1 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
 			vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
 			vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
 		} else if (len >= chunks[CHUNK_TRAILER].iov_len) {
 			/* there is enough data in second part to align the frame */
 			data_len = len - chunks[CHUNK_TRAILER].iov_len;
 			src = vectrpos(&chunks[CHUNK_DATA_1], data_len);
-	printk(KERN_DEBUG ">>> 5.2 copy %u bytes from DATA_1 to REM buffer\n", data_len);
 			vectcpy(&chunks[CHUNK_REM], src, data_len);
 			vectshrink(&chunks[CHUNK_DATA_1], data_len);
-	printk(KERN_DEBUG ">>> 5.2 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
 			vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
 			vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
 		} else {
@@ -860,21 +844,16 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 			if (data_len >= chunks[CHUNK_DATA_1].iov_len) {
 				size_t cut_len = data_len - chunks[CHUNK_DATA_1].iov_len;
 				src = vectrpos(&chunks[CHUNK_DATA_0], cut_len);
-	printk(KERN_DEBUG ">>> 5.3 copy %u bytes from DATA_0 to REM buffer\n", cut_len);
 				vectcpy(&chunks[CHUNK_REM], src, cut_len);
 				vectshrink(&chunks[CHUNK_DATA_0], cut_len);
-	printk(KERN_DEBUG ">>> 5.3 copy %u bytes from DATA_1 to REM buffer\n", chunks[CHUNK_DATA_1].iov_len);
 				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len);
 				vectshrink(&chunks[CHUNK_DATA_1], chunks[CHUNK_DATA_1].iov_len);
-	printk(KERN_DEBUG ">>> 5.3 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
 				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
 				vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
 			} else {
 				src = vectrpos(&chunks[CHUNK_DATA_1], data_len);
-	printk(KERN_DEBUG ">>> 5.3 copy %u bytes from DATA_1 to REM buffer\n", data_len);
 				vectcpy(&chunks[CHUNK_REM], src, data_len);
 				vectshrink(&chunks[CHUNK_DATA_1], data_len);
-	printk(KERN_DEBUG ">>> 5.3 copy %u bytes from TRAILER to REM buffer\n", chunks[CHUNK_TRAILER].iov_len);
 				vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
 				vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
 			}
@@ -887,17 +866,14 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 		if (chunks[CHUNK_DATA_1].iov_len == 0) {
 			data_len = chunks[CHUNK_DATA_0].iov_len % ALIGNMENT_SIZE;
 			src = vectrpos(&chunks[CHUNK_DATA_0], data_len);
-	printk(KERN_DEBUG ">>> 5.4 copy %u bytes from DATA_0 to ALIGN buffer\n", data_len);
 			vectcpy(&chunks[CHUNK_ALIGN], src, data_len);
 			vectshrink(&chunks[CHUNK_DATA_0], data_len);
 		} else {
 			data_len = chunks[CHUNK_DATA_1].iov_len % ALIGNMENT_SIZE;
 			src = vectrpos(&chunks[CHUNK_DATA_1], data_len);
-	printk(KERN_DEBUG ">>> 5.4 copy %u bytes from DATA_1 to ALIGN buffer\n", data_len);
 			vectcpy(&chunks[CHUNK_ALIGN], src, data_len);
 			vectshrink(&chunks[CHUNK_DATA_1], data_len);
 		}
-	printk(KERN_DEBUG ">>> 5.4 copy %u bytes from TRAILER to ALIGN buffer\n", chunks[CHUNK_TRAILER].iov_len);
 		vectcpy(&chunks[CHUNK_ALIGN], chunks[CHUNK_TRAILER].iov_base, chunks[CHUNK_TRAILER].iov_len);
 		vectshrink(&chunks[CHUNK_TRAILER], chunks[CHUNK_TRAILER].iov_len);
 	}
