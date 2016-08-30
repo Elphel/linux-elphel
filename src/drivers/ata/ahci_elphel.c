@@ -621,8 +621,6 @@ static int map_vectors(struct elphel_ahci_priv *dpriv)
 			vect.iov_len = chunks[i].iov_len - dpriv->curr_data_offset;
 		} else {
 			total_sz += chunks[i].iov_len;
-//			vect.iov_base = chunks[i].iov_base;
-//			vect.iov_len = chunks[i].iov_len;
 			vect = chunks[i];
 		}
 		if (total_sz > dpriv->max_data_sz) {
@@ -639,14 +637,13 @@ static int map_vectors(struct elphel_ahci_priv *dpriv)
 		}
 		printk(KERN_DEBUG "mapping data chunk number %d: total_sz = %u, vect.iov_len = %u\n", i, total_sz, vect.iov_len);
 		if (vect.iov_len != 0) {
-//			sg_set_buf(&dpriv->sgl[index++], vect.iov_base, vect.iov_len);
 			dpriv->sgl[index++] = vect;
 		}
 		if (finish)
 			break;
 	}
 	if (finish == 0) {
-		// frame vectors have been fully processed, stop calling me
+		/* frame vectors have been fully processed, stop calling me */
 		dpriv->curr_data_chunk = MAX_DATA_CHUNKS;
 		dpriv->curr_data_offset = 0;
 	}
@@ -731,7 +728,6 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 
 	/* copy JPEG marker */
 	len = chunks[CHUNK_LEADER].iov_len;
-	printk(KERN_DEBUG ">>> copy %u bytes from LEADER to common buffer\n", len);
 	vectcpy(cbuff, chunks[CHUNK_LEADER].iov_base, len);
 	vectshrink(&chunks[CHUNK_LEADER], chunks[CHUNK_LEADER].iov_len);
 
@@ -1134,12 +1130,7 @@ static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 		dump_sg_list(dpriv->sgl, dpriv->sg_elems);
 
 		dpriv->lba_ptr.wr_count = get_blocks_num(dpriv->sgl, dpriv->sg_elems);
-		printk(KERN_DEBUG ">>> trying to write data from sg list %u blocks, LBA: %llu\n", dpriv->lba_ptr.wr_count, dpriv->lba_ptr.lba_write);
 		dma_sync_single_for_device(dev, cbuff->iov_dma, cbuff->iov_len, DMA_TO_DEVICE);
-//		if (dpriv->data_chunks[CHUNK_DATA_0].iov_len != 0)
-//			dma_sync_single_for_device(dev, dpriv->data_chunks[CHUNK_DATA_0].iov_dma, dpriv->data_chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
-//		if (dpriv->data_chunks[CHUNK_DATA_1].iov_len != 0)
-//			dma_sync_single_for_device(dev, dpriv->data_chunks[CHUNK_DATA_1].iov_dma, dpriv->data_chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
 		elphel_cmd_issue(port, dpriv->lba_ptr.lba_write, dpriv->lba_ptr.wr_count, dpriv->sgl, dpriv->sg_elems, dpriv->curr_cmd);
 	}
 
