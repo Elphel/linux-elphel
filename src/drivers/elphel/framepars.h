@@ -13,7 +13,7 @@ extern wait_queue_head_t       aframepars_wait_queue[SENSOR_PORTS];
 
 ///TODO: init framepars (zero parameters) before initscripts (not when detecting the sensors) - then initscript will be able to overwrite some
 void init_framepars_ptr(int sensor_port);
-void initSequencers    (int sensor_port); ///Move to sensorcommon? currently it is used through frameparsall file (lseek)
+int  initSequencers    (int sensor_port); ///Move to sensorcommon? currently it is used through frameparsall file (lseek)
 void initGlobalPars    (int sensor_port); /// resets all global parameters but debug mask (if ELPHEL_DEBUG)
 int  initMultiPars     (int sensor_port); /// initialize structures for individual per-sensor parameters. Now only works for sensor registers using G_MULTI_REGSM. Should be called aftre/during sensor detection
 void initFramePars     (int sensor_port); ///initialize all parameters, set thisFrameNumber to frame8 (read from hardware, usually 0 after resetting i2c and cmd_seq)
@@ -67,7 +67,7 @@ void schedule_this_pgm_func       (int sensor_port, struct framepars_t * this_fr
 //inline void _processParsASAP      (int sensor_port, struct sensorproc_t * sensorproc, int frame8);
 //inline void _processParsSeq       (int sensor_port, struct sensorproc_t * sensorproc, int frame8, int maxahead);
 
-void        processPars          (int sensor_port, struct sensorproc_t * sensorproc, int frame8, int maxahead);
+int         processPars          (int sensor_port, struct sensorproc_t * sensorproc, int frame8, int maxahead);
 ///*** TODO: Add option (flag?) to write "single" (like single compress, single sensor) so it will not make all the next frames "single"
 
 int         framepars_init       (struct platform_device *pdev);

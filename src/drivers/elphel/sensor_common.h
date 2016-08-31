@@ -28,9 +28,18 @@ extern struct sensorproc_t * asensorproc;
 //void camSeqSetJPEG_rp(int p);
 u32 get_compressor_frame(unsigned int chn);
 int getHardFrameNumber(int sensor_port, int use_compressor);
+
+// Byte I/O
 int camseq_get_jpeg_wp(unsigned int chn);
 int camseq_get_jpeg_rp(unsigned int chn);
 void camseq_set_jpeg_rp(unsigned int chn, int ptr);
+
+// DWORD I/O, same as in NC353
+int camSeqGetJPEG_wp (unsigned int chn);
+int camSeqGetJPEG_rp (unsigned int chn);
+void camSeqSetJPEG_rp(unsigned int chn, int ptr);
+
+
 
 ///CIRCBUF macros
 extern unsigned long  * ccam_dma_buf_ptr[SENSOR_PORTS];
@@ -38,12 +47,13 @@ extern unsigned long  * ccam_dma_buf_ptr[SENSOR_PORTS];
 /* move these lines to x313_macro.h
 #define X313_LENGTH_MASK      0xff000000
 #define X313_PADDED_FRAME(x)((((x)+67+CCAM_MMAP_META ) >>2) & 0xfffffff8)
-#define X313_BUFFSUB(x,y) (((x)>=(y))? ((x)-(y)) : ((x)+ (CCAM_DMA_SIZE-(y))))
-#define X313_BUFFADD(x,y) ((((x) + (y))<=CCAM_DMA_SIZE)? ((x) + (y)) : ((x) - (CCAM_DMA_SIZE-(y))))
+#define X313_BUFFSUB(x,y) (((x)>=(y))? ((x)-(y)) : ((x)+ (CCAM__DMA_SIZE-(y))))
+#define X313_BUFFADD(x,y) ((((x) + (y))<=CCAM__DMA_SIZE)? ((x) + (y)) : ((x) - (CCAM__DMA_SIZE-(y))))
 */
 
 //int init_FPGA(void); /// can be initialized only after FPGA is configured, not at module init (NOTE was static??)
 ///can be verified with if (!X313_IS_SDRAM_ON)
+int init_compressor_dma(int chn_mask, int reset);
 void reset_compressor(unsigned int chn);
 void compressor_interrupts (int on, int chn);
 void sensor_interrupts     (int on, int chn);

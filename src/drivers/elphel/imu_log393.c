@@ -1055,8 +1055,8 @@ void logger_irq_cmd(int cmd) ///< interrupt command: 0 - nop, 1 - reset, 2 - dis
 #ifdef NC353
 ///TODO: it seems we could use a single data descriptor (in LX data segment was limited to 16KB), but let's have minimal changes
 //#define DMA_CHUNK 0x4000 // 32-bit words - may increase??
-//#define CCAM_DESCR_DATA_NUM (( CCAM_DMA_SIZE  / DMA_CHUNK) +1 ) // number of data descriptors
-#define CCAM_DESCR1_DATA_NUM (( CCAM_DMA1_SIZE  / DMA_CHUNK) +1 ) // number of data descriptors
+//#define CCAM_DESCR_DATA_NUM (( CCAM__DMA_SIZE  / DMA_CHUNK) +1 ) // number of data descriptors
+#define CCAM_DESCR1_DATA_NUM (( CCAM__DMA1_SIZE  / DMA_CHUNK) +1 ) // number of data descriptors
 
 static dma_descr_data    ccam_dma1_descr_data    [CCAM_DESCR1_DATA_NUM]  __attribute__ ((__aligned__(16)));
 static dma_descr_context ccam_dma1_descr_context __attribute__ ((__aligned__(32)));
@@ -1222,7 +1222,7 @@ int x313_setDMA1Buffer(void) {
         i++;
     }
     // TODO: make new global parameter?
-    //    set_globalParam (G_CIRCBUFSIZE,CCAM_DMA_SIZE<<2); /// make it adjustable? TODO: initialize with others?
+    //    set_globalParam (G_CIRCBUFSIZE,CCAM__DMA_SIZE<<2); /// make it adjustable? TODO: initialize with others?
     //*********************** TEMPORARY ********************************
     MD8(printk ("filling DMA1 buffer with natural numbers - just test \n"));
     for(dai = 0; dai < CCAM_DMA1_SIZE; dai++) logger_buffer[dai] = dai;

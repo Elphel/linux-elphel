@@ -52,6 +52,7 @@
 
 #include <asm/delay.h> // just for usleep1000()
 
+#include "x393_fpga_functions.h"
 // NC393 debug macros
 #include "debug393.h"
 
@@ -135,7 +136,7 @@ u32 get_compressor_frame(unsigned int chn) ///< Sensor port number (0..3)
 /** @brief  Works like a cache to time save on looking for tags in the directory (forced to recalculate if does not match)
  *  will have offset of the Exif_Image_DateTime data in meta page (Exif_Photo_SubSecTime should go immediately after in meta page)
  */
-static struct meta_offsets_t {
+static struct meta_offsets_t { // Never used even in NC353?
 	int Image_DateTime;           ///< EXIF Date/Time offset
 	int Photo_DateTimeOriginal;   ///< EXIF Date/Time Original offset
 	int Photo_ExposureTime;       ///< EXIF exposure offset
@@ -158,6 +159,7 @@ void camSeqSetJPEG_rp(int p) {
 }
 #endif /* TEST_DISABLE_CODE */
 
+/** Write pointer in circbuf, in bytes */
 int camseq_get_jpeg_wp(unsigned int chn)
 {
 	return (chn < SENSOR_PORTS) ? image_acq_priv.jpeg_ptr[chn].jpeg_wp : 0;
@@ -172,8 +174,51 @@ void camseq_set_jpeg_rp(unsigned int chn, int ptr)
 {
 	if (chn < SENSOR_PORTS) {
 		image_acq_priv.jpeg_ptr[chn].jpeg_rp = ptr;
+
+	    set_globalParam(chn, G_CIRCBUFRP, ptr);
+	    set_globalParam(chn, G_FREECIRCBUF,
+	            (((get_globalParam(chn, G_CIRCBUFRP) <= get_globalParam(chn, G_CIRCBUFWP))?
+	                    get_globalParam(chn, G_CIRCBUFSIZE):0)+ get_globalParam(chn, G_CIRCBUFRP))
+	                    - get_globalParam(chn, G_CIRCBUFWP));
 	}
 }
+
+/** Write pointer in circbuf, in DWORDs */
+int camSeqGetJPEG_wp(unsigned int chn)
+{
+    return (chn < SENSOR_PORTS) ? image_acq_priv.jpeg_ptr[chn].jpeg_wp : 0;
+}
+
+int camSeqGetJPEG_rp(unsigned int chn)
+{
+    return (chn < SENSOR_PORTS) ? image_acq_priv.jpeg_ptr[chn].jpeg_rp : 0;
+}
+
+void camSeqSetJPEG_rp(unsigned int chn, ///< channel (0..3)
+                      int ptr)          /// DWORD index in the buffer
+{
+    if (chn < SENSOR_PORTS) {
+        image_acq_priv.jpeg_ptr[chn].jpeg_rp = ptr << 2;
+
+        set_globalParam(chn, G_CIRCBUFRP, ptr);
+        set_globalParam(chn, G_FREECIRCBUF,
+                (((get_globalParam(chn, G_CIRCBUFRP) <= get_globalParam(chn, G_CIRCBUFWP))?
+                        get_globalParam(chn, G_CIRCBUFSIZE):0)+ get_globalParam(chn, G_CIRCBUFRP))
+                        - get_globalParam(chn, G_CIRCBUFWP));
+    }
+}
+#ifdef NC353
+void camSeqSetJPEG_rp(int p) {
+                              JPEG_rp=p;
+                              set_globalParam(G_CIRCBUFRP,  p<< 2);
+                              set_globalParam(G_FREECIRCBUF,
+                                    (((get_globalParam(G_CIRCBUFRP) <= get_globalParam(G_CIRCBUFWP))?
+                                       get_globalParam(G_CIRCBUFSIZE):0)+ get_globalParam(G_CIRCBUFRP))
+                                       - get_globalParam(G_CIRCBUFWP));
+                               }
+
+#endif
+
 /** Return current frame number, if it was from the compressor interrupt
  * get the compressed frame number (updated when compression is over,
  * can happen even later than start of the next frame.
@@ -218,7 +263,7 @@ void tasklet_compressor_function(unsigned long arg);
 /**
  * @brief Copy #sensorproc structure, needed for multisensor board to be able
  * to replace some of the functions
- * @param[in]   sensor_port sesnolr port number
+ * @param[in]   sensor_port sensor port number
  * @param[in]   copy   pointer to a copy structure
  * @return      pointer to a \b copy structure
  */
@@ -345,13 +390,13 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 	//		dev_dbg(g_dev_ptr, "from updateIRQJPEG_wp: phys_addr = 0x%x, virt_addr = 0x%p\n", phys_addr, virt_addr);
 	//		outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
 	//		__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
-	//		phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + CCAM_DMA_SIZE - CHUNK_SIZE;
-	//		virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr + BYTE2DW(CCAM_DMA_SIZE - CHUNK_SIZE);
+	//		phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + CCAM__DMA_SIZE - CHUNK_SIZE;
+	//		virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr + BYTE2DW(CCAM__DMA_SIZE - CHUNK_SIZE);
 	//		outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
 	//		__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
 	//		dev_dbg(g_dev_ptr, "from updateIRQJPEG_wp: phys_addr = 0x%x, virt_addr = 0x%p\n", phys_addr, virt_addr);
 	//		barrier();
-	//		prev_dword = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp), 4);
+	//		prev_dword = X393__BUFFSUB(DW2BYTE(jptr->jpeg_wp), 4);
 	//		dev_dbg(g_dev_ptr, "circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] = 0x%x\n", circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp]);
 	//		dev_dbg(g_dev_ptr, "circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)] = 0x%x\n", circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)]);
 	////		if (circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] == 0x00 &&
@@ -418,21 +463,22 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 {
 	dma_addr_t phys_addr;
 	void *virt_addr;
+	int chn = jptr->chn_num;
 	struct interframe_params_t *interframe = NULL;
-	int len_offset = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp), CHUNK_SIZE + 4);
+	int len_offset = X393_BUFFSUB_CHN(DW2BYTE(jptr->jpeg_wp), CHUNK_SIZE + 4, chn);
 	int jpeg_len = circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(len_offset)] & FRAME_LENGTH_MASK;
-	int jpeg_start = X393_BUFFSUB(DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE - INSERTED_BYTES(jpeg_len) - CCAM_MMAP_META, jpeg_len);
+	int jpeg_start = X393_BUFFSUB_CHN(DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE - INSERTED_BYTES(jpeg_len) - CCAM_MMAP_META, jpeg_len,chn);
 	// frame_params_offset points to interframe_params_t area before current frame (this parameters belong to the frame below in memory, not the previous)
-	int frame_params_offset = BYTE2DW(X393_BUFFSUB(jpeg_start, CHUNK_SIZE));
-	int prev_len32_off = X393_BUFFSUB(jpeg_start, CHUNK_SIZE + 4);
+	int frame_params_offset = BYTE2DW(X393_BUFFSUB_CHN(jpeg_start, CHUNK_SIZE, chn));
+	int prev_len32_off = X393_BUFFSUB_CHN(jpeg_start, CHUNK_SIZE + 4,chn);
 	int prev_len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_len32_off)];
 
 	if ((prev_len32 & MARKER_FF) != MARKER_FF) {
 		// try to correct offset
-		prev_len32_off = X393_BUFFSUB(prev_len32_off, 0x20);
+		prev_len32_off = X393_BUFFSUB_CHN(prev_len32_off, 0x20,chn);
 		prev_len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_len32_off)];
 		if ((prev_len32 & MARKER_FF) == MARKER_FF) {
-			frame_params_offset = BYTE2DW(X393_BUFFADD(prev_len32_off, 4));
+			frame_params_offset = BYTE2DW(X393_BUFFADD_CHN(prev_len32_off, 4, jptr->chn_num));
 		}
 	}
 
@@ -441,7 +487,7 @@ inline struct interframe_params_t* updateIRQ_interframe(struct jpeg_ptr_t *jptr)
 	interframe->signffff = 0xffff;
 
 	/* debug code follows */
-	set_default_interframe(interframe); // TODO: Production NC393:  should be removed?
+	//set_default_interframe(interframe); // TODO: Production NC393:  should be removed?
 	/* end of debug code */
 
 	set_globalParam(jptr->chn_num, G_FRAME_SIZE, jpeg_len);
@@ -690,24 +736,25 @@ void tasklet_compressor_function(unsigned long arg)
     int sensor_port = image_acq_priv.jpeg_ptr[arg].chn_num; // == arg & 3
     const struct jpeg_ptr_t *jptr = &image_acq_priv.jpeg_ptr[arg];
     unsigned int sz;
+    u32 ccam_dma_size = circbuf_priv_ptr[jptr->chn_num].buf_size;
     /* invalidate L2 cache lines in the beginning of current frame */
     phys_addr_start = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->fpga_cntr_prev);
     virt_addr_start = circbuf_priv_ptr[jptr->chn_num].buf_ptr + jptr->fpga_cntr_prev;
     sz = DW2BYTE(jptr->fpga_cntr_prev) + L2_INVAL_SIZE;
-    if (sz < CCAM_DMA_SIZE) {
+    if (sz < ccam_dma_size) {
         phys_addr_end = phys_addr_start + L2_INVAL_SIZE - 1;
         outer_inv_range(phys_addr_start, phys_addr_end);
         __cpuc_flush_dcache_area(virt_addr_start, L2_INVAL_SIZE);
     } else {
-        phys_addr_end = phys_addr_start + (CCAM_DMA_SIZE - DW2BYTE(jptr->fpga_cntr_prev) - 1);
+        phys_addr_end = phys_addr_start + (ccam_dma_size - DW2BYTE(jptr->fpga_cntr_prev) - 1);
         outer_inv_range(phys_addr_start, phys_addr_end);
-        __cpuc_flush_dcache_area(virt_addr_start, CCAM_DMA_SIZE - DW2BYTE(jptr->fpga_cntr_prev));
+        __cpuc_flush_dcache_area(virt_addr_start, ccam_dma_size - DW2BYTE(jptr->fpga_cntr_prev));
 
         phys_addr_start = circbuf_priv_ptr[jptr->chn_num].phys_addr;
-        phys_addr_end = phys_addr_start + (sz - CCAM_DMA_SIZE - 1);
+        phys_addr_end = phys_addr_start + (sz - ccam_dma_size - 1);
         virt_addr_start = circbuf_priv_ptr[jptr->chn_num].buf_ptr;
         outer_inv_range(phys_addr_start, phys_addr_end);
-        __cpuc_flush_dcache_area(virt_addr_start, sz - CCAM_DMA_SIZE);
+        __cpuc_flush_dcache_area(virt_addr_start, sz - ccam_dma_size);
     }
     wake_up_interruptible(&circbuf_wait_queue); // should be done in here (after cache invalidation), not in ISR
 }
@@ -872,6 +919,33 @@ void tasklet_cmdseq_function(unsigned long arg)
 }
 
 //#endif /* TEST_DISABLE_CODE */
+
+int init_compressor_dma(int chn_mask, int reset)
+{ int res;
+    int status_mode = 3;
+    int report_mode = 0;
+    int port_afi = 0;
+    dma_addr_t cmprs_sa[4];
+    u32 cmprs_len[4];
+    int chn;
+    struct  circbuf_priv_t * cirbuf_data;
+    for (chn = 0; chn <4; chn++) if (chn_mask & (1 << chn)){
+        cirbuf_data = get_circbuf(chn);
+        cmprs_sa[chn] =  cirbuf_data->phys_addr;
+        cmprs_len[chn] = cirbuf_data->buf_size;
+    }
+
+    res = compressor_dma_setup (port_afi,
+                                chn_mask,
+                                reset,
+                                status_mode,
+                                report_mode,
+                                cmprs_sa[0], cmprs_len[0],
+                                cmprs_sa[1], cmprs_len[1],
+                                cmprs_sa[2], cmprs_len[2],
+                                cmprs_sa[3], cmprs_len[3]);
+    return res;
+}
 
 /**
  * @brief resets compressor and buffer pointers

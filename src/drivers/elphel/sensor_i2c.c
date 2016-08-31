@@ -1424,7 +1424,6 @@ static ssize_t get_i2c_help(struct device *dev,              ///< Linux kernel b
     );
 }
 
-
 /** Sysfs function - read i2c sequencer frame number (4 bits) */
 static ssize_t i2c_frame_show(struct device *dev,              ///< Linux kernel basic device structure
         struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes

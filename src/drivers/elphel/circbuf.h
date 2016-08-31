@@ -28,8 +28,11 @@
 struct circbuf_priv_t {
 	int                 minor;                             ///< device file minor number
 	unsigned long       *buf_ptr;                          ///< pointer to circular buffer memory region
+	unsigned long       buf_size;                          ///< circular region size in bytes
+    unsigned long       buf_size32;                        ///< circular region size in dwords
 	dma_addr_t          phys_addr;                         ///< physical address of memory region reported by memory driver
 };
+struct  circbuf_priv_t *get_circbuf(int chn); // alternative to use of extern struct circbuf_priv_ptr;
 extern struct circbuf_priv_t *circbuf_priv_ptr;
 extern wait_queue_head_t circbuf_wait_queue;
 

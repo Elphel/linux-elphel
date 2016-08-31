@@ -681,7 +681,7 @@
 
 #define G_DEBUG         (FRAMEPAR_GLOBALS + 2) ///< Each bit turns on/off some debug outputs
 #define G_TEST_CTL_BITS (FRAMEPAR_GLOBALS + 3) ///< turn some features on/off in the drivers for debugging purposes
-#define   G_TEST_CTL_BITS_RESET_DMA_COMPRESSOR 0 ///< reset compressor and DMA when detecting sensor, bit number in G_TEST_CTL_BITS
+#define G_TEST_CTL_BITS_RESET_DMA_COMPRESSOR 0 ///< reset compressor and DMA when detecting sensor, bit number in G_TEST_CTL_BITS
 
 #define G_CABLE_TIM     (FRAMEPAR_GLOBALS + 7) ///< Extra cable delay, signed ps)
 #define G_FPGA_TIM0     (FRAMEPAR_GLOBALS + 8) ///< FPGA timing parameter 0 - difference between DCLK pad and DCM input, signed (ps)
@@ -1448,7 +1448,7 @@ struct p_names_t {
 #define      LSEEK_CIRC_USED        13
 #define      LSEEK_CIRC_STOP_COMPRESSOR 14
 #define      LSEEK_CIRC_UTIME       15
-
+#define      LSEEK_CIRC_GETFRAME    16
 #define      LSEEK_HUFFMAN_DC0      1
 #define      LSEEK_HUFFMAN_AC0      2
 #define      LSEEK_HUFFMAN_DC1      3
@@ -1541,6 +1541,7 @@ struct p_names_t {
           LSEEK_NAME_ENTRY(CIRC_WAIT), \
           LSEEK_NAME_ENTRY(CIRC_FREE), \
           LSEEK_NAME_ENTRY(CIRC_USED), \
+          LSEEK_NAME_ENTRY(CIRC_GETFRAME), \
           LSEEK_NAME_ENTRY(HUFFMAN_DC0), \
           LSEEK_NAME_ENTRY(HUFFMAN_AC0), \
           LSEEK_NAME_ENTRY(HUFFMAN_DC1), \
@@ -1596,9 +1597,9 @@ struct p_names_t {
 #define CCAM_BYTES_PER_DMABUF (CCAM_CHUNK_PER_DMABUF<<16)
 /*  For past compatibility, CCMA_DMA_SIZE...
 */
-//#define CCAM_DMA_SIZE CCAM_WORDS_PER_DMABUF
-#define CCAM_DMA_SIZE   0x4000000
-#define CIRCBUF_START_OFFSET 0x100000
+//#define CCAM_DMA_SIZE  CCAM_WORDS_PER_DMABUF
+#define CCAM_DMA_SIZE        0x4000000     ///< Each channel buffer size TODO NC393: use only for initial allocation, move to DT
+#define CIRCBUF_START_OFFSET 0x100000      ///< Offset for the first bufer TODO NC393: use only for initial allocation, move to DT
 
 /*
 *       CCAM_MMAP_OFFSET... -- offsets in bytes in memory mapped region.

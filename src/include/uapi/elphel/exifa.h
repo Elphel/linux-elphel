@@ -5,16 +5,22 @@
 #define _ASM_EXIF_H
 
 //Major
-#define X3X3_EXIF 125
+//// #define X3X3_EXIF 125
 //Minors
-#define X3X3_EXIF_EXIF    0 // read encoded Exif data (SEEK_END,
-#define X3X3_EXIF_META    1 // write metadata, concurently opened files. All writes atomic
+////#define X3X3_EXIF_EXIF    0 // read encoded Exif data (SEEK_END,
+////#define X3X3_EXIF_META    1 // write metadata, concurently opened files. All writes atomic
 // control/setup devices
-#define X3X3_EXIF_TEMPLATE 2 // write Exif template
-#define X3X3_EXIF_METADIR  3 // write metadata to Exif header translation (dir_table[MAX_EXIF_FIELDS])
+////#define X3X3_EXIF_TEMPLATE 2 // write Exif template
+////#define X3X3_EXIF_METADIR  3 // write metadata to Exif header translation (dir_table[MAX_EXIF_FIELDS])
 // those 2 files will disable exif_enable and exif_valid, truncate file size to file pointer on release.
-#define X3X3_EXIF_TIME     4 // write today/tomorrow date (YYYY:MM:DD) and number of seconds at today/tomorrow
+////#define X3X3_EXIF_TIME     4 // write today/tomorrow date (YYYY:MM:DD) and number of seconds at today/tomorrow
                              // midnight (00:00:00) in seconds from epoch (long, startting from LSB)
+
+//#define DEV393_EXIF_TEMPLATE  ("exif_template",     "exif_elphel",   125,  2, "0666", "c")  ///< write Exif template
+//#define DEV393_EXIF_METADIR   ("exif_metadir",      "exif_elphel",   125,  3, "0666", "c")  ///< write metadata to Exif header translation (dir_table[MAX_EXIF_FIELDS])
+//#define DEV393_EXIF_TIME      ("exif_time",         "exif_elphel",   125,  4, "0666", "c")  ///< write today/tomorrow date (YYYY:MM:DD) and number of seconds at today/tomorrow
+
+
 
 // commands for the overloaded lseek:
 

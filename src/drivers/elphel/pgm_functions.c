@@ -616,10 +616,75 @@ int pgm_initsensor     (int sensor_port,               ///< sensor port number (
 									   ///< be applied to,  negative - ASAP
 									   ///< @return always 0
 {
+   // NC393: Putting here some initialization that should later be moved away (Gamma window)
+  x393_status_ctrl_t      status_ctrl =      {.d32=0};
+  x393_gamma_ctl_t        gamma_ctl =        {.d32=0};
+  x393_gamma_height01m1_t gamma_height01m1 = {.d32=0};
+  x393_gamma_height2m1_t  gamma_height2m1 =  {.d32=0};
+  x393_lens_height_m1_t   vign_hight0 =      {.d32=0};
+  x393_lens_height_m1_t   vign_hight1 =      {.d32=0};
+  x393_lens_height_m1_t   vign_hight2 =      {.d32=0};
+  x393_sens_mode_t        sens_mode =        {.d32=0};
+
   dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
   MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
+  status_ctrl.mode = 3; // mode auto
+  set_x393_cmprs_status(status_ctrl, sensor_port);
+
+  //Until multiple subchannels supported, use just 0
+  gamma_height01m1.height0m1= 0xffff;
+  gamma_height01m1.height1m1= 0;
+  gamma_height2m1.height2m1 = 0;
+
+  vign_hight0.height_m1 = 0xffff;
+  vign_hight1.height_m1 = 0;
+  vign_hight2.height_m1 = 0;
+
+  X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_gamma_ctrl, gamma_ctl);
+  dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n",sensor_port, sensor_port, frame16, gamma_ctl.d32);
+  MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n",sensor_port, frame16, gamma_ctl.d32)
+
+  // Enable gamma module to pass through
+  gamma_ctl.en =        1;
+  gamma_ctl.en_set =    1;
+  gamma_ctl.repet =     1;
+  gamma_ctl.repet_set = 1;
+
+  X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_gamma_height01m1, gamma_height01m1);
+  dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_gamma_height01m1,  0x%x)\n",sensor_port, sensor_port, frame16, gamma_height01m1.d32);
+  MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_gamma_height01m1,  0x%x)\n",sensor_port, frame16, gamma_height01m1.d32)
+  X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_gamma_height2m1, gamma_height2m1);
+  dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_gamma_height2m1,  0x%x)\n",sensor_port, sensor_port, frame16, gamma_height2m1.d32);
+  MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_gamma_height2m1,  0x%x)\n",sensor_port, frame16, gamma_height2m1.d32)
+
+  X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_height0_m1, vign_hight0);
+  dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_height0_m1,  0x%x)\n",sensor_port, sensor_port, frame16, vign_hight0.d32);
+  MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_height0_m1,  0x%x)\n",sensor_port, frame16, vign_hight0.d32)
+
+  X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_height1_m1, vign_hight1);
+  dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_height1_m1,  0x%x)\n",sensor_port, sensor_port, frame16, vign_hight1.d32);
+  MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_height1_m1,  0x%x)\n",sensor_port, frame16, vign_hight1.d32)
+
+  X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_height2_m1, vign_hight2);
+  dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_height2_m1,  0x%x)\n",sensor_port, sensor_port, frame16, vign_hight2.d32);
+  MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_height2_m1,  0x%x)\n",sensor_port, frame16, vign_hight2.d32)
+
+  sens_mode.hist_en =    1; // just first subchannel
+  sens_mode.hist_nrst =  1; // just first subchannel
+  sens_mode.hist_set =   1;
+  sens_mode.chn_en =     1;
+  sens_mode.chn_en_set = 1;
+
+  X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_mode, sens_mode);
+  dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",
+          sensor_port, sensor_port, frame16, sens_mode.d32);
+  MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",
+          sensor_port, frame16, sens_mode.d32)
+
+
   if (frame16 >= 0) return -1; // should be ASAP
 //TODO: seems nothing to do here - all in the sensor-specific function:
+//Adding setup compressor report status mode - maybe move elsethere? Needed for comprfessor frame reporting, has to be done just once
   return 0;
 }
 
@@ -1130,10 +1195,12 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     int pfh;
     int n_stripes;
     u32 clk_sensor = thispars->pars[P_CLK_SENSOR];
+    u32 clk_fpga = thispars->pars[P_CLK_FPGA];
 #if USELONGLONG
     uint64_t ull_min_period;
     uint64_t ull_period;
 #endif
+    if (!clk_fpga) clk_fpga = 240000000; // 240MHz
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
@@ -1150,7 +1217,8 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     default:
         cycles*=4;
     }
-    cycles  *=64 *2; //cycles per frame (64 pixels/block, 2 clock cycles/pixel)
+//    cycles  *=64 *2; //cycles per frame (64 pixels/block, 2 clock cycles/pixel)
+    cycles  *=64; //cycles per frame (64 pixels/block, 1 clock cycles/pixel in NC393)
     dev_dbg(g_dev_ptr,"{%d}  cycles=%d(0x%x)\n",sensor_port,cycles,cycles);
     MDP(DBGB_PADD, sensor_port,"cycles=%d(0x%x)\n",cycles,cycles)
     cycles += thispars->pars[P_FPGA_XTRA]; // extra cycles needed for the compressor to start/finish the frame;
@@ -1166,9 +1234,9 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
 #if USELONGLONG
     ull_min_period=(((long long) cycles) * ((long long) clk_sensor));
 #ifdef __div64_32
-    __div64_32(&ull_min_period, thispars->pars[P_CLK_FPGA]);
+    __div64_32(&ull_min_period, clk_fpga);
 #else
-    do_div(ull_min_period, clk_sensor);
+    do_div(ull_min_period, clk_fpga);
 //    ull_min_period/=thispars->pars[P_CLK_FPGA];
 #endif
     min_period= ull_min_period;
@@ -1384,10 +1452,37 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     if (bayer_modified) {
         gamma_ctl.bayer = thispars->pars[P_BAYER] ^ flips ^ sensor->bayer;
         gamma_ctl.bayer_set = 1;
+    }
+    //NC393: Other needed bits are set in pgm_initsensor (they must be set just once)
+    // set gamma_ctl if needed
+    if (gamma_ctl.d32) { // anything changed
         X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_gamma_ctrl, gamma_ctl);
         dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n",sensor_port, sensor_port, frame16, gamma_ctl.d32);
         MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n",sensor_port, frame16, gamma_ctl.d32)
     }
+
+#if 0
+    // Control for the gamma-conversion module
+
+    typedef union {
+        struct {
+              u32           bayer: 2; // [ 1: 0] (0) Bayer color shift (pixel to gamma table)
+              u32       bayer_set: 1; // [    2] (0) Set 'bayer' field
+              u32            page: 1; // [    3] (0) Table page (only available if SENS_GAMMA_BUFFER in Verilog)
+              u32        page_set: 1; // [    4] (0) Set 'page' field
+              u32              en: 1; // [    5] (1) Enable module
+              u32          en_set: 1; // [    6] (1) Set 'en' field
+              u32           repet: 1; // [    7] (1) Repetitive (normal) mode. Set 0 for testing of the single-frame mode
+              u32       repet_set: 1; // [    8] (1) Set 'repet' field
+              u32            trig: 1; // [    9] (0) Single trigger used when repetitive mode is off (self clearing bit)
+              u32                :22;
+        };
+        struct {
+              u32             d32:32; // [31: 0] (0) cast to u32
+        };
+    } x393_gamma_ctl_t;
+#endif
+
     return 0;
 #else
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
@@ -1473,7 +1568,7 @@ int pgm_sensorrun  (int sensor_port,               ///< sensor port number (0..3
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -EINVAL; // wrong frame
-    if (thispars->pars[P_SENSOR_RUN] & 3) {
+    if (thispars->pars[P_SENSOR_RUN] & 3) { // do nothing if stopped, set run/single accordingly
         control_sensor_memory (sensor_port,
                 thispars->pars[P_SENSOR_RUN] & 3,
                 (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
@@ -1524,7 +1619,7 @@ int pgm_sensorstop (int sensor_port,               ///< sensor port number (0..3
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -EINVAL; // wrong frame
     // Do we need to filter for stop only (    if ((thispars->pars[P_SENSOR_RUN] & 3)==0){... ) ?
-    if ((thispars->pars[P_SENSOR_RUN] & 3)==0){
+    if ((thispars->pars[P_SENSOR_RUN] & 3)==0){ // do nothing if not stop
         control_sensor_memory (sensor_port,
                 thispars->pars[P_SENSOR_RUN] & 3,
                 (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
@@ -1798,7 +1893,7 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     width_marg = thispars->pars[P_ACTUAL_WIDTH];
-    height_marg = thispars->pars[P_ACTUAL_WIDTH];
+    height_marg = thispars->pars[P_ACTUAL_HEIGHT];
     switch(thispars->pars[P_COLOR]){
     case COLORMODE_COLOR:
     case COLORMODE_COLOR20:
@@ -1914,7 +2009,7 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     width_marg = thispars->pars[P_ACTUAL_WIDTH];
-    height_marg = thispars->pars[P_ACTUAL_WIDTH];
+    height_marg = thispars->pars[P_ACTUAL_HEIGHT];
     // NC393: maybe add later monochrome mode with small tiles?
     cmprs_frame_format.num_macro_cols_m1 = (width_marg>> 4) - 1; // before adding margins
     cmprs_frame_format.num_macro_rows_m1 = (height_marg>> 4) - 1; // before adding margins;
@@ -1948,7 +2043,8 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     tile_height = 16 + overlap;
     setup_compressor_memory (sensor_port,       // sensor port number (0..3)
                              width_bursts,      // 13-bit - in 8*16=128 bit bursts
-                             height_marg,       // 16-bit window height (in scan lines)
+                             (cmprs_frame_format.num_macro_rows_m1 + 1) << 4,
+//                             height_marg,       // 16-bit window height (in scan lines)
                              0,                 // 13-bit window left margin in 8-bursts (16 bytes)
                              cmprs_top,         // 16-bit window top margin (in scan lines
                              tile_width,        // tile width in bjursts (16-pixels each)
@@ -2569,12 +2665,8 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     default:
         extra_pages = 0;
     }
-    control_compressor_memory (sensor_port,
-                               thispars->pars[P_SENSOR_RUN] & 3, // stop/single/run(/reset)
-                               extra_pages,
-                               disable_need,
-                               (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
-                               frame16);
+    // Compressor memory can be stopped, run single (next frame) or run continuously
+    // Compressor itself can run in standalone mode 2 (when sensor is stopped/single) or normal mode "3" (X393_CMPRS_CBIT_RUN_ENABLE)
     // program compressor mode - normal run (3) or standalone(2)
     switch (thispars->pars[P_COMPRESSOR_RUN]) {
     case COMPRESSOR_RUN_STOP:
@@ -2587,6 +2679,14 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     }
     cmprs_mode.run_set = 1;
     X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    // enable memory after the compressor, same latency
+    control_compressor_memory (sensor_port,
+                               thispars->pars[P_COMPRESSOR_RUN] & 3, // stop/single/run(/reset)
+                               extra_pages,
+                               disable_need,
+                               (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                               frame16);
+
     dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
     MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, frame16, cmprs_mode.d32)
 
@@ -2644,17 +2744,19 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
     default:
         extra_pages = 0;
     }
-    // Stop memory -> compressor
-    control_compressor_memory (sensor_port,
-                               X393_CMPRS_CBIT_RUN_DISABLE,
-                               extra_pages,
-                               disable_need,
-                               (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
-                               frame16);
     // Stop compressor (do not propagate frame sync late, finish current frame)
     cmprs_mode.run = X393_CMPRS_CBIT_RUN_DISABLE;
     cmprs_mode.run_set = 1;
     X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    // Stop memory -> compressor. Will continue current frame until finished
+    //TODO NC393: Handle safe/unsafe reprogramming memory at frame syncs - compression can be finished later
+
+    control_compressor_memory (sensor_port,
+                               COMPRESSOR_RUN_STOP,
+                               extra_pages,
+                               disable_need,
+                               (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                               frame16);
     dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
     MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32)
     return 0;
@@ -2707,24 +2809,31 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     default:
         extra_pages = 0;
     }
-    control_compressor_memory (sensor_port,
-            thispars->pars[P_COMPRESSOR_RUN] & 3, // stop/single/run(/reset)
-            extra_pages,
-            disable_need,
-            (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
-                    frame16);
-    // program compressor mode - normal run (3) or standalone(2)
+// Compressor memory can be stopped, run single (next frame) or run continuously
+// Compressor itself can run in standalone mode 2 (when sensor is stopped/single) or normal mode "3" (X393_CMPRS_CBIT_RUN_ENABLE)
+    // program compressor mode first - normal run (3) or standalone(2)
     switch (thispars->pars[P_COMPRESSOR_RUN]) {
     case COMPRESSOR_RUN_STOP:
         cmprs_mode.run = X393_CMPRS_CBIT_RUN_DISABLE;
         break;
     case COMPRESSOR_RUN_SINGLE:
     case COMPRESSOR_RUN_CONT:
-        cmprs_mode.run = ((thispars->pars[P_COMPRESSOR_RUN] & 3)==COMPRESSOR_RUN_CONT)? X393_CMPRS_CBIT_RUN_ENABLE : X393_CMPRS_CBIT_RUN_STANDALONE;
+        // look here on the sensor - if it is stopped - run in standalone mode (2), otherwise - enable(3)
+        cmprs_mode.run = ((thispars->pars[P_SENSOR_RUN] & 3)==SENSOR_RUN_CONT)? X393_CMPRS_CBIT_RUN_ENABLE : X393_CMPRS_CBIT_RUN_STANDALONE;
         break;
     }
     cmprs_mode.run_set = 1;
     X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    // enable memory after the compressor, same latency
+
+    control_compressor_memory (sensor_port,
+            thispars->pars[P_COMPRESSOR_RUN] & 3, // stop/single/run(/reset)
+            extra_pages,
+            disable_need,
+            (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                    frame16);
+
+
     dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
     MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32)
     return 0;
@@ -2919,7 +3028,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr = X393_LENS_AX;
             lens_corr.ax = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_VIGNET_AY + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2927,7 +3036,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr = X393_LENS_AY;
             lens_corr.ay = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_VIGNET_C + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2935,7 +3044,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr = X393_LENS_C;
             lens_corr.c = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
 
         par_index = P_VIGNET_BX + poffs;
@@ -2944,7 +3053,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr = X393_LENS_BX;
             lens_corr.bx = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_VIGNET_BY + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2952,7 +3061,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr = X393_LENS_BY;
             lens_corr.by = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_SCALE_ZERO_IN + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2960,7 +3069,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_FAT0_IN;
             lens_corr.fatzero_in = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_SCALE_ZERO_OUT + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2968,7 +3077,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_FAT0_OUT;
             lens_corr.fatzero_out = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_VIGNET_SHL + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -2976,7 +3085,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_POST_SCALE;
             lens_corr.post_scale = thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
 
         par_index = P_DGAINR + poffs;
@@ -2985,7 +3094,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_SCALE0;
             lens_corr.scale =      thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
 
         par_index = P_DGAING + poffs;
@@ -2994,7 +3103,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_SCALE1;
             lens_corr.scale =      thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_DGAINGB + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -3002,7 +3111,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_SCALE2;
             lens_corr.scale =      thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
         par_index = P_DGAINB + poffs;
         if (FRAMEPAR_MODIFIED(par_index)) {
@@ -3010,7 +3119,7 @@ int pgm_prescal        (int sensor_port,               ///< sensor port number (
             lens_corr.addr =       X393_LENS_SCALE3;
             lens_corr.scale =      thispars->pars[par_index];
             X393_SEQ_SEND1 (sensor_port, frame16, x393_lens_corr_cnh_addr_data, lens_corr);
-            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
+            dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_corr_cnh_addr_data,  0x%x)\n",sensor_port, sensor_port, frame16, lens_corr.d32);
         }
     }
 

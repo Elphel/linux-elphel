@@ -154,6 +154,9 @@
  */
 #define  FRAMEPARS_DRIVER_DESCRIPTION "Elphel (R) Model 393 Frame Parameters device driver"
 
+static int hardware_initialized = 0;
+
+
 /* 393: sFrameParsAll is an array of 4per-port structures */
 static struct framepars_all_t sFrameParsAll[SENSOR_PORTS] __attribute__ ((aligned(PAGE_SIZE)));  ///< Sensor Parameters, currently 16 pages all and 2048 pages some, static struct
 unsigned int frameParsInitialized[SENSOR_PORTS];                                                     // set to 0 at startup, 1 after initialization that is triggered by setParsAtomic()
@@ -253,12 +256,23 @@ int        framepars_mmap(struct file *file, struct vm_area_struct *vma);
 /**
  * @brief Reset hardware sequencers (i2c, command) and initialize framepars structure
  */
-void initSequencers(int sensor_port)
+int initSequencers(int sensor_port)
 {
     FLAGS_IBH
+    if (!is_fpga_programmed){
+        dev_err(g_devfp_ptr,"*** Attempted to access hardware without bitsteram ***\n");
+        return - ENODEV;
+    }
+    if (!hardware_initialized) {
+        dev_dbg(g_devfp_ptr,"Configuring compressor DMA channels\n");
+        dev_info(g_devfp_ptr,"Configuring compressor DMA channels\n");
+        init_compressor_dma(0xf, // all channels (TODO: NC393 - select channels in DT or use existing for sesnors?
+                              0); // not to interfere with python setting the same
+                //            1); // reset all channels (do only once, resetting running DMA may confuse AXI)
+        hardware_initialized = 1;
 
-	dev_dbg(g_devfp_ptr,"%s \n",__func__);
-	dev_dbg(g_devfp_ptr,"%s : port= %d,initSequencers:resetting both sequencers (not really?)\n",__func__, sensor_port);
+    }
+	dev_dbg(g_devfp_ptr,"port= %d,initSequencers:resetting both sequencers (not really?)\n", sensor_port);
 #ifdef TEST_DISABLE_CODE
 	local_irq_save(flags);
 	X3X3_SEQ_RESET;
@@ -266,6 +280,7 @@ void initSequencers(int sensor_port)
 	local_irq_restore(flags);
 #endif
     initFramePars(sensor_port);
+    return 0;
 }
 
 /** Reset absolute frame number \b thisFrameNumber to \b frame16, optionally reset/restart sequencer */
@@ -909,7 +924,7 @@ void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16,
 #endif
 }
 #else
-void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16, int maxahead)
+int processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16, int maxahead)
 {
     FLAGS_IBH
     frame16 &= PARS_FRAMES_MASK;
@@ -922,7 +937,7 @@ void processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16,
     dev_dbg(g_devfp_ptr,"port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     if (!sensorproc){
         dev_err(g_devfp_ptr,"%s port=%d frame16=%d sensorproc==NULL !!!! \n",  __func__, sensor_port,  frame16);
-        return;
+        return -ENODEV;
     }
     LOCK_IBH(framepars_locks[sensor_port]);
     _processPars(sensor_port, sensorproc, frame16, maxahead);
@@ -1013,7 +1028,7 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
                                                       ///< @return 0 - OK, -ERR_FRAMEPARS_TOOEARLY, -ERR_FRAMEPARS_TOOLATE
 {
     FLAGS_IBH
-    int npar, nframe;
+    int npar, nframe, res;
 	unsigned long val, bmask, bmask32;
 	int index, bindex;
 	struct framepars_t *framepars = aframepars[sensor_port];
@@ -1029,7 +1044,8 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
     //int klog393_ts(const char * str);
 
 	if (!frameParsInitialized[sensor_port]) {
-		initSequencers(sensor_port); // Will call  initFramePars(); and initialize functions
+		res = initSequencers(sensor_port); // Will call  initFramePars(); and initialize functions
+		if (res <0) return res;
 	}
 	LOCK_IBH(framepars_locks[sensor_port]);
 	PROFILE_NOW(5); // Was 6, but no 7 in NC393
@@ -1465,6 +1481,7 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 	struct framepars_pd * privData = (struct framepars_pd*) file -> private_data;
 	int sensor_port = privData -> minor - DEV393_MINOR(DEV393_FRAMEPARS0);
     sec_usec_t sec_usec;
+    int res;
 //	struct framepars_t *framepars = aframepars[sensor_port];
     dev_dbg(g_devfp_ptr, "(framepars_lseek)  offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port);
     MDP(DBGB_FFOP, sensor_port, "(framepars_lseek)  offset=0x%x, orig=0x%x\n", (int)offset, (int)orig)
@@ -1498,7 +1515,8 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 				switch (offset) {
 				case LSEEK_GET_FPGA_TIME:
 					//X313_GET_FPGA_TIME( GLOBALPARS(G_SECONDS), GLOBALPARS(G_MICROSECONDS) );
-                    get_fpga_rtc(&sec_usec);
+                    if (!get_fpga_rtc(&sec_usec))
+                        return - ENODEV;
                     GLOBALPARS(sensor_port,G_SECONDS) =      sec_usec.sec;
                     GLOBALPARS(sensor_port,G_MICROSECONDS) = sec_usec.usec;
                     dev_dbg(g_devfp_ptr, "LSEEK_GET_FPGA_TIME: sec=%ld, usec=%ld\n", sec_usec.sec, sec_usec.usec);
@@ -1507,13 +1525,17 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 					//X313_SET_FPGA_TIME( GLOBALPARS(G_SECONDS) , GLOBALPARS(G_MICROSECONDS) );
                     sec_usec.sec =  GLOBALPARS(sensor_port,G_SECONDS);
                     sec_usec.usec = GLOBALPARS(sensor_port,G_MICROSECONDS);
-                    set_fpga_rtc(sec_usec);
+                    res = set_fpga_rtc(sec_usec);
+                    if (res <0){
+                        return - ENODEV;
+                    }
                     dev_dbg(g_devfp_ptr, "LSEEK_SET_FPGA_TIME: sec=%ld, usec=%ld\n", sec_usec.sec, sec_usec.usec);
 					break;
 				case LSEEK_FRAMEPARS_INIT:      // reset hardware sequencers, init framepars structure
 				    dev_dbg(g_devfp_ptr, "LSEEK_FRAMEPARS_INIT\n");
 					initGlobalPars(sensor_port);       // reset all global parameters but the first 32
-					initSequencers(sensor_port);
+					res = initSequencers(sensor_port);
+					if (res <0) return res;
 					break;
 				case LSEEK_FRAME_RESET: // reset absolute frame number to avoid integer frame number overflow
                     dev_dbg(g_devfp_ptr, "LSEEK_FRAME_RESET\n");
@@ -1522,7 +1544,8 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 				case LSEEK_SENSORPROC:                  // process modified parameters in frame 0 (to start sensor detection)
 				    dev_dbg(g_devfp_ptr, "LSEEK_SENSORPROC: aframepars[%d][0].functions=0x%08lx\n",
 				            sensor_port, aframepars[sensor_port][0].functions);
-					processPars(sensor_port, &asensorproc[sensor_port], 0, PARS_FRAMES);  //frame0, all 8 frames (maxAhead==8)
+					res = processPars(sensor_port, &asensorproc[sensor_port], 0, PARS_FRAMES);  //frame0, all 8 frames (maxAhead==8)
+					if (res <0) return res;
 					break;
 				case LSEEK_DMA_INIT:                    // initialize ETRAX DMA (normally done in sensor_common.c at driver init
 				    dev_dbg(g_devfp_ptr, "LSEEK_DMA_INIT\n");
@@ -1620,11 +1643,14 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
                         //X313_SET_FPGA_TIME( GLOBALPARS(G_SECONDS) , GLOBALPARS(G_MICROSECONDS) );
 					    sec_usec.sec =  GLOBALPARS(sensor_port,G_SECONDS);
                         sec_usec.usec = GLOBALPARS(sensor_port,G_MICROSECONDS);
-                        set_fpga_rtc(sec_usec);
+                        result = set_fpga_rtc(sec_usec);
+                        if (result <0)
+                            return result;
 						break;
 					case FRAMEPARS_GETFPGATIME: //ignore value, set frame 0 G_SECONDS, G_MICROSECONDS to FPGA registers
 						//X313_GET_FPGA_TIME( GLOBALPARS(G_SECONDS) , GLOBALPARS(G_MICROSECONDS) );
-					    get_fpga_rtc(&sec_usec);
+					    if (!get_fpga_rtc(&sec_usec))
+					        return - ENODEV;
 					    GLOBALPARS(sensor_port,G_SECONDS) =      sec_usec.sec;
                         GLOBALPARS(sensor_port,G_MICROSECONDS) = sec_usec.usec;
 						break;
@@ -1722,7 +1748,8 @@ static ssize_t store_this_frame(struct device *dev, struct device_attribute *att
 static ssize_t show_fpga_time(struct device *dev, struct device_attribute *attr, char *buf)
 {
     sec_usec_t sec_usec;
-    get_fpga_rtc(&sec_usec);
+    if (!get_fpga_rtc(&sec_usec))
+        return - ENODEV;
     return sprintf(buf,"%lu.%lu\n", sec_usec.sec, sec_usec.usec);
 }
 
@@ -1736,7 +1763,8 @@ static ssize_t store_fpga_time(struct device *dev, struct device_attribute *attr
         sscanf(cp,"%lu",&sec_usec.usec);
         for (i=strlen(cp); i<6;i++)
             sec_usec.usec *=10;
-        set_fpga_rtc(sec_usec);
+        i = set_fpga_rtc(sec_usec);
+        if (i<0) return i;
     } else {
         return - EINVAL;
     }
@@ -1848,6 +1876,8 @@ int framepars_init(struct platform_device *pdev)
 	elphel393_framepars_sysfs_register(pdev);
     dev_info(dev, DEV393_NAME(DEV393_FRAMEPARS0)": registered sysfs\n");
     g_devfp_ptr = dev;
+    hardware_initialized = 0;
+
 	return 0;
 }
 

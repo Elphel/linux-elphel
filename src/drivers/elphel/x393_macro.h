@@ -20,6 +20,7 @@
 #define _X393_MACRO
 
 #include <uapi/elphel/x393_devices.h>
+#include "circbuf.h" // for circbuf_priv (or disable X393_BUFSUB_CHN, X393_BUFADD_CHN if _CIRCBUF_H is not defined?
 
 
 /** @brief Resolution of current/OEF pointer in bits */
@@ -55,9 +56,15 @@
 
 #define X313_LENGTH_MASK      0xff000000
 /** @brief Subtract two offsets considering that the resulting offset can roll over the start of circular buffer */
-#define X393_BUFFSUB(x, y) (((x) >= (y)) ? ((x)-(y)) : ((x) + (CCAM_DMA_SIZE -(y))))
-/** @brief Add two offsets considering that the resulting offset car roll over the end of circular buffer */
-#define X393_BUFFADD(x, y) ((((x) + (y)) <= CCAM_DMA_SIZE) ? ((x) + (y)) : ((x) - (CCAM_DMA_SIZE -(y))))
+//#define X393__BUFFSUB(x, y) (((x) >= (y)) ? ((x)-(y)) : ((x) + (CCAM__DMA_SIZE -(y))))
+#define X393_BUFFSUB_CHN(x, y, chn) (((x) >= (y)) ? ((x)-(y)) : ((x) + (circbuf_priv_ptr[chn].buf_size -(y))))
+#define X393_BUFFSUB32(x, y, chn) (((x) >= (y)) ? ((x)-(y)) : ((x) + (circbuf_priv_ptr[chn].buf_size32 -(y))))
+
+
+/** @brief Add two offsets considering that the resulting offset can roll over the end of circular buffer */
+//#define X393__BUFFADD(x, y) ((((x) + (y)) <= CCAM__DMA_SIZE) ? ((x) + (y)) : ((x) - (CCAM__DMA_SIZE -(y))))
+#define X393_BUFFADD_CHN(x, y, chn) ((((x) + (y)) <= circbuf_priv_ptr[chn].buf_size) ? ((x) + (y)) : ((x) - (circbuf_priv_ptr[chn].buf_size -(y))))
+#define X393_BUFFADD32(x, y, chn)   ((((x) + (y)) <= circbuf_priv_ptr[chn].buf_size32) ? ((x) + (y)) : ((x) - (circbuf_priv_ptr[chn].buf_size32 -(y))))
 
 #define TABLE_TYPE_QUANT     0
 #define TABLE_TYPE_CORING    1

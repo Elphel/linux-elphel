@@ -581,7 +581,8 @@ static  unsigned short mt9t001_inits[]=
 /** Register initial writes for MT9P006 */
 static  unsigned short mt9p001_inits[]= 
 {
-        P_MT9X001_OUTCTRL,  0x2, // set slowest output signals (clock and non-clock) to reduce EMI (for FCC part 15)
+//        P_MT9X001_OUTCTRL,  0x2, // set slowest output signals (clock and non-clock) to reduce EMI (for FCC part 15)
+        P_MT9X001_OUTCTRL,  0x1f82, // NC393: Restoring default, will adjust later
         P_MT9X001_7F     ,  0x0  // Should be written 0 to prevent blue "blooming" columns
 };
 /** Specifying sensor registers to be controlled individually in multi-sensor applications, MT9M001 */
