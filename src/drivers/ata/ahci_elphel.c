@@ -71,6 +71,8 @@ static void finish_cmd(struct device *dev, struct elphel_ahci_priv *dpriv);
 static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port);
 //static void start_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port);
 static inline size_t get_size_from(const struct fvec *vects, int index, size_t offset, int all);
+static inline void vectmov(struct fvec *vec, size_t len);
+static inline void vectsplit(struct fvec *vect, struct fvec *parts, size_t *n_elem);
 
 static ssize_t set_load_flag(struct device *dev, struct device_attribute *attr,
 		const char *buff, size_t buff_sz)
@@ -141,8 +143,8 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		writel(host_irq_stat, hpriv->mmio + HOST_IRQ_STAT);
 		handled = IRQ_HANDLED;
 
-//		if (process_cmd(host->dev, dpriv, host->ports[0]) == 0)
-//			finish_cmd(host->dev, dpriv);
+		if (process_cmd(host->dev, dpriv, host->ports[0]) == 0)
+			finish_cmd(host->dev, dpriv);
 	} else {
 		/* pass handling to AHCI level */
 		handled = ahci_single_irq_intr(irq, dev_instance);
@@ -256,7 +258,6 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	ret = init_buffers(dev, &dpriv->fbuffs);
 	if (ret != 0)
 		return ret;
-//	sg_init_table(dpriv->sgl, MAX_DATA_CHUNKS);
 	init_vectors(dpriv);
 
 	match = of_match_device(ahci_elphel_of_match, &pdev->dev);
@@ -640,7 +641,7 @@ static int map_vectors(struct elphel_ahci_priv *dpriv)
 			vect = chunks[i];
 		}
 		if (total_sz > dpriv->max_data_sz) {
-			// truncate current buffer and finish mapping
+			/* truncate current buffer and finish mapping */
 			tail = total_sz - dpriv->max_data_sz;
 			vect.iov_len -= tail;
 			dpriv->curr_data_chunk = i;
@@ -652,7 +653,20 @@ static int map_vectors(struct elphel_ahci_priv *dpriv)
 			finish = 1;
 		}
 		if (vect.iov_len != 0) {
-			dpriv->sgl[index++] = vect;
+			if (vect.iov_len < MAX_PRDT_LEN) {
+				dpriv->sgl[index++] = vect;
+			} else {
+				/* current vector is too long and can not be mapped to a single PRDT entry, split it */
+				vectsplit(&vect, dpriv->sgl, &index);
+				if (vect.iov_len < MAX_PRDT_LEN) {
+					dpriv->sgl[index++] = vect;
+				} else {
+					/* free slots in PRDT table have ended */
+					dpriv->curr_data_chunk = i;
+					dpriv->curr_data_offset = (unsigned char *)vect.iov_base - (unsigned char *)chunks[i].iov_base;
+					finish = 1;
+				}
+			}
 		}
 		if (finish)
 			break;
@@ -666,6 +680,21 @@ static int map_vectors(struct elphel_ahci_priv *dpriv)
 	return index;
 }
 
+static inline void vectsplit(struct fvec *vect, struct fvec *parts, size_t *n_elem)
+{
+	size_t len;
+	struct fvec split;
+
+	while (vect->iov_len > MAX_PRDT_LEN && *n_elem < MAX_SGL_LEN) {
+		len = MAX_PRDT_LEN - MAX_PRDT_LEN % PHY_BLOCK_SIZE;
+		split.iov_base = vect->iov_base;
+		split.iov_dma = vect->iov_dma;
+		split.iov_len = len;
+		vectmov(vect, len);
+		parts[*n_elem] = split;
+		*n_elem = *n_elem + 1;
+	}
+}
 static inline void vectcpy(struct fvec *dest, void *src, size_t len)
 {
 	unsigned char *d = (unsigned char *)dest->iov_base;
@@ -1236,7 +1265,6 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 
 	if ((dpriv->flags & PROC_CMD) || dont_process) {
 		// we are not ready yet
-		printk(KERN_DEBUG ">>> not ready: flags = %u\n", dpriv->flags);
 		return -EAGAIN;
 	}
 
@@ -1315,24 +1343,24 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
 		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, dpriv->data_chunks[i].iov_len);
 	}
-	if (check_chunks(dpriv->data_chunks) != 0) {
-		dont_process = 1;
-		return -EINVAL;
-	}
+//	if (check_chunks(dpriv->data_chunks) != 0) {
+//		dont_process = 1;
+//		return -EINVAL;
+//	}
 
 	process_cmd(dev, dpriv, port);
-	while (dpriv->flags & PROC_CMD) {
-#ifndef DEBUG_DONT_WRITE
-		while (dpriv->flags & IRQ_SIMPLE) {
-			printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
-			msleep_interruptible(1);
-		}
-#endif
-		printk(KERN_DEBUG ">>> proceeding to next cmd chunk\n");
-		sg_elems = process_cmd(dev, dpriv, port);
-		if (sg_elems == 0)
-			finish_cmd(dev, dpriv);
-	}
+//	while (dpriv->flags & PROC_CMD) {
+//#ifndef DEBUG_DONT_WRITE
+//		while (dpriv->flags & IRQ_SIMPLE) {
+//			printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
+//			msleep_interruptible(1);
+//		}
+//#endif
+//		printk(KERN_DEBUG ">>> proceeding to next cmd chunk\n");
+//		sg_elems = process_cmd(dev, dpriv, port);
+//		if (sg_elems == 0)
+//			finish_cmd(dev, dpriv);
+//	}
 //	if (chunks[CHUNK_DATA_0].iov_len != 0)
 //		dma_unmap_single(dev, chunks[CHUNK_DATA_0].iov_dma, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
 //	if (chunks[CHUNK_DATA_1].iov_len != 0)

@@ -34,6 +34,8 @@
 #define CMD_FIS_LEN               5
 /** This is used to get 28-bit address from 64-bit value */
 #define ADDR_MASK_28_BIT          ((u64)0xfffffff)
+/** A maximum of length of 4MB may exist for PRDT entry */
+#define MAX_PRDT_LEN              0x3fffff
 /** An array or JPEG frame chunks contains pointers to JPEG leading marker,
  * JPEG header, Exif data if present, stuffing bytes chunk which aligns
  * the frame size to disk sector boundary, JPEG data which
@@ -46,6 +48,9 @@
 #define DEFAULT_PORT_NUM          0
 /** Align buffers length to this amount of bytes */
 #define ALIGNMENT_SIZE            32
+/** Maximum number of entries in PRDT table. HW max is 64k.
+ * Set this value the same as AHCI_MAX_SG in ahci.h */
+#define MAX_SGL_LEN               168
 
 /** This structure holds raw device buffer pointers */
 struct drv_pointers {
@@ -102,7 +107,7 @@ struct elphel_ahci_priv {
 	struct drv_pointers lba_ptr;
 	struct frame_buffers fbuffs;
 	struct fvec data_chunks[MAX_DATA_CHUNKS];
-	struct fvec sgl[MAX_DATA_CHUNKS];
+	struct fvec sgl[MAX_SGL_LEN];
 	int sg_elems;
 	int curr_data_chunk;                         ///< index of a data chunk used during last transaction
 	size_t curr_data_offset;                     ///< offset of the last byte in a data chunk pointed to by @e curr_data_chunk
