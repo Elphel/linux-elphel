@@ -68,6 +68,7 @@ static void init_vectors(struct elphel_ahci_priv *dpriv);
 static void deinit_buffers(struct device *dev, struct frame_buffers *buffs);
 static inline struct elphel_ahci_priv *dev_get_dpriv(struct device *dev);
 static void finish_cmd(struct device *dev, struct elphel_ahci_priv *dpriv);
+static void finish_rec(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port);
 static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port);
 //static void start_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port);
 static inline size_t get_size_from(const struct fvec *vects, int index, size_t offset, int all);
@@ -135,7 +136,7 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		dpriv->flags &= ~IRQ_SIMPLE;
 		irq_stat = readl(port_mmio + PORT_IRQ_STAT);
 
-		dev_dbg(host->dev, "irq_stat = 0x%x, host irq_stat = 0x%x\n", irq_stat, host_irq_stat);
+		dev_dbg(host->dev, "irq_stat = 0x%x, host irq_stat = 0x%x, time stamp: %u\n", irq_stat, host_irq_stat, get_rtc_usec());
 
 		writel(irq_stat, port_mmio + PORT_IRQ_STAT);
 //		writel(0xffffffff, port_mmio + PORT_IRQ_STAT);
@@ -143,8 +144,13 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		writel(host_irq_stat, hpriv->mmio + HOST_IRQ_STAT);
 		handled = IRQ_HANDLED;
 
-		if (process_cmd(host->dev, dpriv, host->ports[0]) == 0)
+		if (process_cmd(host->dev, dpriv, host->ports[0]) == 0) {
 			finish_cmd(host->dev, dpriv);
+			if (dpriv->flags & DELAYED_FINISH) {
+				dpriv->flags &= ~DELAYED_FINISH;
+				finish_rec(host->dev, dpriv, port);
+			}
+		}
 	} else {
 		/* pass handling to AHCI level */
 		handled = ahci_single_irq_intr(irq, dev_instance);
@@ -1175,6 +1181,7 @@ static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 
 		dpriv->lba_ptr.wr_count = get_blocks_num(dpriv->sgl, dpriv->sg_elems);
 		dma_sync_single_for_device(dev, cbuff->iov_dma, cbuff->iov_len, DMA_TO_DEVICE);
+		printk(KERN_DEBUG ">>> time before issuing command: %u\n", get_rtc_usec());
 		elphel_cmd_issue(port, dpriv->lba_ptr.lba_write, dpriv->lba_ptr.wr_count, dpriv->sgl, dpriv->sg_elems, dpriv->curr_cmd);
 	}
 
@@ -1263,23 +1270,28 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	size_t blocks_num;
 	static int dont_process = 0;
 
-	if ((dpriv->flags & PROC_CMD) || dont_process) {
-		// we are not ready yet
-		return -EAGAIN;
-	}
-
 	if (buff_sz != sizeof(struct frame_data)) {
 		dev_err(dev, "the size of the data buffer is incorrect, should be equal to sizeof(struct frame_data)\n");
 		return -EINVAL;
 	}
 	memcpy(&fdata, buff, sizeof(struct frame_data));
+
 	if (fdata.cmd == DRV_CMD_FINISH) {
-		finish_rec(dev, dpriv, port);
+		if (!(dpriv->flags & PROC_CMD)) {
+			finish_rec(dev, dpriv, port);
+		} else {
+			dpriv->flags |= DELAYED_FINISH;
+		}
 		return buff_sz;
 	}
 
+	if ((dpriv->flags & PROC_CMD) || dont_process) {
+		// we are not ready yet
+		return -EAGAIN;
+	}
+
 	/* debug code follows */
-	printk(KERN_DEBUG ">>> data pointers received:\n");
+	printk(KERN_DEBUG ">>> data pointers received, time stamp: %u\n", get_rtc_usec());
 	printk(KERN_DEBUG ">>> sensor port: %u\n", fdata.sensor_port);
 	printk(KERN_DEBUG ">>> cirbuf ptr: %d, cirbuf data len: %d\n", fdata.cirbuf_ptr, fdata.jpeg_len);
 	printk(KERN_DEBUG ">>> meta_index: %d\n", fdata.meta_index);

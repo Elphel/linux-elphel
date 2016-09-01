@@ -30,6 +30,9 @@
 #define PROC_CMD                  (1 << 1)
 /** Flag indicating that the remaining chunk of data will be recorder */
 #define LAST_BLOCK                (1 << 2)
+/** Flag indicating that recording should be stopped right after the last chunk of data
+ * is written */
+#define DELAYED_FINISH            (1 << 3)
 /** The length of a command FIS in double words */
 #define CMD_FIS_LEN               5
 /** This is used to get 28-bit address from 64-bit value */
