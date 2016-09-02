@@ -258,6 +258,8 @@ int        framepars_mmap(struct file *file, struct vm_area_struct *vma);
  */
 int initSequencers(int sensor_port)
 {
+//    x393_rtc_sec_t  rtc_sec =  {.d32=0};
+    sec_usec_t sec_usec;
     FLAGS_IBH
     if (!is_fpga_programmed){
         dev_err(g_devfp_ptr,"*** Attempted to access hardware without bitsteram ***\n");
@@ -268,9 +270,12 @@ int initSequencers(int sensor_port)
         dev_info(g_devfp_ptr,"Configuring compressor DMA channels\n");
         init_compressor_dma(0xf, // all channels (TODO: NC393 - select channels in DT or use existing for sesnors?
                               0); // not to interfere with python setting the same
-                //            1); // reset all channels (do only once, resetting running DMA may confuse AXI)
+        // Start RTC by writing 0 to seconds if it was not already set, otherwise preserve current time
+        get_fpga_rtc(&sec_usec);
+        set_fpga_rtc( sec_usec);
+        // Start RTC by writing 0 to seconds
+//        set_x393_rtc_sec_set (rtc_sec); // started RTC, correct time may be set later or before
         hardware_initialized = 1;
-
     }
 	dev_dbg(g_devfp_ptr,"port= %d,initSequencers:resetting both sequencers (not really?)\n", sensor_port);
 #ifdef TEST_DISABLE_CODE
@@ -412,6 +417,14 @@ int initMultiPars(int sensor_port)
 	return GLOBALPARS(sensor_port, G_MULTI_NUM);
 }
 
+/** Reads parameters for the specified frame number, OK to use in compressor ISR using last compressed frame */
+inline unsigned long get_imageParamsFrame(int sensor_port, ///< sensor port (0..3)
+                                          int n,           ///< parameter index (should be 128..143)
+                                          int frame)       ///< absolute frame number
+{
+    return aframepars[sensor_port][frame & PARS_FRAMES_MASK].pars[n];
+}
+
 /**
  * @brief reads parameters from the current frame (matching hardware index)
  * @param sensor_port sensor port number (0..3)
@@ -434,7 +447,7 @@ inline unsigned long get_imageParamsPrev(int sensor_port, int n)
 	return aframepars[sensor_port][(thisFrameNumber(sensor_port) - 1) & PARS_FRAMES_MASK].pars[n];
 }
 
-/** Reads past parameters (small subset of all) fro absolute frame number */
+/** Reads past parameters (small subset of all) for absolute frame number */
 inline unsigned long get_imageParamsPast(int sensor_port, ///< sensor port (0..3)
                                          int n,           ///< parameter index (should be 128..143)
                                          int frame)       ///< absolute frame number
@@ -508,45 +521,54 @@ void updateInterFrame(int sensor_port,      ///< Sensor port number (0..3)
 //    int index32;
 //    unsigned long bmask, bmask32;
     int pastParsIndex;
-//    struct framepars_t *framepars = aframepars[sensor_port];
-//    u32 compressed_frame; ///< absolute number of compressed frame , matching frame16
-//    compressed_frame  = (thisFrameNumber(sensor_port)  & ~PARS_FRAMES_MASK) | (frame16 & PARS_FRAMES_MASK);
-//    if (compressed_frame > thisFrameNumber(sensor_port)) // compressor frame number can never be higher than sesnor one
-//        compressed_frame -= PARS_FRAMES;
+    int compressedIndex = compressed_frame & PARS_FRAMES_MASK; // last compressed frame mod 16
+    struct framepars_t *framepars = aframepars[sensor_port];
+
     thisCompressorFrameNumber(sensor_port) = compressed_frame;
-//  pastParsIndex = (thisFrameNumber(sensor_port) - 1) & PASTPARS_SAVE_ENTRIES_MASK; // copying from what was past frame that might include histogram data
     pastParsIndex = compressed_frame & PASTPARS_SAVE_ENTRIES_MASK; // copying from what was past frame that might include histogram data
-//    memcpy(interframe_pars,      &framepars[findex_this].pars[P_GTAB_R], 24);           // will leave some gaps, but copy [P_ACTUAL_WIDTH]
+// After Frame sync interrupt processed, oldest valid will be is sensor frame number -2, compressor lag is 1 frame (0..2), so read not past-pars is OK
+#ifdef USE_PASTPARS_IN_CMPRSIRQ
     memcpy(interframe_pars,      &apastpars[sensor_port][pastParsIndex].past_pars[P_GTAB_R-PARS_SAVE_FROM], 24); // will leave some gaps, but copy [P_ACTUAL_WIDTH]
     interframe_pars->height =     apastpars[sensor_port][pastParsIndex].past_pars[P_ACTUAL_HEIGHT-PARS_SAVE_FROM];        // NOTE: P_ACTUAL_WIDTH,P_QUALITY copied with memcpy
     interframe_pars->color =      apastpars[sensor_port][pastParsIndex].past_pars[P_COLOR-PARS_SAVE_FROM];
     interframe_pars->byrshift =   apastpars[sensor_port][pastParsIndex].past_pars[P_COMPMOD_BYRSH-PARS_SAVE_FROM];
     interframe_pars->quality2 |= (apastpars[sensor_port][pastParsIndex].past_pars[P_PORTRAIT-PARS_SAVE_FROM] & 1) << 7;
+
+#else
+    memcpy (interframe_pars,  &framepars[compressedIndex].pars[P_GTAB_R], 24); /// will leave some gaps, but copy [P_ACTUAL_WIDTH]
+    interframe_pars->height=  framepars[compressedIndex].pars[P_ACTUAL_HEIGHT]; /// NOTE: P_ACTUAL_WIDTH,P_QUALITY copied with memcpy
+    interframe_pars->color=   framepars[compressedIndex].pars[P_COLOR];
+    interframe_pars->byrshift=framepars[compressedIndex].pars[P_COMPMOD_BYRSH];
+    interframe_pars->quality2 |= (framepars[compressedIndex].pars[P_PORTRAIT] & 1) << 7;
+#endif
+
+
 }
 
 //++++++++++++++++++++++++++++++++++++++++++
 /** Called from ISR (sensor frame interrupt)- advance thisFrameNumber to match hardware frame16, copy parameters as needed.
- * before: (thisFrameNumber mod8      pointed to current (for the software) parameters frame (now behind by at least 1, maybe 2)
- *         (thisFrameNumber-1) mod 8 - oldest with parameters preserved, also containes histograms results (+image timestamp, size?)
- *                                    subset of that frame data is copied to pastpars
- *         (thisFrameNumber-2) mod 8 - farthest in the future frame
+ * before: (thisFrameNumber mod 16      pointed to current (for the software) parameters frame (now behind by at least 1, maybe 2)
+ *         (thisFrameNumber-1) mod 16 - oldest with parameters preserved, also containes histograms results (+image timestamp, size?)
+ *                                        subset of that frame data is copied to pastpars
+ *         (thisFrameNumber-2) mod 16- farthest in the future frame
  * after:   thisFrameNumber matches hardware pointer
- * @param sensor_port sensor port number (0..3)
- * @param interframe_pars pointer to structure (between frames in the frame buffer) to save a pointer to past parameters
- *                   pass NULL if compressor was off (or no time to copy?)
  */
 
 //TODO: Remove interframe, handle it with compressor interrupts (above)
-void updateFramePars(int sensor_port, int frame16)
+/// Among other things copies subset of parameters to pastpars
+
+void updateFramePars(int sensor_port, ///< sensor port number (0..3)
+                     int frame16)     ///< Sensor sequencer (hardware) frame number
 {
 	int findex_this, findex_prev, findex_future, findex_next;
 	int index, index32;
 	unsigned long bmask, bmask32;
 	int pastParsIndex;
 	struct framepars_t *framepars = aframepars[sensor_port];
-// If interrupt was from compression done (circbuf advanced, interframe_pars!=null), the frame16 (hardware) maybe not yet advanced
-// We can fix it here, but it will not work if some frames were not processed in time
 #ifdef NC353
+	// Old comments from NC353
+	// If interrupt was from compression done (circbuf advanced, interframe_pars!=null), the frame16 (hardware) maybe not yet advanced
+	// We can fix it here, but it will not work if some frames were not processed in time
 	if ((interframe_pars != NULL) && (((frame16 ^ thisFrameNumber(sensor_port)) & PARS_FRAMES_MASK) == 0)) {
 		findex_this =  frame16  & PARS_FRAMES_MASK;
 
@@ -556,25 +578,35 @@ void updateFramePars(int sensor_port, int frame16)
 	}
 #endif
     dev_dbg(g_devfp_ptr,"%s : port= %d, frame16=%d\n",__func__, sensor_port, frame16);
-	while ((frame16 ^ thisFrameNumber(sensor_port)) & PARS_FRAMES_MASK) {
+	while ((frame16 ^ thisFrameNumber(sensor_port)) & PARS_FRAMES_MASK) { // While hardware pointer is still ahead of the software maintained one
 	    dev_dbg(g_devfp_ptr,"%s : port= %d, frame16=%d, thisFrameNumber(sensor_port)\n",__func__, sensor_port, frame16, (int)thisFrameNumber(sensor_port));
 // before update:
-//   framepars[findex_prev]  holds previous frame data (oldest availble)
+//   framepars[findex_prev]  holds previous frame data (oldest availble - latest?)
 //   framepars[findex_future] holds farthest in the future one
 // after update:
 //   framepars[findex_prev]  holds farthest in the future one ("this" will become "prev")
-		findex_this =  thisFrameNumber(sensor_port)  & PARS_FRAMES_MASK;
-		findex_prev =  (findex_this - 1)  & PARS_FRAMES_MASK;
-		findex_future = (findex_this - 2)  & PARS_FRAMES_MASK; // farthest in the future
-		findex_next =  (findex_this + 1)  & PARS_FRAMES_MASK;
+		findex_this =  thisFrameNumber(sensor_port)  & PARS_FRAMES_MASK; // Nothing is yet done for this frame (mod 16)
+		findex_prev =  (findex_this - 1)  & PARS_FRAMES_MASK;            // Holds previous frame data (mod 16)  (latest available)
+		findex_future = (findex_this - 2)  & PARS_FRAMES_MASK;           // farthest in the future (mod 16)  (not to overwrite latest
+		findex_next =  (findex_this + 1)  & PARS_FRAMES_MASK;            // Just next frame (mod 16) after the current
 // copy subset of the parameters to the long buffer of past parameters. TODO: fill Exif also here?
 // TODO:DONE: Change - make pastpars be save for all frames, not just compressed ones
 // With PASTPARS_SAVE_ENTRIES being multiple of PARS_FRAMES - make it possible to calculate past_index from thisFrameNumber
 //    pastParsIndex= thisFrameNumber & PASTPARS_SAVE_ENTRIES_MASK;
 		pastParsIndex = (thisFrameNumber(sensor_port) - 1) & PASTPARS_SAVE_ENTRIES_MASK; // copying from what was past frame that might include histogram data
 //    memcpy (pastpars[pastParsIndex].past_pars, &framepars[findex_prev].pars[PARS_SAVE_FROM], sizeof(pastpars[0].past_pars));
-		memcpy(apastpars[sensor_port][pastParsIndex].past_pars, &framepars[findex_prev].pars[PARS_SAVE_FROM], PARS_SAVE_COPY * sizeof(int));
-// Now update interframe_pars (interframe area) used to create JPEG headers. Interframe area survives exactly as long as the frames themselves (not like pastpars)
+//		memcpy(apastpars[sensor_port][pastParsIndex].past_pars, &framepars[findex_prev].pars[PARS_SAVE_FROM], PARS_SAVE_COPY * sizeof(int));
+        memcpy(apastpars[sensor_port][pastParsIndex].past_pars, &framepars[findex_prev].pars[PARS_SAVE_FROM], PARS_SAVE_COPY << 2);
+
+		// Now update interframe_pars (interframe area) used to create JPEG headers. Interframe area survives exactly as long as the frames themselves (not like pastpars)
+
+#if 0
+		struct framepars_past_t {
+		    unsigned long past_pars[PARS_SAVE_NUM]; ///< Array of frame parameters preserved for the future
+		};
+
+#endif
+
 #ifdef NC353
 		if (interframe_pars) {                                                                  // frame was compressed, not just vsync
 //TODO: get rid of *_prev, use it for the future.

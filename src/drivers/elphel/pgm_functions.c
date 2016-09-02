@@ -625,6 +625,7 @@ int pgm_initsensor     (int sensor_port,               ///< sensor port number (
   x393_lens_height_m1_t   vign_hight1 =      {.d32=0};
   x393_lens_height_m1_t   vign_hight2 =      {.d32=0};
   x393_sens_mode_t        sens_mode =        {.d32=0};
+  x393_camsync_mode_t     camsync_mode =     {.d32=0};
 
   dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
   MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
@@ -681,7 +682,61 @@ int pgm_initsensor     (int sensor_port,               ///< sensor port number (
   MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",
           sensor_port, frame16, sens_mode.d32)
 
+/*
+        self.set_camsync_period  (0) # reset circuitry
+        self.X393_gpio.set_gpio_ports (port_a = True)
+        self.set_camsync_mode (
+                               en = True,
+                               en_snd = True,
+                               en_ts_external = external_timestamp,
+                               triggered_mode = trigger_mode,
+                               master_chn =     0,
+                               chn_en = sensor_mask)
 
+  void                         x393_camsync_mode                   (x393_camsync_mode_t d);                         // CAMSYNC mode
+
+// CAMSYNC mode
+
+typedef union {
+    struct {
+          u32              en: 1; // [    0] (1) Enable CAMSYNC module
+          u32          en_set: 1; // [    1] (1) Set 'en' bit
+          u32          en_snd: 1; // [    2] (1) Enable sending timestamps (valid with 'en_snd_set')
+          u32      en_snd_set: 1; // [    3] (0) Set 'en_snd'
+          u32             ext: 1; // [    4] (1) Use external (received) timestamps, if available. O - use local timestamps
+          u32         ext_set: 1; // [    5] (0) Set 'ext'
+          u32            trig: 1; // [    6] (1) Sensor triggered mode (0 - free running sensor)
+          u32        trig_set: 1; // [    7] (0) Set 'trig'
+          u32      master_chn: 2; // [ 9: 8] (0) master sensor channel (zero delay in internal trigger mode, delay used for flash output)
+          u32  master_chn_set: 1; // [   10] (0) Set 'master_chn'
+          u32         ts_chns: 4; // [14:11] (1) Channels to generate timestmp messages (bit mask)
+          u32     ts_chns_set: 4; // [18:15] (0) Sets for 'ts_chns' (each bit controls corresponding 'ts_chns' bit)
+          u32                :13;
+    };
+    struct {
+          u32             d32:32; // [31: 0] (0) cast to u32
+    };
+} x393_camsync_mode_t;
+           self.set_camsync_mode (
+                               en = True,
+                               en_snd = True,
+                               en_ts_external = False,
+                               triggered_mode = False,
+                               master_chn =     0,
+                               chn_en = sensor_mask)
+
+ */
+
+  camsync_mode.en =       1;
+  camsync_mode.en_set =   1;
+  camsync_mode.ext =      0;
+  camsync_mode.ext_set =  1;
+  camsync_mode.trig =     0;
+  camsync_mode.trig_set = 1;
+
+  x393_camsync_mode                   (camsync_mode);  // immediate mode, bypass sequencer CAMSYNC mode
+                                                       // (TODO NC393: Make it possible to synchronize writes (through sequencer)
+  set_x393_camsync_trig_period        (0);  // reset circuitry (immediate mode)
   if (frame16 >= 0) return -1; // should be ASAP
 //TODO: seems nothing to do here - all in the sensor-specific function:
 //Adding setup compressor report status mode - maybe move elsethere? Needed for comprfessor frame reporting, has to be done just once
@@ -1378,6 +1433,7 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     x393_sensio_width_t   sensio_width = {.d32=0};
     x393_sens_sync_mult_t sync_mult =    {.d32=0};
     x393_gamma_ctl_t      gamma_ctl =    {.d32=0};
+
     int n_scan_lines, n_ph_lines;
     int flips;
     int bayer_modified;
@@ -1450,7 +1506,7 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
 
     // Change Bayer for gamma/histograms?
     if (bayer_modified) {
-        gamma_ctl.bayer = thispars->pars[P_BAYER] ^ flips ^ sensor->bayer;
+        gamma_ctl.bayer = thispars->pars[P_BAYER] ^ flips ^ sensor->bayer ^ 3; // 3 added for NC393
         gamma_ctl.bayer_set = 1;
     }
     //NC393: Other needed bits are set in pgm_initsensor (they must be set just once)
@@ -1462,6 +1518,31 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     }
 
 #if 0
+
+    typedef union {
+        struct {
+              u32             run: 2; // [ 1: 0] (0) Run mode
+              u32         run_set: 1; // [    2] (0) Set 'run'
+              u32           qbank: 3; // [ 5: 3] (0) Quantization table bank
+              u32       qbank_set: 1; // [    6] (0) Set 'qbank'
+              u32           dcsub: 1; // [    7] (0) Subtract DC enable
+              u32       dcsub_set: 1; // [    8] (0) Set 'qbank'
+              u32           cmode: 4; // [12: 9] (0) Color format
+              u32       cmode_set: 1; // [   13] (0) Set 'cmode'
+              u32      multiframe: 1; // [   14] (0) Multi/single frame mode
+              u32  multiframe_set: 1; // [   15] (0) Set 'multiframe'
+              u32                : 2;
+              u32           bayer: 2; // [19:18] (0) Bayer shift
+              u32       bayer_set: 1; // [   20] (0) Set 'bayer'
+              u32           focus: 2; // [22:21] (0) Focus mode
+              u32       focus_set: 1; // [   23] (0) Set 'focus'
+              u32                : 8;
+        };
+        struct {
+              u32             d32:32; // [31: 0] (0) cast to u32
+        };
+    } x393_cmprs_mode_t;
+
     // Control for the gamma-conversion module
 
     typedef union {

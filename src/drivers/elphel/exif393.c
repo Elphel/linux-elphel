@@ -353,7 +353,7 @@ int putlong_meta(int sensor_port, unsigned long data, int * indx,  unsigned long
 // Uses struct exif_time that should be updated from the user space (once a day),
 // calculates date/time ignoring leap seconds if not updated in time
 /*
- * 393: Continue to use same static buffers for exif_time
+ * 393: Continue to use same static buffers for exif_time - common to all channels
  */
 char * encode_time(char buf[27], unsigned long sec, unsigned long usec) {
 	unsigned long s,d,m,y,y4,lp,h;
@@ -422,11 +422,11 @@ char * encode_time(char buf[27], unsigned long sec, unsigned long usec) {
 
 int store_meta(int sensor_port) { //called from IRQ service - put current metadata to meta_buffer, return page index
 	if (!aexif_enabled[sensor_port]) return 0;
-	int retval=aexif_wp[sensor_port];
-	memcpy(&ameta_buffer[sensor_port][aexif_wp[sensor_port] * aexif_meta_size[sensor_port]], ameta_buffer[sensor_port],aexif_meta_size[sensor_port]);
+	int meta_index=aexif_wp[sensor_port];
+	memcpy(&ameta_buffer[sensor_port][meta_index * aexif_meta_size[sensor_port]], ameta_buffer[sensor_port], aexif_meta_size[sensor_port]);
 	aexif_wp[sensor_port]++;
 	if (aexif_wp[sensor_port] > MAX_EXIF_FRAMES) aexif_wp[sensor_port] = 1;
-	return retval;
+	return meta_index;
 }
 
 //!++++++++++++++++++++++++++++++++++++ open() ++++++++++++++++++++++++++++++++++++++++++++++++++++++

@@ -305,7 +305,8 @@
 <li>                     bit 2 - async (snapshot, ext trigger) mode, 0 - continuous NOTE: Only this bit is used now
 <li>                     bit 3 - no overlap,  single frames: program - acquire/compress same frame</ul>*/
 #define P_BGFRAME       16 ///< Background measurement mode - will use 16-bit mode and no FPN correction
-#define P_IMGSZMEM      17 ///< image size in video memory (calculated when channel 0 is programmed) NC393: Not used ???
+//#define P_IMGSZMEM      17 ///< image size in video memory (calculated when channel 0 is programmed) NC393: Not used ???
+#define P_COMP_BAYER    17 ///< derivative, readonly - calculated from P_BAYER and COMPMOD_BYRSH to separate sensor and compressor channels
 // image page numbers depend on image size/pixel depth, so changing any of them will invalidate all pages
 #define P_PAGE_ACQ      18 ///< Number of image page buffer to acquire to (0.1?)  NC393: Not used ???
 #define P_PAGE_READ     19 ///< Number of image page buffer to read from to (0.1?)  NC393: Not used ???
@@ -1073,7 +1074,7 @@ struct p_names_t {
           P_NAME_ENTRY(TRIG), \
           P_NAME_ENTRY(EXPOS), \
           P_NAME_ENTRY(BGFRAME), \
-          P_NAME_ENTRY(IMGSZMEM), \
+          P_NAME_ENTRY(COMP_BAYER), \
           P_NAME_ENTRY(PAGE_ACQ), \
           P_NAME_ENTRY(PAGE_READ), \
           P_NAME_ENTRY(OVERLAP), \

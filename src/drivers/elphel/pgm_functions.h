@@ -39,7 +39,6 @@ int add_sensor_proc(int port, int index, int (*sens_func)(int sensor_port, struc
 #define X393_SEQ_SEND1S(port,frame,func,data,subchn) {if ((frame) < 0) seqr_##func (0,       (data), (port), (subchn)); \
                                                       else             seqa_##func ((frame), (data), (port), (subchn)); }
 
-
 /** Tells if parameter is modifies
  * @param x parameter index to test
  * @return nonzero if modified */
