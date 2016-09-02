@@ -19,6 +19,7 @@ int  initMultiPars     (int sensor_port); /// initialize structures for individu
 void initFramePars     (int sensor_port); ///initialize all parameters, set thisFrameNumber to frame8 (read from hardware, usually 0 after resetting i2c and cmd_seq)
 void resetFrameNumber  (int sensor_port, u32 aframe, int hreset); /// reset this frame number (called from initFramePars(), also can be used to avoid frame number integer overflow)
 
+unsigned long get_imageParamsFrame(int sensor_port, int n, int frame);
 unsigned long get_imageParamsThis (int sensor_port, int n);
 unsigned long get_imageParamsPrev (int sensor_port, int n);
 unsigned long get_imageParamsPast(int sensor_port,  int n,  int frame);

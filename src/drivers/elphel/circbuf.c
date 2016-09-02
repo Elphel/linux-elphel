@@ -938,7 +938,7 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
               return file->f_pos ; //! data already available, return file pointer
           default:
             if ((offset & ~0x1f)==LSEEK_DAEMON_CIRCBUF) {
-              wait_event_interruptible (circbuf_wait_queue, get_imageParamsThis(chn, P_DAEMON_EN) & (1<<(offset & 0x1f)));
+              wait_event_interruptible (circbuf_wait_queue, get_imageParamsFrame(chn, P_DAEMON_EN, camSeqGetJPEG_frame(chn)) & (1<<(offset & 0x1f)));
             }
         }
         dev_dbg(g_dev_ptr, "return SEEK_END file->f_pos =0x%08llx\n",file->f_pos);

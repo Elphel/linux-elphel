@@ -582,6 +582,9 @@ int histograms_release (struct inode *inode, ///< inode
  * @param orig SEEK_SET, SEEK_CUR or SEEK_SET END
  * @return file position (histogram frame index (combined frame index and channel))
  */
+
+// TODO: NC393 - use int camSeqGetJPEG_frame(unsigned int chn); and
+// get_imageParamsFrame(..., camSeqGetJPEG_frame(chn)) instead of get_imageParamsThis(...)
 // TODO: add flag that will allow driver to wakeup processes before the specified frame comes ?
 loff_t histograms_lseek (struct file * file,
                          loff_t offset,
