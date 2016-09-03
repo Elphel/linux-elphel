@@ -1137,6 +1137,10 @@ static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 		dump_sg_list(dpriv->sgl, dpriv->sg_elems);
 
 		dpriv->lba_ptr.wr_count = get_blocks_num(dpriv->sgl, dpriv->sg_elems);
+		if (dpriv->lba_ptr.lba_write + dpriv->lba_ptr.wr_count > dpriv->lba_ptr.lba_end) {
+			/* the frame rolls over the buffer boundary, don't split it and start writing from the beginning */
+			dpriv->lba_ptr.lba_write = dpriv->lba_ptr.lba_start;
+		}
 		cbuff = &dpriv->fbuffs[dpriv->head_ptr].common_buff;
 		dma_sync_single_for_device(dev, cbuff->iov_dma, cbuff->iov_len, DMA_TO_DEVICE);
 		printk(KERN_DEBUG ">>> time before issuing command: %u\n", get_rtc_usec());
