@@ -33,6 +33,7 @@
 /** Flag indicating that recording should be stopped right after the last chunk of data
  * is written */
 #define DELAYED_FINISH            (1 << 3)
+#define LOCK_TAIL                 (1 << 4)
 /** The length of a command FIS in double words */
 #define CMD_FIS_LEN               5
 /** This is used to get 28-bit address from 64-bit value */
@@ -54,6 +55,8 @@
 /** Maximum number of entries in PRDT table. HW max is 64k.
  * Set this value the same as AHCI_MAX_SG in ahci.h */
 #define MAX_SGL_LEN               168
+/** Maximum number of frames which will be processed at the same time */
+#define MAX_CMD_SLOTS             4
 
 /** This structure holds raw device buffer pointers */
 struct drv_pointers {
@@ -108,12 +111,14 @@ struct elphel_ahci_priv {
 	int curr_cmd;
 	size_t max_data_sz;
 	struct drv_pointers lba_ptr;
-	struct frame_buffers fbuffs;
-	struct fvec data_chunks[MAX_DATA_CHUNKS];
+	struct frame_buffers fbuffs[MAX_CMD_SLOTS];
+	struct fvec data_chunks[MAX_CMD_SLOTS][MAX_DATA_CHUNKS];
 	struct fvec sgl[MAX_SGL_LEN];
 	int sg_elems;
 	int curr_data_chunk;                         ///< index of a data chunk used during last transaction
 	size_t curr_data_offset;                     ///< offset of the last byte in a data chunk pointed to by @e curr_data_chunk
+	size_t head_ptr;                             ///< pointer to command slot which will be written next
+	size_t tail_ptr;                             ///< pointer to next free command slot
 };
 
 #endif /* _AHCI_ELPHEL_EXT */

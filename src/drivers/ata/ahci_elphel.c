@@ -61,10 +61,11 @@ static const struct of_device_id ahci_elphel_of_match[];
 static const struct attribute_group dev_attr_root_group;
 
 static bool load_driver = false;
+uint32_t total_datarate;
 
 static void elphel_cmd_issue(struct ata_port *ap, uint64_t start, uint16_t count, struct fvec *sgl, unsigned int elem, uint8_t cmd);
 static int init_buffers(struct device *dev, struct frame_buffers *buffs);
-static void init_vectors(struct elphel_ahci_priv *dpriv);
+static void init_vectors(struct frame_buffers *buffs, struct fvec *chunks);
 static void deinit_buffers(struct device *dev, struct frame_buffers *buffs);
 static inline struct elphel_ahci_priv *dev_get_dpriv(struct device *dev);
 static void finish_cmd(struct device *dev, struct elphel_ahci_priv *dpriv);
@@ -74,6 +75,9 @@ static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 static inline size_t get_size_from(const struct fvec *vects, int index, size_t offset, int all);
 static inline void vectmov(struct fvec *vec, size_t len);
 static inline void vectsplit(struct fvec *vect, struct fvec *parts, size_t *n_elem);
+int move_tail(struct elphel_ahci_priv *dpriv, int lock);
+int move_head(struct elphel_ahci_priv *dpriv);
+size_t get_prev_slot(struct elphel_ahci_priv *dpriv);
 
 static ssize_t set_load_flag(struct device *dev, struct device_attribute *attr,
 		const char *buff, size_t buff_sz)
@@ -146,9 +150,13 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 
 		if (process_cmd(host->dev, dpriv, host->ports[0]) == 0) {
 			finish_cmd(host->dev, dpriv);
-			if (dpriv->flags & DELAYED_FINISH) {
-				dpriv->flags &= ~DELAYED_FINISH;
-				finish_rec(host->dev, dpriv, port);
+			if (move_head(dpriv) != -1) {
+				process_cmd(host->dev, dpriv, host->ports[0]);
+			} else {
+				if (dpriv->flags & DELAYED_FINISH) {
+					dpriv->flags &= ~DELAYED_FINISH;
+					finish_rec(host->dev, dpriv, port);
+				}
 			}
 		}
 	} else {
@@ -242,7 +250,7 @@ static int elphel_parse_prop(const struct device_node *devn,
 
 static int elphel_drv_probe(struct platform_device *pdev)
 {
-	int ret;
+	int ret, i;
 	struct ahci_host_priv *hpriv;
 	struct elphel_ahci_priv *dpriv;
 	struct device *dev = &pdev->dev;
@@ -261,10 +269,12 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	if (!dpriv)
 		return -ENOMEM;
 
-	ret = init_buffers(dev, &dpriv->fbuffs);
-	if (ret != 0)
-		return ret;
-	init_vectors(dpriv);
+	for (i = 0; i < MAX_CMD_SLOTS; i++) {
+		ret = init_buffers(dev, &dpriv->fbuffs[i]);
+		if (ret != 0)
+			return ret;
+		init_vectors(&dpriv->fbuffs[i], &dpriv->data_chunks[i]);
+	}
 
 	match = of_match_device(ahci_elphel_of_match, &pdev->dev);
 	if (!match)
@@ -306,10 +316,12 @@ static int elphel_drv_probe(struct platform_device *pdev)
 
 static int elphel_drv_remove(struct platform_device *pdev)
 {
+	int i;
 	struct elphel_ahci_priv *dpriv = dev_get_dpriv(&pdev->dev);
 
 	dev_info(&pdev->dev, "removing Elphel AHCI driver");
-	deinit_buffers(&pdev->dev, &dpriv->fbuffs);
+	for (i = 0; i < MAX_CMD_SLOTS; i++)
+		deinit_buffers(&pdev->dev, &dpriv->fbuffs[i]);
 	sysfs_remove_group(&pdev->dev.kobj, &dev_attr_root_group);
 	ata_platform_remove_one(pdev);
 
@@ -409,15 +421,6 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 
 unsigned char app15[ALIGNMENT_SIZE] = {0xff, 0xef};
 
-/* used for performance measurements */
-struct time_mark {
-	uint32_t size;
-	uint32_t usec;
-	uint32_t sec;
-};
-struct time_mark prev_mark;
-struct time_mark curr_mark;
-uint32_t total_datarate;
 
 /* this should be placed to system includes directory*/
 #define DRV_CMD_WRITE             0
@@ -630,9 +633,10 @@ static int map_vectors(struct elphel_ahci_priv *dpriv)
 	int finish = 0;
 	size_t total_sz = 0;
 	size_t tail;
-	struct fvec *chunks = dpriv->data_chunks;
+	struct fvec *chunks;
 	struct fvec vect;
 
+	chunks = &dpriv->data_chunks[dpriv->head_ptr];
 	for (i = dpriv->curr_data_chunk; i < MAX_DATA_CHUNKS; i++) {
 		if (i == CHUNK_REM)
 			/* remainder should never be processed */
@@ -673,6 +677,8 @@ static int map_vectors(struct elphel_ahci_priv *dpriv)
 					finish = 1;
 				}
 			}
+			if (index == (MAX_SGL_LEN - 1))
+				finish = 1;
 		}
 		if (finish)
 			break;
@@ -742,14 +748,22 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 	int is_delayed = 0;
 	unsigned char *src;
 	size_t len, total_sz, data_len;
-	size_t max_len = dpriv->fbuffs.common_buff.iov_len;
-	struct frame_buffers *fbuffs = &dpriv->fbuffs;
-	struct fvec *chunks = dpriv->data_chunks;
+	size_t cmd_slot = dpriv->tail_ptr;
+	size_t prev_slot = get_prev_slot(dpriv);
+	size_t max_len = dpriv->fbuffs[cmd_slot].common_buff.iov_len;
+	struct frame_buffers *fbuffs = &dpriv->fbuffs[cmd_slot];
+	struct fvec *chunks = &dpriv->data_chunks[cmd_slot];
 	struct fvec *cbuff = &chunks[CHUNK_COMMON];
+	struct fvec *rbuff = &dpriv->data_chunks[prev_slot][CHUNK_REM];
 
-	total_sz = get_size_from(chunks, 0, 0, INCLUDE_REM);
+	total_sz = get_size_from(chunks, 0, 0, INCLUDE_REM) + rbuff->iov_len;
 	if (total_sz < PHY_BLOCK_SIZE) {
 		/* the frame length is less than sector size, delay this frame */
+		if (prev_slot != cmd_slot) {
+			/* some data may be left from previous frame */
+			vectcpy(&chunks[CHUNK_REM], rbuff->iov_base, rbuff->iov_len);
+			vectshrink(rbuff, rbuff->iov_len);
+		}
 		dev_dbg(dev, "frame size is less than sector size: %u bytes; delay recording\n", total_sz);
 		vectcpy(&chunks[CHUNK_REM], chunks[CHUNK_LEADER].iov_base, chunks[CHUNK_LEADER].iov_len);
 		vectshrink(&chunks[CHUNK_LEADER], chunks[CHUNK_LEADER].iov_len);
@@ -769,11 +783,12 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 	dma_sync_single_for_cpu(dev, fbuffs->common_buff.iov_dma, fbuffs->common_buff.iov_len, DMA_TO_DEVICE);
 
 	/* copy remainder of previous frame to the beginning of common buffer */
-	if (likely(chunks[CHUNK_REM].iov_len != 0)) {
-		len = chunks[CHUNK_REM].iov_len;
-		dev_dbg(dev, "copy %u bytes from REM to common buffer\n", len);
-		vectcpy(cbuff, chunks[CHUNK_REM].iov_base, len);
-		vectshrink(&chunks[CHUNK_REM], chunks[CHUNK_REM].iov_len);
+	printk(KERN_DEBUG "current command slot: %u, prev slot: %u\n", cmd_slot, prev_slot);
+	if (likely(rbuff->iov_len != 0)) {
+		len = rbuff->iov_len;
+		dev_dbg(dev, "copy %u bytes from REM #%u to common buffer\n", len, prev_slot);
+		vectcpy(cbuff, rbuff->iov_base, len);
+		vectshrink(rbuff, rbuff->iov_len);
 	}
 
 	/* copy JPEG marker */
@@ -930,30 +945,6 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 	}
 }
 
-/** TEST FUNCTION: stuff frame data to align the frame to disk block boundary */
-//static void stuff_frame(struct fvec *vects)
-//{
-//	int i;
-//	size_t total = 0;
-//	size_t stuffing = 0;
-//
-//	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
-//		total += vects[i].iov_len;
-//	}
-//
-//	stuffing = PHY_BLOCK_SIZE - total % PHY_BLOCK_SIZE;
-//
-//	printk(KERN_DEBUG "%s: total = %u, stuffing = %u\n", __func__, total, stuffing);
-//	if (stuffing == PHY_BLOCK_SIZE)
-//		return;
-//
-//	if (stuffing < 3) {
-//		// the number of stuffing bytes is less then marker plus one byte, add one more sector
-//		stuffing += PHY_BLOCK_SIZE;
-//	}
-//	vects[CHUNK_STUFFING].iov_len = stuffing;
-//}
-
 static void dump_sg_list(const struct fvec *sgl, size_t elems)
 {
 	int i;
@@ -1003,21 +994,20 @@ static inline size_t get_size_from(const struct fvec *vects, int index, size_t o
 }
 
 /** Set vectors pointing to data buffers except for JPEG data - those are set in circbuf driver */
-static void init_vectors(struct elphel_ahci_priv *dpriv)
+static void init_vectors(struct frame_buffers *buffs, struct fvec *chunks)
 {
-	struct frame_buffers *buffs = &dpriv->fbuffs;
-	struct fvec *chunks = dpriv->data_chunks;
-
 	chunks[CHUNK_EXIF].iov_base = buffs->exif_buff.iov_base;
 	chunks[CHUNK_EXIF].iov_len = 0;
 
 	chunks[CHUNK_LEADER].iov_base = buffs->jpheader_buff.iov_base;
-	chunks[CHUNK_LEADER].iov_len = JPEG_MARKER_LEN;
-	chunks[CHUNK_HEADER].iov_base = (unsigned char *)chunks[CHUNK_LEADER].iov_base + chunks[CHUNK_LEADER].iov_len;
+//	chunks[CHUNK_LEADER].iov_len = JPEG_MARKER_LEN;
+	chunks[CHUNK_LEADER].iov_len = 0;
+	chunks[CHUNK_HEADER].iov_base = (unsigned char *)chunks[CHUNK_LEADER].iov_base + JPEG_MARKER_LEN;
 	chunks[CHUNK_HEADER].iov_len = 0;
 
 	chunks[CHUNK_TRAILER].iov_base = buffs->trailer_buff.iov_base;
-	chunks[CHUNK_TRAILER].iov_len = JPEG_MARKER_LEN;
+//	chunks[CHUNK_TRAILER].iov_len = JPEG_MARKER_LEN;
+	chunks[CHUNK_TRAILER].iov_len = 0;
 
 	chunks[CHUNK_REM].iov_base = buffs->rem_buff.iov_base;
 	chunks[CHUNK_REM].iov_len = 0;
@@ -1075,13 +1065,6 @@ static int init_buffers(struct device *dev, struct frame_buffers *buffs)
 		goto err_remainder;
 	buffs->rem_buff.iov_len = 2 * PHY_BLOCK_SIZE;
 
-	/* debug code follows */
-	g_jpg_data_0 = kzalloc(DATA_BUFF_SIZE, GFP_KERNEL);
-	g_jpg_data_1 = kzalloc(DATA_BUFF_SIZE, GFP_KERNEL);
-	if (!g_jpg_data_0 || !g_jpg_data_1)
-		return -ENOMEM;
-	/* end of debug code */
-
 	return 0;
 
 err_remainder:
@@ -1129,39 +1112,13 @@ static inline struct elphel_ahci_priv *dev_get_dpriv(struct device *dev)
 	return dpriv;
 }
 
-//static void start_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port)
-//{
-//	int num;
-//	size_t max_sz = (MAX_LBA_COUNT + 1) * PHY_BLOCK_SIZE;
-//	size_t total_sz = get_total_size(dpriv->data_chunks);
-//
-//	if ((dpriv->lba_ptr.lba_write & ~ADDR_MASK_28_BIT) || total_sz > max_sz) {
-////	if (dpriv->lba_ptr.lba_write & ~ADDR_MASK_28_BIT) {
-//		dpriv->curr_cmd = ATA_CMD_WRITE_EXT;
-//		dpriv->max_data_sz = (MAX_LBA_COUNT_EXT + 1) * PHY_BLOCK_SIZE;
-//	} else {
-//		dpriv->curr_cmd = ATA_CMD_WRITE;
-//		dpriv->max_data_sz = (MAX_LBA_COUNT + 1) * PHY_BLOCK_SIZE;
-//	}
-//	dpriv->flags |= PROC_CMD;
-//	dpriv->sg_elems = map_vectors(dpriv);
-//
-//	num = dma_map_sg(dev, dpriv->sgl, dpriv->sg_elems, DMA_TO_DEVICE);
-//	printk(KERN_DEBUG ">>> %d entries dma mapped\n", num);
-//	dump_sg_list(dpriv->sgl, dpriv->sg_elems);
-//
-//	dpriv->lba_ptr.wr_count = get_blocks_num(dpriv->sgl, dpriv->sg_elems);
-//	printk(KERN_DEBUG ">>> trying to write data from sg list %u blocks, LBA: %llu\n", dpriv->lba_ptr.wr_count, dpriv->lba_ptr.lba_write);
-//	elphel_cmd_issue(port, dpriv->lba_ptr.lba_write, dpriv->lba_ptr.wr_count, dpriv->sgl, dpriv->sg_elems, dpriv->curr_cmd);
-//}
-
 /** Process command and return the number of S/G entries mapped */
 static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port)
 {
 	int num;
-	struct fvec *cbuff = &dpriv->fbuffs.common_buff;
+	struct fvec *cbuff;
 	size_t max_sz = (MAX_LBA_COUNT + 1) * PHY_BLOCK_SIZE;
-	size_t rem_sz = get_size_from(dpriv->data_chunks, dpriv->curr_data_chunk, dpriv->curr_data_offset, EXCLUDE_REM);
+	size_t rem_sz = get_size_from(&dpriv->data_chunks[dpriv->head_ptr], dpriv->curr_data_chunk, dpriv->curr_data_offset, EXCLUDE_REM);
 
 	/* define ATA command to use for current transaction */
 	if ((dpriv->lba_ptr.lba_write & ~ADDR_MASK_28_BIT) || rem_sz > max_sz) {
@@ -1180,11 +1137,11 @@ static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 		dump_sg_list(dpriv->sgl, dpriv->sg_elems);
 
 		dpriv->lba_ptr.wr_count = get_blocks_num(dpriv->sgl, dpriv->sg_elems);
+		cbuff = &dpriv->fbuffs[dpriv->head_ptr].common_buff;
 		dma_sync_single_for_device(dev, cbuff->iov_dma, cbuff->iov_len, DMA_TO_DEVICE);
 		printk(KERN_DEBUG ">>> time before issuing command: %u\n", get_rtc_usec());
 		elphel_cmd_issue(port, dpriv->lba_ptr.lba_write, dpriv->lba_ptr.wr_count, dpriv->sgl, dpriv->sg_elems, dpriv->curr_cmd);
 	}
-
 	return dpriv->sg_elems;
 }
 
@@ -1199,7 +1156,8 @@ static void finish_cmd(struct device *dev, struct elphel_ahci_priv *dpriv)
 		all = 1;
 		dpriv->flags &= ~LAST_BLOCK;
 	}
-	reset_chunks(dpriv->data_chunks, all);
+	printk(KERN_DEBUG "reset chunks in slot %u, all = %d\n", dpriv->head_ptr, all);
+	reset_chunks(dpriv->data_chunks[dpriv->head_ptr], all);
 	dpriv->flags &= ~PROC_CMD;
 	dpriv->curr_cmd = 0;
 	dpriv->max_data_sz = 0;
@@ -1212,18 +1170,18 @@ static void finish_rec(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 {
 	size_t stuff_len;
 	unsigned char *src;
-	struct fvec *cvect = &dpriv->data_chunks[CHUNK_COMMON];
-	struct fvec *rvect = &dpriv->data_chunks[CHUNK_REM];
+	struct fvec *cvect = &dpriv->data_chunks[dpriv->head_ptr][CHUNK_COMMON];
+	struct fvec *rvect = &dpriv->data_chunks[dpriv->head_ptr][CHUNK_REM];
 
 	if (rvect->iov_len == 0)
 		return;
 
-	dev_dbg(dev, "write last chunk of data, size: %u\n", rvect->iov_len);
+	dev_dbg(dev, "write last chunk of data from slot %u, size: %u\n", dpriv->head_ptr, rvect->iov_len);
 	stuff_len = PHY_BLOCK_SIZE - rvect->iov_len;
 	src = vectrpos(rvect, 0);
 	memset(src, 0, stuff_len);
 	rvect->iov_len += stuff_len;
-	dma_sync_single_for_cpu(dev, dpriv->fbuffs.common_buff.iov_dma, dpriv->fbuffs.common_buff.iov_len, DMA_TO_DEVICE);
+	dma_sync_single_for_cpu(dev, dpriv->fbuffs[dpriv->head_ptr].common_buff.iov_dma, dpriv->fbuffs[dpriv->head_ptr].common_buff.iov_len, DMA_TO_DEVICE);
 	vectcpy(cvect, rvect->iov_base, rvect->iov_len);
 	vectshrink(rvect, rvect->iov_len);
 
@@ -1231,43 +1189,73 @@ static void finish_rec(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 	process_cmd(dev, dpriv, port);
 }
 
-/** Return time difference in microseconds between two time stamps */
-#define USEC                      1000000
-static uint32_t timediff(struct time_mark *start, struct time_mark *end)
+int move_tail(struct elphel_ahci_priv *dpriv, int lock)
 {
-	uint32_t ret = 0;
+	size_t slot = (dpriv->tail_ptr + 1) % MAX_CMD_SLOTS;
 
-	if (end->sec >= start->sec) {
-		if (end->usec >= start->usec) {
-			ret = USEC * (end->sec - start->sec) + (end->usec - start->usec);
-		} else {
-			ret = USEC * (end->sec - start->sec - 1) + (USEC + end->usec - start->usec);
-		}
+	if (slot != dpriv->head_ptr) {
+		if (lock)
+			dpriv->flags |= LOCK_TAIL;
+		dpriv->tail_ptr = slot;
+		printk(KERN_DEBUG "move tail pointer to slot: %u\n", slot);
+		return 0;
+	} else {
+		/* no more free command slots */
+		return -1;
+	}
+}
+
+int move_head(struct elphel_ahci_priv *dpriv)
+{
+	size_t use_tail;
+	size_t slot = (dpriv->head_ptr + 1) % MAX_CMD_SLOTS;
+
+	if (dpriv->flags & LOCK_TAIL) {
+		/* current command slot is not ready yet, use previous */
+		use_tail = get_prev_slot(dpriv);
+	} else {
+		use_tail = dpriv->tail_ptr;
 	}
 
-	return ret;
+	if (dpriv->head_ptr != use_tail) {
+		dpriv->head_ptr = slot;
+		printk(KERN_DEBUG "move head pointer to slot: %u\n", slot);
+		return 0;
+	} else {
+		/* no more commands in queue */
+		return -1;
+	}
+
 }
+
+size_t get_prev_slot(struct elphel_ahci_priv *dpriv)
+{
+	size_t slot;
+
+	if (dpriv->tail_ptr == dpriv->head_ptr)
+		return dpriv->tail_ptr;
+
+	if (dpriv->tail_ptr != 0) {
+		slot = dpriv->tail_ptr - 1;
+	} else {
+		slot = MAX_CMD_SLOTS - 1;
+	}
+	return slot;
+}
+
 static ssize_t rawdev_write(struct device *dev,  ///<
 		struct device_attribute *attr,           ///<
 		const char *buff,                        ///<
 		size_t buff_sz)                          ///<
 {
-	int i, n_elem;
-	int sg_elems = 0;
+	int i;
 	struct ata_host *host = dev_get_drvdata(dev);
 	struct ata_port *port = host->ports[DEFAULT_PORT_NUM];
 	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
-	struct scatterlist *sgl;
-	struct scatterlist *sg_ptr;
-//	u8 *test_buff = pElphel_buf->d2h_vaddr;
-	u8 *test_buff;
-	uint8_t *buffers[SG_TBL_SZ] = {0};
-	uint64_t lba_addr;
 	struct frame_data fdata;
 	size_t rcvd = 0;
-	struct frame_buffers *buffs = &dpriv->fbuffs;
-	struct fvec *chunks = dpriv->data_chunks;
-	size_t blocks_num;
+	struct frame_buffers *buffs;
+	struct fvec *chunks;
 	static int dont_process = 0;
 
 	if (buff_sz != sizeof(struct frame_data)) {
@@ -1285,17 +1273,21 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 		return buff_sz;
 	}
 
-	if ((dpriv->flags & PROC_CMD) || dont_process) {
+	if ((move_tail(dpriv, 1) == -1) || dont_process) {
 		// we are not ready yet
 		return -EAGAIN;
 	}
+	printk(KERN_DEBUG "set current tail slot: %u\n", dpriv->tail_ptr);
+	chunks = &dpriv->data_chunks[dpriv->tail_ptr];
+	buffs = &dpriv->fbuffs[dpriv->tail_ptr];
 
 	/* debug code follows */
+	printk(KERN_DEBUG "\n");
 	printk(KERN_DEBUG ">>> data pointers received, time stamp: %u\n", get_rtc_usec());
 	printk(KERN_DEBUG ">>> sensor port: %u\n", fdata.sensor_port);
 	printk(KERN_DEBUG ">>> cirbuf ptr: %d, cirbuf data len: %d\n", fdata.cirbuf_ptr, fdata.jpeg_len);
 	printk(KERN_DEBUG ">>> meta_index: %d\n", fdata.meta_index);
-	printk(KERN_DEBUG "\n");
+	printk(KERN_DEBUG ">>> frame will be place to slot %u\n", dpriv->tail_ptr);
 
 	rcvd = exif_get_data(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len);
 //	rcvd = exif_get_data_tst(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len, 1);
@@ -1334,34 +1326,30 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 //	if (chunks[CHUNK_DATA_1].iov_len != 0)
 //		chunks[CHUNK_DATA_1].iov_dma = dma_map_single(dev, chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
 
-	/* performance calculations */
-	curr_mark.size = get_size_from(chunks, 0, 0, EXCLUDE_REM);
-	curr_mark.usec = get_rtc_usec();
-	curr_mark.sec = get_rtc_sec();
-	printk(KERN_DEBUG "current size: %u bytes\n", curr_mark.size);
-	printk(KERN_DEBUG "time diff: %u us\n", timediff(&prev_mark, &curr_mark));
-	printk(KERN_DEBUG "prev time stamp: sec = %u, usec = %u; curr time stamp: sec = %u, usec = %u\n", prev_mark.sec, prev_mark.usec, curr_mark.sec, curr_mark.usec);
-	if (prev_mark.sec != 0 && prev_mark.usec != 0)
-		total_datarate = prev_mark.size / timediff(&prev_mark, &curr_mark);
-	prev_mark = curr_mark;
-	/* end of performance calculations */
 
 	printk(KERN_DEBUG ">>> unaligned frame dump:\n");
 	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
-		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, dpriv->data_chunks[i].iov_len);
+		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, chunks[i].iov_len);
 	}
 	align_frame(dev, dpriv);
 	printk(KERN_DEBUG ">>> aligned frame dump:\n");
 	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
-		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, dpriv->data_chunks[i].iov_len);
+		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, chunks[i].iov_len);
 	}
-//	if (check_chunks(dpriv->data_chunks) != 0) {
-//		dont_process = 1;
-//		return -EINVAL;
-//	}
+	if (check_chunks(chunks) != 0) {
+		dont_process = 1;
+		return -EINVAL;
+	}
+	/* new command slot is ready now and can be unlocked */
+	dpriv->flags &= ~LOCK_TAIL;
 
-	process_cmd(dev, dpriv, port);
+	if ((dpriv->flags & PROC_CMD) == 0) {
+		if (get_size_from(&dpriv->data_chunks[dpriv->head_ptr], 0, 0, EXCLUDE_REM) == 0)
+			move_head(dpriv);
+		process_cmd(dev, dpriv, port);
+	}
 //	while (dpriv->flags & PROC_CMD) {
+//		int sg_elems;
 //#ifndef DEBUG_DONT_WRITE
 //		while (dpriv->flags & IRQ_SIMPLE) {
 //			printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
@@ -1370,8 +1358,12 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 //#endif
 //		printk(KERN_DEBUG ">>> proceeding to next cmd chunk\n");
 //		sg_elems = process_cmd(dev, dpriv, port);
-//		if (sg_elems == 0)
+//		if (sg_elems == 0) {
 //			finish_cmd(dev, dpriv);
+//			if (move_head(dpriv) != -1) {
+//				process_cmd(dev, dpriv, port);
+//			}
+//		}
 //	}
 //	if (chunks[CHUNK_DATA_0].iov_len != 0)
 //		dma_unmap_single(dev, chunks[CHUNK_DATA_0].iov_dma, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
