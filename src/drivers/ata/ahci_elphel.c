@@ -13,6 +13,8 @@
  * more details.
  */
 
+#define CONFIG_PRINK
+
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -123,6 +125,7 @@ static void elphel_defer_load(struct device *dev)
 
 static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 {
+	unsigned long irq_flags;
 	irqreturn_t handled;
 	struct ata_host *host = dev_instance;
 	struct ahci_host_priv *hpriv = host->private_data;
@@ -133,7 +136,7 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 
 
 	if (dpriv->flags & IRQ_SIMPLE) {
-		/* handle interrupt */
+		/* handle interrupt from internal command */
 		host_irq_stat = readl(hpriv->mmio + HOST_IRQ_STAT);
 		if (!host_irq_stat)
 			return IRQ_NONE;
@@ -143,24 +146,27 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		dev_dbg(host->dev, "irq_stat = 0x%x, host irq_stat = 0x%x, time stamp: %u\n", irq_stat, host_irq_stat, get_rtc_usec());
 
 		writel(irq_stat, port_mmio + PORT_IRQ_STAT);
-//		writel(0xffffffff, port_mmio + PORT_IRQ_STAT);
 
 		writel(host_irq_stat, hpriv->mmio + HOST_IRQ_STAT);
 		handled = IRQ_HANDLED;
 
-		if (process_cmd(host->dev, dpriv, host->ports[0]) == 0) {
+		if (process_cmd(host->dev, dpriv, host->ports[DEFAULT_PORT_NUM]) == 0) {
 			finish_cmd(host->dev, dpriv);
 			if (move_head(dpriv) != -1) {
-				process_cmd(host->dev, dpriv, host->ports[0]);
+				process_cmd(host->dev, dpriv, host->ports[DEFAULT_PORT_NUM]);
 			} else {
 				if (dpriv->flags & DELAYED_FINISH) {
 					dpriv->flags &= ~DELAYED_FINISH;
 					finish_rec(host->dev, dpriv, port);
+				} else {
+					/* all commands have been processed; flag reset here does not need spin lock protection */
+					dpriv->flags &= ~INTERNAL_CMD;
 				}
 			}
 		}
 	} else {
-		/* pass handling to AHCI level */
+		/* pass handling to AHCI level; flag reset here does not need spin lock protection */
+		dpriv->flags &= ~NATIVE_CMD;
 		handled = ahci_single_irq_intr(irq, dev_instance);
 	}
 
@@ -268,6 +274,8 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	dpriv = devm_kzalloc(dev, sizeof(struct elphel_ahci_priv), GFP_KERNEL);
 	if (!dpriv)
 		return -ENOMEM;
+
+	spin_lock_init(&dpriv->flags_lock);
 
 	for (i = 0; i < MAX_CMD_SLOTS; i++) {
 		ret = init_buffers(dev, &dpriv->fbuffs[i]);
@@ -783,7 +791,6 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 	dma_sync_single_for_cpu(dev, fbuffs->common_buff.iov_dma, fbuffs->common_buff.iov_len, DMA_TO_DEVICE);
 
 	/* copy remainder of previous frame to the beginning of common buffer */
-	printk(KERN_DEBUG "current command slot: %u, prev slot: %u\n", cmd_slot, prev_slot);
 	if (likely(rbuff->iov_len != 0)) {
 		len = rbuff->iov_len;
 		dev_dbg(dev, "copy %u bytes from REM #%u to common buffer\n", len, prev_slot);
@@ -1152,6 +1159,7 @@ static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 static void finish_cmd(struct device *dev, struct elphel_ahci_priv *dpriv)
 {
 	int all;
+	unsigned long irq_flags;
 
 	dpriv->lba_ptr.wr_count = 0;
 	if ((dpriv->flags & LAST_BLOCK) == 0) {
@@ -1162,6 +1170,7 @@ static void finish_cmd(struct device *dev, struct elphel_ahci_priv *dpriv)
 	}
 	printk(KERN_DEBUG "reset chunks in slot %u, all = %d\n", dpriv->head_ptr, all);
 	reset_chunks(dpriv->data_chunks[dpriv->head_ptr], all);
+	/* flag reset here does not need spin lock protection */
 	dpriv->flags &= ~PROC_CMD;
 	dpriv->curr_cmd = 0;
 	dpriv->max_data_sz = 0;
@@ -1253,6 +1262,7 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 		size_t buff_sz)                          ///<
 {
 	int i;
+	unsigned long irq_flags;
 	struct ata_host *host = dev_get_drvdata(dev);
 	struct ata_port *port = host->ports[DEFAULT_PORT_NUM];
 	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
@@ -1262,11 +1272,24 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	struct fvec *chunks;
 	static int dont_process = 0;
 
+	/* simple check if we've got the right command */
 	if (buff_sz != sizeof(struct frame_data)) {
 		dev_err(dev, "the size of the data buffer is incorrect, should be equal to sizeof(struct frame_data)\n");
 		return -EINVAL;
 	}
 	memcpy(&fdata, buff, sizeof(struct frame_data));
+
+	/* check if we can issue internal command */
+	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+	if ((dpriv->flags & NATIVE_CMD) == 0) {
+		dpriv->flags |= INTERNAL_CMD;
+	} else {
+		spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+		printk_ratelimited(KERN_DEBUG, "system command is in progress, defer Elphel command\n");
+//		dev_dbg(dev, "system command is in progress, defer Elphel command\n");
+		return -EAGAIN;
+	}
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 
 	if (fdata.cmd == DRV_CMD_FINISH) {
 		if (!(dpriv->flags & PROC_CMD)) {
@@ -1278,10 +1301,9 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	}
 
 	if ((move_tail(dpriv, 1) == -1) || dont_process) {
-		// we are not ready yet
+		/* we are not ready yet because command queue is full */
 		return -EAGAIN;
 	}
-	printk(KERN_DEBUG "set current tail slot: %u\n", dpriv->tail_ptr);
 	chunks = &dpriv->data_chunks[dpriv->tail_ptr];
 	buffs = &dpriv->fbuffs[dpriv->tail_ptr];
 
@@ -1499,6 +1521,31 @@ static void elphel_cmd_issue(struct ata_port *ap,///< device port for which the 
 	writel(1 << slot_num, port_mmio + PORT_CMD_ISSUE);
 }
 
+static int elphel_qc_defer(struct ata_queued_cmd *qc)
+{
+	int ret;
+	unsigned long irq_flags;
+	struct elphel_ahci_priv *dpriv = dev_get_dpriv(qc->ap->dev);
+
+	/* First apply the usual rules */
+	ret = ata_std_qc_defer(qc);
+	if (ret != 0)
+		return ret;
+
+	/* And now check if internal command is in progress */
+	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+	if (dpriv->flags & INTERNAL_CMD) {
+		ret = ATA_DEFER_LINK;
+		printk_ratelimited(KERN_DEBUG "defer system command\n");
+	} else {
+		printk_ratelimited(KERN_DEBUG "proceed to system command\n");
+		dpriv->flags |= NATIVE_CMD;
+	}
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+
+	return ret;
+}
+
 static ssize_t lba_start_read(struct device *dev, struct device_attribute *attr, char *buff)
 {
 	struct ata_host *host = dev_get_drvdata(dev);
@@ -1596,6 +1643,7 @@ static struct ata_port_operations ahci_elphel_ops = {
 		.inherits		= &ahci_ops,
 		.port_start		= elphel_port_start,
 		.qc_prep		= elphel_qc_prep,
+		.qc_defer       = elphel_qc_defer,
 };
 
 static const struct ata_port_info ahci_elphel_port_info = {
