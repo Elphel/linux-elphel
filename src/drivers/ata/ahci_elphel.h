@@ -61,6 +61,19 @@
 #define MAX_SGL_LEN               168
 /** Maximum number of frames which will be processed at the same time */
 #define MAX_CMD_SLOTS             4
+/** Maximum number of sectors for READ DMA or WRITE DMA commands */
+#define MAX_LBA_COUNT             0xff
+/** Maximum number of sectors for READ DMA EXT or WRITE_DMA EXT commands */
+#define MAX_LBA_COUNT_EXT         0xffff
+/** Physical disk block size */
+#define PHY_BLOCK_SIZE            512
+#define JPEG_MARKER_LEN           2
+/** The size in bytes of JPEG marker length field */
+#define JPEG_SIZE_LEN             2
+/** Include REM buffer to total size calculation */
+#define INCLUDE_REM               1
+/** Exclude REM buffer from total size calculation */
+#define EXCLUDE_REM               0
 
 /** This structure holds raw device buffer pointers */
 struct drv_pointers {
@@ -69,23 +82,6 @@ struct drv_pointers {
 	uint64_t lba_write;                          ///< current write pointer inside raw buffer
 	uint16_t wr_count;                           ///< the number of LBA to write next time
 };
-
-//struct fvec {
-//	void *iov_base;                             ///< pointer to allocated buffer
-//	size_t iov_len;                             ///< the size (in bytes) of allocated buffer; set after allocation and is not modified during buffer lifetime
-//	dma_addr_t iov_dma;                         ///< buffer physical address
-//};
-
-//struct frame_vects {
-//	struct fvec prev_chunk;                      ///< remainder chunk of data from previous frame (NOT USED NOW)
-//	struct fvec header_buff;                     ///< buffer for JPEG header
-//	struct fvec leader;                          ///< JPEG leading marker, pointer to header_buff
-//	struct fvec exif;                            ///< pointer to Exif data buffer
-//	struct fvec header;                          ///< JPEG header data without leading marker, pointer to header_buff
-//	struct fvec stuffing;                        ///< stuffing bytes for frame alignment (WILL BE REMOVED AFTER SPEED TEST)
-//	struct kvec jpeg[2];                         ///< pointers to JPEG frame data which can be split across circular buffer boundary
-//	struct fvec trailer;                         ///< JPEG trailing marker
-//};
 
 struct frame_buffers {
 	struct fvec exif_buff;

@@ -13,6 +13,7 @@
  * more details.
  */
 
+/* this one is required for printk_ratelimited */
 #define CONFIG_PRINK
 
 #include <linux/errno.h>
@@ -27,14 +28,12 @@
 #include <linux/dma-mapping.h>
 #include <linux/sysfs.h>
 #include <linux/uio.h>
-//#include <asm/uaccess.h>
 
 #include "ahci.h"
 #include "ahci_elphel.h"
 #include "../elphel/exif393.h"
 #include "../elphel/exifa.h"
 #include "../elphel/jpeghead.h"
-//#include "../elphel/circbuf.h"
 #include "../elphel/x393_helpers.h"
 
 #include <elphel/elphel393-mem.h>
@@ -51,11 +50,6 @@
 #define PROP_NAME_CLB_OFFS "clb_offs"
 #define PROP_NAME_FB_OFFS "fb_offs"
 
-/** Maximum number of sectors for READ DMA or WRITE DMA commands */
-#define MAX_LBA_COUNT             0xff
-/** Maximum number of sectors for READ DMA EXT or WRITE_DMA EXT commands */
-#define MAX_LBA_COUNT_EXT         0xffff
-
 static struct ata_port_operations ahci_elphel_ops;
 static const struct ata_port_info ahci_elphel_port_info;
 static struct scsi_host_template ahci_platform_sht;
@@ -63,7 +57,7 @@ static const struct of_device_id ahci_elphel_of_match[];
 static const struct attribute_group dev_attr_root_group;
 
 static bool load_driver = false;
-uint32_t total_datarate;
+static unsigned char app15[ALIGNMENT_SIZE] = {0xff, 0xef};
 
 static void elphel_cmd_issue(struct ata_port *ap, uint64_t start, uint16_t count, struct fvec *sgl, unsigned int elem, uint8_t cmd);
 static int init_buffers(struct device *dev, struct frame_buffers *buffs);
@@ -73,15 +67,17 @@ static inline struct elphel_ahci_priv *dev_get_dpriv(struct device *dev);
 static void finish_cmd(struct elphel_ahci_priv *dpriv);
 static void finish_rec(struct elphel_ahci_priv *dpriv);
 static int process_cmd(struct elphel_ahci_priv *dpriv);
-//static void start_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port);
 static inline size_t get_size_from(const struct fvec *vects, int index, size_t offset, int all);
 static inline void vectmov(struct fvec *vec, size_t len);
 static inline void vectsplit(struct fvec *vect, struct fvec *parts, size_t *n_elem);
-int move_tail(struct elphel_ahci_priv *dpriv, int lock);
+int move_tail(struct elphel_ahci_priv *dpriv);
 int move_head(struct elphel_ahci_priv *dpriv);
-size_t get_prev_slot(struct elphel_ahci_priv *dpriv);
+size_t get_prev_slot(const struct elphel_ahci_priv *dpriv);
 int is_cmdq_empty(const struct elphel_ahci_priv *dpriv);
 void process_queue(unsigned long data);
+/* debug functions */
+static int check_chunks(struct fvec *vects);
+static void dump_sg_list(const struct device *dev, const struct fvec *sgl, size_t elems);
 
 static ssize_t set_load_flag(struct device *dev, struct device_attribute *attr,
 		const char *buff, size_t buff_sz)
@@ -148,7 +144,6 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		dev_dbg(host->dev, "irq_stat = 0x%x, host irq_stat = 0x%x, time stamp: %u\n", irq_stat, host_irq_stat, get_rtc_usec());
 
 		writel(irq_stat, port_mmio + PORT_IRQ_STAT);
-
 		writel(host_irq_stat, hpriv->mmio + HOST_IRQ_STAT);
 		handled = IRQ_HANDLED;
 		tasklet_schedule(&dpriv->bh);
@@ -158,9 +153,7 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
 		if (is_cmdq_empty(dpriv)) {
 			dpriv->flags &= ~DISK_BUSY;
-//			printk(KERN_DEBUG ">>> irq: flags = %u\n", dpriv->flags);
 		} else {
-//			printk(KERN_DEBUG ">>> irq schedule tasklet: flags = %u\n", dpriv->flags);
 			tasklet_schedule(&dpriv->bh);
 		}
 		spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
@@ -173,8 +166,6 @@ void process_queue(unsigned long data)
 {
 	unsigned long irq_flags;
 	struct elphel_ahci_priv *dpriv = (struct elphel_ahci_priv *)data;
-	struct ata_host *host = dev_get_drvdata(dpriv->dev);
-	struct ata_port *port = host->ports[DEFAULT_PORT_NUM];
 
 	if (process_cmd(dpriv) == 0) {
 		finish_cmd(dpriv);
@@ -277,11 +268,12 @@ static int elphel_parse_prop(const struct device_node *devn,
 
 static int elphel_drv_probe(struct platform_device *pdev)
 {
-	int ret, i;
+	int ret, i, irq_num;
 	struct ahci_host_priv *hpriv;
 	struct elphel_ahci_priv *dpriv;
 	struct device *dev = &pdev->dev;
 	const struct of_device_id *match;
+	struct ata_host *host;
 
 	if (&dev->kobj) {
 		ret = sysfs_create_group(&dev->kobj, &dev_attr_root_group);
@@ -304,7 +296,7 @@ static int elphel_drv_probe(struct platform_device *pdev)
 		ret = init_buffers(dev, &dpriv->fbuffs[i]);
 		if (ret != 0)
 			return ret;
-		init_vectors(&dpriv->fbuffs[i], &dpriv->data_chunks[i]);
+		init_vectors(&dpriv->fbuffs[i], dpriv->data_chunks[i]);
 	}
 
 	match = of_match_device(ahci_elphel_of_match, &pdev->dev);
@@ -328,19 +320,16 @@ static int elphel_drv_probe(struct platform_device *pdev)
 		ahci_platform_disable_resources(hpriv);
 		return ret;
 	}
-	/* reassign interrupt handler*/
-	int rc;
-	unsigned int irq_flags = IRQF_SHARED;
-	int irq = platform_get_irq(pdev, 0);
-	struct ata_host *ahost = platform_get_drvdata(pdev);
-	printk(KERN_DEBUG ">>> removing automatically assigned irq handler\n");
-	devm_free_irq(dev, irq, ahost);
-	rc = devm_request_irq(dev, irq, elphel_irq_handler, irq_flags, dev_name(dev), ahost);
-	if (rc) {
-		printk(KERN_DEBUG ">>> failed to request irq\n");
-		return rc;
+
+	/* reassign automatically assigned interrupt handler */
+	irq_num = platform_get_irq(pdev, 0);
+	host = platform_get_drvdata(pdev);
+	devm_free_irq(dev, irq_num, host);
+	ret = devm_request_irq(dev, irq_num, elphel_irq_handler, IRQF_SHARED, dev_name(dev), host);
+	if (ret) {
+		dev_err(dev, "failed to reassign default IRQ handler to Elphel handler\n");
+		return ret;
 	}
-	printk(KERN_DEBUG ">>> irq handler reassigned\n");
 
 	return 0;
 }
@@ -360,13 +349,6 @@ static int elphel_drv_remove(struct platform_device *pdev)
 	return 0;
 }
 
-void dump_tf_addr(struct ata_taskfile *tf)
-{
-	printk(KERN_DEBUG ">>> taskfile dump: lbal = 0x%x, lbam = 0x%x, lbah = 0x%x, "
-			"hob_lbal = 0x%x, hod_lbam = 0x%x, hob_lbah = 0x%x\n",
-			tf->lbal, tf->lbam, tf->lbah,
-			tf->hob_lbal, tf->hob_lbam, tf->hob_lbah);
-}
 static void elphel_qc_prep(struct ata_queued_cmd *qc)
 {
 	struct ata_port *ap = qc->ap;
@@ -391,9 +373,6 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 	cmd_tbl = pp->cmd_tbl + qc->tag * AHCI_CMD_TBL_SZ;
 
 	ata_tf_to_fis(&qc->tf, qc->dev->link->pmp, 1, cmd_tbl);
-
-	dev_dbg(ap->dev, ">>> CFIS dump, data from libahci, phys addr = 0x%x:\n", pp->cmd_tbl_dma);
-	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, cmd_tbl, 20);
 
 	if (is_atapi) {
 		memset(cmd_tbl + AHCI_CMD_TBL_CDB, 0, 32);
@@ -430,29 +409,6 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 			AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
 }
 
-/* ============================================== */
-#define TEST_BUFF_SZ              512
-#define MAX_IOVECTORS             10
-/** The position of size field in copy buffer */
-#define VECTOR_SZ_POS             0
-/** The position of vector pointer field in copy buffer */
-#define POINTER_POS               1
-/** Physical disk block size */
-#define PHY_BLOCK_SIZE            512
-//#define PHY_BLOCK_SIZE            4096
-#define JPEG_MARKER_LEN           2
-/** The size in bytes of JPEG marker length field */
-#define JPEG_SIZE_LEN             2
-#define SG_TBL_SZ                 256
-/** Include REM buffer to total size calculation */
-#define INCLUDE_REM               1
-/** Exclude REM buffer from total size calculation */
-#define EXCLUDE_REM               0
-
-//#define DEBUG_DONT_WRITE
-
-unsigned char app15[ALIGNMENT_SIZE] = {0xff, 0xef};
-
 
 /* this should be placed to system includes directory*/
 #define DRV_CMD_WRITE             0
@@ -466,197 +422,6 @@ struct frame_data {
 };
 /* end of system includes */
 
-/* Debug functions */
-#define DATA_BUFF_SIZE            500000
-unsigned char *g_jpg_data_0;
-unsigned char *g_jpg_data_1;
-int use_preset;
-size_t g_jpg_0_sz;
-size_t g_jpg_1_sz;
-ssize_t g_exif_sz;
-ssize_t g_jpg_hdr_sz;
-static size_t exif_get_data_tst(int sensor_port, unsigned short meta_index, void *buff, size_t buff_sz, int enable)
-{
-	int i;
-	const int default_exif_sz = 774;
-	int exif_sz;
-	unsigned char *dest = buff;
-
-	if (g_exif_sz >= 0 && g_exif_sz < MAX_EXIF_SIZE)
-		exif_sz = g_exif_sz;
-	else
-		exif_sz = default_exif_sz;
-
-	if (buff_sz < exif_sz || enable == 0)
-		return 0;
-
-	dest[0] = 0xff;
-	dest[1] = 0xe1;
-	for (i = 2; i < exif_sz; i++) {
-		dest[i] = 0xa1;
-	}
-
-	return exif_sz;
-}
-static size_t jpeghead_get_data_tst(int sensor_port, void *buff, size_t buff_sz, size_t offs)
-{
-	int i;
-	const int default_jpeghdr_sz = 623;
-	int jpeghdr_sz;
-	unsigned char *dest = buff;
-
-	if (g_jpg_hdr_sz >=0 && g_jpg_hdr_sz < JPEG_HEADER_MAXSIZE)
-		jpeghdr_sz = g_jpg_hdr_sz;
-	else
-		jpeghdr_sz = default_jpeghdr_sz;
-
-	if (buff_sz < jpeghdr_sz)
-		return 0;
-
-	dest[0] = 0xff;
-	dest[1] = 0xd8;
-	dest[2] = 0xff;
-	dest[3] = 0xe0;
-	for (i = 4; i < jpeghdr_sz; i++) {
-		dest[i] = 0xb2;
-	}
-
-	return jpeghdr_sz;
-}
-#include <linux/random.h>
-static int circbuf_get_ptr_tst(int sensor_port, size_t offset, size_t len, struct fvec *vect_0, struct fvec *vect_1)
-{
-	int ret = 1;
-	size_t jpg_0_sz;
-	size_t jpg_1_sz;
-
-	get_random_bytes(&jpg_0_sz, sizeof(size_t));
-	get_random_bytes(&jpg_1_sz, sizeof(size_t));
-	if (use_preset == 0) {
-		if (jpg_0_sz != 0)
-			jpg_0_sz = jpg_0_sz % (DATA_BUFF_SIZE - 1);
-		if (jpg_1_sz != 0) {
-			jpg_0_sz -= (jpg_0_sz % ALIGNMENT_SIZE);
-			jpg_1_sz = jpg_1_sz % (DATA_BUFF_SIZE - 1);
-		}
-	} else if (use_preset == 1) {
-		if (g_jpg_0_sz != 0)
-			jpg_0_sz = jpg_0_sz % g_jpg_0_sz;
-		if (g_jpg_1_sz != 0) {
-			jpg_0_sz -= (jpg_0_sz % ALIGNMENT_SIZE);
-			jpg_1_sz = jpg_1_sz % g_jpg_1_sz;
-		}
-	} else if (use_preset == 2) {
-		jpg_0_sz = g_jpg_0_sz;
-		jpg_1_sz = g_jpg_1_sz;
-	}
-	if (g_jpg_0_sz != 0)
-		memset(g_jpg_data_0, 0xc3, jpg_0_sz);
-	if (g_jpg_1_sz != 0)
-		memset(g_jpg_data_1, 0xd4, jpg_1_sz);
-
-	if (g_jpg_0_sz != 0) {
-		vect_0->iov_base = g_jpg_data_0;
-//		vect_0->iov_dma = 0;
-		vect_0->iov_len = jpg_0_sz;
-	} else {
-		vect_0->iov_base = NULL;
-		vect_0->iov_dma = 0;
-		vect_0->iov_len = 0;
-	}
-
-	if (g_jpg_1_sz != 0) {
-		vect_1->iov_base = g_jpg_data_1;
-//		vect_1->iov_dma = 0;
-		vect_1->iov_len = jpg_1_sz;
-		ret = 2;
-	} else {
-		vect_1->iov_base = NULL;
-		vect_1->iov_dma = 0;
-		vect_1->iov_len = 0;
-	}
-
-	return ret;
-}
-static void dump_frame(struct fvec *vects)
-{
-	int i;
-	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
-		printk(KERN_DEBUG ">>> dump data chunk %d, size %u\n", i, vects[i].iov_len);
-		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, vects[i].iov_base, vects[i].iov_len);
-	}
-}
-static int check_chunks(struct fvec *vects)
-{
-	int i;
-	int ret = 0;
-	size_t sz = 0;
-	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
-		if (i != CHUNK_REM) {
-			sz += vects[i].iov_len;
-			if ((vects[i].iov_len % ALIGNMENT_SIZE) != 0) {
-				dev_err(NULL, "ERROR: unaligned write from slot %d, length %u\n", i, vects[i].iov_len);
-				ret = -1;
-			}
-		}
-	}
-	if ((sz % PHY_BLOCK_SIZE) != 0) {
-		dev_err(NULL, "ERROR: total length of the transaction is not aligned to sector boundary, total length %u\n", sz);
-		ret = -1;
-	} else {
-		dev_err(NULL, ">>> +++ frame is OK +++\n");
-	}
-	return ret;
-}
-static ssize_t data_0_write(struct device *dev, struct device_attribute *attr, const char *buff, size_t buff_sz)
-{
-	if (kstrtoul(buff, 10, &g_jpg_0_sz) != 0)
-		return -EINVAL;
-	printk(KERN_DEBUG ">>> preset DATA_0 length: %u\n", g_jpg_0_sz);
-	return buff_sz;
-}
-static ssize_t data_1_write(struct device *dev, struct device_attribute *attr, const char *buff, size_t buff_sz)
-{
-	if (kstrtoul(buff, 10, &g_jpg_1_sz) != 0)
-		return -EINVAL;
-	printk(KERN_DEBUG ">>> preset DATA_1 length: %u\n", g_jpg_1_sz);
-	return buff_sz;
-}
-static ssize_t data_write(struct device *dev, struct device_attribute *attr, const char *buff, size_t buff_sz)
-{
-	if (kstrtoul(buff, 10, &use_preset) != 0)
-		return -EINVAL;
-
-	return buff_sz;
-}
-static ssize_t exif_write(struct device *dev, struct device_attribute *attr, const char *buff, size_t buff_sz)
-{
-	if (kstrtol(buff, 10, &g_exif_sz) != 0)
-		return -EINVAL;
-	printk(KERN_DEBUG ">>> preset EXIF length: %u\n", g_exif_sz);
-
-	return buff_sz;
-}
-static ssize_t hdr_write(struct device *dev, struct device_attribute *attr, const char *buff, size_t buff_sz)
-{
-	if (kstrtol(buff, 10, &g_jpg_hdr_sz) != 0)
-		return -EINVAL;
-	printk(KERN_DEBUG ">>> preset JPEGHEADER length: %u\n", g_jpg_hdr_sz);
-
-	return buff_sz;
-}
-static ssize_t datarate_read(struct device *dev, struct device_attribute *attr, char *buff)
-{
-	return sprintf(buff, "Total data rate: %u Mb/s\n", total_datarate);
-}
-static DEVICE_ATTR(data_0_sz, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, NULL, data_0_write);
-static DEVICE_ATTR(data_1_sz, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, NULL, data_1_write);
-static DEVICE_ATTR(data_proc, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, NULL, data_write);
-static DEVICE_ATTR(exif_sz, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, NULL, exif_write);
-static DEVICE_ATTR(jpg_hdr_sz, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, NULL, hdr_write);
-static DEVICE_ATTR(datarate_mbs, S_IRUSR | S_IRGRP, datarate_read, NULL);
-/* End of debug functions*/
-
 /** Map buffer vectors to S/G list and return the number of vectors mapped */
 static int map_vectors(struct elphel_ahci_priv *dpriv)
 {
@@ -668,7 +433,7 @@ static int map_vectors(struct elphel_ahci_priv *dpriv)
 	struct fvec *chunks;
 	struct fvec vect;
 
-	chunks = &dpriv->data_chunks[dpriv->head_ptr];
+	chunks = dpriv->data_chunks[dpriv->head_ptr];
 	for (i = dpriv->curr_data_chunk; i < MAX_DATA_CHUNKS; i++) {
 		if (i == CHUNK_REM)
 			/* remainder should never be processed */
@@ -776,8 +541,6 @@ static inline unsigned char *vectrpos(struct fvec *vec, size_t offset)
 }
 static void align_frame(struct elphel_ahci_priv *dpriv)
 {
-	int i;
-	int is_delayed = 0;
 	unsigned char *src;
 	size_t len, total_sz, data_len;
 	size_t cmd_slot = dpriv->tail_ptr;
@@ -785,7 +548,7 @@ static void align_frame(struct elphel_ahci_priv *dpriv)
 	size_t max_len = dpriv->fbuffs[cmd_slot].common_buff.iov_len;
 	struct device *dev = dpriv->dev;
 	struct frame_buffers *fbuffs = &dpriv->fbuffs[cmd_slot];
-	struct fvec *chunks = &dpriv->data_chunks[cmd_slot];
+	struct fvec *chunks = dpriv->data_chunks[cmd_slot];
 	struct fvec *cbuff = &chunks[CHUNK_COMMON];
 	struct fvec *rbuff = &dpriv->data_chunks[prev_slot][CHUNK_REM];
 
@@ -856,8 +619,8 @@ static void align_frame(struct elphel_ahci_priv *dpriv)
 	/* check if there is enough data to continue - JPEG data length can be too short */
 	len = get_size_from(chunks, CHUNK_DATA_0, 0, EXCLUDE_REM);
 	if (len < PHY_BLOCK_SIZE) {
-		dev_dbg(dev, "jpeg data is too short, delay this frame\n");
 		size_t num = align_bytes_num(cbuff->iov_len, PHY_BLOCK_SIZE);
+		dev_dbg(dev, "jpeg data is too short, delay this frame\n");
 		if (len >= num) {
 			/* there is enough data to align common buffer to sector boundary */
 			if (num >= chunks[CHUNK_DATA_0].iov_len) {
@@ -977,17 +740,6 @@ static void align_frame(struct elphel_ahci_priv *dpriv)
 	}
 }
 
-static void dump_sg_list(const struct fvec *sgl, size_t elems)
-{
-	int i;
-
-	printk(KERN_DEBUG "dump S/G list, %u elements:\n", elems);
-	for (i = 0; i < elems; i++) {
-		printk(KERN_DEBUG "dma address: 0x%x, len: %u\n", sgl[i].iov_dma, sgl[i].iov_len);
-	}
-	printk(KERN_DEBUG "===== end of S/G list =====\n");
-}
-
 /** Calculate the number of blocks this frame will occupy. The frame must be aligned to block size */
 static inline size_t get_blocks_num(struct fvec *sgl, size_t n_elem)
 {
@@ -1008,7 +760,6 @@ static inline size_t get_size_from(const struct fvec *vects, int index, size_t o
 	size_t total = 0;
 
 	if (index >= MAX_DATA_CHUNKS || offset > vects[index].iov_len) {
-		dev_dbg(NULL, "nothing to process, index or offset is out of vector range: vector %d, offset %u\n", index, offset);
 		return 0;
 	}
 
@@ -1032,13 +783,11 @@ static void init_vectors(struct frame_buffers *buffs, struct fvec *chunks)
 	chunks[CHUNK_EXIF].iov_len = 0;
 
 	chunks[CHUNK_LEADER].iov_base = buffs->jpheader_buff.iov_base;
-//	chunks[CHUNK_LEADER].iov_len = JPEG_MARKER_LEN;
 	chunks[CHUNK_LEADER].iov_len = 0;
 	chunks[CHUNK_HEADER].iov_base = (unsigned char *)chunks[CHUNK_LEADER].iov_base + JPEG_MARKER_LEN;
 	chunks[CHUNK_HEADER].iov_len = 0;
 
 	chunks[CHUNK_TRAILER].iov_base = buffs->trailer_buff.iov_base;
-//	chunks[CHUNK_TRAILER].iov_len = JPEG_MARKER_LEN;
 	chunks[CHUNK_TRAILER].iov_len = 0;
 
 	chunks[CHUNK_REM].iov_base = buffs->rem_buff.iov_base;
@@ -1074,9 +823,9 @@ static int init_buffers(struct device *dev, struct frame_buffers *buffs)
 	ptr[0] = 0xff;
 	ptr[1] = 0xd9;
 
-	/* 3 * ALIGMENT_SIZE here means 2 buffers for JPEG data alignment plus one buffer for
-	 * DATA_0 address alignment - this one is padded with APP15 marker */
-	total_sz = MAX_EXIF_SIZE + JPEG_HEADER_MAXSIZE + 4 * ALIGNMENT_SIZE + PHY_BLOCK_SIZE;
+	/* common buffer should be large enough to contain JPEG header, Exif, some alignment bytes and
+	 * remainder from previous frame */
+	total_sz = MAX_EXIF_SIZE + JPEG_HEADER_MAXSIZE + ALIGNMENT_SIZE + 2 * PHY_BLOCK_SIZE;
 	if (total_sz > PAGE_SIZE) {
 		mult = total_sz / PAGE_SIZE + 1;
 		total_sz = mult * PAGE_SIZE;
@@ -1147,18 +896,16 @@ static inline struct elphel_ahci_priv *dev_get_dpriv(struct device *dev)
 /** Process command and return the number of S/G entries mapped */
 static int process_cmd(struct elphel_ahci_priv *dpriv)
 {
-	int num;
 	struct fvec *cbuff;
 	struct ata_host *host = dev_get_drvdata(dpriv->dev);
 	struct ata_port *port = host->ports[DEFAULT_PORT_NUM];
 	size_t max_sz = (MAX_LBA_COUNT + 1) * PHY_BLOCK_SIZE;
-	size_t rem_sz = get_size_from(&dpriv->data_chunks[dpriv->head_ptr], dpriv->curr_data_chunk, dpriv->curr_data_offset, EXCLUDE_REM);
+	size_t rem_sz = get_size_from(dpriv->data_chunks[dpriv->head_ptr], dpriv->curr_data_chunk, dpriv->curr_data_offset, EXCLUDE_REM);
 
 	if (dpriv->flags & PROC_CMD)
 		dpriv->lba_ptr.lba_write += dpriv->lba_ptr.wr_count;
 	dpriv->flags |= PROC_CMD;
 
-	printk(KERN_DEBUG ">>> rem_sz = %u, head pos = %u (curr_data_chunk = %d, curr_data_offset = %u)\n", rem_sz, dpriv->head_ptr, dpriv->curr_data_chunk, dpriv->curr_data_offset);
 	/* define ATA command to use for current transaction */
 	if ((dpriv->lba_ptr.lba_write & ~ADDR_MASK_28_BIT) || rem_sz > max_sz) {
 		dpriv->curr_cmd = ATA_CMD_WRITE_EXT;
@@ -1170,7 +917,7 @@ static int process_cmd(struct elphel_ahci_priv *dpriv)
 
 	dpriv->sg_elems = map_vectors(dpriv);
 	if (dpriv->sg_elems != 0) {
-		dump_sg_list(dpriv->sgl, dpriv->sg_elems);
+		dump_sg_list(dpriv->dev, dpriv->sgl, dpriv->sg_elems);
 
 		dpriv->lba_ptr.wr_count = get_blocks_num(dpriv->sgl, dpriv->sg_elems);
 		if (dpriv->lba_ptr.lba_write + dpriv->lba_ptr.wr_count > dpriv->lba_ptr.lba_end) {
@@ -1179,7 +926,6 @@ static int process_cmd(struct elphel_ahci_priv *dpriv)
 		}
 		cbuff = &dpriv->fbuffs[dpriv->head_ptr].common_buff;
 		dma_sync_single_for_device(dpriv->dev, cbuff->iov_dma, cbuff->iov_len, DMA_TO_DEVICE);
-		printk(KERN_DEBUG ">>> time before issuing command: %u\n", get_rtc_usec());
 		elphel_cmd_issue(port, dpriv->lba_ptr.lba_write, dpriv->lba_ptr.wr_count, dpriv->sgl, dpriv->sg_elems, dpriv->curr_cmd);
 	}
 	return dpriv->sg_elems;
@@ -1188,7 +934,6 @@ static int process_cmd(struct elphel_ahci_priv *dpriv)
 static void finish_cmd(struct elphel_ahci_priv *dpriv)
 {
 	int all;
-	unsigned long irq_flags;
 
 	dpriv->lba_ptr.wr_count = 0;
 	if ((dpriv->flags & LAST_BLOCK) == 0) {
@@ -1197,7 +942,6 @@ static void finish_cmd(struct elphel_ahci_priv *dpriv)
 		all = 1;
 		dpriv->flags &= ~LAST_BLOCK;
 	}
-	printk(KERN_DEBUG "reset chunks in slot %u, all = %d\n", dpriv->head_ptr, all);
 	reset_chunks(dpriv->data_chunks[dpriv->head_ptr], all);
 	dpriv->curr_cmd = 0;
 	dpriv->max_data_sz = 0;
@@ -1230,15 +974,14 @@ static void finish_rec(struct elphel_ahci_priv *dpriv)
 	process_cmd(dpriv);
 }
 
-int move_tail(struct elphel_ahci_priv *dpriv, int lock)
+int move_tail(struct elphel_ahci_priv *dpriv)
 {
 	size_t slot = (dpriv->tail_ptr + 1) % MAX_CMD_SLOTS;
 
 	if (slot != dpriv->head_ptr) {
-		if (lock)
-			dpriv->flags |= LOCK_TAIL;
+		dpriv->flags |= LOCK_TAIL;
 		dpriv->tail_ptr = slot;
-		printk(KERN_DEBUG "move tail pointer to slot: %u\n", slot);
+		dev_dbg(dpriv->dev, "move tail pointer to slot: %u\n", slot);
 		return 0;
 	} else {
 		/* no more free command slots */
@@ -1260,7 +1003,7 @@ int move_head(struct elphel_ahci_priv *dpriv)
 
 	if (dpriv->head_ptr != use_tail) {
 		dpriv->head_ptr = slot;
-		printk(KERN_DEBUG "move head pointer to slot: %u\n", slot);
+		dev_dbg(dpriv->dev, "move head pointer to slot: %u\n", slot);
 		return 0;
 	} else {
 		/* no more commands in queue */
@@ -1285,7 +1028,7 @@ int is_cmdq_empty(const struct elphel_ahci_priv *dpriv)
 		return 1;
 }
 
-size_t get_prev_slot(struct elphel_ahci_priv *dpriv)
+size_t get_prev_slot(const struct elphel_ahci_priv *dpriv)
 {
 	size_t slot;
 
@@ -1305,15 +1048,13 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 		const char *buff,                        ///<
 		size_t buff_sz)                          ///<
 {
-	int i;
+	size_t rcvd = 0;
 	bool proceed = false;
 	unsigned long irq_flags;
 	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
 	struct frame_data fdata;
-	size_t rcvd = 0;
 	struct frame_buffers *buffs;
 	struct fvec *chunks;
-	static int dont_process = 0;
 
 	/* simple check if we've got the right command */
 	if (buff_sz != sizeof(struct frame_data)) {
@@ -1322,7 +1063,6 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	}
 	memcpy(&fdata, buff, sizeof(struct frame_data));
 
-	printk_ratelimited(KERN_DEBUG "flags on receive cmd: %u\n", dpriv->flags);
 	/* lock disk resource as soon as possible */
 	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
 	if ((dpriv->flags & DISK_BUSY) == 0) {
@@ -1340,72 +1080,25 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 		return buff_sz;
 	}
 
-	if ((move_tail(dpriv, 1) == -1) || dont_process) {
+	if (move_tail(dpriv) == -1) {
 		/* we are not ready yet because command queue is full */
 		printk_ratelimited(KERN_DEBUG "command queue is full\n");
 		return -EAGAIN;
 	}
-	chunks = &dpriv->data_chunks[dpriv->tail_ptr];
+	chunks = dpriv->data_chunks[dpriv->tail_ptr];
 	buffs = &dpriv->fbuffs[dpriv->tail_ptr];
 
-	/* debug code follows */
-	printk(KERN_DEBUG "\n");
-	printk(KERN_DEBUG ">>> data pointers received, time stamp: %u\n", get_rtc_usec());
-	printk(KERN_DEBUG ">>> sensor port: %u\n", fdata.sensor_port);
-	printk(KERN_DEBUG ">>> cirbuf ptr: %d, cirbuf data len: %d\n", fdata.cirbuf_ptr, fdata.jpeg_len);
-	printk(KERN_DEBUG ">>> meta_index: %d\n", fdata.meta_index);
-
+	dev_dbg(dev, "process frame from sensor port: %u\n", fdata.sensor_port);
 	rcvd = exif_get_data(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len);
-//	rcvd = exif_get_data_tst(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len, 1);
-	printk(KERN_DEBUG ">>> bytes received from exif driver: %u\n", rcvd);
-	if (rcvd > 0 && rcvd < buffs->exif_buff.iov_len) {
-//		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buffs->exif_buff.iov_base, rcvd);
-	}
 	chunks[CHUNK_EXIF].iov_len = rcvd;
 
 	rcvd = jpeghead_get_data(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
-//	rcvd = jpeghead_get_data_tst(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
-	printk(KERN_DEBUG ">>> bytes received from jpeghead driver: %u\n", rcvd);
-	if (rcvd > 0 && rcvd < buffs->jpheader_buff.iov_len) {
-//		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buffs->jpheader_buff.iov_base, rcvd);
-		chunks[CHUNK_LEADER].iov_len = JPEG_MARKER_LEN;
-		chunks[CHUNK_TRAILER].iov_len = JPEG_MARKER_LEN;
-		chunks[CHUNK_HEADER].iov_len = rcvd - chunks[CHUNK_LEADER].iov_len;
-	} else {
-		// we don't want these buffers for test purposes
-		chunks[CHUNK_LEADER].iov_len = 0;
-		chunks[CHUNK_TRAILER].iov_len = 0;
-		chunks[CHUNK_HEADER].iov_len = 0;
-	}
+	chunks[CHUNK_LEADER].iov_len = JPEG_MARKER_LEN;
+	chunks[CHUNK_TRAILER].iov_len = JPEG_MARKER_LEN;
+	chunks[CHUNK_HEADER].iov_len = rcvd - chunks[CHUNK_LEADER].iov_len;
 
-	rcvd = 0;
 	rcvd = circbuf_get_ptr(fdata.sensor_port, fdata.cirbuf_ptr, fdata.jpeg_len, &chunks[CHUNK_DATA_0], &chunks[CHUNK_DATA_1]);
-//	rcvd = circbuf_get_ptr_tst(fdata.sensor_port, fdata.cirbuf_ptr, fdata.jpeg_len, &chunks[CHUNK_DATA_0], &chunks[CHUNK_DATA_1]);
-	if (rcvd > 0) {
-		printk(KERN_DEBUG ">>> number of jpeg data pointers: %d\n", rcvd);
-		printk(KERN_DEBUG ">>> bytes received from circbuf driver, chunk 0: %u\n", chunks[CHUNK_DATA_0].iov_len);
-		if (rcvd == 2)
-			printk(KERN_DEBUG ">>> bytes received from circbuf driver, chunk 1: %u\n", chunks[CHUNK_DATA_1].iov_len);
-	}
-//	if (chunks[CHUNK_DATA_0].iov_len != 0)
-//		chunks[CHUNK_DATA_0].iov_dma = dma_map_single(dev, chunks[CHUNK_DATA_0].iov_base, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
-//	if (chunks[CHUNK_DATA_1].iov_len != 0)
-//		chunks[CHUNK_DATA_1].iov_dma = dma_map_single(dev, chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
-
-
-//	printk(KERN_DEBUG ">>> unaligned frame dump:\n");
-//	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
-//		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, chunks[i].iov_len);
-//	}
 	align_frame(dpriv);
-//	printk(KERN_DEBUG ">>> aligned frame dump:\n");
-//	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
-//		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, chunks[i].iov_len);
-//	}
-//	if (check_chunks(chunks) != 0) {
-//		dont_process = 1;
-//		return -EINVAL;
-//	}
 	/* new command slot is ready now and can be unlocked */
 	dpriv->flags &= ~LOCK_TAIL;
 
@@ -1418,33 +1111,11 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 		}
 		spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 	}
-	printk(KERN_DEBUG ">>> flags before exec: %u, proceed = %d\n", dpriv->flags, proceed);
 	if ((dpriv->flags & PROC_CMD) == 0 && proceed) {
-		if (get_size_from(&dpriv->data_chunks[dpriv->head_ptr], 0, 0, EXCLUDE_REM) == 0)
+		if (get_size_from(dpriv->data_chunks[dpriv->head_ptr], 0, 0, EXCLUDE_REM) == 0)
 			move_head(dpriv);
 		process_cmd(dpriv);
 	}
-//	while (dpriv->flags & PROC_CMD) {
-//		int sg_elems;
-//#ifndef DEBUG_DONT_WRITE
-//		while (dpriv->flags & IRQ_SIMPLE) {
-//			printk_once(KERN_DEBUG ">>> waiting for interrupt\n");
-//			msleep_interruptible(1);
-//		}
-//#endif
-//		printk(KERN_DEBUG ">>> proceeding to next cmd chunk\n");
-//		sg_elems = process_cmd(dev, dpriv, port);
-//		if (sg_elems == 0) {
-//			finish_cmd(dev, dpriv);
-//			if (move_head(dpriv) != -1) {
-//				process_cmd(dev, dpriv, port);
-//			}
-//		}
-//	}
-//	if (chunks[CHUNK_DATA_0].iov_len != 0)
-//		dma_unmap_single(dev, chunks[CHUNK_DATA_0].iov_dma, chunks[CHUNK_DATA_0].iov_len, DMA_TO_DEVICE);
-//	if (chunks[CHUNK_DATA_1].iov_len != 0)
-//		dma_unmap_single(dev, chunks[CHUNK_DATA_1].iov_dma, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
 
 	return buff_sz;
 }
@@ -1523,7 +1194,7 @@ static inline void prep_prdt(struct fvec *sgl,   ///< pointer to S/G list which 
 static void elphel_cmd_issue(struct ata_port *ap,///< device port for which the command should be issued
 		uint64_t start,                          ///< LBA start address
 		uint16_t count,                          ///< the number of sectors to read or write
-		struct fvec *sgl,                 ///< S/G list pointing to data buffers
+		struct fvec *sgl,                        ///< S/G list pointing to data buffers
 		unsigned int elem,                       ///< the number of elements in @e sgl
 		uint8_t cmd)                             ///< the command to be issued; should be ATA_CMD_READ, ATA_CMD_READ_EXT,
 		                                         ///< ATA_CMD_WRITE or ATA_CMD_WRITE_EXT, other commands are not tested
@@ -1555,16 +1226,10 @@ static void elphel_cmd_issue(struct ata_port *ap,///< device port for which the 
 		opts |= AHCI_CMD_WRITE;
 	ahci_fill_cmd_slot(pp, slot_num, opts);
 
-	dev_dbg(ap->dev, ">>> dump command table content, first %d bytes, phys addr = 0x%x:\n", 20, pp->cmd_tbl_dma);
-	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, pp->cmd_tbl, 20);
+	dev_dbg(ap->dev, "dump command table content, first %d bytes, phys addr = 0x%x:\n", 16, pp->cmd_tbl_dma);
+	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, pp->cmd_tbl, 16);
 
 	dma_sync_single_for_device(ap->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
-
-	/* debug code follows */
-#ifdef DEBUG_DONT_WRITE
-	return;
-#endif
-	/* end of debug code */
 
 	/* issue command */
 	writel(0x11, port_mmio + PORT_CMD);
@@ -1583,13 +1248,10 @@ static int elphel_qc_defer(struct ata_queued_cmd *qc)
 		return ret;
 
 	/* And now check if internal command is in progress */
-	printk_ratelimited(KERN_DEBUG ">>> %s: cmd queue head pos = %u, tail pos = %u, flags = %u\n", __func__, dpriv->head_ptr, dpriv->tail_ptr, dpriv->flags);
 	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
 	if ((dpriv->flags & DISK_BUSY) || is_cmdq_empty(dpriv) == 0) {
 		ret = ATA_DEFER_LINK;
-		printk_ratelimited(KERN_DEBUG "defer system command\n");
 	} else {
-		printk_ratelimited(KERN_DEBUG "proceed to system command\n");
 		dpriv->flags |= DISK_BUSY;
 	}
 	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
@@ -1677,12 +1339,6 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_lba_start.attr,
 		&dev_attr_lba_end.attr,
 		&dev_attr_lba_current.attr,
-		&dev_attr_data_0_sz.attr,
-		&dev_attr_data_1_sz.attr,
-		&dev_attr_data_proc.attr,
-		&dev_attr_exif_sz.attr,
-		&dev_attr_jpg_hdr_sz.attr,
-		&dev_attr_datarate_mbs.attr,
 		NULL
 };
 static const struct attribute_group dev_attr_root_group = {
@@ -1730,6 +1386,40 @@ static struct platform_driver ahci_elphel_driver = {
 		},
 };
 module_platform_driver(ahci_elphel_driver);
+
+static int check_chunks(struct fvec *vects)
+{
+	int i;
+	int ret = 0;
+	size_t sz = 0;
+	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
+		if (i != CHUNK_REM) {
+			sz += vects[i].iov_len;
+			if ((vects[i].iov_len % ALIGNMENT_SIZE) != 0) {
+				dev_err(NULL, "ERROR: unaligned write from slot %d, length %u\n", i, vects[i].iov_len);
+				ret = -1;
+			}
+		}
+	}
+	if ((sz % PHY_BLOCK_SIZE) != 0) {
+		dev_err(NULL, "ERROR: total length of the transaction is not aligned to sector boundary, total length %u\n", sz);
+		ret = -1;
+	} else {
+		dev_err(NULL, "===== frame is OK =====\n");
+	}
+	return ret;
+}
+
+static void dump_sg_list(const struct device *dev, const struct fvec *sgl, size_t elems)
+{
+	int i;
+
+	dev_dbg(dev, "===== dump S/G list, %u elements:\n", elems);
+	for (i = 0; i < elems; i++) {
+		dev_dbg(dev, "dma address: 0x%x, len: %u\n", sgl[i].iov_dma, sgl[i].iov_len);
+	}
+	dev_dbg(dev, "===== end of S/G list =====\n");
+}
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Elphel, Inc.");
