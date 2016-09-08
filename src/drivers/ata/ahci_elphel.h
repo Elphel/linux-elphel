@@ -24,22 +24,20 @@
 #ifndef _AHCI_ELPHEL_EXT
 #define _AHCI_ELPHEL_EXT
 
-/** Flag indicating that IRQ should not be processed in ahci_handle_port_interrupt */
+/** Flag indicating that IRQ corresponds to internal command and should not be
+ * processed in ahci_handle_port_interrupt */
 #define IRQ_SIMPLE                (1 << 0)
-/** Flag indicating that driver's internal command is in progress. This flag is set when
- * driver performs write on its own and is mutually exclusive with #NATIVE_CMD flag */
-#define INTERNAL_CMD              (1 << 1)
-/** Flag indicating that libahci command is in progress. This flag is set when
- * driver performs write from the system calls and is mutually exclusive with #INTERNAL_CMD flag */
-#define NATIVE_CMD                (1 << 2)
+/** Flag indicating that disk is currently busy. Access to this flag should be protected by
+ * spin locks to prevent race conditions */
+#define DISK_BUSY                 (1 << 1)
 /** Processing driver's internal command is in progress */
-#define PROC_CMD                  (1 << 3)
-/** Flag indicating that the remaining chunk of data will be recorder */
-#define LAST_BLOCK                (1 << 4)
+#define PROC_CMD                  (1 << 2)
+/** Flag indicating that the remaining chunk of data will be recorded */
+#define LAST_BLOCK                (1 << 3)
 /** Flag indicating that recording should be stopped right after the last chunk of data
  * is written */
-#define DELAYED_FINISH            (1 << 5)
-#define LOCK_TAIL                 (1 << 6)
+#define DELAYED_FINISH            (1 << 4)
+#define LOCK_TAIL                 (1 << 5)
 /** The length of a command FIS in double words */
 #define CMD_FIS_LEN               5
 /** This is used to get 28-bit address from 64-bit value */
@@ -125,12 +123,12 @@ struct elphel_ahci_priv {
 	size_t curr_data_offset;                     ///< offset of the last byte in a data chunk pointed to by @e curr_data_chunk
 	size_t head_ptr;                             ///< pointer to command slot which will be written next
 	size_t tail_ptr;                             ///< pointer to next free command slot
-	spinlock_t flags_lock;                       ///< controls access to two flags in @e flags variable:
-                                                 ///< #INTERNAL_CMD and #NATIVE_CMD. These flags control access to disk
-                                                 ///< write operations either from the the driver itself or from the system and
-                                                 ///< thus are mutually exclusive. Only flags set operation should be
-                                                 ///> protected by this spin lock. Mutex is not used because these flags are accessed
-                                                 ///> from interrupt context
+	spinlock_t flags_lock;                       ///< controls access to #DISK_BUSY flag in @e flags variable.
+	                                             ///< This flag controls access to disk write operations either from
+	                                             ///< the the driver itself or from the system.  Mutex is not used
+	                                             ///< because this flag is accessed from interrupt context
+	struct tasklet_struct bh;                    ///< command processing tasklet
+	struct device *dev;                          ///< pointer to parent device structure
 };
 
 #endif /* _AHCI_ELPHEL_EXT */

@@ -70,9 +70,9 @@ static int init_buffers(struct device *dev, struct frame_buffers *buffs);
 static void init_vectors(struct frame_buffers *buffs, struct fvec *chunks);
 static void deinit_buffers(struct device *dev, struct frame_buffers *buffs);
 static inline struct elphel_ahci_priv *dev_get_dpriv(struct device *dev);
-static void finish_cmd(struct device *dev, struct elphel_ahci_priv *dpriv);
-static void finish_rec(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port);
-static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port);
+static void finish_cmd(struct elphel_ahci_priv *dpriv);
+static void finish_rec(struct elphel_ahci_priv *dpriv);
+static int process_cmd(struct elphel_ahci_priv *dpriv);
 //static void start_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port);
 static inline size_t get_size_from(const struct fvec *vects, int index, size_t offset, int all);
 static inline void vectmov(struct fvec *vec, size_t len);
@@ -80,6 +80,8 @@ static inline void vectsplit(struct fvec *vect, struct fvec *parts, size_t *n_el
 int move_tail(struct elphel_ahci_priv *dpriv, int lock);
 int move_head(struct elphel_ahci_priv *dpriv);
 size_t get_prev_slot(struct elphel_ahci_priv *dpriv);
+int is_cmdq_empty(const struct elphel_ahci_priv *dpriv);
+void process_queue(unsigned long data);
 
 static ssize_t set_load_flag(struct device *dev, struct device_attribute *attr,
 		const char *buff, size_t buff_sz)
@@ -149,28 +151,47 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 
 		writel(host_irq_stat, hpriv->mmio + HOST_IRQ_STAT);
 		handled = IRQ_HANDLED;
-
-		if (process_cmd(host->dev, dpriv, host->ports[DEFAULT_PORT_NUM]) == 0) {
-			finish_cmd(host->dev, dpriv);
-			if (move_head(dpriv) != -1) {
-				process_cmd(host->dev, dpriv, host->ports[DEFAULT_PORT_NUM]);
-			} else {
-				if (dpriv->flags & DELAYED_FINISH) {
-					dpriv->flags &= ~DELAYED_FINISH;
-					finish_rec(host->dev, dpriv, port);
-				} else {
-					/* all commands have been processed; flag reset here does not need spin lock protection */
-					dpriv->flags &= ~INTERNAL_CMD;
-				}
-			}
-		}
+		tasklet_schedule(&dpriv->bh);
 	} else {
-		/* pass handling to AHCI level; flag reset here does not need spin lock protection */
-		dpriv->flags &= ~NATIVE_CMD;
+		/* pass handling to AHCI level and then decide if the resource should be freed */
 		handled = ahci_single_irq_intr(irq, dev_instance);
+		spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+		if (is_cmdq_empty(dpriv)) {
+			dpriv->flags &= ~DISK_BUSY;
+//			printk(KERN_DEBUG ">>> irq: flags = %u\n", dpriv->flags);
+		} else {
+//			printk(KERN_DEBUG ">>> irq schedule tasklet: flags = %u\n", dpriv->flags);
+			tasklet_schedule(&dpriv->bh);
+		}
+		spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 	}
 
 	return handled;
+}
+
+void process_queue(unsigned long data)
+{
+	unsigned long irq_flags;
+	struct elphel_ahci_priv *dpriv = (struct elphel_ahci_priv *)data;
+	struct ata_host *host = dev_get_drvdata(dpriv->dev);
+	struct ata_port *port = host->ports[DEFAULT_PORT_NUM];
+
+	if (process_cmd(dpriv) == 0) {
+		finish_cmd(dpriv);
+		if (move_head(dpriv) != -1) {
+			process_cmd(dpriv);
+		} else {
+			if (dpriv->flags & DELAYED_FINISH) {
+				dpriv->flags &= ~DELAYED_FINISH;
+				finish_rec(dpriv);
+			} else {
+				/* all commands have been processed */
+				spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+				dpriv->flags &= ~DISK_BUSY;
+				spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+			}
+		}
+	}
 }
 
 // What about port_stop and freeing/unmapping ?
@@ -275,7 +296,9 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	if (!dpriv)
 		return -ENOMEM;
 
+	dpriv->dev = dev;
 	spin_lock_init(&dpriv->flags_lock);
+	tasklet_init(&dpriv->bh, process_queue, (unsigned long)dpriv);
 
 	for (i = 0; i < MAX_CMD_SLOTS; i++) {
 		ret = init_buffers(dev, &dpriv->fbuffs[i]);
@@ -328,6 +351,7 @@ static int elphel_drv_remove(struct platform_device *pdev)
 	struct elphel_ahci_priv *dpriv = dev_get_dpriv(&pdev->dev);
 
 	dev_info(&pdev->dev, "removing Elphel AHCI driver");
+	tasklet_kill(&dpriv->bh);
 	for (i = 0; i < MAX_CMD_SLOTS; i++)
 		deinit_buffers(&pdev->dev, &dpriv->fbuffs[i]);
 	sysfs_remove_group(&pdev->dev.kobj, &dev_attr_root_group);
@@ -750,7 +774,7 @@ static inline unsigned char *vectrpos(struct fvec *vec, size_t offset)
 {
 	return (unsigned char *)vec->iov_base + (vec->iov_len - offset);
 }
-static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
+static void align_frame(struct elphel_ahci_priv *dpriv)
 {
 	int i;
 	int is_delayed = 0;
@@ -759,6 +783,7 @@ static void align_frame(struct device *dev, struct elphel_ahci_priv *dpriv)
 	size_t cmd_slot = dpriv->tail_ptr;
 	size_t prev_slot = get_prev_slot(dpriv);
 	size_t max_len = dpriv->fbuffs[cmd_slot].common_buff.iov_len;
+	struct device *dev = dpriv->dev;
 	struct frame_buffers *fbuffs = &dpriv->fbuffs[cmd_slot];
 	struct fvec *chunks = &dpriv->data_chunks[cmd_slot];
 	struct fvec *cbuff = &chunks[CHUNK_COMMON];
@@ -1120,13 +1145,20 @@ static inline struct elphel_ahci_priv *dev_get_dpriv(struct device *dev)
 }
 
 /** Process command and return the number of S/G entries mapped */
-static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port)
+static int process_cmd(struct elphel_ahci_priv *dpriv)
 {
 	int num;
 	struct fvec *cbuff;
+	struct ata_host *host = dev_get_drvdata(dpriv->dev);
+	struct ata_port *port = host->ports[DEFAULT_PORT_NUM];
 	size_t max_sz = (MAX_LBA_COUNT + 1) * PHY_BLOCK_SIZE;
 	size_t rem_sz = get_size_from(&dpriv->data_chunks[dpriv->head_ptr], dpriv->curr_data_chunk, dpriv->curr_data_offset, EXCLUDE_REM);
 
+	if (dpriv->flags & PROC_CMD)
+		dpriv->lba_ptr.lba_write += dpriv->lba_ptr.wr_count;
+	dpriv->flags |= PROC_CMD;
+
+	printk(KERN_DEBUG ">>> rem_sz = %u, head pos = %u (curr_data_chunk = %d, curr_data_offset = %u)\n", rem_sz, dpriv->head_ptr, dpriv->curr_data_chunk, dpriv->curr_data_offset);
 	/* define ATA command to use for current transaction */
 	if ((dpriv->lba_ptr.lba_write & ~ADDR_MASK_28_BIT) || rem_sz > max_sz) {
 		dpriv->curr_cmd = ATA_CMD_WRITE_EXT;
@@ -1136,9 +1168,6 @@ static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 		dpriv->max_data_sz = (MAX_LBA_COUNT + 1) * PHY_BLOCK_SIZE;
 	}
 
-	if (dpriv->flags & PROC_CMD)
-		dpriv->lba_ptr.lba_write += dpriv->lba_ptr.wr_count;
-	dpriv->flags |= PROC_CMD;
 	dpriv->sg_elems = map_vectors(dpriv);
 	if (dpriv->sg_elems != 0) {
 		dump_sg_list(dpriv->sgl, dpriv->sg_elems);
@@ -1149,14 +1178,14 @@ static int process_cmd(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 			dpriv->lba_ptr.lba_write = dpriv->lba_ptr.lba_start;
 		}
 		cbuff = &dpriv->fbuffs[dpriv->head_ptr].common_buff;
-		dma_sync_single_for_device(dev, cbuff->iov_dma, cbuff->iov_len, DMA_TO_DEVICE);
+		dma_sync_single_for_device(dpriv->dev, cbuff->iov_dma, cbuff->iov_len, DMA_TO_DEVICE);
 		printk(KERN_DEBUG ">>> time before issuing command: %u\n", get_rtc_usec());
 		elphel_cmd_issue(port, dpriv->lba_ptr.lba_write, dpriv->lba_ptr.wr_count, dpriv->sgl, dpriv->sg_elems, dpriv->curr_cmd);
 	}
 	return dpriv->sg_elems;
 }
 
-static void finish_cmd(struct device *dev, struct elphel_ahci_priv *dpriv)
+static void finish_cmd(struct elphel_ahci_priv *dpriv)
 {
 	int all;
 	unsigned long irq_flags;
@@ -1170,16 +1199,15 @@ static void finish_cmd(struct device *dev, struct elphel_ahci_priv *dpriv)
 	}
 	printk(KERN_DEBUG "reset chunks in slot %u, all = %d\n", dpriv->head_ptr, all);
 	reset_chunks(dpriv->data_chunks[dpriv->head_ptr], all);
-	/* flag reset here does not need spin lock protection */
-	dpriv->flags &= ~PROC_CMD;
 	dpriv->curr_cmd = 0;
 	dpriv->max_data_sz = 0;
 	dpriv->curr_data_chunk = 0;
 	dpriv->curr_data_offset = 0;
+	dpriv->flags &= ~PROC_CMD;
 }
 
 /** Fill free space in REM buffer with 0 and save the reaming data chunk */
-static void finish_rec(struct device *dev, struct elphel_ahci_priv *dpriv, struct ata_port *port)
+static void finish_rec(struct elphel_ahci_priv *dpriv)
 {
 	size_t stuff_len;
 	unsigned char *src;
@@ -1189,17 +1217,17 @@ static void finish_rec(struct device *dev, struct elphel_ahci_priv *dpriv, struc
 	if (rvect->iov_len == 0)
 		return;
 
-	dev_dbg(dev, "write last chunk of data from slot %u, size: %u\n", dpriv->head_ptr, rvect->iov_len);
+	dev_dbg(dpriv->dev, "write last chunk of data from slot %u, size: %u\n", dpriv->head_ptr, rvect->iov_len);
 	stuff_len = PHY_BLOCK_SIZE - rvect->iov_len;
 	src = vectrpos(rvect, 0);
 	memset(src, 0, stuff_len);
 	rvect->iov_len += stuff_len;
-	dma_sync_single_for_cpu(dev, dpriv->fbuffs[dpriv->head_ptr].common_buff.iov_dma, dpriv->fbuffs[dpriv->head_ptr].common_buff.iov_len, DMA_TO_DEVICE);
+	dma_sync_single_for_cpu(dpriv->dev, dpriv->fbuffs[dpriv->head_ptr].common_buff.iov_dma, dpriv->fbuffs[dpriv->head_ptr].common_buff.iov_len, DMA_TO_DEVICE);
 	vectcpy(cvect, rvect->iov_base, rvect->iov_len);
 	vectshrink(rvect, rvect->iov_len);
 
 	dpriv->flags |= LAST_BLOCK;
-	process_cmd(dev, dpriv, port);
+	process_cmd(dpriv);
 }
 
 int move_tail(struct elphel_ahci_priv *dpriv, int lock)
@@ -1241,6 +1269,22 @@ int move_head(struct elphel_ahci_priv *dpriv)
 
 }
 
+int is_cmdq_empty(const struct elphel_ahci_priv *dpriv)
+{
+	size_t use_tail;
+
+	if (dpriv->flags & LOCK_TAIL) {
+		/* current command slot is not ready yet, use previous */
+		use_tail = get_prev_slot(dpriv);
+	} else {
+		use_tail = dpriv->tail_ptr;
+	}
+	if (dpriv->head_ptr != use_tail)
+		return 0;
+	else
+		return 1;
+}
+
 size_t get_prev_slot(struct elphel_ahci_priv *dpriv)
 {
 	size_t slot;
@@ -1262,9 +1306,8 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 		size_t buff_sz)                          ///<
 {
 	int i;
+	bool proceed = false;
 	unsigned long irq_flags;
-	struct ata_host *host = dev_get_drvdata(dev);
-	struct ata_port *port = host->ports[DEFAULT_PORT_NUM];
 	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
 	struct frame_data fdata;
 	size_t rcvd = 0;
@@ -1279,21 +1322,18 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	}
 	memcpy(&fdata, buff, sizeof(struct frame_data));
 
-	/* check if we can issue internal command */
+	printk_ratelimited(KERN_DEBUG "flags on receive cmd: %u\n", dpriv->flags);
+	/* lock disk resource as soon as possible */
 	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
-	if ((dpriv->flags & NATIVE_CMD) == 0) {
-		dpriv->flags |= INTERNAL_CMD;
-	} else {
-		spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
-		printk_ratelimited(KERN_DEBUG, "system command is in progress, defer Elphel command\n");
-//		dev_dbg(dev, "system command is in progress, defer Elphel command\n");
-		return -EAGAIN;
+	if ((dpriv->flags & DISK_BUSY) == 0) {
+		dpriv->flags |= DISK_BUSY;
+		proceed = true;
 	}
 	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 
 	if (fdata.cmd == DRV_CMD_FINISH) {
-		if (!(dpriv->flags & PROC_CMD)) {
-			finish_rec(dev, dpriv, port);
+		if ((dpriv->flags & PROC_CMD) == 0 && proceed) {
+			finish_rec(dpriv);
 		} else {
 			dpriv->flags |= DELAYED_FINISH;
 		}
@@ -1302,6 +1342,7 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 
 	if ((move_tail(dpriv, 1) == -1) || dont_process) {
 		/* we are not ready yet because command queue is full */
+		printk_ratelimited(KERN_DEBUG "command queue is full\n");
 		return -EAGAIN;
 	}
 	chunks = &dpriv->data_chunks[dpriv->tail_ptr];
@@ -1313,7 +1354,6 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	printk(KERN_DEBUG ">>> sensor port: %u\n", fdata.sensor_port);
 	printk(KERN_DEBUG ">>> cirbuf ptr: %d, cirbuf data len: %d\n", fdata.cirbuf_ptr, fdata.jpeg_len);
 	printk(KERN_DEBUG ">>> meta_index: %d\n", fdata.meta_index);
-	printk(KERN_DEBUG ">>> frame will be place to slot %u\n", dpriv->tail_ptr);
 
 	rcvd = exif_get_data(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len);
 //	rcvd = exif_get_data_tst(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len, 1);
@@ -1353,26 +1393,36 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 //		chunks[CHUNK_DATA_1].iov_dma = dma_map_single(dev, chunks[CHUNK_DATA_1].iov_base, chunks[CHUNK_DATA_1].iov_len, DMA_TO_DEVICE);
 
 
-	printk(KERN_DEBUG ">>> unaligned frame dump:\n");
-	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
-		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, chunks[i].iov_len);
-	}
-	align_frame(dev, dpriv);
-	printk(KERN_DEBUG ">>> aligned frame dump:\n");
-	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
-		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, chunks[i].iov_len);
-	}
-	if (check_chunks(chunks) != 0) {
-		dont_process = 1;
-		return -EINVAL;
-	}
+//	printk(KERN_DEBUG ">>> unaligned frame dump:\n");
+//	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
+//		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, chunks[i].iov_len);
+//	}
+	align_frame(dpriv);
+//	printk(KERN_DEBUG ">>> aligned frame dump:\n");
+//	for (i = 0; i < MAX_DATA_CHUNKS; i++) {
+//		printk(KERN_DEBUG ">>>\tslot: %i; len: %u\n", i, chunks[i].iov_len);
+//	}
+//	if (check_chunks(chunks) != 0) {
+//		dont_process = 1;
+//		return -EINVAL;
+//	}
 	/* new command slot is ready now and can be unlocked */
 	dpriv->flags &= ~LOCK_TAIL;
 
-	if ((dpriv->flags & PROC_CMD) == 0) {
+	if (!proceed) {
+		/* disk may be free by the moment, try to grab it */
+		spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+		if ((dpriv->flags & DISK_BUSY) == 0) {
+			dpriv->flags |= DISK_BUSY;
+			proceed = true;
+		}
+		spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+	}
+	printk(KERN_DEBUG ">>> flags before exec: %u, proceed = %d\n", dpriv->flags, proceed);
+	if ((dpriv->flags & PROC_CMD) == 0 && proceed) {
 		if (get_size_from(&dpriv->data_chunks[dpriv->head_ptr], 0, 0, EXCLUDE_REM) == 0)
 			move_head(dpriv);
-		process_cmd(dev, dpriv, port);
+		process_cmd(dpriv);
 	}
 //	while (dpriv->flags & PROC_CMD) {
 //		int sg_elems;
@@ -1533,13 +1583,14 @@ static int elphel_qc_defer(struct ata_queued_cmd *qc)
 		return ret;
 
 	/* And now check if internal command is in progress */
+	printk_ratelimited(KERN_DEBUG ">>> %s: cmd queue head pos = %u, tail pos = %u, flags = %u\n", __func__, dpriv->head_ptr, dpriv->tail_ptr, dpriv->flags);
 	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
-	if (dpriv->flags & INTERNAL_CMD) {
+	if ((dpriv->flags & DISK_BUSY) || is_cmdq_empty(dpriv) == 0) {
 		ret = ATA_DEFER_LINK;
 		printk_ratelimited(KERN_DEBUG "defer system command\n");
 	} else {
 		printk_ratelimited(KERN_DEBUG "proceed to system command\n");
-		dpriv->flags |= NATIVE_CMD;
+		dpriv->flags |= DISK_BUSY;
 	}
 	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 
