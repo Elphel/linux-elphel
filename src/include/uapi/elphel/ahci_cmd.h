@@ -26,7 +26,8 @@
 #define DRV_CMD_FINISH            (1 << 1)
 #define DRV_CMD_EXIF              (1 << 2)
 
-#define NAME_TO_STR(NAME)         #NAME
+#define _NAME_TO_STR(...)         #__VA_ARGS__
+#define NAME_TO_STR(NAME)         _NAME_TO_STR(NAME)
 /** The path to Elphel AHCI driver sysfs entry. The trailing slash is mandatory. */
 #define SYSFS_AHCI_ENTRY          "/sys/devices/soc0/amba@0/80000000.elphel-ahci/"
 /** sysfs entry name, no double quotes. This macro is used to populate <em>struct attribute</em> in #ahci_elphel.c */
