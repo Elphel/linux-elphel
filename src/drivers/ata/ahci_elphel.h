@@ -19,7 +19,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "../elphel/circbuf.h"
+#include <uapi/elphel/ahci_cmd.h>
 
 #ifndef _AHCI_ELPHEL_EXT
 #define _AHCI_ELPHEL_EXT

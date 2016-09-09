@@ -27,16 +27,15 @@
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
 #include <linux/sysfs.h>
-#include <linux/uio.h>
+#include <elphel/exifa.h>
+#include <elphel/elphel393-mem.h>
 
 #include "ahci.h"
 #include "ahci_elphel.h"
 #include "../elphel/exif393.h"
-#include "../elphel/exifa.h"
 #include "../elphel/jpeghead.h"
+#include "../elphel/circbuf.h"
 #include "../elphel/x393_helpers.h"
-
-#include <elphel/elphel393-mem.h>
 
 #define DRV_NAME "elphel-ahci"
 /*
@@ -408,19 +407,6 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 	dma_sync_single_for_device(&qc->dev->tdev, pp->cmd_tbl_dma,
 			AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
 }
-
-
-/* this should be placed to system includes directory*/
-#define DRV_CMD_WRITE             0
-#define DRV_CMD_FINISH            1
-struct frame_data {
-	unsigned int sensor_port;
-	int cirbuf_ptr;
-	int jpeg_len;
-	int meta_index;
-	int cmd;
-};
-/* end of system includes */
 
 /** Map buffer vectors to S/G list and return the number of vectors mapped */
 static int map_vectors(struct elphel_ahci_priv *dpriv)
@@ -1071,7 +1057,7 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	}
 	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 
-	if (fdata.cmd == DRV_CMD_FINISH) {
+	if (fdata.cmd & DRV_CMD_FINISH) {
 		if ((dpriv->flags & PROC_CMD) == 0 && proceed) {
 			finish_rec(dpriv);
 		} else {
@@ -1088,9 +1074,11 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	chunks = dpriv->data_chunks[dpriv->tail_ptr];
 	buffs = &dpriv->fbuffs[dpriv->tail_ptr];
 
-	dev_dbg(dev, "process frame from sensor port: %u\n", fdata.sensor_port);
-	rcvd = exif_get_data(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len);
-	chunks[CHUNK_EXIF].iov_len = rcvd;
+	dev_dbg(dev, "process frame from sensor port: %u, command = %d\n", fdata.sensor_port, fdata.cmd);
+	if (fdata.cmd & DRV_CMD_EXIF) {
+		rcvd = exif_get_data(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len);
+		chunks[CHUNK_EXIF].iov_len = rcvd;
+	}
 
 	rcvd = jpeghead_get_data(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
 	chunks[CHUNK_LEADER].iov_len = JPEG_MARKER_LEN;
@@ -1329,16 +1317,16 @@ static ssize_t lba_current_write(struct device *dev, struct device_attribute *at
 }
 
 static DEVICE_ATTR(load_module, S_IWUSR | S_IWGRP, NULL, set_load_flag);
-static DEVICE_ATTR(write, S_IWUSR | S_IWGRP, NULL, rawdev_write);
-static DEVICE_ATTR(lba_start, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, lba_start_read, lba_start_write);
-static DEVICE_ATTR(lba_end, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, lba_end_read, lba_end_write);
-static DEVICE_ATTR(lba_current, S_IRUSR | S_IRGRP | S_IWUSR | S_IRGRP, lba_current_read, lba_current_write);
+static DEVICE_ATTR(SYSFS_AHCI_FNAME_WRITE, S_IWUSR | S_IWGRP, NULL, rawdev_write);
+static DEVICE_ATTR(SYSFS_AHCI_FNAME_START, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, lba_start_read, lba_start_write);
+static DEVICE_ATTR(SYSFS_AHCI_FNAME_END, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, lba_end_read, lba_end_write);
+static DEVICE_ATTR(SYSFS_AHCI_FNAME_CURR, S_IRUSR | S_IRGRP | S_IWUSR | S_IRGRP, lba_current_read, lba_current_write);
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_load_module.attr,
-		&dev_attr_write.attr,
-		&dev_attr_lba_start.attr,
-		&dev_attr_lba_end.attr,
-		&dev_attr_lba_current.attr,
+		&dev_attr_SYSFS_AHCI_FNAME_WRITE.attr,
+		&dev_attr_SYSFS_AHCI_FNAME_START.attr,
+		&dev_attr_SYSFS_AHCI_FNAME_END.attr,
+		&dev_attr_SYSFS_AHCI_FNAME_CURR.attr,
 		NULL
 };
 static const struct attribute_group dev_attr_root_group = {
