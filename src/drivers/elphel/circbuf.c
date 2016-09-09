@@ -100,7 +100,7 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 	return 0;
 }
 
-int circbuf_get_ptr(int sensor_port, size_t offset, size_t len, struct fvec *vect_0, struct fvec *vect_1)
+ssize_t circbuf_get_ptr(int sensor_port, size_t offset, size_t len, struct fvec *vect_0, struct fvec *vect_1)
 {
 	int ret = 1;
 

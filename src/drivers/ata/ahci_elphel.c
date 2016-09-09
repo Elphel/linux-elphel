@@ -1034,7 +1034,7 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 		const char *buff,                        ///<
 		size_t buff_sz)                          ///<
 {
-	size_t rcvd = 0;
+	ssize_t rcvd = 0;
 	bool proceed = false;
 	unsigned long irq_flags;
 	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
@@ -1081,11 +1081,37 @@ static ssize_t rawdev_write(struct device *dev,  ///<
 	}
 
 	rcvd = jpeghead_get_data(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
+	if (rcvd < 0) {
+		/* free resource lock and current command slot */
+		if (proceed) {
+			spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+			dpriv->flags &= ~DISK_BUSY;
+			spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+		}
+		reset_chunks(chunks, 0);
+		dpriv->tail_ptr = get_prev_slot(dpriv);
+		dpriv->flags &= ~LOCK_TAIL;
+		dev_err(dev, "could not get JPEG header, error %d\n", rcvd);
+		return -EINVAL;
+	}
 	chunks[CHUNK_LEADER].iov_len = JPEG_MARKER_LEN;
 	chunks[CHUNK_TRAILER].iov_len = JPEG_MARKER_LEN;
 	chunks[CHUNK_HEADER].iov_len = rcvd - chunks[CHUNK_LEADER].iov_len;
 
 	rcvd = circbuf_get_ptr(fdata.sensor_port, fdata.cirbuf_ptr, fdata.jpeg_len, &chunks[CHUNK_DATA_0], &chunks[CHUNK_DATA_1]);
+	if (rcvd < 0) {
+		/* free resource lock and current command slot */
+		if (proceed) {
+			spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+			dpriv->flags &= ~DISK_BUSY;
+			spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+		}
+		reset_chunks(chunks, 0);
+		dpriv->tail_ptr = get_prev_slot(dpriv);
+		dpriv->flags &= ~LOCK_TAIL;
+		dev_err(dev, "could not get JPEG data, error %d\n", rcvd);
+		return -EINVAL;
+	}
 	align_frame(dpriv);
 	/* new command slot is ready now and can be unlocked */
 	dpriv->flags &= ~LOCK_TAIL;

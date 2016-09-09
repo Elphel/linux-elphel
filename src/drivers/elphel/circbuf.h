@@ -56,6 +56,6 @@ extern unsigned short circbuf_width;
 extern unsigned char  circbuf_byrshift;
 /* end of debug code */
 
-int circbuf_get_ptr(int sensor_port, size_t offset, size_t len, struct fvec *vect_0, struct fvec *vect_1);
+ssize_t circbuf_get_ptr(int sensor_port, size_t offset, size_t len, struct fvec *vect_0, struct fvec *vect_1);
 
 #endif /* _CIRCBUF_H */
