@@ -34,7 +34,6 @@
 #include "ahci_elphel.h"
 #include "../elphel/exif393.h"
 #include "../elphel/jpeghead.h"
-#include "../elphel/circbuf.h"
 #include "../elphel/x393_helpers.h"
 
 #define DRV_NAME "elphel-ahci"

@@ -20,6 +20,7 @@
  */
 
 #include <uapi/elphel/ahci_cmd.h>
+#include "../elphel/circbuf.h"
 
 #ifndef _AHCI_ELPHEL_EXT
 #define _AHCI_ELPHEL_EXT

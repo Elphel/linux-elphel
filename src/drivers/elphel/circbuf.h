@@ -23,13 +23,18 @@
 #define _CIRCBUF_H
 
 #include <linux/poll.h>
-#include <uapi/elphel/ahci_cmd.h>
+
+struct fvec {
+	void *iov_base;                              ///< pointer to allocated buffer
+	size_t iov_len;                              ///< the size (in bytes) of allocated buffer; set after allocation and is not modified during buffer lifetime
+	dma_addr_t iov_dma;                          ///< buffer physical address
+};
 
 /** @brief Circular buffer private data */
 struct circbuf_priv_t {
-	int                 minor;                             ///< device file minor number
-	unsigned long       *buf_ptr;                          ///< pointer to circular buffer memory region
-	dma_addr_t          phys_addr;                         ///< physical address of memory region reported by memory driver
+	int                 minor;                   ///< device file minor number
+	unsigned long       *buf_ptr;                ///< pointer to circular buffer memory region
+	dma_addr_t          phys_addr;               ///< physical address of memory region reported by memory driver
 };
 extern struct circbuf_priv_t *circbuf_priv_ptr;
 extern wait_queue_head_t circbuf_wait_queue;

@@ -26,6 +26,7 @@
 #define DRV_CMD_FINISH            (1 << 1)
 #define DRV_CMD_EXIF              (1 << 2)
 
+#define NAME_TO_STR(NAME)         #NAME
 /** The path to Elphel AHCI driver sysfs entry. The trailing slash is mandatory. */
 #define SYSFS_AHCI_ENTRY          "/sys/devices/soc0/amba@0/80000000.elphel-ahci/"
 /** sysfs entry name, no double quotes. This macro is used to populate <em>struct attribute</em> in #ahci_elphel.c */
@@ -37,14 +38,14 @@
 /** sysfs entry name, no double quotes. This macro is used to populate <em>struct attribute</em> in #ahci_elphel.c */
 #define SYSFS_AHCI_FNAME_CURR     lba_current
 /** This file is used to send commands to AHCI driver from user space applications (camogm as for now). */
-#define SYSFS_AHCI_WRITE          SYSFS_AHCI_ENTRY #SYSFS_AHCI_FNAME_WRITE
+#define SYSFS_AHCI_WRITE          SYSFS_AHCI_ENTRY NAME_TO_STR(SYSFS_AHCI_FNAME_WRITE)
 /** This file is used to control starting LBA of a disk buffer (R/W). */
-#define SYSFS_AHCI_LBA_START      SYSFS_AHCI_ENTRY #SYSFS_AHCI_FNAME_START
+#define SYSFS_AHCI_LBA_START      SYSFS_AHCI_ENTRY NAME_TO_STR(SYSFS_AHCI_FNAME_START)
 /** This file is used to control ending LBA of a disk buffer (R/W). */
-#define SYSFS_AHCI_LBA_END        SYSFS_AHCI_ENTRY #SYSFS_AHCI_FNAME_END
+#define SYSFS_AHCI_LBA_END        SYSFS_AHCI_ENTRY NAME_TO_STR(SYSFS_AHCI_FNAME_END)
 /** This file is used to control current LBA of a disk buffer (R/W). Use this file to set a pointer inside
  * [lba_start..lba_end] area where next write operation will begin. */
-#define SYSFS_AHCI_LBA_CURRENT    SYSFS_AHCI_ENTRY #SYSFS_AHCI_FNAME_CURR
+#define SYSFS_AHCI_LBA_CURRENT    SYSFS_AHCI_ENTRY NAME_TO_STR(SYSFS_AHCI_FNAME_CURR)
 
 struct frame_data {
        unsigned int sensor_port;
@@ -52,12 +53,6 @@ struct frame_data {
        int jpeg_len;
        int meta_index;
        int cmd;
-};
-
-struct fvec {
-	void *iov_base;                              ///< pointer to allocated buffer
-	size_t iov_len;                              ///< the size (in bytes) of allocated buffer; set after allocation and is not modified during buffer lifetime
-	dma_addr_t iov_dma;                          ///< buffer physical address
 };
 
 #endif /* _AHCI_CMD */
