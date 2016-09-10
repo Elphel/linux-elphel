@@ -25,56 +25,36 @@
 #ifndef _AHCI_ELPHEL_EXT
 #define _AHCI_ELPHEL_EXT
 
-/** Flag indicating that IRQ corresponds to internal command and should not be
- * processed in ahci_handle_port_interrupt */
-#define IRQ_SIMPLE                (1 << 0)
-/** Flag indicating that disk is currently busy. Access to this flag should be protected by
- * spin locks to prevent race conditions */
-#define DISK_BUSY                 (1 << 1)
-/** Processing driver's internal command is in progress */
-#define PROC_CMD                  (1 << 2)
-/** Flag indicating that the remaining chunk of data will be recorded */
-#define LAST_BLOCK                (1 << 3)
-/** Flag indicating that recording should be stopped right after the last chunk of data
- * is written */
-#define DELAYED_FINISH            (1 << 4)
-#define LOCK_TAIL                 (1 << 5)
-/** The length of a command FIS in double words */
-#define CMD_FIS_LEN               5
-/** This is used to get 28-bit address from 64-bit value */
-#define ADDR_MASK_28_BIT          ((u64)0xfffffff)
-/** A maximum of length of 4MB may exist for PRDT entry */
-#define MAX_PRDT_LEN              0x3fffff
-/** An array or JPEG frame chunks contains pointers to JPEG leading marker,
- * JPEG header, Exif data if present, stuffing bytes chunk which aligns
- * the frame size to disk sector boundary, JPEG data which
- * can be split into two chunks, their corresponding align buffers, JPEG
- * trailing marker, and pointer to a buffer containing the remainder of a
- * frame. Ten chunks of data in total.
- * @todo Fix description */
-#define MAX_DATA_CHUNKS           9
-/** Default port number */
-#define DEFAULT_PORT_NUM          0
-/** Align buffers length to this amount of bytes */
-#define ALIGNMENT_SIZE            32
-/** Maximum number of entries in PRDT table. HW max is 64k.
- * Set this value the same as AHCI_MAX_SG in ahci.h */
-#define MAX_SGL_LEN               168
-/** Maximum number of frames which will be processed at the same time */
-#define MAX_CMD_SLOTS             4
-/** Maximum number of sectors for READ DMA or WRITE DMA commands */
-#define MAX_LBA_COUNT             0xff
-/** Maximum number of sectors for READ DMA EXT or WRITE_DMA EXT commands */
-#define MAX_LBA_COUNT_EXT         0xffff
-/** Physical disk block size */
-#define PHY_BLOCK_SIZE            512
-#define JPEG_MARKER_LEN           2
-/** The size in bytes of JPEG marker length field */
-#define JPEG_SIZE_LEN             2
-/** Include REM buffer to total size calculation */
-#define INCLUDE_REM               1
-/** Exclude REM buffer from total size calculation */
-#define EXCLUDE_REM               0
+
+#define IRQ_SIMPLE                (1 << 0)       ///< Flag indicating that IRQ corresponds to internal command and should not be
+                                                 ///< processed in ahci_handle_port_interrupt
+#define DISK_BUSY                 (1 << 1)       ///< Flag indicating that disk is currently busy. Access to this flag should be protected by
+                                                 ///< spin locks to prevent race conditions
+#define PROC_CMD                  (1 << 2)       ///< Processing driver's internal command is in progress
+#define LAST_BLOCK                (1 << 3)       ///< Flag indicating that the remaining chunk of data will be recorded
+#define DELAYED_FINISH            (1 << 4)       ///< Flag indicating that recording should be stopped right after the last chunk of data is written
+#define LOCK_TAIL                 (1 << 5)       ///< Lock current command slot until all data buffers are assigned and the frame is aligned
+#define CMD_FIS_LEN               5              ///< The length of a command FIS in double words
+#define ADDR_MASK_28_BIT          ((u64)0xfffffff)///< This is used to get 28-bit address from 64-bit value
+#define MAX_PRDT_LEN              0x3fffff       ///< A maximum of length of 4MB may exist for PRDT entry
+#define MAX_DATA_CHUNKS           9              ///< An array or JPEG frame chunks contains pointers to JPEG leading marker,
+                                                 ///< JPEG header, Exif data if present, stuffing bytes chunk which aligns
+                                                 ///< the frame size to disk sector boundary, JPEG data which
+                                                 ///< can be split into two chunks, align buffers, JPEG
+                                                 ///< trailing marker, and pointer to a buffer containing the remainder of a
+                                                 ///< frame. Nine chunks of data in total.
+#define DEFAULT_PORT_NUM          0              ///< Default port number
+#define ALIGNMENT_SIZE            32             ///< Align buffers length to this amount of bytes
+#define MAX_SGL_LEN               168            ///< Maximum number of entries in PRDT table. HW max is 64k.
+                                                 ///< Set this value the same as AHCI_MAX_SG in ahci.h
+#define MAX_CMD_SLOTS             4              ///< Maximum number of frames which will be processed at the same time
+#define MAX_LBA_COUNT             0xff           ///< Maximum number of sectors for READ DMA or WRITE DMA commands
+#define MAX_LBA_COUNT_EXT         0xffff         ///< Maximum number of sectors for READ DMA EXT or WRITE_DMA EXT commands
+#define PHY_BLOCK_SIZE            512            ///< Physical disk block size
+#define JPEG_MARKER_LEN           2              ///< The size in bytes of JPEG marker
+#define JPEG_SIZE_LEN             2              ///< The size in bytes of JPEG marker length field
+#define INCLUDE_REM               1              ///< Include REM buffer to total size calculation
+#define EXCLUDE_REM               0              ///< Exclude REM buffer from total size calculation
 
 /** This structure holds raw device buffer pointers */
 struct drv_pointers {
@@ -84,38 +64,43 @@ struct drv_pointers {
 	uint16_t wr_count;                           ///< the number of LBA to write next time
 };
 
+/** Container structure for frame buffers */
 struct frame_buffers {
-	struct fvec exif_buff;
-	struct fvec jpheader_buff;
-	struct fvec trailer_buff;
-	struct fvec common_buff;
+	struct fvec exif_buff;                       ///< Exif buffer
+	struct fvec jpheader_buff;                   ///< JPEG header buffer
+	struct fvec trailer_buff;                    ///< buffer for trailing marker
+	struct fvec common_buff;                     ///< common buffer where other parts are combined
 	struct fvec rem_buff;                        ///< remainder from previous frame
 };
 
+/** Symbolic names for slots in buffer pointers. Buffer alignment function relies on the order of these names, so
+ * new names can be added but the overall order should not be changed */
 enum {
-	CHUNK_LEADER,
-	CHUNK_EXIF,
-	CHUNK_HEADER,
-	CHUNK_COMMON,
-	CHUNK_DATA_0,
-	CHUNK_DATA_1,
-	CHUNK_TRAILER,
-	CHUNK_ALIGN,
-	CHUNK_REM
+	CHUNK_LEADER,                                ///< pointer to JPEG leading marker
+	CHUNK_EXIF,                                  ///< pointer to Exif buffer
+	CHUNK_HEADER,                                ///< pointer to JPEG header data excluding leading marker
+	CHUNK_COMMON,                                ///< pointer to common buffer
+	CHUNK_DATA_0,                                ///< pointer to JPEG data
+	CHUNK_DATA_1,                                ///< pointer to the second half of JPEG data if a frame crosses circbuf boundary
+	CHUNK_TRAILER,                               ///< pointer to JPEG trailing marker
+	CHUNK_ALIGN,                                 ///< pointer to buffer where the second part of JPEG data should be aligned
+	CHUNK_REM                                    ///< pointer to buffer containing the remainder of current frame. It will be recorded during next transaction
 };
 
+/** AHCI driver private structure */
 struct elphel_ahci_priv {
-	u32 clb_offs;
-	u32 fb_offs;
-	u32 base_addr;
-	u32 flags;
-	int curr_cmd;
-	size_t max_data_sz;
-	struct drv_pointers lba_ptr;
-	struct frame_buffers fbuffs[MAX_CMD_SLOTS];
-	struct fvec data_chunks[MAX_CMD_SLOTS][MAX_DATA_CHUNKS];
-	struct fvec sgl[MAX_SGL_LEN];
-	int sg_elems;
+	u32 clb_offs;                                ///< CLB offset, received from device tree
+	u32 fb_offs;                                 ///< FB offset, received from device tree
+	u32 base_addr;                               ///< controller base address
+	u32 flags;                                   ///< flags indicating current state of the driver. Access to #DISK_BUSY flags is protected with
+	                                             ///< a spin lock
+	int curr_cmd;                                ///< current ATA command
+	size_t max_data_sz;                          ///< maximum data size (in bytes) which can be processed with current ATA command
+	struct drv_pointers lba_ptr;                 ///< disk buffer pointers
+	struct frame_buffers fbuffs[MAX_CMD_SLOTS];  ///< a set of buffers for each command
+	struct fvec data_chunks[MAX_CMD_SLOTS][MAX_DATA_CHUNKS];///< a set of vectors pointing to data buffers for each command
+	struct fvec sgl[MAX_SGL_LEN];                ///< an array of data buffers mapped for next transaction
+	int sg_elems;                                ///< the number of S/G vectors mapped for next transaction in @e sgl array
 	int curr_data_chunk;                         ///< index of a data chunk used during last transaction
 	size_t curr_data_offset;                     ///< offset of the last byte in a data chunk pointed to by @e curr_data_chunk
 	size_t head_ptr;                             ///< pointer to command slot which will be written next

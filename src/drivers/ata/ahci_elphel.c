@@ -159,7 +159,7 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 
 	return handled;
 }
-
+/** Command queue processing tasklet */
 void process_queue(unsigned long data)
 {
 	unsigned long irq_flags;
@@ -474,6 +474,7 @@ static int map_vectors(struct elphel_ahci_priv *dpriv)
 	return index;
 }
 
+/** Split buffer pointed by vector @e vect into several smaller buffer. Each part will be less than #MAX_PRDT_LEN bytes */
 static inline void vectsplit(struct fvec *vect, struct fvec *parts, size_t *n_elem)
 {
 	size_t len;
@@ -489,6 +490,8 @@ static inline void vectsplit(struct fvec *vect, struct fvec *parts, size_t *n_el
 		*n_elem = *n_elem + 1;
 	}
 }
+
+/** Copy @e len bytes from buffer pointed by @e src vector to buffer pointed by @e dest vector */
 static inline void vectcpy(struct fvec *dest, void *src, size_t len)
 {
 	unsigned char *d = (unsigned char *)dest->iov_base;
@@ -496,6 +499,8 @@ static inline void vectcpy(struct fvec *dest, void *src, size_t len)
 	memcpy(d + dest->iov_len, src, len);
 	dest->iov_len += len;
 }
+
+/** Move vector forward by @e len bytes decreasing its length */
 static inline void vectmov(struct fvec *vec, size_t len)
 {
 	if (vec->iov_len >= len) {
@@ -504,12 +509,16 @@ static inline void vectmov(struct fvec *vec, size_t len)
 		vec->iov_len -= len;
 	}
 }
+
+/** Shrink vector length by @len bytes */
 static inline void vectshrink(struct fvec *vec, size_t len)
 {
 	if (vec->iov_len >= len) {
 		vec->iov_len -= len;
 	}
 }
+
+/** Return the number of bytes needed to align @e data_len to @e align_len boundary */
 static inline size_t align_bytes_num(size_t data_len, size_t align_len)
 {
 	size_t rem = data_len % align_len;
@@ -518,12 +527,15 @@ static inline size_t align_bytes_num(size_t data_len, size_t align_len)
 	else
 		return align_len - rem;
 }
+
 /** This helper function is used to position a pointer @e offset bytes from the end
  * of a buffer. DMA handle is not updated intentionally as it is not needed during copying */
 static inline unsigned char *vectrpos(struct fvec *vec, size_t offset)
 {
 	return (unsigned char *)vec->iov_base + (vec->iov_len - offset);
 }
+
+/** Align current frame to disk sector boundary and each individual buffer to #ALIGNMENT_SIZE boundary */
 static void align_frame(struct elphel_ahci_priv *dpriv)
 {
 	unsigned char *src;
@@ -784,6 +796,7 @@ static void init_vectors(struct frame_buffers *buffs, struct fvec *chunks)
 	chunks[CHUNK_COMMON].iov_len = 0;
 }
 
+/** Allocate memory for frame buffers */
 static int init_buffers(struct device *dev, struct frame_buffers *buffs)
 {
 	int mult;
@@ -846,6 +859,7 @@ err_header:
 	return -ENOMEM;
 }
 
+/** Free allocated frame buffers */
 static void deinit_buffers(struct device *dev, struct frame_buffers *buffs)
 {
 	kfree(buffs->jpheader_buff.iov_base);
@@ -856,6 +870,7 @@ static void deinit_buffers(struct device *dev, struct frame_buffers *buffs)
 	kfree(buffs->rem_buff.iov_base);
 }
 
+/** Discard buffer pointers which makes the command slot marked as empty */
 static inline void reset_chunks(struct fvec *vects, int all)
 {
 	int i;
@@ -869,6 +884,7 @@ static inline void reset_chunks(struct fvec *vects, int all)
 	}
 }
 
+/** Get driver private structure from pointer to device structure */
 static inline struct elphel_ahci_priv *dev_get_dpriv(struct device *dev)
 {
 	struct ata_host *host = dev_get_drvdata(dev);
@@ -916,6 +932,7 @@ static int process_cmd(struct elphel_ahci_priv *dpriv)
 	return dpriv->sg_elems;
 }
 
+/** Finish currently running command */
 static void finish_cmd(struct elphel_ahci_priv *dpriv)
 {
 	int all;
@@ -935,7 +952,7 @@ static void finish_cmd(struct elphel_ahci_priv *dpriv)
 	dpriv->flags &= ~PROC_CMD;
 }
 
-/** Fill free space in REM buffer with 0 and save the reaming data chunk */
+/** Fill free space in REM buffer with 0 and save the remaining data chunk */
 static void finish_rec(struct elphel_ahci_priv *dpriv)
 {
 	size_t stuff_len;
@@ -959,6 +976,7 @@ static void finish_rec(struct elphel_ahci_priv *dpriv)
 	process_cmd(dpriv);
 }
 
+/** Move a pointer to free command slot one step forward */
 int move_tail(struct elphel_ahci_priv *dpriv)
 {
 	size_t slot = (dpriv->tail_ptr + 1) % MAX_CMD_SLOTS;
@@ -974,6 +992,7 @@ int move_tail(struct elphel_ahci_priv *dpriv)
 	}
 }
 
+/** Move a pointer to next ready command */
 int move_head(struct elphel_ahci_priv *dpriv)
 {
 	size_t use_tail;
@@ -997,6 +1016,7 @@ int move_head(struct elphel_ahci_priv *dpriv)
 
 }
 
+/** Check if command queue is empty */
 int is_cmdq_empty(const struct elphel_ahci_priv *dpriv)
 {
 	size_t use_tail;
@@ -1013,6 +1033,7 @@ int is_cmdq_empty(const struct elphel_ahci_priv *dpriv)
 		return 1;
 }
 
+/** Get command slot before the last one filled in */
 size_t get_prev_slot(const struct elphel_ahci_priv *dpriv)
 {
 	size_t slot;
@@ -1028,10 +1049,11 @@ size_t get_prev_slot(const struct elphel_ahci_priv *dpriv)
 	return slot;
 }
 
-static ssize_t rawdev_write(struct device *dev,  ///<
-		struct device_attribute *attr,           ///<
-		const char *buff,                        ///<
-		size_t buff_sz)                          ///<
+/** Get and enqueue new command */
+static ssize_t rawdev_write(struct device *dev,  ///< device structure associated with the driver
+		struct device_attribute *attr,           ///< interface for device attributes
+		const char *buff,                        ///< buffer containing new command
+		size_t buff_sz)                          ///< the size of the command buffer
 {
 	ssize_t rcvd = 0;
 	bool proceed = false;
@@ -1249,6 +1271,7 @@ static void elphel_cmd_issue(struct ata_port *ap,///< device port for which the 
 	writel(1 << slot_num, port_mmio + PORT_CMD_ISSUE);
 }
 
+/** Defer system command if internal command queue is not empty */
 static int elphel_qc_defer(struct ata_queued_cmd *qc)
 {
 	int ret;
@@ -1272,6 +1295,7 @@ static int elphel_qc_defer(struct ata_queued_cmd *qc)
 	return ret;
 }
 
+/** Return the stating position of disk buffer (in LBA) */
 static ssize_t lba_start_read(struct device *dev, struct device_attribute *attr, char *buff)
 {
 	struct ata_host *host = dev_get_drvdata(dev);
@@ -1281,6 +1305,7 @@ static ssize_t lba_start_read(struct device *dev, struct device_attribute *attr,
 	return snprintf(buff, 20, "%llu\n", dpriv->lba_ptr.lba_start);
 }
 
+/** Set the starting position of disk buffer (in LBA) */
 static ssize_t lba_start_write(struct device *dev, struct device_attribute *attr, const char *buff, size_t buff_sz)
 {
 	struct ata_host *host = dev_get_drvdata(dev);
@@ -1296,6 +1321,7 @@ static ssize_t lba_start_write(struct device *dev, struct device_attribute *attr
 	return buff_sz;
 }
 
+/** Return the ending position of disk buffer (in LBA) */
 static ssize_t lba_end_read(struct device *dev, struct device_attribute *attr, char *buff)
 {
 	struct ata_host *host = dev_get_drvdata(dev);
@@ -1305,6 +1331,7 @@ static ssize_t lba_end_read(struct device *dev, struct device_attribute *attr, c
 	return snprintf(buff, 20, "%llu\n", dpriv->lba_ptr.lba_end);
 }
 
+/** Set the ending position of disk buffer (in LBA) */
 static ssize_t lba_end_write(struct device *dev, struct device_attribute *attr, const char *buff, size_t buff_sz)
 {
 	struct ata_host *host = dev_get_drvdata(dev);
@@ -1320,6 +1347,7 @@ static ssize_t lba_end_write(struct device *dev, struct device_attribute *attr, 
 	return buff_sz;
 }
 
+/** Return the current position of write pointer (in LBA) */
 static ssize_t lba_current_read(struct device *dev, struct device_attribute *attr, char *buff)
 {
 	struct ata_host *host = dev_get_drvdata(dev);
@@ -1329,6 +1357,7 @@ static ssize_t lba_current_read(struct device *dev, struct device_attribute *att
 	return snprintf(buff, 20, "%llu\n", dpriv->lba_ptr.lba_write);
 }
 
+/** Set the current position of write pointer (in LBA) */
 static ssize_t lba_current_write(struct device *dev, struct device_attribute *attr, const char *buff, size_t buff_sz)
 {
 	struct ata_host *host = dev_get_drvdata(dev);
@@ -1400,6 +1429,7 @@ static struct platform_driver ahci_elphel_driver = {
 };
 module_platform_driver(ahci_elphel_driver);
 
+/** Debug function, checks frame alignment */
 static int check_chunks(struct fvec *vects)
 {
 	int i;
@@ -1423,6 +1453,7 @@ static int check_chunks(struct fvec *vects)
 	return ret;
 }
 
+/** Debug function, prints the S/G list of current command */
 static void dump_sg_list(const struct device *dev, const struct fvec *sgl, size_t elems)
 {
 	int i;
