@@ -34,7 +34,6 @@
 #include "ahci_elphel.h"
 #include "../elphel/exif393.h"
 #include "../elphel/jpeghead.h"
-#include "../elphel/x393_helpers.h"
 
 #define DRV_NAME "elphel-ahci"
 /*
@@ -68,11 +67,13 @@ static int process_cmd(struct elphel_ahci_priv *dpriv);
 static inline size_t get_size_from(const struct fvec *vects, int index, size_t offset, int all);
 static inline void vectmov(struct fvec *vec, size_t len);
 static inline void vectsplit(struct fvec *vect, struct fvec *parts, size_t *n_elem);
-int move_tail(struct elphel_ahci_priv *dpriv);
-int move_head(struct elphel_ahci_priv *dpriv);
-size_t get_prev_slot(const struct elphel_ahci_priv *dpriv);
-int is_cmdq_empty(const struct elphel_ahci_priv *dpriv);
+static int move_tail(struct elphel_ahci_priv *dpriv);
+static int move_head(struct elphel_ahci_priv *dpriv);
+static size_t get_prev_slot(const struct elphel_ahci_priv *dpriv);
+static int is_cmdq_empty(const struct elphel_ahci_priv *dpriv);
 void process_queue(unsigned long data);
+static void set_flag(struct elphel_ahci_priv *drpiv, uint32_t flag);
+static void reset_flag(struct elphel_ahci_priv *dpriv, uint32_t flag);
 /* debug functions */
 static int check_chunks(struct fvec *vects);
 static void dump_sg_list(const struct device *dev, const struct fvec *sgl, size_t elems);
@@ -139,7 +140,7 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		dpriv->flags &= ~IRQ_SIMPLE;
 		irq_stat = readl(port_mmio + PORT_IRQ_STAT);
 
-		dev_dbg(host->dev, "irq_stat = 0x%x, host irq_stat = 0x%x, time stamp: %u\n", irq_stat, host_irq_stat, get_rtc_usec());
+		dev_dbg(host->dev, "irq_stat = 0x%x, host irq_stat = 0x%x\n", irq_stat, host_irq_stat);
 
 		writel(irq_stat, port_mmio + PORT_IRQ_STAT);
 		writel(host_irq_stat, hpriv->mmio + HOST_IRQ_STAT);
@@ -405,6 +406,26 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 	ahci_fill_cmd_slot(pp, qc->tag, opts);
 	dma_sync_single_for_device(&qc->dev->tdev, pp->cmd_tbl_dma,
 			AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
+}
+
+/** Set flag @e flag in driver private structure. This function uses spin lock to access the flags variable. */
+static void set_flag(struct elphel_ahci_priv *dpriv, uint32_t flag)
+{
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+	dpriv->flags |= flag;
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+}
+
+/** Reset flag @e flag in driver private structure. This function uses spin lock to access the flags variable. */
+static void reset_flag(struct elphel_ahci_priv *dpriv, uint32_t flag)
+{
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+	dpriv->flags &= ~flag;
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 }
 
 /** Map buffer vectors to S/G list and return the number of vectors mapped */
@@ -976,13 +997,13 @@ static void finish_rec(struct elphel_ahci_priv *dpriv)
 	process_cmd(dpriv);
 }
 
-/** Move a pointer to free command slot one step forward */
-int move_tail(struct elphel_ahci_priv *dpriv)
+/** Move a pointer to free command slot one step forward. This function holds spin lock #elphel_ahci_priv::flags_lock */
+static int move_tail(struct elphel_ahci_priv *dpriv)
 {
 	size_t slot = (dpriv->tail_ptr + 1) % MAX_CMD_SLOTS;
 
 	if (slot != dpriv->head_ptr) {
-		dpriv->flags |= LOCK_TAIL;
+		set_flag(dpriv, LOCK_TAIL);
 		dpriv->tail_ptr = slot;
 		dev_dbg(dpriv->dev, "move tail pointer to slot: %u\n", slot);
 		return 0;
@@ -992,18 +1013,21 @@ int move_tail(struct elphel_ahci_priv *dpriv)
 	}
 }
 
-/** Move a pointer to next ready command */
-int move_head(struct elphel_ahci_priv *dpriv)
+/** Move a pointer to next ready command. This function holds spin lock #elphel_ahci_priv::flags_lock*/
+static int move_head(struct elphel_ahci_priv *dpriv)
 {
 	size_t use_tail;
+	unsigned long irq_flags;
 	size_t slot = (dpriv->head_ptr + 1) % MAX_CMD_SLOTS;
 
+	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
 	if (dpriv->flags & LOCK_TAIL) {
 		/* current command slot is not ready yet, use previous */
 		use_tail = get_prev_slot(dpriv);
 	} else {
 		use_tail = dpriv->tail_ptr;
 	}
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 
 	if (dpriv->head_ptr != use_tail) {
 		dpriv->head_ptr = slot;
@@ -1017,7 +1041,7 @@ int move_head(struct elphel_ahci_priv *dpriv)
 }
 
 /** Check if command queue is empty */
-int is_cmdq_empty(const struct elphel_ahci_priv *dpriv)
+static int is_cmdq_empty(const struct elphel_ahci_priv *dpriv)
 {
 	size_t use_tail;
 
@@ -1034,7 +1058,7 @@ int is_cmdq_empty(const struct elphel_ahci_priv *dpriv)
 }
 
 /** Get command slot before the last one filled in */
-size_t get_prev_slot(const struct elphel_ahci_priv *dpriv)
+static size_t get_prev_slot(const struct elphel_ahci_priv *dpriv)
 {
 	size_t slot;
 
@@ -1089,13 +1113,13 @@ static ssize_t rawdev_write(struct device *dev,  ///< device structure associate
 
 	if (move_tail(dpriv) == -1) {
 		/* we are not ready yet because command queue is full */
-		printk_ratelimited(KERN_DEBUG "command queue is full\n");
+		printk_ratelimited(KERN_DEBUG "command queue is full, flags = %u, proceed = %d\n", dpriv->flags, proceed);
 		return -EAGAIN;
 	}
 	chunks = dpriv->data_chunks[dpriv->tail_ptr];
 	buffs = &dpriv->fbuffs[dpriv->tail_ptr];
 
-	dev_dbg(dev, "process frame from sensor port: %u, command = %d\n", fdata.sensor_port, fdata.cmd);
+	dev_dbg(dev, "process frame from sensor port: %u, command = %d, flags = %u\n", fdata.sensor_port, fdata.cmd, dpriv->flags);
 	if (fdata.cmd & DRV_CMD_EXIF) {
 		rcvd = exif_get_data(fdata.sensor_port, fdata.meta_index, buffs->exif_buff.iov_base, buffs->exif_buff.iov_len);
 		chunks[CHUNK_EXIF].iov_len = rcvd;
@@ -1135,7 +1159,7 @@ static ssize_t rawdev_write(struct device *dev,  ///< device structure associate
 	}
 	align_frame(dpriv);
 	/* new command slot is ready now and can be unlocked */
-	dpriv->flags &= ~LOCK_TAIL;
+	reset_flag(dpriv, LOCK_TAIL);
 
 	if (!proceed) {
 		/* disk may be free by the moment, try to grab it */
