@@ -125,6 +125,8 @@ int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
 /** Control (stop/single/run/reset) memory controller for a sensor channel */
 int  control_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
                             int cmd,              ///< command: 0 stop, 1 - single, 2 - repetitive, 3 - reset
+                            int reset_frame,      ///< reset addresses to the start of frame, reset buffer (1 of 4) pointer.
+                                                  ///< Should only be used if the channel controller was stopped before
                             x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
                             int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
                                                   ///< @return 0 -OK
@@ -140,7 +142,9 @@ int  control_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
                                           .single =        0, // [    9] (0) run single frame
                                           .repetitive =    1, // [   10] (1) run repetitive frames
                                           .disable_need =  0, // [   11] (0) disable 'need' generation, only 'want' (compressor channels)
-                                          .skip_too_late = 1}; // [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
+                                          .skip_too_late = 1, // [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
+                                          .abort_late =    1};// [   14] (0) abort frame if not finished by the new frame sync (wait pending memory transfers)
+   mcntrl_mode.reset_frame =  reset_frame;
    switch (cmd){
    case SENSOR_RUN_STOP:
        mcntrl_mode.enable = 0;
@@ -191,7 +195,6 @@ int  control_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
    }
    return 0;
 }
-
 
 /** Setup memory controller for a compressor channel */
 int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3)
@@ -285,26 +288,30 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
 /** Control memory controller (stop/single/run/reset) for a compressor channel */
 int control_compressor_memory (int num_sensor,       ///< sensor port number (0..3)
                                int cmd,              ///< command: 0 stop, 1 - single, 2 - repetitive, 3 - reset
+                               int reset_frame,      ///< reset addresses to the start of frame, reset buffer (1 of 4) pointer.
+                                                     ///< Should only be used if the channel controller was stopped before
                                int extra_pages,      ///< extra pages needed (1) - number of previous pages to keep in a 4-page buffer
                                int disable_need,     ///< disable "need" (yield to sensor channels - they can not wait)
                                x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
                                int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
                                                      ///< @return 0 - OK
 {
-   x393_mcntrl_mode_scan_t mcntrl_mode = {.enable =        1, // [    0] (1) enable requests from this channel ( 0 will let current to finish, but not raise want/need)
-                                          .chn_nreset =    1, // [    1] (1) 0: immediately reset all the internal circuitry
+   x393_mcntrl_mode_scan_t mcntrl_mode = {.chn_nreset =    1, // [    0] (1) 0: immediately reset all the internal circuitry
+                                          .enable =        1, // [    1] (1)  enable requests from this channel ( 0 will let current to finish, but not raise want/need)
                                           .write_mem =     0, // [    2] (0) 0 - read from memory, 1 - write to memory
                                           .extra_pages =   1, // [ 4: 3] (0) 2-bit number of extra pages that need to stay (not to be overwritten) in the buffer
                                           .keep_open =     0, // [    5] (0) (NA in linescan) for 8 or less rows - do not close page between accesses (not used in scanline mode)
                                           .byte32 =        1, // [    6] (1) (NA in linescan) 32-byte columns (0 - 16-byte), not used in scanline mode
-                                          .reset_frame =   0, // [    8] (0) reset frame number
+                                          .reset_frame =   1, // [    8] (0) reset frame number
                                           .single =        0, // [    9] (0) run single frame
                                           .repetitive =    1, // [   10] (1) run repetitive frames
                                           .disable_need =  1, // [   11] (0) disable 'need' generation, only 'want' (compressor channels)
-                                          .skip_too_late = 1};// [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
-
-   mcntrl_mode.disable_need = disable_need; // non-constant parameter
-   mcntrl_mode.extra_pages =  extra_pages;  // non-constant parameter
+                                          .skip_too_late = 1, // [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
+                                          .copy_frame =    1, // [   13] (0) Copy frame number from the master (sensor) channel. Combine with reset_frame to reset bjuffer
+                                          .abort_late =    1};// [   14] (0) abort frame if not finished by the new frame sync (wait pending memory transfers)
+   mcntrl_mode.disable_need = disable_need;
+   mcntrl_mode.extra_pages =  extra_pages;
+   mcntrl_mode.reset_frame =  reset_frame;
    switch (cmd){
    case COMPRESSOR_RUN_STOP:
        mcntrl_mode.enable = 0;

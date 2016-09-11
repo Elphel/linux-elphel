@@ -14,6 +14,10 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
+#ifndef HISTOGRAMS_H
+#define HISTOGRAMS_H
+#undef ISR_HISTOGRAMS // to histograms-related disable code in ISR - not needed in NC393
+
 // These wait queues will be advanced each frame after the histogram data is transferred to the FPGA.
 // It will happen even if the corresponding task is disabled, with the only exception:
 // hist_c_wait_queue will not be awaken in the current frame if it is too late (frame counter incremented while serving tasklet)
@@ -28,3 +32,4 @@ int get_histograms (int sensor_port, int sensor_chn, unsigned long frame, int ne
 
 //int histograms_init_hardware(void);
 void histograms_dma_ctrl(int mode); // 0 - reset, 1 - disable, 2 - enable
+#endif

@@ -535,7 +535,7 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr,                ///< pointer 
     unsigned char orientation_short[2];
     int maker_offset;
     u32 frame =  jptr->frame;
-    int frame_index = frame & PASTPARS_SAVE_ENTRIES_MASK;
+//    int frame_index = frame & PASTPARS_SAVE_ENTRIES_MASK;
     // NC393: current parameters are valid at compressor done interrupt (after frame sync interrupts latest valid is new frame number - 2
     if (index_time<0) index_time+=get_globalParam (sensor_port, G_CIRCBUFSIZE)>>2;
 	//   struct exif_datetime_t
@@ -655,11 +655,12 @@ static irqreturn_t frame_sync_irq_handler(int irq, void *dev_id)
 {
 	struct jpeg_ptr_t *jptr = dev_id;
     x393_cmdframeseq_mode_t cmdframeseq_mode = {.d32 = 0};
-    cmdframeseq_mode.interrupt_cmd = IRQ_CLEAR;
     unsigned long flags;
     int frame16;
+    u32 aframe;
+    cmdframeseq_mode.interrupt_cmd = IRQ_CLEAR;
     local_irq_save(flags);
-    u32 aframe = GLOBALPARS(jptr->chn_num, G_THIS_FRAME); // thisFrameNumber(jptr->chn_num); // current absolute frame number
+    aframe = GLOBALPARS(jptr->chn_num, G_THIS_FRAME); // thisFrameNumber(jptr->chn_num); // current absolute frame number
     frame16 = getHardFrameNumber(jptr->chn_num, 0); // Use sensor frame number
     updateFramePars     (jptr->chn_num,
                          frame16);
@@ -728,7 +729,7 @@ void tasklet_compressor_function(unsigned long arg)
 {
     dma_addr_t phys_addr_start, phys_addr_end;
     void *virt_addr_start;
-    int sensor_port = image_acq_priv.jpeg_ptr[arg].chn_num; // == arg & 3
+//    int sensor_port = image_acq_priv.jpeg_ptr[arg].chn_num; // == arg & 3
     const struct jpeg_ptr_t *jptr = &image_acq_priv.jpeg_ptr[arg];
     unsigned int sz;
     u32 ccam_dma_size = circbuf_priv_ptr[jptr->chn_num].buf_size;
@@ -760,10 +761,10 @@ implement 2 modes of controlling when to calculate histograms:
 1 - add mask to 3 frame number LSB (i.e. - 0/10000000/10001000/10101010/11111111) - 3 contol bits - en/dis and mode
 2 - requested in advance (i.e. by autoexposure when writing new exposure or white balance - when writing balance
 
-mode 1 will provide easy way to display histograms (no need to repetively request them),
+mode 1 will provide easy way to display histograms (no need to repeatedly request them),
 mode 2 - useful for autoexposure
 
-Modify waiting (LSEEK_*) for histogrames so they will only unfreeze if the histogram is available (skipping multiple frames))
+Modify waiting (LSEEK_*) for histograms so they will only unfreeze if the histogram is available (skipping multiple frames))
 For displaying histograms - try use latest available - not waiting fro a particular frame.
 
 
@@ -774,19 +775,16 @@ For displaying histograms - try use latest available - not waiting fro a particu
 //#define HISTOGRAMS_WAKEUP_ALWAYS 0
 void tasklet_cmdseq_function(unsigned long arg)
 {
-//    int is_compressor_irq = 1; // TODO: add interrupts from frame sync if compressor is off
     int hist_en;
     int sensor_port = image_acq_priv.jpeg_ptr[arg].chn_num; // == arg & 3
     int tasklet_disable=get_globalParam(sensor_port, G_TASKLET_CTL);
     unsigned long thisFrameNumber=getThisFrameNumber(sensor_port);
+#ifdef ISR_HISTOGRAMS
     unsigned long prevFrameNumber=thisFrameNumber-1;
     unsigned long * hash32p=&(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_GTAB_R]); // same gamma for all sub-channels
     unsigned long * framep= &(aframepars[sensor_port][(thisFrameNumber-1) & PARS_FRAMES_MASK].pars[P_FRAME]);
-//    const struct jpeg_ptr_t *jptr = &image_acq_priv.jpeg_ptr[arg];
-//    dma_addr_t phys_addr_start, phys_addr_end;
-//    void *virt_addr_start;
-//    unsigned int sz;
     int subchn,hist_indx;
+#endif
 
 
     // Time is out?
@@ -817,8 +815,11 @@ void tasklet_cmdseq_function(unsigned long arg)
     default:                   // calculate always (safer)
         hist_en=1;
     }
+
+    // Actually in NC393 nothing has to be done with histograms at interrupts - do all the processing when histograms are requested
     //#ifdef TEST_DISABLE_CODE
     if (hist_en) {
+#ifdef ISR_HISTOGRAMS
         histograms_check_init(); // check if histograms are initialized and initialize if not (structures and hardware)
         // after updateFramePars gammaHash are from framepars[this-1]
         for (subchn=0;subchn<MAX_SENSORS;subchn++) if (((hist_indx=get_hist_index(sensor_port,subchn)))>=0){
@@ -842,12 +843,12 @@ void tasklet_cmdseq_function(unsigned long arg)
             dev_dbg(g_dev_ptr, "%s : port= %d, === already next frame (1)\n", __func__, sensor_port);
             return; // already next frame
         }
-
+#endif // ifdef ISR_HISTOGRAMS
 #if HISTOGRAMS_WAKEUP_ALWAYS
     }
     wake_up_interruptible(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
 #else
-        wake_up_interruptible(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
+    wake_up_interruptible(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
     }
 #endif
     // Process parameters
@@ -882,6 +883,7 @@ void tasklet_cmdseq_function(unsigned long arg)
         hist_en=1;
     }
     if (hist_en) {
+#ifdef ISR_HISTOGRAMS
         histograms_check_init(); // check if histograms are initialized and initialize if not (structures and hardware)
         // after updateFramePars gammaHash are from framepars[this-1]
         // after updateFramePars gammaHash are from framepars[this-1]
@@ -904,6 +906,7 @@ void tasklet_cmdseq_function(unsigned long arg)
             dev_dbg(g_dev_ptr, "%s : port= %d, === already next frame (1)\n", __func__, sensor_port);
             return; // already next frame
         }
+#endif // ifdef ISR_HISTOGRAMS
 #if HISTOGRAMS_WAKEUP_ALWAYS
     }
     wake_up_interruptible(&hist_c_wait_queue);     // wait queue for all the other (R,G2,B) histograms (color)
@@ -1141,7 +1144,6 @@ int image_acq_init(struct platform_device *pdev)
 	dev_info(dev, "reset_qtables(0) (policy = COMMON_CACHE)\n");
 	set_cache_policy(COMMON_CACHE);
     reset_qtables(0); // force initialization at next access (with COMMON_CACHE chyannel is ignored, with PER_CHN_CACHE - do for each chennel)
-//	framepars_init(pdev);
 	pgm_functions_set_device(dev);
 	g_dev_ptr = dev;
 	return 0;

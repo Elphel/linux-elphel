@@ -25,14 +25,14 @@ struct elphel_video_buf_t
     int frames_in_buffer[4]; ///< Number of frames in channel 0 buffer
 
 };
-int  setup_sensor_memory (int num_sensor, int window_width,  int window_height, int window_left,
-                         int window_top,  x393cmd_t x393cmd, int frame16);
-int  control_sensor_memory (int num_sensor, int cmd, x393cmd_t x393cmd, int frame16);
+int  setup_sensor_memory   (int num_sensor, int window_width,  int window_height, int window_left,
+                           int window_top,  x393cmd_t x393cmd, int frame16);
+int  control_sensor_memory (int num_sensor, int cmd, int reset_frame, x393cmd_t x393cmd, int frame16);
 
 int setup_compressor_memory (int num_sensor, int window_width,   int window_height, int window_left,
                             int window_top,  int tile_width,     int tile_height,   int tile_vstep,
                             x393cmd_t x393cmd, int frame16);
-int control_compressor_memory  (int num_sensor, int cmd, int extra_pages, int disable_need, x393cmd_t x393cmd, int frame16);
+int control_compressor_memory  (int num_sensor, int cmd, int reset_frame, int extra_pages, int disable_need, x393cmd_t x393cmd, int frame16);
 int frames_in_buffer_minus_one (int num_sensor);
 
 void memchan_enable            (int chn, int enable);

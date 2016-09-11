@@ -24,6 +24,8 @@ unsigned long get_imageParamsThis (int sensor_port, int n);
 unsigned long get_imageParamsPrev (int sensor_port, int n);
 unsigned long get_imageParamsPast(int sensor_port,  int n,  int frame);
 
+unsigned long * get_imageParamsFramePtr(int sensor_port, int n, int frame);
+unsigned long * get_imageParamsPastPtr (int sensor_port, int n, int frame);
 
 void          set_imageParamsThis (int sensor_port, int n, unsigned long d);
 unsigned long get_globalParam     (int sensor_port, int n);
@@ -69,9 +71,5 @@ void schedule_this_pgm_func       (int sensor_port, struct framepars_t * this_fr
 //inline void _processParsSeq       (int sensor_port, struct sensorproc_t * sensorproc, int frame8, int maxahead);
 
 int         processPars          (int sensor_port, struct sensorproc_t * sensorproc, int frame8, int maxahead);
-///*** TODO: Add option (flag?) to write "single" (like single compress, single sensor) so it will not make all the next frames "single"
-
-int         framepars_init       (struct platform_device *pdev);
-int         framepars_remove     (struct platform_device *pdev);
-
+// *** TODO: Add option (flag?) to write "single" (like single compress, single sensor) so it will not make all the next frames "single"
 #endif

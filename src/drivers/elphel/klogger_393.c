@@ -408,7 +408,7 @@ int klogger_393_probe(struct platform_device *pdev)
                 __func__,buffer_size,buffer_size, (int) klog393_buf);
         res = register_chrdev(DEV393_MAJOR(DEV393_KLOGGER), DEV393_NAME(DEV393_KLOGGER), &framepars_fops);
         if (res < 0) {
-            dev_err(dev, "framepars_init: couldn't get a major number %d (DEV393_MAJOR(DEV393_KLOGGER)).\n",
+            dev_err(dev, "klogger_393_probe: couldn't get a major number %d (DEV393_MAJOR(DEV393_KLOGGER)).\n",
                     DEV393_MAJOR(DEV393_KLOGGER));
             return res;
         }

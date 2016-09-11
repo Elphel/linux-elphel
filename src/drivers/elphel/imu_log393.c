@@ -690,7 +690,7 @@ static ssize_t imu_write(struct file * file, const char * buf, size_t count, lof
     switch ((int) file->private_data) {
     case DEV393_MINOR(DEV393_LOGGER) :
     case DEV393_MINOR(DEV393_LOGGER_CTRL):
-        if (!file->f_mode & FMODE_WRITE) {
+        if (!(file->f_mode & FMODE_WRITE)) {
             return -EINVAL; // readonly
         }
         if (p >= sizeof(wbuf))  return -EINVAL; // bigger than all

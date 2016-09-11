@@ -135,8 +135,14 @@
 #endif
 
 //u32         (*fpga_hist_data)[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]; ///< Array of histogram data, mapped to the memory wheer FPGA sends data
-//u32        *fpga_hist_data[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]; ///< Array of histogram data, mapped to the memory wheer FPGA sends data
-u32        (*fpga_hist_data)[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]; ///< Array of histogram data, mapped to the memory wheer FPGA sends data
+//u32        *fpga_hist_data[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]; ///< Array of histogram data, mapped to the memory where FPGA sends data
+//u32        (*fpga_hist_data)[SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]; ///< Array of histogram data, mapped to the memory where FPGA sends data
+//typedef u32 fpga_hist_t [SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256];
+//typedef u32 fpga_hist_t [][MAX_SENSORS][PARS_FRAMES][4][256];
+
+typedef u32 (*fpga_hist_t)[MAX_SENSORS][PARS_FRAMES][4][256];
+fpga_hist_t fpga_hist_data;
+
 dma_addr_t   fpga_hist_phys; // physical address of the start of the received histogram data
 
 #define  X3X3_HISTOGRAMS_DRIVER_DESCRIPTION "Elphel (R) Model 353 Histograms device driver"
@@ -151,7 +157,7 @@ static int numHistChn = 0;
 
 /** Variable-length array (length is the total number of active sensors <=16), each being the same as in 353:
  * consisting of SENSOR_PORTS histogram_stuct_t structures */
-struct  histogram_stuct_t (*histograms)[HISTOGRAM_CACHE_NUMBER];
+struct  histogram_stuct_t (*histograms)[HISTOGRAM_CACHE_NUMBER] = NULL;
 //struct  histogram_stuct_t *histograms;
 
 dma_addr_t histograms_phys; ///< likely not needed, saved during allocation
@@ -231,14 +237,15 @@ inline void  histogram_calc_percentiles ( unsigned long * cumul_hist,  unsigned 
  * Histograms will be initialized for all possible ports/channels, only some will be enabled */
 int histograms_init_hardware(void)
 {
-    int port, chn;
-    x393_hist_saxi_addr_t saxi_addr;
-//    fpga_hist_data = (u32 [SENSOR_PORTS][MAX_SENSORS][PARS_FRAMES][4][256]) pElphel_buf->d2h_vaddr; // must be page-aligned!
-    fpga_hist_data = (u32 *) pElphel_buf->histograms_vaddr; // d2h_vaddr; // must be page-aligned!
+    int port, chn, hist_chn;
+    x393_hist_saxi_addr_t saxi_addr = {.d32=0};
+//    fpga_hist_data = (u32 *) pElphel_buf->histograms_vaddr; // d2h_vaddr; // must be page-aligned!
+    fpga_hist_data = (fpga_hist_t) pElphel_buf->histograms_vaddr; // d2h_vaddr; // must be page-aligned!
     fpga_hist_phys = pElphel_buf->histograms_paddr; //d2h_paddr;
     for (port=0; port<SENSOR_PORTS; port++) for (chn=0; chn < MAX_SENSORS; chn++) {
-        saxi_addr.page=(fpga_hist_phys >> PAGE_SHIFT)+ PARS_FRAMES * (chn + MAX_SENSORS *port);// table for 4 colors is exactly 1 page;
-        set_x393_hist_saxi_addr (saxi_addr, chn);       // Histogram DMA addresses (in 4096 byte pages)
+        hist_chn = chn + MAX_SENSORS *port;
+        saxi_addr.page=(fpga_hist_phys >> PAGE_SHIFT)+ PARS_FRAMES * hist_chn;// table for 4 colors is exactly 1 page;
+        set_x393_hist_saxi_addr (saxi_addr, hist_chn);       // Histogram DMA addresses (in 4096 byte pages)
     }
     // Hand all data to device
     dma_sync_single_for_device(NULL, fpga_hist_phys, SENSOR_PORTS*MAX_SENSORS*PARS_FRAMES*4*256*4, DMA_FROM_DEVICE);
@@ -300,7 +307,7 @@ void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask
 //    dev_warn(g_dev_ptr, "dma_alloc_coherent(NULL, 0x%x, 0x%x,GFP_NOWAIT)",pages * PAGE_SIZE, (int) histograms_phys);
 
 //    histograms = dma_alloc_coherent(NULL,(pages * PAGE_SIZE),&histograms_phys,GFP_ATOMIC); // OK
-    dev_warn(g_dev_ptr, "dma_alloc_coherent should be done before (@probe), needed are 0x%x bytes)",pages * PAGE_SIZE);
+    dev_warn(g_dev_ptr, "dma_alloc_coherent should be done before (@probe), needed are 0x%lx bytes)",pages * PAGE_SIZE);
     BUG_ON(!histograms);
     histograms_p= (struct histogram_stuct_t *) histograms;
 //    MDF21(printk("\n"));
@@ -329,7 +336,7 @@ int get_hist_index (int sensor_port,     ///< sensor port number (0..3)
 }
 
 /**
- * @brief Get histograms from the FPGA (called as tasklet?)
+ * @brief Get histograms from the FPGA (called as tasklet - not anymore?)
  * TODO: should it be one frame behind current?
  * each group of 4 bits cover 4 colors of the same type */
 int set_histograms  (int sensor_port,           ///< sensor port number (0..3)
@@ -346,18 +353,41 @@ int set_histograms  (int sensor_port,           ///< sensor port number (0..3)
                      unsigned long * framep)   ///< array of 8 values to copy  (frame, gains,expos,vexpos, focus), NULL OK
                                                ///< @return 0 OK, -EINVAL unused port/channel
 {
-    int i, color_start, hist_indx, hist_frame;
-    hist_indx=get_hist_index(sensor_port,sensor_chn);
+    const int hist_frames_available = PARS_FRAMES - 3; // ?
+    int i, color_start, hist_indx, hist_frame, hist_frame_index;
+    unsigned long thisFrameNumber=getThisFrameNumber(sensor_port);
+    dev_dbg(g_dev_ptr, "Setting histograms for frame=%ld(0x%lx), thisFrameNumber=%ld (0x%lx), needed=0x%x\n",
+            frame,frame,thisFrameNumber,thisFrameNumber, needed);
+    hist_indx=get_hist_index(sensor_port,sensor_chn); // channel/subchannel combination, removed unused
     if (hist_indx <0 ) return -EINVAL;
-    if (histograms[hist_indx][GLOBALPARS(sensor_port,G_HIST_LAST_INDEX+sensor_chn)].frame!=frame) {
-        GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn)=(GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn)+1) & (HISTOGRAM_CACHE_NUMBER-1);
-        histograms[hist_indx][GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn)].valid=0;     // overwrite all
-        histograms[hist_indx][GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn)].frame=frame; // add to existent
-        if (framep)    memcpy (&(histograms[hist_indx][GLOBALPARS(sensor_port,G_HIST_LAST_INDEX)].frame),  framep,    32); // copy provided frame, gains,expos,vexpos, focus
-        if (gammaHash) memcpy (&(histograms[hist_indx][GLOBALPARS(sensor_port,G_HIST_LAST_INDEX)].gtab_r), gammaHash, 16); // copy provided 4 hash32 values
-    } else {
-        needed &= ~histograms[hist_indx][GLOBALPARS(sensor_port,G_HIST_LAST_INDEX)].valid; // remove those that are already available from the request
+    if (frame >= thisFrameNumber) {
+        dev_dbg(g_dev_ptr, "frame=%ld(0x%lx) >= thisFrameNumber=%ld (0x%lx) (not yet available)\n",frame,frame,thisFrameNumber,thisFrameNumber);
+        return -EINVAL; // not yet available
     }
+    // verify frame still not overwritten
+    if (frame < (thisFrameNumber - hist_frames_available)) {
+        dev_dbg(g_dev_ptr, "frame=%ld(0x%lx) < thisFrameNumber=%ld (0x%lx) - %d (already gone)\n",frame,frame,thisFrameNumber,thisFrameNumber,hist_frames_available);
+        return -EINVAL; // not yet available
+    }
+    dev_dbg(g_dev_ptr, "Setting histograms for frame=%ld(0x%lx), thisFrameNumber=%ld (0x%lx), needed=0x%x, hist_indx=0x%x \n",
+            frame,frame,thisFrameNumber,thisFrameNumber, needed, hist_indx);
+    hist_frame_index = (int) GLOBALPARS(sensor_port,G_HIST_LAST_INDEX+sensor_chn);
+    dev_dbg(g_dev_ptr, "histograms[%d][%d].frame = 0x%lx\n",
+            hist_indx, hist_frame_index, histograms[hist_indx][hist_frame_index].frame);
+    if (histograms[hist_indx][hist_frame_index].frame!=frame) {
+        hist_frame_index = (hist_frame_index+1) & (HISTOGRAM_CACHE_NUMBER-1);
+        GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn)=hist_frame_index;
+        histograms[hist_indx][hist_frame_index].valid=0;     // overwrite all
+        histograms[hist_indx][hist_frame_index].frame=frame; // add to existent
+        if (framep)    memcpy (&(histograms[hist_indx][hist_frame_index].frame),  framep,    32); // copy provided frame, gains,expos,vexpos, focus
+        if (gammaHash) memcpy (&(histograms[hist_indx][hist_frame_index].gtab_r), gammaHash, 16); // copy provided 4 hash32 values
+        dev_dbg(g_dev_ptr, "histograms[%d][%d].frame = 0x%lx\n",
+                hist_indx, hist_frame_index, histograms[hist_indx][hist_frame_index].frame);
+    } else {
+        needed &= ~histograms[hist_indx][hist_frame_index].valid; // remove those that are already available from the request
+    }
+    dev_dbg(g_dev_ptr, "needed=0x%x\n", needed);
+
     // TODO: handle valid and needed for multichannel?
     if (!(needed & 0xf)) // nothing to do with FPGA
         return 0;
@@ -371,12 +401,22 @@ int set_histograms  (int sensor_port,           ///< sensor port number (0..3)
         outer_inv_range(phys_addr, phys_addr + (256*sizeof(u32) - 1));
         __cpuc_flush_dcache_area(dma_data, 256*sizeof(u32));
         color_start= i<<8 ;
-        memcpy(&histograms[hist_indx][GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn)],
+        memcpy(&histograms[hist_indx][hist_frame_index].hist[256*i],
                 dma_data, 256*sizeof(u32));
         // old in 353:  fpga_hist_read_nice (color_start, 256, (unsigned long *) &histograms[GLOBALPARS(G_HIST_LAST_INDEX)].hist[color_start]);
-        histograms[hist_indx][ GLOBALPARS(sensor_port,G_HIST_LAST_INDEX+sensor_chn)].valid |= 1 << i;
+        histograms[hist_indx][hist_frame_index].valid |= 1 << i;
+        dev_dbg(g_dev_ptr, "histograms[%d][%d].valid=0x%lx\n",
+                hist_indx, hist_frame_index,histograms[hist_indx][hist_frame_index].valid );
     }
     return 0;
+/*
+   for (i=0; i<4; i++) if (needed & ( 1 << i )) {
+    color_start= i<<8 ;
+    fpga_hist_read_nice (color_start, 256, (unsigned long *) &histograms[GLOBALPARS(G_HIST_LAST_INDEX)].hist[color_start]);
+    histograms[GLOBALPARS(G_HIST_LAST_INDEX)].valid |= 1 << i;
+  }
+
+ */
 }
 
 
@@ -403,9 +443,29 @@ int  get_histograms(int sensor_port,     ///< sensor port number (0..3)
     int i, color_start, index;
     int hist_indx=get_hist_index(sensor_port,sensor_chn);
     int raw_needed;
+    unsigned long thisFrameNumber=getThisFrameNumber(sensor_port);
+    unsigned long * gammaHash;
+    unsigned long * framep;
     if (hist_indx <0 ) return -EINVAL;
-    index=GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn);
     raw_needed=(needed | (needed>>4) | needed>>8) & 0xf;
+    dev_dbg(g_dev_ptr, "sensor_port=%d, sensor_chn=%d, frame = %ld (0x%lx), thisFrameNumber=%ld(0x%lx), needed = 0x%x, raw_needed=0x%x\n",
+            sensor_port, sensor_chn, frame, frame, thisFrameNumber, thisFrameNumber, needed, raw_needed);
+    if (raw_needed){
+        // get parameters - decide from current or mpastpars
+        if (frame == (thisFrameNumber-1)) { // use pars
+            gammaHash = get_imageParamsFramePtr(sensor_port, P_GTAB_R, frame);
+            framep =    get_imageParamsFramePtr(sensor_port, P_FRAME, frame);
+        } else {
+            gammaHash = get_imageParamsPastPtr (sensor_port, P_GTAB_R, frame);
+            framep =    get_imageParamsPastPtr (sensor_port, P_FRAME, frame);
+        }
+        if ((i= set_histograms (sensor_port, sensor_chn, frame, raw_needed, gammaHash, framep))){
+            dev_dbg(g_dev_ptr, "Failed to set up histograms for frame= %ld(0x%lx), thisFrameNumber=%ld(0x%lx), returned %d\n",
+                    frame,frame, thisFrameNumber,thisFrameNumber,i);
+            return i;
+        }
+    }
+    index=GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn); // set_histograms may increment G_HIST_LAST_INDEX+sensor_chn
     for (i=0;i<HISTOGRAM_CACHE_NUMBER;i++) {
         dev_dbg(g_dev_ptr, "index=%d, needed=0x%x\n",index,needed);
         if ((histograms[hist_indx][index].frame <= frame) && ((histograms[hist_indx][index].valid & raw_needed)==raw_needed)) break;
@@ -413,9 +473,13 @@ int  get_histograms(int sensor_port,     ///< sensor port number (0..3)
     }
     if (i>=HISTOGRAM_CACHE_NUMBER) {
         dev_err(g_dev_ptr, "no histograms exist for requested colors (0x%x), requested 0x%x\n",raw_needed,needed);
+        // here we need to try to locate and copy raw histogram
+
+
+
         return -EFAULT; // if Y - never calculated, if C - maybe all the cache is used by Y
     }
-    needed &= ~0x0f; // mask out FPGA read requests -= they are not handled here anymore (use set_histograms())
+///    needed &= ~0x0f; // mask out FPGA read requests -= they are not handled here anymore (use set_histograms())
     dev_dbg(g_dev_ptr, "needed=0x%x\n",needed);
     needed |= ((needed >>4) & 0xf0); // cumulative histograms are needed for percentile calculations
     needed &= ~histograms[hist_indx][index].valid;
@@ -590,20 +654,27 @@ loff_t histograms_lseek (struct file * file,
                          loff_t offset,
                          int orig)
 {
-    int p,s;
+    int p,s,index;
     struct histograms_pd * privData = (struct histograms_pd *) file->private_data;
     unsigned long reqAddr,reqFrame;
 
-    dev_dbg(g_dev_ptr, "histograms_lseek: offset=0x%x, orig=0x%x\n",(int) offset, (int) orig);
+    dev_dbg(g_dev_ptr, "histograms_lseek: offset=%d(0x%x), orig=0x%x, getThisFrameNumber(%d)=0x%x\n", (int) offset, (int) offset, (int) orig, privData->port, (int)getThisFrameNumber(privData->port));
     switch (privData->minor) {
     case DEV393_MINOR(DEV393_HISTOGRAM) :
         switch(orig) {
-        case SEEK_CUR: // ignore offset
+        case SEEK_CUR: // ignore offset - in NC353 it was get latest?
+            offset = -1; // for now - just make "latest"
+#if 0
             offset+=(privData-> wait_mode)?
                     GLOBALPARS(privData->port,G_HIST_C_FRAME+privData->subchannel):
                     GLOBALPARS(privData->port,G_HIST_Y_FRAME+privData->subchannel);
+#endif
             //no break (CDT understands this)
-        case SEEK_SET:
+        case SEEK_SET: // negative - make latest?
+            if (offset <0){
+                dev_dbg(g_dev_ptr, "offset= %lld (0x%llx) changing to previous frame \n",offset,offset);
+                offset = getThisFrameNumber(privData->port) -1;
+            }
             privData->frame=offset;
             // Try to make some precautions to avoid waiting forever - if the past frame is requested - request histogram for the current frame,
             // if the "immediate" future (fits into the array of frames) one  - request that frame's  histogram
@@ -613,34 +684,56 @@ loff_t histograms_lseek (struct file * file,
             if (privData->request_en) {
                 reqAddr=(privData-> wait_mode)?P_HISTRQ_C:P_HISTRQ_Y;
                 reqFrame=getThisFrameNumber(privData->port);
+                dev_dbg(g_dev_ptr, "offset= %d (0x%x), reqFrame=%d (0x%x) \n",(int) offset,(int) offset,(int) reqFrame,(int) reqFrame);
                 if (offset > reqFrame) {
                     if (offset > (reqFrame+5)) reqFrame+=5; // What is this 5?
                     else                       reqFrame=offset;
+                    dev_dbg(g_dev_ptr, "offset= %d (0x%x), modified reqFrame for future request =%d (0x%x) \n",(int) offset,(int) offset,(int) reqFrame,(int) reqFrame);
+                }
+                if (offset < reqFrame) { // just debugging
+                    dev_dbg(g_dev_ptr, "offset < reqFrame, will run get_histograms (%d, %d, 0x%x, 0x%x) \n",
+                            privData->port, privData->subchannel, (int) offset, (int) privData->needed);
                 }
                 if ((offset < reqFrame) && // if the requested frame is in the past - try to get it first before requesting a new
                         (((privData->frame_index = get_histograms (privData->port, privData->subchannel, offset, privData->needed))) >=0)) {
 //                    file->f_pos=privData->frame_index;
+                    if (((index = get_hist_index(privData->port, privData->subchannel))) <0)
+                        return -ENODEV; // requested combination of port and subchannel does not exist
                     file->f_pos=privData->frame_index + HISTOGRAM_CACHE_NUMBER * get_hist_index(privData->port, privData->subchannel);
+                    dev_dbg(g_dev_ptr, "Returning %d (0x%x)\n", (int) file->f_pos, (int) file->f_pos);
                     return file->f_pos;
                 }
                 // request histogram(s)
                 //             setFramePar(&framepars[reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
+                dev_dbg(g_dev_ptr, "setFrameParLocked(%d, &aframepars[%d][0x%x], 0x%lx, 1)\n",
+                        privData->port, privData->port, (int) (reqFrame & PARS_FRAMES_MASK), reqAddr);
                 setFrameParLocked(privData->port, &aframepars[privData->port][reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
                 // make sure (harmful) interrupt did not happen since getThisFrameNumber()
                 if (reqFrame < getThisFrameNumber(privData->port)) {
-                    //               setFramePar(&framepars[getThisFrameNumber() & PARS_FRAMES_MASK], reqAddr, 1);
+                    dev_dbg(g_dev_ptr, "setFrameParLocked(%d, &aframepars[%d][0x%lx], 0x%lx, 1)\n",
+                            privData->port, privData->port, getThisFrameNumber(privData->port) & PARS_FRAMES_MASK, reqAddr);
                     setFrameParLocked(privData->port, &aframepars[privData->port][getThisFrameNumber(privData->port) & PARS_FRAMES_MASK], reqAddr, 1);
-
                 }
+            } else { // debug
+                dev_dbg(g_dev_ptr, "privData->request_en=0\n");
             }
+#if 0
             if (privData-> wait_mode)  wait_event_interruptible (hist_c_wait_queue,GLOBALPARS(privData->port,G_HIST_C_FRAME + privData->subchannel)>=offset);
             else                       wait_event_interruptible (hist_y_wait_queue,GLOBALPARS(privData->port,G_HIST_Y_FRAME + privData->subchannel)>=offset);
+#endif
+            dev_dbg(g_dev_ptr, "Before waiting: frame = 0x%x, offset=0x%x privData-> wait_mode=%d\n",
+                    (int) getThisFrameNumber(privData->port), (int) offset, privData-> wait_mode);
+            // neded next frame after requested (modify php too?)
+            if (privData-> wait_mode)  wait_event_interruptible (hist_c_wait_queue,getThisFrameNumber(privData->port)>offset);
+            else                       wait_event_interruptible (hist_y_wait_queue,getThisFrameNumber(privData->port)>offset);
+            dev_dbg(g_dev_ptr, "After waiting: frame = 0x%x\n", (int) getThisFrameNumber(privData->port));
             privData->frame_index = get_histograms (privData->port, privData->subchannel, offset, privData->needed);
             if (privData->frame_index <0) {
                 return -EFAULT;
             } else {
 //                file->f_pos=privData->frame_index;
                 file->f_pos=privData->frame_index + HISTOGRAM_CACHE_NUMBER * get_hist_index(privData->port, privData->subchannel);
+                dev_dbg(g_dev_ptr, "file->f_pos (full histogram number - cache and port/channel combined) = 0x%x\n", (int) file->f_pos);
                 return file->f_pos;
             }
             break; // just in case
@@ -737,7 +830,7 @@ int histograms_init(struct platform_device *pdev) {
     int res;
     int sz, pages;
     struct device *dev = &pdev->dev;
-    const struct of_device_id *match; // not yet used
+//    const struct of_device_id *match; // not yet used
 //    init_histograms(); // Not now??? Need to have list of channels
     // Do it later, from the user space
     res = register_chrdev(DEV393_MAJOR(DEV393_HISTOGRAM), DEV393_NAME(DEV393_HISTOGRAM), &histograms_fops);
@@ -759,7 +852,7 @@ int histograms_init(struct platform_device *pdev) {
     sz = SENSOR_PORTS * MAX_SENSORS * HISTOGRAM_CACHE_NUMBER * sizeof(struct histogram_stuct_t);
     pages = ((sz -1 ) >> PAGE_SHIFT) + 1;
     histograms = dma_alloc_coherent(NULL,(pages * PAGE_SIZE),&histograms_phys,GFP_KERNEL);
-    dev_info(dev, "dma_alloc_coherent(NULL, 0x%x, 0x%x,GFP_KERNEL)",pages * PAGE_SIZE, (int) histograms_phys);
+    dev_info(dev, "dma_alloc_coherent(NULL, 0x%lx, 0x%x,GFP_KERNEL)", pages * PAGE_SIZE, (int) histograms_phys);
     g_dev_ptr = dev; // to use for debug print
     return 0;
 }

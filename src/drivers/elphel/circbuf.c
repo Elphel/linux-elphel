@@ -495,7 +495,7 @@ inline int get_image_start_chn(int last_chunk_offset, unsigned int len32, int ch
     return X393_BUFFSUB_CHN(last_chunk_offset + CHUNK_SIZE - INSERTED_BYTES(len32) - CCAM_MMAP_META, len32, chn);
 }
 
-
+#ifdef PRE_FRAMEPARS
 /* debug code follows */
 void stop_compressor(unsigned int chn)
 {
@@ -503,8 +503,9 @@ void stop_compressor(unsigned int chn)
 
 	mode.run = 1;
 	mode.run_set = 1;
-	x393_cmprs_control_reg(mode, chn);
+	set_x393_cmprs_control_reg(mode, chn);
 }
+#endif
 void dump_state(unsigned int chn)
 {
 	int img_start, last_image_chunk;

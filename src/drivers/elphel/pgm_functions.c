@@ -641,15 +641,15 @@ int pgm_initsensor     (int sensor_port,               ///< sensor port number (
   vign_hight1.height_m1 = 0;
   vign_hight2.height_m1 = 0;
 
-  X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_gamma_ctrl, gamma_ctl);
-  dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n",sensor_port, sensor_port, frame16, gamma_ctl.d32);
-  MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n",sensor_port, frame16, gamma_ctl.d32)
-
   // Enable gamma module to pass through
   gamma_ctl.en =        1;
   gamma_ctl.en_set =    1;
   gamma_ctl.repet =     1;
   gamma_ctl.repet_set = 1;
+
+  X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_gamma_ctrl, gamma_ctl);
+  dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n",sensor_port, sensor_port, frame16, gamma_ctl.d32);
+  MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n",sensor_port, frame16, gamma_ctl.d32)
 
   X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_gamma_height01m1, gamma_height01m1);
   dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_gamma_height01m1,  0x%x)\n",sensor_port, sensor_port, frame16, gamma_height01m1.d32);
@@ -670,6 +670,7 @@ int pgm_initsensor     (int sensor_port,               ///< sensor port number (
   dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_height2_m1,  0x%x)\n",sensor_port, sensor_port, frame16, vign_hight2.d32);
   MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_lens_height2_m1,  0x%x)\n",sensor_port, frame16, vign_hight2.d32)
 
+  // TODO NC393: Setup for all used sub-channels (or is it in multisensor?)
   sens_mode.hist_en =    1; // just first subchannel
   sens_mode.hist_nrst =  1; // just first subchannel
   sens_mode.hist_set =   1;
@@ -1433,10 +1434,12 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     x393_sensio_width_t   sensio_width = {.d32=0};
     x393_sens_sync_mult_t sync_mult =    {.d32=0};
     x393_gamma_ctl_t      gamma_ctl =    {.d32=0};
+    int bayer;
 
     int n_scan_lines, n_ph_lines;
     int flips;
     int bayer_modified;
+    x393_mcntrl_frame_start_dly_t start_dly ={.d32=0};
 
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
@@ -1506,7 +1509,9 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
 
     // Change Bayer for gamma/histograms?
     if (bayer_modified) {
-        gamma_ctl.bayer = thispars->pars[P_BAYER] ^ flips ^ sensor->bayer ^ 3; // 3 added for NC393
+        bayer = thispars->pars[P_BAYER] ^ flips ^ sensor->bayer  ^ 3; // 3 added for NC393;
+        setFramePar(sensor_port, thispars, P_COMP_BAYER | FRAMEPAIR_FORCE_PROC,   bayer);
+        gamma_ctl.bayer = bayer; // 3 added for NC393
         gamma_ctl.bayer_set = 1;
     }
     //NC393: Other needed bits are set in pgm_initsensor (they must be set just once)
@@ -1516,6 +1521,13 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
         dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n",sensor_port, sensor_port, frame16, gamma_ctl.d32);
         MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_gamma_ctrl,  0x%x)\n",sensor_port, frame16, gamma_ctl.d32)
     }
+
+    if (FRAMEPAR_MODIFIED(P_MEMSENSOR_DLY) && ((start_dly.start_dly = thispars->pars[P_MEMSENSOR_DLY]))){
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_mcntrl_scanline_start_delay, start_dly);
+        dev_dbg(g_dev_ptr,"{%d}  Setting sensor-to-memory frame sync delay  to %ld (0x%lx)\n",sensor_port, start_dly.start_dly,start_dly.start_dly);
+        MDP(DBGB_PADD, sensor_port,"Setting sensor-to-memory frame sync delay  to %ld (0x%lx)\n", start_dly.start_dly,start_dly.start_dly)
+    }
+
 
 #if 0
 
@@ -1645,15 +1657,18 @@ int pgm_sensorrun  (int sensor_port,               ///< sensor port number (0..3
 												   ///< @return OK - 0, <0 - error
 
 {
+    int reset_frame;
 #ifndef NC353
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -EINVAL; // wrong frame
+    reset_frame = ((prevpars->pars[P_SENSOR_RUN]==0) && (thispars->pars[P_SENSOR_RUN]!=0))? 1:0;
     if (thispars->pars[P_SENSOR_RUN] & 3) { // do nothing if stopped, set run/single accordingly
         control_sensor_memory (sensor_port,
-                thispars->pars[P_SENSOR_RUN] & 3,
-                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
-                        frame16);
+                               thispars->pars[P_SENSOR_RUN] & 3,
+                               reset_frame,
+                               (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                                        frame16);
     }
     // Is it OK to process stop here too?
     return 0;
@@ -1703,6 +1718,7 @@ int pgm_sensorstop (int sensor_port,               ///< sensor port number (0..3
     if ((thispars->pars[P_SENSOR_RUN] & 3)==0){ // do nothing if not stop
         control_sensor_memory (sensor_port,
                 thispars->pars[P_SENSOR_RUN] & 3,
+                0,
                 (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
                         frame16);
     }
@@ -2215,8 +2231,8 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
         // TODO: Modify left margin by 1 for COLORMODE_COLOR !
     }
     // Bayer shift changed? (additional bayer shift, separate from the gamma-tables one)
-    if (FRAMEPAR_MODIFIED(P_COMPMOD_BYRSH)) {
-        cmprs_mode.bayer =     thispars->pars[P_COMPMOD_BYRSH];
+    if (FRAMEPAR_MODIFIED(P_COMPMOD_BYRSH) || FRAMEPAR_MODIFIED(P_COMP_BAYER)) {
+        cmprs_mode.bayer =     thispars->pars[P_COMPMOD_BYRSH] ^ thispars->pars[P_COMP_BAYER];
         cmprs_mode.bayer_set = 1;
     }
 #if 0
@@ -2727,6 +2743,7 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
 #ifndef NC353
     int extra_pages;
     int disable_need =  1; // TODO: Use some G_* parameter
+    int reset_frame;
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
@@ -2737,6 +2754,7 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
                 (int)thispars->pars[P_COMPRESSOR_RUN])
         return 0; // does not need compressor to be started
     }
+    reset_frame = ((prevpars->pars[P_COMPRESSOR_RUN]==0) && (thispars->pars[P_COMPRESSOR_RUN]!=0))? 1:0;
     // NC393: memory controller already set by pgm_memcompressor, but we'll need to setup dependent/from memory here
     switch(thispars->pars[P_COLOR]){
     case COLORMODE_COLOR:
@@ -2759,15 +2777,20 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
         break;
     }
     cmprs_mode.run_set = 1;
-    X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    if (thispars->pars[P_COMPRESSOR_RUN] == COMPRESSOR_RUN_STOP) { // turn comressor off first
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    }
     // enable memory after the compressor, same latency
     control_compressor_memory (sensor_port,
                                thispars->pars[P_COMPRESSOR_RUN] & 3, // stop/single/run(/reset)
+                               reset_frame,
                                extra_pages,
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
                                frame16);
-
+    if (thispars->pars[P_COMPRESSOR_RUN] != COMPRESSOR_RUN_STOP) { // turn comressor on after memory
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    }
     dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
     MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, frame16, cmprs_mode.d32)
 
@@ -2828,12 +2851,13 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
     // Stop compressor (do not propagate frame sync late, finish current frame)
     cmprs_mode.run = X393_CMPRS_CBIT_RUN_DISABLE;
     cmprs_mode.run_set = 1;
-    X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode); // compressor off
     // Stop memory -> compressor. Will continue current frame until finished
     //TODO NC393: Handle safe/unsafe reprogramming memory at frame syncs - compression can be finished later
 
-    control_compressor_memory (sensor_port,
+    control_compressor_memory (sensor_port, // compressor memory off
                                COMPRESSOR_RUN_STOP,
+                               0, // reset_frame
                                extra_pages,
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
@@ -2866,22 +2890,15 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     int extra_pages;
     int disable_need =  1; // TODO: Use some G_* parameter
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
+    int reset_frame = 0;
+    int just_started = 0;
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",
             sensor_port,frame16, (int) prevpars->pars[P_COMPRESSOR_RUN], (int) thispars->pars[P_COMPRESSOR_RUN]);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",
             frame16, (int) prevpars->pars[P_COMPRESSOR_RUN], (int) thispars->pars[P_COMPRESSOR_RUN])
 
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-    if ((prevpars->pars[P_COMPRESSOR_RUN]==0) && (thispars->pars[P_COMPRESSOR_RUN]!=0)) { // just started
-        // Was for NC353
-        // reset memory controller for the channel2 to the start of the frame
-        // enable memory channel2 (NOTE: when is it disabled? does it need to be disabled?)
-        // set number of tiles to compressor
-
-        // NC393: memory controller already set by pgm_memcompressor, but we'll need to setup dependent/from memory here
-        //Seems nothing here?
-        // Or is there?
-    }
+    reset_frame = ((prevpars->pars[P_COMPRESSOR_RUN]==0) && (thispars->pars[P_COMPRESSOR_RUN]!=0))? 1:0;
     switch(thispars->pars[P_COLOR]){
     case COLORMODE_COLOR:
     case COLORMODE_COLOR20:
@@ -2904,16 +2921,20 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
         break;
     }
     cmprs_mode.run_set = 1;
-    X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
-    // enable memory after the compressor, same latency
-
+    if (thispars->pars[P_COMPRESSOR_RUN] == COMPRESSOR_RUN_STOP) { // turn comressor off first
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    }
+//    // enable memory after the compressor, same latency
     control_compressor_memory (sensor_port,
-            thispars->pars[P_COMPRESSOR_RUN] & 3, // stop/single/run(/reset)
-            extra_pages,
-            disable_need,
-            (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
-                    frame16);
-
+                               thispars->pars[P_COMPRESSOR_RUN] & 3, // stop/single/run(/reset)
+                               reset_frame,
+                               extra_pages,
+                               disable_need,
+                               (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+                                        frame16);
+    if (thispars->pars[P_COMPRESSOR_RUN] != COMPRESSOR_RUN_STOP) { // turn comressor on after memory
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+    }
 
     dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
     MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32)

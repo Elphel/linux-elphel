@@ -190,7 +190,7 @@ int is_fpga_programmed(void) ///< @return 0 - bitstream is NOT loaded, 1 - bitst
     if (!zynq_devcfg_ptr){
         zynq_devcfg_ptr = ioremap(0xf8007000, 0x00010000);
         if (!zynq_devcfg_ptr)
-            return -ENOMEM;
+            return 0; // -ENOMEM;
     }
     return (readl(zynq_devcfg_ptr + 0x000c) & 4)? 1: 0;
 }

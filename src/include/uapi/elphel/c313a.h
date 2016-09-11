@@ -306,7 +306,7 @@
 <li>                     bit 3 - no overlap,  single frames: program - acquire/compress same frame</ul>*/
 #define P_BGFRAME       16 ///< Background measurement mode - will use 16-bit mode and no FPN correction
 //#define P_IMGSZMEM      17 ///< image size in video memory (calculated when channel 0 is programmed) NC393: Not used ???
-#define P_COMP_BAYER    17 ///< derivative, readonly - calculated from P_BAYER and COMPMOD_BYRSH to separate sensor and compressor channels
+//#define P_COMP_BAYER    17 ///< -> 119 derivative, readonly - calculated from P_BAYER and COMPMOD_BYRSH to separate sensor and compressor channels
 // image page numbers depend on image size/pixel depth, so changing any of them will invalidate all pages
 #define P_PAGE_ACQ      18 ///< Number of image page buffer to acquire to (0.1?)  NC393: Not used ???
 #define P_PAGE_READ     19 ///< Number of image page buffer to read from to (0.1?)  NC393: Not used ???
@@ -458,6 +458,8 @@
 #define P_RFOCUS_TOP     117 ///< relative (0x10000 - 1.0)focus WOI top margin, inclusive (3 LSB will be zeroed as it should be multiple of 8x8 block height)
 #define P_RFOCUS_HEIGHT  118 ///< relative (0x10000 - 1.0)focus WOI height (3 LSB will be zeroed as it should be multiple of 8x8 block height)
 
+#define P_COMP_BAYER     119 ///< compressor bayer (before  applying P_COMPMOD_BYRSH)
+#define P_MEMSENSOR_DLY  120 ///< sensor-to-memory channel frame sync delay in mclk cycles (5ns @200MHz)
 // Obsolete in x393, may need something different
 #ifdef NC353
 #define P_SDRAM_CHN20    125 ///< data to be written to the SDRAM CH2 REG 0  (last moment) TODO: Obsolete in x393, may need something different
@@ -501,7 +503,7 @@
 // the following 8 values should go in the same sequence as fields in the histogram page
 // 393: per sub-channel
 //// Will need to have them per-subchannel (4x)
-
+//Next 8 copied to histograms data
 #define P_FRAME          136 ///< Frame number (reset with JPEG pointers) -(read only)
 #define P_GAINR          137 ///< R channel gain  8.16 (0x10000 - 1.0). Combines both analog gain and digital scaling
 #define P_GAING          138 ///< G channel gain ("red line")
@@ -510,6 +512,7 @@
 #define P_EXPOS          141 ///< P_RW_EXPOS  1   exposure time      - now in microseconds?
 #define P_VEXPOS         142 ///< video exposure (if 0 - use P_RW_EXPOS in ms)
 #define P_FOCUS_VALUE    143 ///< (readonly) - sum of all blocks focus values inside focus WOI
+
 #define P_COMPMOD_BYRSH  144 ///< Bayer shift in compressor
 #define P_PORTRAIT       145 ///< Quantization coefficients optimized for vertical scan lines
 
@@ -678,7 +681,8 @@
 
 #define GLOBALS_PRESERVE   0x20     /// number of parameters that are not erased during initGlobalPars
 
-#define GLOBALPARS(p, x) (aglobalPars[p][(x)-FRAMEPAR_GLOBALS]) ///< should work in drivers and applications, First 32 parameter values are not erased with initGlobalPars
+#define GLOBALPARS(p, x)   (aglobalPars[p][(x)-FRAMEPAR_GLOBALS]) ///< should work in drivers and applications, First 32 parameter values are not erased with initGlobalPars
+#define GLOBALPARS_SNGL(x) (globalPars[(x)-FRAMEPAR_GLOBALS]) ///< for applications that use just one port
 
 #define G_DEBUG         (FRAMEPAR_GLOBALS + 2) ///< Each bit turns on/off some debug outputs
 #define G_TEST_CTL_BITS (FRAMEPAR_GLOBALS + 3) ///< turn some features on/off in the drivers for debugging purposes
@@ -879,7 +883,8 @@
 
 
 /// if defined 1 - will wakeup each frame, regardless of the availability of the histograms
-#define HISTOGRAMS_WAKEUP_ALWAYS 0
+//#define HISTOGRAMS_WAKEUP_ALWAYS 0
+#define HISTOGRAMS_WAKEUP_ALWAYS 1
 
 /// Number of frames handled in the buffer (increased to 16 for NC393).
 ///
@@ -1074,7 +1079,6 @@ struct p_names_t {
           P_NAME_ENTRY(TRIG), \
           P_NAME_ENTRY(EXPOS), \
           P_NAME_ENTRY(BGFRAME), \
-          P_NAME_ENTRY(COMP_BAYER), \
           P_NAME_ENTRY(PAGE_ACQ), \
           P_NAME_ENTRY(PAGE_READ), \
           P_NAME_ENTRY(OVERLAP), \
@@ -1190,6 +1194,8 @@ struct p_names_t {
           P_NAME_ENTRY(RFOCUS_WIDTH), \
           P_NAME_ENTRY(RFOCUS_TOP), \
           P_NAME_ENTRY(RFOCUS_HEIGHT), \
+          P_NAME_ENTRY(COMP_BAYER), \
+          P_NAME_ENTRY(MEMSENSOR_DLY), \
           P_NAME_ENTRY(SENSOR_IFACE_TIM0), \
           P_NAME_ENTRY(SENSOR_IFACE_TIM1), \
           P_NAME_ENTRY(SENSOR_IFACE_TIM2), \
