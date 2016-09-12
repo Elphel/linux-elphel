@@ -99,7 +99,7 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 		circbuf_priv[i].phys_addr = dma_handle + CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE;
 		circbuf_priv[i].buf_size = CCAM_DMA_SIZE;
 
-		circbuf_priv[i].buf_size32 = circbuf_priv[i].buf_size; // used in many places
+		circbuf_priv[i].buf_size32 = circbuf_priv[i].buf_size>>2; // used in many places
 		ccam_dma_buf_ptr[i] = circbuf_priv[i].buf_ptr;
 		// set circular buffer size in bytes
 		set_globalParam(i, G_CIRCBUFSIZE, circbuf_priv[i].buf_size);
@@ -318,7 +318,7 @@ int circbuf_open(struct inode *inode, struct file *filp)
 {
     unsigned int minor = MINOR(inode->i_rdev);
 	inode->i_size = circbuf_priv[minor_to_chn(minor, NULL)].buf_size; // CCAM__DMA_SIZE;
-	dev_dbg(g_dev_ptr, "inode->i_size = 0x%lx\n", inode->i_size);
+	dev_dbg(g_dev_ptr, "inode->i_size = 0x%llx\n", inode->i_size);
 
 	return 0;
 }
@@ -391,10 +391,10 @@ int circbuf_valid_ptr(loff_t *rp_offset, struct interframe_params_t **fpp, unsig
 {
 	int rp = *rp_offset;
 	int last_image_chunk;
-	unsigned int sec;
-	unsigned int usec;
+//	unsigned int sec;
+//	unsigned int usec;
 	int wp = camseq_get_jpeg_wp(chn);
-	unsigned int len32 = get_image_length(DW2BYTE(wp), chn, &last_image_chunk);
+//	unsigned int len32 = get_image_length(DW2BYTE(wp), chn, &last_image_chunk);
 	struct interframe_params_t *fp, *fp_off;
 
 	if (rp & 0x1f) {
@@ -445,13 +445,14 @@ int circbufValidPointer(int rp,
         struct interframe_params_t ** fpp,
         unsigned int chn)
 {
+    struct interframe_params_t * fp;
+    int wp, p;
     if (rp & 0x1f) {  //!rp is not 32-bytes aligned
         dev_dbg(g_dev_ptr, "circbufValidPointer: misaligned pointer\n");
         return -2;
     }
-    int wp=camSeqGetJPEG_wp(chn);
-    int p= rp >> 2; // index in ccam_dma_buf
-    struct interframe_params_t * fp;
+    wp=camSeqGetJPEG_wp(chn);
+    p= rp >> 2; // index in ccam_dma_buf
     fp = (struct interframe_params_t *) &circbuf_priv[chn].buf_ptr[X393_BUFFSUB32(p, 8, chn)]; // 32 bytes before the frame pointer, may roll-over to the end of ccam_dma_buf
 
     dev_dbg(g_dev_ptr, "rp=0x%x (0x%x), offset=0x%x\n",
@@ -461,10 +462,27 @@ int circbufValidPointer(int rp,
     *fpp=fp;
     dev_dbg(g_dev_ptr, "p=0x%x , wp==0x%x\n",p,wp);
     if (p == wp) {
+        dev_dbg(g_dev_ptr, "circbufValidPointer: frame not yet acquired, fp - not valid\n");
         return 0; // frame not yet acquired, fp - not valid
     }
     if (fp->signffff != 0xffff) { //! signature is overwritten
-        dev_dbg(g_dev_ptr, "circbufValidPointer: signanure overwritten\n");
+        int i;
+        dev_dbg(g_dev_ptr, "circbufValidPointer: signature overwritten\n");
+        dev_dbg(g_dev_ptr, "wp = 0x%x, p=0x%x\n",wp,p);
+        for (i=p-16; i<p+8; i+=8){
+            dev_dbg(g_dev_ptr, "%06x: %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
+                                i, circbuf_priv[chn].buf_ptr[i+0], circbuf_priv[chn].buf_ptr[i+1], circbuf_priv[chn].buf_ptr[i+2], circbuf_priv[chn].buf_ptr[i+3],
+                                   circbuf_priv[chn].buf_ptr[i+4], circbuf_priv[chn].buf_ptr[i+5], circbuf_priv[chn].buf_ptr[i+6], circbuf_priv[chn].buf_ptr[i+7]);
+        }
+        for (i=wp-16; i<wp+8; i+=8){
+            dev_dbg(g_dev_ptr, "%06x: %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
+                                i, circbuf_priv[chn].buf_ptr[i+0], circbuf_priv[chn].buf_ptr[i+1], circbuf_priv[chn].buf_ptr[i+2], circbuf_priv[chn].buf_ptr[i+3],
+                                   circbuf_priv[chn].buf_ptr[i+4], circbuf_priv[chn].buf_ptr[i+5], circbuf_priv[chn].buf_ptr[i+6], circbuf_priv[chn].buf_ptr[i+7]);
+        }
+
+        dev_dbg(g_dev_ptr, "circbuf_priv_ptr[%d].buf_size=0x%lx, circbuf_priv_ptr[%d].buf_size32=0x%lx\n",
+                chn,circbuf_priv_ptr[chn].buf_size, chn,circbuf_priv_ptr[chn].buf_size32);
+
         return -1;
     }
     if ((fp->timestamp_sec) & X313_LENGTH_MASK) {
@@ -875,6 +893,11 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
           case LSEEK_CIRC_LAST:
              file->f_pos=camSeqGetJPEG_wp(chn)<<2;
              fvld=circbufValidPointer(file->f_pos, &fp, chn); //!set fp
+             if (fvld <0 ){
+                 dev_dbg(g_dev_ptr, "*** LSEEK_CIRC_LAST: invalid pointer rp=0x%x, fvld=%d, fl=0x%x\n",
+                        (int) (file->f_pos >> 2), (int)fvld,(int)circbuf_priv[chn].buf_ptr[X393_BUFFSUB32(rp, 9, chn)] ^ X313_LENGTH_MASK);
+
+             }
           case LSEEK_CIRC_PREV:
              rp= file->f_pos >> 2;
              fl=circbuf_priv[chn].buf_ptr[X393_BUFFSUB32(rp, 9, chn)] ^ X313_LENGTH_MASK;

@@ -784,6 +784,7 @@
 #define G_HIST_Y_FRAME    (FRAMEPAR_GLOBALS + 102) ///< last frame for which Y histogram was calculated (uses 4 locations)
 #define G_HIST_C_FRAME    (FRAMEPAR_GLOBALS + 106) ///< last frame for which C histograms were calculated (uses 4 locations)
 
+#define G_HIST_SHIFT     (FRAMEPAR_GLOBALS + 107) ///< debug feature - add 0..15 to the histogram frame to read DMA memory
 
 #define G_SENSOR_CALIB   (FRAMEPAR_GLOBALS + 1024) ///< 1024 Array of sensor calibration data, sensor dependent.For Micron it is 256*4 actual gains in 8.16 format
                                                    ///< Only first 96 for each color are used
@@ -1347,6 +1348,7 @@ struct p_names_t {
           G_NAME_ENTRY(TEMPERATURE01), \
           G_NAME_ENTRY(TEMPERATURE23), \
           G_NAME_ENTRY(SENSOR_CALIB) \
+          G_NAME_ENTRY(G_HIST_SHIFT) \
 };
 
 #define ONCHANGE_NAME_ENTRY(y) { onchange_##y, #y }

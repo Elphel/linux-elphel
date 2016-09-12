@@ -42,6 +42,17 @@
 
 //#define DEV393_KLOGGER        ("klogger_393",      "klogger_393",    144,  1, "0666", "c")  ///< kernel event logger to memory (no i/o)
 
+#ifdef LOCK_BH_KLOGGER
+    #define FLAGS_KLOGGER_BH
+    #define LOCK_KLOGGER_BH(x)   spin_lock_bh(x)
+    #define UNLOCK_KLOGGER_BH(x) spin_unlock_bh(x)
+#else
+    #define FLAGS_KLOGGER_BH     unsigned long flags;
+    #define LOCK_KLOGGER_BH(x)   spin_lock_irqsave(x,flags)
+    #define UNLOCK_KLOGGER_BH(x) spin_unlock_irqrestore(x,flags)
+#endif
+
+
 static DEFINE_SPINLOCK(klogger_lock);
 
 static struct device *g_dev_ptr=NULL; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
@@ -72,6 +83,7 @@ int print_klog393(const int mode,       ///< bits 0: timestamp, 1 - file, 2 - fu
                   const char *fmt, ...) ///< Format and argumants as in printf
 
 {
+    FLAGS_KLOGGER_BH
     char buf[1024];
     const char * cp;
     sec_usec_t ts;
@@ -81,7 +93,8 @@ int print_klog393(const int mode,       ///< bits 0: timestamp, 1 - file, 2 - fu
         return 0;
     }
     if (mmode & 16){
-        spin_lock_bh(&klogger_lock);
+//        spin_lock_bh(&klogger_lock);
+        LOCK_KLOGGER_BH(&klogger_lock);
     }
     if (mmode & 1) {
         get_fpga_rtc(&ts);
@@ -107,7 +120,8 @@ int print_klog393(const int mode,       ///< bits 0: timestamp, 1 - file, 2 - fu
     va_end(args);
     klog393_puts(buf);
     if (mmode & 16){
-        spin_unlock_bh(&klogger_lock);
+//        spin_unlock_bh(&klogger_lock);
+        UNLOCK_KLOGGER_BH(&klogger_lock);
     }
 
     return 0;

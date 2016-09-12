@@ -34,6 +34,9 @@
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
 
+#include <linux/spinlock.h>
+
+
 #include <uapi/elphel/c313a.h>
 #include <uapi/elphel/exifa.h>
 //#include <uapi/elphel/x393_devices.h>
@@ -55,6 +58,23 @@
 #include "x393_fpga_functions.h"
 // NC393 debug macros
 #include "debug393.h"
+
+static DEFINE_SPINLOCK(framepars_irq_0); ///<
+static DEFINE_SPINLOCK(framepars_irq_1); ///<
+static DEFINE_SPINLOCK(framepars_irq_2); ///<
+static DEFINE_SPINLOCK(framepars_irq_3); ///<
+/** Define array of pointers to locks - hardware allows concurrent writes to different ports tables */
+spinlock_t * frame_irq_locks[4] = {&framepars_irq_0, &framepars_irq_1, &framepars_irq_2, &framepars_irq_3};
+
+static DEFINE_SPINLOCK(compressor_irq_0); ///<
+static DEFINE_SPINLOCK(compressor_irq_1); ///<
+static DEFINE_SPINLOCK(compressor_irq_2); ///<
+static DEFINE_SPINLOCK(compressor_irq_3); ///<
+/** Define array of pointers to locks - hardware allows concurrent writes to different ports tables */
+spinlock_t * compressor_locks[4] = {&compressor_irq_0, &compressor_irq_1, &compressor_irq_2, &compressor_irq_3};
+
+
+
 
 /* Driver name to display in log messages.*/
 //#define IMAGEACQ_DRIVER_DESCRIPTION      "Elphel (R) Model 393 Image Acquisition device driver"
@@ -342,14 +362,7 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 // Find absolute frame number just compressed WRONG, should use comressor frame number
 //	cmdseqmux_status = x393_cmdseqmux_status(); // CMDSEQMUX status data (frame numbers and interrupts
 	frame16 = getHardFrameNumber(jptr->chn_num, 1); // Use compressor
-#if 0
-	switch (jptr->chn_num){
-	case 0:  frame16 =cmdseqmux_status.frame_num0; break;
-    case 1:  frame16 =cmdseqmux_status.frame_num1; break;
-    case 2:  frame16 =cmdseqmux_status.frame_num2; break;
-    default: frame16 =cmdseqmux_status.frame_num3;
-	}
-#endif
+
 	if (frame16 > (aframe & PARS_FRAMES_MASK))
 	    aframe -= 16;
 	jptr->frame = (aframe & ~PARS_FRAMES_MASK) | frame16; // This is absolute compressed frame number, may lag behind current one
@@ -361,58 +374,6 @@ static inline int updateIRQJPEG_wp(struct jpeg_ptr_t *jptr)
 		if (zero_counter[jptr->chn_num] < 1000)
 			frame_pos[jptr->chn_num][zero_counter[jptr->chn_num] - 1] = frame_counter[jptr->chn_num];
 	}
-	/* end of debug code */
-
-	/* Correct frame length and re-adjust interframe params.
-	 * This operations was scheduled on previous interrupt.
-	 */
-	//	if (jptr->flags & SENS_FLAG_HW_OFF) {
-	//		int len32;
-	//		int len32_ptr = jptr->jpeg_wp - INTERFRAME_PARAMS_SZ - 1;
-	//		phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + DW2BYTE(jptr->jpeg_wp) - CHUNK_SIZE;
-	//		virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr + jptr->jpeg_wp - INTERFRAME_PARAMS_SZ;
-	//		outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
-	//		__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
-	//		len32 = circbuf_priv_ptr[jptr->chn_num].buf_ptr[len32_ptr];
-	//		len32 -= INTERFRAME_PARAMS_SZ;
-	//		circbuf_priv_ptr[jptr->chn_num].buf_ptr[len32_ptr] = len32;
-	//		__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
-	//		outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
-	//		jptr->flags &= ~SENS_FLAG_HW_OFF;
-	//	}
-
-	/* Looks like compressor is not writing 32 zero bytes when last frame ends precisely at the
-	 * end of buffer. Try to detect this situation and set a flag so that we can overwrite first
-	 * 32 bytes of the buffer on next interrupt. These bytes will be used as interframe parameters and current frame length
-	 * will be decreased by these 32 bytes. Such a measure will corrupt the frame but preserve the structure.
-	 */
-	//	if (jptr->jpeg_wp == 0) {
-	//		// we need to invalidate two cache lines in order to
-	//		// estimate the situation correctly: one line after the pointer, which should be the line of
-	//		// 32 bytes of newly compressed frame(or zero bytes?), and one line before the pointer, which should be the last line of the frame. If this is not done
-	//		// then the data read from memory can be incorrect and error detection will give false result. Barrier is set to
-	//		// prevent compiler from reordering operations.
-	//		phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr;
-	//		virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr;
-	//		dev_dbg(g_dev_ptr, "from updateIRQJPEG_wp: phys_addr = 0x%x, virt_addr = 0x%p\n", phys_addr, virt_addr);
-	//		outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
-	//		__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
-	//		phys_addr = circbuf_priv_ptr[jptr->chn_num].phys_addr + CCAM__DMA_SIZE - CHUNK_SIZE;
-	//		virt_addr = circbuf_priv_ptr[jptr->chn_num].buf_ptr + BYTE2DW(CCAM__DMA_SIZE - CHUNK_SIZE);
-	//		outer_inv_range(phys_addr, phys_addr + (CHUNK_SIZE - 1));
-	//		__cpuc_flush_dcache_area(virt_addr, CHUNK_SIZE);
-	//		dev_dbg(g_dev_ptr, "from updateIRQJPEG_wp: phys_addr = 0x%x, virt_addr = 0x%p\n", phys_addr, virt_addr);
-	//		barrier();
-	//		prev_dword = X393__BUFFSUB(DW2BYTE(jptr->jpeg_wp), 4);
-	//		dev_dbg(g_dev_ptr, "circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] = 0x%x\n", circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp]);
-	//		dev_dbg(g_dev_ptr, "circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)] = 0x%x\n", circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)]);
-	////		if (circbuf_priv_ptr[jptr->chn_num].buf_ptr[jptr->jpeg_wp] == 0x00 &&
-	//		if ((circbuf_priv_ptr[jptr->chn_num].buf_ptr[BYTE2DW(prev_dword)] & MARKER_FF) == MARKER_FF) {
-	////			jptr->jpeg_wp += INTERFRAME_PARAMS_SZ;
-	//			jptr->flags |= SENS_FLAG_HW_OFF;
-	//			corrected_offset[jptr->chn_num] += 1;
-	//		}
-	//	}
 
 	// invalidate CPU L1 and L2 caches
 	// the code below was used to find cache coherence issues
@@ -659,7 +620,8 @@ static irqreturn_t frame_sync_irq_handler(int irq, void *dev_id)
     int frame16;
     u32 aframe;
     cmdframeseq_mode.interrupt_cmd = IRQ_CLEAR;
-    local_irq_save(flags);
+//    local_irq_save(flags);
+    spin_lock_irqsave(frame_irq_locks[jptr->chn_num],flags);
     aframe = GLOBALPARS(jptr->chn_num, G_THIS_FRAME); // thisFrameNumber(jptr->chn_num); // current absolute frame number
     frame16 = getHardFrameNumber(jptr->chn_num, 0); // Use sensor frame number
     updateFramePars     (jptr->chn_num,
@@ -668,7 +630,8 @@ static irqreturn_t frame_sync_irq_handler(int irq, void *dev_id)
 	//	tasklet_schedule(&tasklet_cmdseq);
 	tasklet_schedule(tasklet_cmdseq[jptr->chn_num]);
 	x393_cmdframeseq_ctrl(cmdframeseq_mode, jptr->chn_num);
-    local_irq_restore(flags);
+//    local_irq_restore(flags);
+    spin_unlock_irqrestore(frame_irq_locks[jptr->chn_num],flags);
 	return IRQ_HANDLED;
 }
 
@@ -688,7 +651,10 @@ static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
 //	int frame16;
 	unsigned long flags;
 
-	local_irq_save(flags);
+//	local_irq_save(flags);
+    spin_lock_irqsave(compressor_locks[jptr->chn_num],flags);
+
+
 	if (updateIRQJPEG_wp(jptr)) {                // Updates write pointer, invalidates cache, calculates absolute frame number (compressed)
 		update_irq_circbuf(jptr);                // Update global parameters (accessible over mmap): G_CIRCBUFWP, G_FREECIRCBUF (depends on user-set G_CIRCBUFRP)
 		updateIRQFocus(jptr);                    // Reads FPGA and updates both G_GFOCUS_VALUE and P_FOCUS_VALUE
@@ -714,7 +680,9 @@ static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
 //	tasklet_schedule(tasklets_compressor[jptr->chn_num]);
 	irq_ctrl.interrupt_cmd = IRQ_CLEAR;
 	x393_cmprs_interrupts(irq_ctrl, jptr->chn_num);
-	local_irq_restore(flags);
+//	local_irq_restore(flags);
+    spin_unlock_irqrestore(compressor_locks[jptr->chn_num],flags);
+
 	return IRQ_HANDLED;
 }
 
@@ -952,7 +920,8 @@ void reset_compressor(unsigned int chn)
 {
 	unsigned long flags;
 
-	local_irq_save(flags);
+//	local_irq_save(flags);
+    spin_lock_irqsave(frame_irq_locks[chn],flags);
 #ifdef TEST_DISABLE_CODE
 	port_csp0_addr[X313_WA_COMP_CMD]= COMPCMD_RESET; // bypasses command sequencer
 	if (framepars) set_imageParamsR_all( P_COMPRESSOR_RUN, COMPRESSOR_RUN_STOP );
@@ -964,7 +933,9 @@ void reset_compressor(unsigned int chn)
 	image_acq_priv.jpeg_ptr[chn].fpga_cntr_prev = 0;
 	image_acq_priv.jpeg_ptr[chn].flags = 0;
 	//update_irq_circbuf(jptr);
-	local_irq_restore(flags);
+//	local_irq_restore(flags);
+    spin_unlock_irqrestore(frame_irq_locks[chn],flags);
+
 }
 
 /** Camera compressor interrupts on/off */

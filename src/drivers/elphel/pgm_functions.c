@@ -1867,8 +1867,8 @@ int pgm_hist       (int sensor_port,               ///< sensor port number (0..3
             // set these values to FPGA
             left_top.left =          hist_setup_data.left;
             left_top.top =           hist_setup_data.top;
-            width_height.width_m1 =  hist_setup_data.width-2;
-            width_height.height_m1 = hist_setup_data.height-2;
+            width_height.width_m1 =  hist_setup_data.width-1;
+            width_height.height_m1 = hist_setup_data.height-1;
             X393_SEQ_SEND1S (sensor_port, frame16, x393_histogram_lt, left_top, sub_chn);
             X393_SEQ_SEND1S (sensor_port, frame16, x393_histogram_wh, width_height,sub_chn);
             dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1S(0x%x, 0x%x, x393_histogram_lt, 0x%x, %d)\n",

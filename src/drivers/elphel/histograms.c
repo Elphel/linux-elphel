@@ -230,7 +230,7 @@ loff_t     histograms_lseek  (struct file * file, loff_t offset, int orig);
 int        histograms_mmap   (struct file *file, struct vm_area_struct *vma);
 
 
-inline void  histogram_calc_cumul       ( unsigned long * hist,        unsigned long * cumul_hist );
+inline unsigned long  histogram_calc_cumul       ( unsigned long * hist,        unsigned long * cumul_hist );
 inline void  histogram_calc_percentiles ( unsigned long * cumul_hist,  unsigned char * percentile);
 
 /** Initialize FPGA DMA engine for histograms. Obviously requires bitstream to be loaded.
@@ -393,7 +393,8 @@ int set_histograms  (int sensor_port,           ///< sensor port number (0..3)
         return 0;
     // Copying received data to histograms structure, maybe later we can skip that step and use data in place
     //  hist_frame=(frame-1) & PARS_FRAMES_MASK; // TODO: Verify
-    hist_frame=frame & PARS_FRAMES_MASK; // TODO: Verify
+//    hist_frame=frame & PARS_FRAMES_MASK; // TODO: Verify
+    hist_frame=(frame + (GLOBALPARS(sensor_port, G_HIST_SHIFT))) & PARS_FRAMES_MASK; // TODO: Verify
     for (i=0; i<4; i++) if (needed & ( 1 << i )) {
         u32 phys_addr= fpga_hist_phys + PAGE_SIZE*(hist_frame + PARS_FRAMES * (sensor_chn + MAX_SENSORS *sensor_port)) + i*256*sizeof(u32); // start of selected color
         u32 * dma_data = &fpga_hist_data[sensor_port][sensor_chn][hist_frame][i][0];
@@ -446,6 +447,7 @@ int  get_histograms(int sensor_port,     ///< sensor port number (0..3)
     unsigned long thisFrameNumber=getThisFrameNumber(sensor_port);
     unsigned long * gammaHash;
     unsigned long * framep;
+    unsigned long dbg_sum;
     if (hist_indx <0 ) return -EINVAL;
     raw_needed=(needed | (needed>>4) | needed>>8) & 0xf;
     dev_dbg(g_dev_ptr, "sensor_port=%d, sensor_chn=%d, frame = %ld (0x%lx), thisFrameNumber=%ld(0x%lx), needed = 0x%x, raw_needed=0x%x\n",
@@ -487,7 +489,8 @@ int  get_histograms(int sensor_port,     ///< sensor port number (0..3)
     if (needed & 0xf0) { // Calculating cumulative histograms
         for (i=0; i<4; i++) if (needed & ( 0x10 << i )) {
             color_start= i<<8 ;
-            histogram_calc_cumul ( (unsigned long *) &histograms[hist_indx][index].hist[color_start],  (unsigned long *) &histograms[hist_indx][index].cumul_hist[color_start] );
+            dbg_sum = histogram_calc_cumul ( (unsigned long *) &histograms[hist_indx][index].hist[color_start],  (unsigned long *) &histograms[hist_indx][index].cumul_hist[color_start] );
+            dev_dbg(g_dev_ptr, "frame: 0x%lx (now 0x%lx) color:%d, pixel sum=0x%08lx\n",frame, thisFrameNumber, i, dbg_sum);
             histograms[hist_indx][index].valid |= 0x10 << i;
         }
         dev_dbg(g_dev_ptr, "needed=0x%x, valid=0x%lx\n",needed,histograms[hist_indx][index].valid);
@@ -504,12 +507,14 @@ int  get_histograms(int sensor_port,     ///< sensor port number (0..3)
 }
 
 /** Calculate cumulative histogram (one color component) from the corresponding raw histogram */
-inline void  histogram_calc_cumul ( unsigned long * hist,       ///< input raw histogram array of unsigned long, single color (256)
-                                    unsigned long * cumul_hist) ///< output cumulative histogram array of unsigned long, single color (256)
+inline  unsigned long  histogram_calc_cumul ( unsigned long * hist,       ///< input raw histogram array of unsigned long, single color (256)
+                                              unsigned long * cumul_hist) ///< output cumulative histogram array of unsigned long, single color (256)
+                                               ///< @return sum of all pixels (last value)
 {
     int i;
     cumul_hist[0]=hist[0];
     for (i=1; i<256;i++) cumul_hist[i]=cumul_hist[i-1]+hist[i];
+    return cumul_hist[255];
 }
 
 /**
@@ -663,17 +668,19 @@ loff_t histograms_lseek (struct file * file,
     case DEV393_MINOR(DEV393_HISTOGRAM) :
         switch(orig) {
         case SEEK_CUR: // ignore offset - in NC353 it was get latest?
-            offset = -1; // for now - just make "latest"
+//            offset = -1; // for now - just make "latest"
 #if 0
             offset+=(privData-> wait_mode)?
                     GLOBALPARS(privData->port,G_HIST_C_FRAME+privData->subchannel):
                     GLOBALPARS(privData->port,G_HIST_Y_FRAME+privData->subchannel);
 #endif
+
+            offset+=getThisFrameNumber(privData->port); // get relative to current frame (-1 - latest)
             //no break (CDT understands this)
-        case SEEK_SET: // negative - make latest?
+        case SEEK_SET: // negative - make relative to current (-1 - latest, -2 - before latest - up to 15 before)
             if (offset <0){
                 dev_dbg(g_dev_ptr, "offset= %lld (0x%llx) changing to previous frame \n",offset,offset);
-                offset = getThisFrameNumber(privData->port) -1;
+                offset += getThisFrameNumber(privData->port);
             }
             privData->frame=offset;
             // Try to make some precautions to avoid waiting forever - if the past frame is requested - request histogram for the current frame,

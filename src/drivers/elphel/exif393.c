@@ -110,11 +110,12 @@ static struct exif_datetime_t {
 
 
 
-static int        exif_open   (struct inode *inode, struct file *filp);
-static int        exif_release(struct inode *inode, struct file *filp);
-static loff_t     exif_lseek  (struct file * file, loff_t offset, int orig);
-static ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff_t *off);
-static ssize_t    exif_read   (struct file * file, char * buf, size_t count, loff_t *off);
+
+int        exif_open   (struct inode *inode, struct file *filp);
+int        exif_release(struct inode *inode, struct file *filp);
+loff_t     exif_lseek  (struct file * file, loff_t offset, int orig);
+ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff_t *off);
+ssize_t    exif_read   (struct file * file, char * buf, size_t count, loff_t *off);
 static int __init exif_init(void);
 
 static struct file_operations exif_fops = {
@@ -357,7 +358,9 @@ int putlong_meta(int sensor_port, unsigned long data, int * indx,  unsigned long
  */
 char * encode_time(char buf[27], unsigned long sec, unsigned long usec) {
 	unsigned long s,d,m,y,y4,lp,h;
-	spin_lock_bh(&lock);
+	unsigned long flags;
+    spin_lock_irqsave(&lock,flags);
+
 	if (((sec-exif_time.today_sec)>86400) || (sec < exif_time.today_sec)) {// today's time is not valid, try tomorrow:
 		memcpy(&exif_time.today_date[0],&exif_time.tomorrow_date[0],sizeof(exif_time.today_date)+sizeof(exif_time.today_sec));
 		if (((sec-exif_time.today_sec)>86400) || (sec < exif_time.today_sec)) {// today's time is _still_ not valid, has to do it itself :-(
@@ -416,13 +419,14 @@ char * encode_time(char buf[27], unsigned long sec, unsigned long usec) {
 	sprintf(&now_datetime.subsec[0],"%06ld",usec);
 	memcpy(buf,&now_datetime.datetime[0],sizeof(now_datetime));
 	//  return &now_datetime.datetime[0];
-	spin_unlock_bh(&lock);
+    spin_unlock_irqrestore(&lock,flags);
 	return buf;
 }
 
 int store_meta(int sensor_port) { //called from IRQ service - put current metadata to meta_buffer, return page index
+    int meta_index;
 	if (!aexif_enabled[sensor_port]) return 0;
-	int meta_index=aexif_wp[sensor_port];
+	meta_index=aexif_wp[sensor_port];
 	memcpy(&ameta_buffer[sensor_port][meta_index * aexif_meta_size[sensor_port]], ameta_buffer[sensor_port], aexif_meta_size[sensor_port]);
 	aexif_wp[sensor_port]++;
 	if (aexif_wp[sensor_port] > MAX_EXIF_FRAMES) aexif_wp[sensor_port] = 1;
@@ -431,7 +435,8 @@ int store_meta(int sensor_port) { //called from IRQ service - put current metada
 
 //!++++++++++++++++++++++++++++++++++++ open() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-static int exif_open(struct inode *inode, struct file *filp) {
+//static
+int exif_open(struct inode *inode, struct file *filp) {
 	int p = MINOR(inode->i_rdev);
 	int * pd= (int *) &(filp->private_data);
 	switch (p) {
@@ -458,7 +463,8 @@ static int exif_open(struct inode *inode, struct file *filp) {
 
 //!++++++++++++++++++++++++++++++++++++ release() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-static int exif_release(struct inode *inode, struct file *filp){
+//static
+int exif_release(struct inode *inode, struct file *filp){
 	int p = MINOR(inode->i_rdev);
 	int * pd= (int *) &(filp->private_data);
 	switch (p) {
@@ -489,13 +495,14 @@ static int exif_release(struct inode *inode, struct file *filp){
 
 //!++++++++++++++++++++++++++++++++++++ lseek() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-static loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
+//static
+loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
 	int p=(int)file->private_data;
 	int thissize=minor_file_size(p);
 	int maxsize=minor_max_size(p);
+//    int fp;
     dev_dbg(g_devfp_ptr,"exif_lseek, minor=%d, offset = 0x%llx, orig=%d\n",p,offset,orig);
 	//   int sensor_port;
-	int fp;
 	switch (orig) {
 	case SEEK_SET:
 		file->f_pos = offset;
@@ -584,7 +591,8 @@ static loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
 
 //!++++++++++++++++++++++++++++++++++++ write() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-static ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff_t *off) {
+//static
+ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff_t *off) {
 	int p=(int)file->private_data;
 	int sensor_port;
 	//  int thissize=minor_file_size(p);
@@ -644,7 +652,8 @@ static ssize_t    exif_write  (struct file * file, const char * buf, size_t coun
 
 //!++++++++++++++++++++++++++++++++++++ read() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-static ssize_t    exif_read   (struct file * file, char * buf, size_t count, loff_t *off) {
+//static
+ssize_t    exif_read   (struct file * file, char * buf, size_t count, loff_t *off) {
 	int p=(int)file->private_data;
 	int thissize=minor_file_size(p);
 	char * cp, * metap;
