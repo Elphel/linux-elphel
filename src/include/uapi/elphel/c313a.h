@@ -1607,7 +1607,7 @@ struct p_names_t {
 /*  For past compatibility, CCMA_DMA_SIZE...
 */
 //#define CCAM_DMA_SIZE  CCAM_WORDS_PER_DMABUF
-#define CCAM_DMA_SIZE        0x4000000     ///< Each channel buffer size TODO NC393: use only for initial allocation, move to DT
+#define CCAM_DMA_SIZE        0x4000000     ///< Each channel buffer size  in BYTES (was in DWORDS in NC353) TODO NC393: use only for initial allocation, move to DT
 #define CIRCBUF_START_OFFSET 0x100000      ///< Offset for the first bufer TODO NC393: use only for initial allocation, move to DT
 
 /*

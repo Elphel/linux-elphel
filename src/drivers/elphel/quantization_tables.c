@@ -358,6 +358,7 @@ void init_qtable_fpga(unsigned int chn)
  * @param[in]   chn        compressor channel number
  * @return      table page number used (0..7) or -1 - invalid q
  */
+//TODO 393: Change to spinlock_irq_save!
 int set_qtable_fpga(int quality2, unsigned int chn)
 {
 	unsigned long flags;
@@ -460,7 +461,11 @@ int set_qtable_fpga(int quality2, unsigned int chn)
 		}
 
 		table_addr.type = TABLE_TYPE_QUANT;
-		table_addr.addr32 = qtables_set[ind].qtable_fpga_mre * QTABLE_SIZE;
+		//NC393 TODO: Find why address should be x4
+//		table_addr.addr32 = qtables_set[ind].qtable_fpga_mre * QTABLE_SIZE;
+        table_addr.addr32 = qtables_set[ind].qtable_fpga_mre * QTABLE_SIZE*4;
+        dev_dbg(g_dev_ptr, "table_addr=0x%08x\n", table_addr);
+
 		x393_cmprs_tables_address(table_addr, chn);
 		for (i = 0; i < QTABLE_SIZE; i++) {
 			x393_cmprs_tables_data(qtable_fpga_dw[i], chn);

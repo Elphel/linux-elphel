@@ -1938,6 +1938,7 @@ int pgm_quality    (int sensor_port,               ///< sensor port number (0..3
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     int y_coring_index;
     int c_coring_index;
+    int qtab = 0;
     int composite_quality=(thispars->pars[P_QUALITY] & 0xff7f) | ((thispars->pars[P_PORTRAIT] & 1)<<7);
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
@@ -1960,15 +1961,15 @@ int pgm_quality    (int sensor_port,               ///< sensor port number (0..3
 
     // calculate quality tables - find already programmed FPGA page or calculates/programms a new one
     // set_qtable_fpga returns table page (0..7) or -1 - invalid q
-
-    if ((thispars->pars[P_COMPMOD_QTAB]=set_qtable_fpga(composite_quality, sensor_port))>=0) {
-        cmprs_mode.qbank = thispars->pars[P_COMPMOD_QTAB];
+    if ((qtab=set_qtable_fpga(composite_quality, sensor_port))>=0) {
+        setFramePar(sensor_port, thispars, P_COMPMOD_QTAB,  qtab); // single parameter, when more - use SETFRAMEPARS_SET
+        cmprs_mode.qbank = qtab;
         cmprs_mode.qbank_set = 1;
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
-        dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",
-                sensor_port, sensor_port, frame16, cmprs_mode.d32);
-        MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",
-                sensor_port, frame16, cmprs_mode.d32)
+        dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x), qtab = %d\n",
+                sensor_port, sensor_port, frame16, cmprs_mode.d32, qtab);
+        MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x), qtab = %d\n",
+                sensor_port, frame16, cmprs_mode.d32, qtab)
 
         return 0;
     } else return -EFAULT;
