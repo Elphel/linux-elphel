@@ -1748,6 +1748,7 @@ int pgm_sensorstop (int sensor_port,               ///< sensor port number (0..3
  * set through a character device driver (with FPGA bit set to get locked?) and then pgm_gamma is activated when
  * the P_GTAB_R (*_G,*_GB, *_B) are updated
  * The scale part of these parameters (lower 16 bits) may be modified by white balancing code without loading a new table
+ * Should not be? It would limit the output range if it is less than default 0x400
  *
  * will be programmed not earlier than 1 frame ahead of the current to prevent condition when earlier frame
  * is programmed after the later one (not possible because of just two tables in the FPGA - current and shadow,
