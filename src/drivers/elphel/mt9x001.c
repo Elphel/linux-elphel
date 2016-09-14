@@ -424,6 +424,7 @@ struct sensor_t mt9m001={
         .binHor      = 0x01,     ///< available horizontal binning values 1
         .binVert     = 0x01,     ///< vailable vertical binning values 1
         .maxGain256  = 4032,     ///< (15.75) maximal analog gain times 0x100
+        .minGain256  = 384,      ///< 1.5 times 0x100
         .minClockFreq= 20000000, ///< Minimal clock frequency
         .maxClockFreq= 48000000, ///< Maximal clock frequency
         .nomClockFreq= 48000000, ///< nominal clock frequency
@@ -463,6 +464,7 @@ struct sensor_t mt9d001={
         .binHor      = 0x01,     ///< available horizontal binning values 1
         .binVert     = 0x01,     ///< vailable vertical binning values 1
         .maxGain256  = 4032,     ///< (15.75) maximal analog gain times 0x100
+        .minGain256  = 384,      ///< 1.5 times 0x100
         .minClockFreq= 20000000, ///< Minimal clock frequency
         .maxClockFreq= 48000000, ///< Maximal clock frequency
         .nomClockFreq= 48000000, ///<nominal clock frequency
@@ -501,6 +503,7 @@ struct sensor_t mt9t001={
         .binHor      = 0xff,     ///< available horizontal binning values 1,2,3,4,5,6,7,8
         .binVert     = 0xff,     ///< vailable vertical binning values 1,2,3,4,5,6,7,8
         .maxGain256  = 4032,     ///< (15.75) maximal analog gain times 0x100
+        .minGain256  = 384,      ///< 1.5 times 0x100
         .minClockFreq= 20000000, ///< Minimal clock frequency
         .maxClockFreq= 48000000, ///< Maximal clock frequency
         .nomClockFreq= 48000000, ///<nominal clock frequency
@@ -539,6 +542,7 @@ struct sensor_t mt9p001={
         .binHor      = 0xff,     ///< 1,2,4 0xb{0,1,3}
         .binVert     = 0xff,     ///< 1,2,3,4 0xf [0,3]
         .maxGain256  = 4032,     ///< (15.75) maximal analog gain times 0x100
+        .minGain256  = 384,      ///< 1.5 times 0x100
         .minClockFreq= 20000000, ///< Minimal clock frequency
         .maxClockFreq= 96000000, ///< Maximal clock frequency
         .nomClockFreq= 96000000, ///< nominal clock frequency
@@ -1010,7 +1014,7 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x,0x%x,0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) sensor_register_overwrites[2*i], (int) sensor_register_overwrites[2*i+1]);
 
     }
-    SETFRAMEPARS_SET(P_GAIN_MIN, 0x10000);
+    SETFRAMEPARS_SET(P_GAIN_MIN, (sensor->minGain256)<<8); // less than that may not saturate sensor and confuse autoexposure/white balancing
     SETFRAMEPARS_SET(P_GAIN_MAX, (sensor->maxGain256)<<8);
     if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
     // G_* parameters - can write directly
@@ -1640,7 +1644,7 @@ unsigned long gain_ajust_mt9x001(
 
 /** Calculates hardware specific analog gains.
  * Changed to rounding (was truncating)*/
-inline int gain_mt9x001(int g,          ///< gain value (integer, 256 for unity gain)
+inline int gain_mt9x001(int g,          ///< gain value (integer, 256 for unity gain). Violating minimal gain is OK here
                         int maxGain256) ///< maximal supported gain (integer, 256 for unity gain)
                                         ///<  @return hardware gain value
 {
@@ -1652,17 +1656,6 @@ inline int gain_mt9x001(int g,          ///< gain value (integer, 256 for unity 
         g = ((g+ 0X20) >> 6) + 0x40;
     return g;
 }
-/* truncating
-inline int gain_mt9x001(int g, int maxGain256) {
-   if(g > maxGain256)
-      g = maxGain256;
-   if(g <= 0x400)
-      g >>= 5;
-   else 
-      g = (g >> 6) + 0x40;
-   return g;
-}
- */
 
 /** Apply scale (0x10000~1.0) to data using 64-bit intermediate data */
 inline unsigned long applyScale16 (unsigned long data,  ///< 32-bit unsigned data
@@ -1725,7 +1718,7 @@ int mt9x001_pgm_gains      (int sensor_port,               ///< sensor port numb
     int gaingModified=FRAMEPAR_MODIFIED(P_GAING);
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-    ///make sure limits are OK
+    ///make sure limits are OK. Allow violating minimal gain here
     if (FRAMEPAR_MODIFIED(P_GAIN_MIN)) {
         limitsModified=1;
         if (minAnaGain < 0x10000) {

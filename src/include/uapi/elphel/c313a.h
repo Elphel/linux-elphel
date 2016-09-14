@@ -1671,6 +1671,7 @@ struct sensor_t {
    unsigned long  binHor;         ///< bit mask bit 0 - 1:1, bit 31 - by 32
    unsigned long  binVert;        ///< bit mask bit 0 - 1:1, bit 31 - by 32
    unsigned long  maxGain256;     ///< maximal analog gain times 0x100
+   unsigned long  minGain256;     ///< minimal analog gain (that allows saturation of all but defective pixels) times 0x100
    unsigned long  minClockFreq;   ///< Minimal clock frequency
    unsigned long  maxClockFreq;   ///< Maximal clock frequency
    unsigned long  nomClockFreq;   ///<nominal clock frequency
@@ -1782,76 +1783,72 @@ struct i2c_timing_t {
 #define GAMMA_SCALE_SHIFT     10  // when scaling - shift right by GAMMA_SCALE_SHIFT (treat scale as 6.10)
 #define GAMMA_SCLALE_1 ( 1 << GAMMA_SCALE_SHIFT )      // gamma scale 1.0 - 0x400
 struct gamma_stuct_t {
-          union {
-             unsigned long hash32; /// fully identifies current table
-             struct {
-                unsigned short scale; /// 6.10: 0x400 is 1.0 scale (>=1.0) is applied in the driver, saturating result
-                union {
-                  unsigned short hash16; /// scale-independent part of the table (tables themselves are calculated outside of the driver)
-                  struct {
+    union {
+        unsigned long hash32; /// fully identifies current table
+        struct {
+            unsigned short scale; /// 6.10: 0x400 is 1.0 scale (>=1.0) is applied in the driver, saturating result
+            union {
+                unsigned short hash16; /// scale-independent part of the table (tables themselves are calculated outside of the driver)
+                struct {
                     unsigned char gamma; /// "gamma" in the range 0.0 ... 2.55
                     unsigned char black; /// black level to subtract (scaled to full scale) from the input data
-                  };
                 };
-             };
-          };
-          unsigned long long valid;      /// 0 - table invalid, 1 - table valid +2 for table locked (until sent to FPGA)
-//          int locked;     /// bit frame+ (color<<3) locked for color/frame
-          unsigned long long locked;     /// NOTE: Changed to just color locked for color
-          int this_non_scaled;      // 0 for non-scaled, others - (for scaled) - pointer to the corresponding non-scaled 
-          union { /// used in head (element 0) and non-scaled chain (not used in scaled)
-            struct { /// element 0 - heads of the chains
-              int oldest_non_scaled; // 
-              int newest_non_scaled; // 
             };
-            struct { /// non-scaled (gamma data is full 16-bit)
-              int newer_non_scaled; // table type (non-scaled prototype) used later than this one
-              int older_non_scaled; // table type (non-scaled prototype) used before this one
-            };
-          };
-          union {  /// used in head (element 0) and scaled chain (not used in non-scaled) (or maybe it will be used?)
-            struct { /// element 0 - heads of the chains
-              int oldest_all;    // 
-              int newest_all;    //
-            };
-            struct { /// scaled (gamma data is hardware defined 10 bit)
-              int newer_all;    /// newer in a single  chain of all scaled tables, regardless of the prototype
-              int older_all;    /// older in a single  chain of all scaled tables, regardless of the prototype
-                                /// *_all also includes yet unused nodes (after init)
-            };
-          };
-          union { /// used in non-scaled and scaled, not in the head (element 0)
-            struct { /// non-scaled
-              int oldest_scaled;    // oldest derivative of this prototype (scaled)
-              int newest_scaled;    // newest derivative of this prototype (scaled)
-            };
-            struct { /// scaled (gamma data is hardware defined 10 bit)
-              int newer_scaled; // table type (non-scaled prototype) used later than this one
-              int older_scaled; // table type (non-scaled prototype) used before this one
-            };
-            struct { /// reuse in the head (element 0) - to make this variable visible through mmap to PHP (for debugging)
-              int non_scaled_length; // current number of different hash values
-              int num_locked;        // number of nodes locked (until table sent to FPGA)
-            };
-          };
-          union {
-            struct { 
-              unsigned short direct[257];   // "Gamma" table, 16-bit for both non-scaled prototypes and scaled, 0..0xffff range (hardware will use less)
-              unsigned short dummy1;        // to have it 32-bit aligned
-//              unsigned short reverse[256];  // reverse table to speed-up reversing (still need interpolation).Index - most significant 8 bits, data - largest direct argument...
-              unsigned char reverse[256];  /// reverse table to speed-up reversing. No division, but needs interpolation by the application
-              unsigned long fpga[256]; // data encoded for FPGA "gamma" table (18 bits, "floating point")
-            };
-            struct {
-//             int locked_col_frame[4 * PARS_FRAMES]; //index of the table to load to color/frame (should be locked, until unlocked)
-             int locked_chn_color[4*MAX_SENSORS*SENSOR_PORTS]; /// NOTE: Changed to just color (locked last written to FPGA - maybe needed again, as the FPGA needs all table to be overwritten - two pages)
-             // For NC393 - using 64 entries - individual for each channel/subchannel, color is in 2 lower bits
-
-//             int other [129+128+256 -(4 * PARS_FRAMES)];
-//             int other [129+64+256 -(4 * PARS_FRAMES)];
-             int other [129+64+256 -4*MAX_SENSORS*SENSOR_PORTS];
-            };
-          };
+        };
+    };
+    unsigned long long valid;      /// 0 - table invalid, 1 - table valid +2 for table locked (until sent to FPGA)
+    //          int locked;     /// bit frame+ (color<<3) locked for color/frame
+    unsigned long long locked;     /// NOTE: Changed to just color locked for color
+    int this_non_scaled;      // 0 for non-scaled, others - (for scaled) - pointer to the corresponding non-scaled
+    union { /// used in head (element 0) and non-scaled chain (not used in scaled)
+        struct { /// element 0 - heads of the chains
+            int oldest_non_scaled; //
+            int newest_non_scaled; //
+        };
+        struct { /// non-scaled (gamma data is full 16-bit)
+            int newer_non_scaled; // table type (non-scaled prototype) used later than this one
+            int older_non_scaled; // table type (non-scaled prototype) used before this one
+        };
+    };
+    union {  /// used in head (element 0) and scaled chain (not used in non-scaled) (or maybe it will be used?)
+        struct { /// element 0 - heads of the chains
+            int oldest_all;    //
+            int newest_all;    //
+        };
+        struct { /// scaled (gamma data is hardware defined 10 bit)
+            int newer_all;    /// newer in a single  chain of all scaled tables, regardless of the prototype
+            int older_all;    /// older in a single  chain of all scaled tables, regardless of the prototype
+            /// *_all also includes yet unused nodes (after init)
+        };
+    };
+    union { /// used in non-scaled and scaled, not in the head (element 0)
+        struct { /// non-scaled
+            int oldest_scaled;    // oldest derivative of this prototype (scaled)
+            int newest_scaled;    // newest derivative of this prototype (scaled)
+        };
+        struct { /// scaled (gamma data is hardware defined 10 bit)
+            int newer_scaled; // table type (non-scaled prototype) used later than this one
+            int older_scaled; // table type (non-scaled prototype) used before this one
+        };
+        struct { /// reuse in the head (element 0) - to make this variable visible through mmap to PHP (for debugging)
+            int non_scaled_length; // current number of different hash values
+            int num_locked;        // number of nodes locked (until table sent to FPGA)
+        };
+    };
+    union {
+        struct {
+            unsigned short direct[257];   // "Gamma" table, 16-bit for both non-scaled prototypes and scaled, 0..0xffff range (hardware will use less)
+            unsigned short dummy1;        // to have it 32-bit aligned
+            unsigned char reverse[256];  /// reverse table to speed-up reversing. No division, but needs interpolation by the application
+            unsigned long fpga[256]; // data encoded for FPGA "gamma" table (18 bits, "floating point")
+        };
+        struct {
+            int locked_chn_color[4*MAX_SENSORS*SENSOR_PORTS]; /// NOTE: Changed to just color (locked last written to FPGA - maybe needed again, as the FPGA needs all table to be overwritten - two pages)
+            // For NC393 - using 64 entries - individual for each channel/subchannel, color is in 2 lower bits
+            // int other [129+64+256 -(4 * PARS_FRAMES)];
+            int other [129+64+256 -4*MAX_SENSORS*SENSOR_PORTS];
+        };
+    };
 };
 
 ///histograms related structure
