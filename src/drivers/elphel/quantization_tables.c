@@ -326,8 +326,8 @@ int get_qtable(int quality2, unsigned char *y_tab, unsigned char *c_tab, unsigne
 	local_irq_restore(flags);
 
 	dev_dbg(g_dev_ptr, "y_tab = 0x%x, c_tab = 0x%x, rslt = %d\n",(int) y_tab, (int) c_tab, rslt);
-	print_hex_dump_bytes("", DUMP_PREFIX_NONE, y_tab, QTABLE_SIZE);
-	print_hex_dump_bytes("", DUMP_PREFIX_NONE, c_tab, QTABLE_SIZE);
+//	print_hex_dump_bytes("", DUMP_PREFIX_NONE, y_tab, QTABLE_SIZE);
+//	print_hex_dump_bytes("", DUMP_PREFIX_NONE, c_tab, QTABLE_SIZE);
 
 	return rslt;
 }
