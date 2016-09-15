@@ -66,10 +66,12 @@
 #define X393_BUFFADD_CHN(x, y, chn) ((((x) + (y)) <= circbuf_priv_ptr[chn].buf_size) ? ((x) + (y)) : ((x) - (circbuf_priv_ptr[chn].buf_size -(y))))
 #define X393_BUFFADD32(x, y, chn)   ((((x) + (y)) <= circbuf_priv_ptr[chn].buf_size32) ? ((x) + (y)) : ((x) - (circbuf_priv_ptr[chn].buf_size32 -(y))))
 
+#if 0
 #define TABLE_TYPE_QUANT     0
 #define TABLE_TYPE_CORING    1
 #define TABLE_TYPE_FOCUS     2
 #define TABLE_TYPE_HUFFMAN   3
+#endif
 
 /**
  * @brief Converts file minor number to image compressor channel.

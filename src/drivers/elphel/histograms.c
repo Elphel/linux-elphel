@@ -312,7 +312,7 @@ void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask
     histograms_p= (struct histogram_stuct_t *) histograms;
 //    MDF21(printk("\n"));
 #ifdef HISTOGRAMS_DISABLE_IRQ
-    local_irq_save(flags);
+    local_ irq_save(flags);
 #endif
     dev_dbg(g_dev_ptr, "Histograms structures, channel mask = 0x%x",chn_mask);
     for (s=0; s<numHistChn; s++) {
@@ -322,7 +322,7 @@ void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask
         }
     }
 #ifdef HISTOGRAMS_DISABLE_IRQ
-    local_irq_restore(flags);
+    local_ irq_restore(flags);
 #endif
     dev_dbg(g_dev_ptr, "Histograms structures initialized");
 

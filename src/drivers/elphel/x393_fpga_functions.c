@@ -20,11 +20,24 @@
 #include <linux/io.h>
 #include <linux/errno.h>
 #include <linux/delay.h>
+#include <linux/spinlock.h>
 
 #include <uapi/elphel/c313a.h> // PARS_FRAMES_MASK
 
 #include "x393.h"
+#include "x393_macro.h"
 #include "x393_fpga_functions.h"
+
+// Define individual locks for compressor (quantization, coring, focus and Huffman) tables
+// sensor gamma tables arde handled in gamma_tables.c (no locking as they are called from tasklet and already per-channel locked)
+
+static DEFINE_SPINLOCK(compressor_table_lock_0); ///<
+static DEFINE_SPINLOCK(compressor_table_lock_1); ///<
+static DEFINE_SPINLOCK(compressor_table_lock_2); ///<
+static DEFINE_SPINLOCK(compressor_table_lock_3); ///<
+/** Define array of pointers to locks - hardware allows concurrent writes to different ports tables */
+spinlock_t * compressor_table_locks[4] = {&compressor_table_lock_0, &compressor_table_lock_1, &compressor_table_lock_2, &compressor_table_lock_3};
+
 
 #define REPEAT_STATUS_READ         10 ///< Number of times status is re-read waiting for a new timestamp
 
@@ -194,3 +207,39 @@ int is_fpga_programmed(void) ///< @return 0 - bitstream is NOT loaded, 1 - bitst
     }
     return (readl(zynq_devcfg_ptr + 0x000c) & 4)? 1: 0;
 }
+//typedef enum {TABLE_TYPE_QUANT,TABLE_TYPE_CORING,TABLE_TYPE_FOCUS,TABLE_TYPE_HUFFMAN} x393cmprs_tables_t; ///< compressor table type
+
+int          write_compressor_table(int chn,      // compressor channel (0..3)
+                                    x393cmprs_tables_t type,     // table type (
+                                    int index,
+                                    int num_items,
+                                    u32 * data )
+{
+    x393_cmprs_table_addr_t table_addr;
+    int i;
+    table_addr.type = (int) type;
+    table_addr.addr32 = index * type*4;
+//    dev_dbg(g_dev_ptr, "table_addr=0x%08x\n", table_addr.d32);
+    x393_cmprs_tables_address(table_addr, chn);
+    for (i = 0; i < num_items; i++) {
+        x393_cmprs_tables_data(data[i], chn);
+    }
+    return 0;
+}
+
+#if 0
+
+#ifdef USE_GAMMA_LOCK
+    #define GAMMA_LOCK_BH(x)    spin_lock_bh(x)
+    #define GAMMA_UNLOCK_BH(x)  spin_unlock_bh(x)
+#else
+    #define GAMMA_LOCK_BH(x)    {}
+    #define GAMMA_UNLOCK_BH(x)  {}
+
+#endif
+
+   switch (x393cmd){
+   case ASAP:
+
+#endif
+
