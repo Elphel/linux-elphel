@@ -1347,8 +1347,8 @@ struct p_names_t {
           G_NAME_ENTRY(PROFILING_EN), \
           G_NAME_ENTRY(TEMPERATURE01), \
           G_NAME_ENTRY(TEMPERATURE23), \
-          G_NAME_ENTRY(SENSOR_CALIB) \
-          G_NAME_ENTRY(G_HIST_SHIFT) \
+          G_NAME_ENTRY(SENSOR_CALIB), \
+          G_NAME_ENTRY(HIST_SHIFT) \
 };
 
 #define ONCHANGE_NAME_ENTRY(y) { onchange_##y, #y }
