@@ -54,7 +54,7 @@
 #include "exif393.h"
 
 #define D(x)
-//#define D(x) printk("%s:%d:",__FILE__,__LINE__);x
+//#define D(x) printk(">>> %s:%d:",__FILE__,__LINE__);x
 
 
 //Major
@@ -90,6 +90,7 @@ static int aexif_wp[SENSOR_PORTS]  =       {1,1,1,1}; // frame write pointer in 
 static int aexif_enabled[SENSOR_PORTS] =   {0,0,0,0}; // enable storing of frame meta data, enable reading Exif data
 static int aexif_valid[SENSOR_PORTS] =     {0,0,0,0}; // Exif tables and buffer are valid.
 static char * ameta_buffer[SENSOR_PORTS]=  {NULL,NULL,NULL,NULL}; // dynamically allocated buffer to store frame meta data.
+static char exif_tmp_buff[MAX_EXIF_SIZE];
 
 //static char * meta_buffer=NULL; // dynamically allocated buffer to store frame meta data.
 // page 0 - temporary storage, 1..MAX_EXIF_FRAMES - buffer
@@ -724,6 +725,35 @@ ssize_t    exif_read   (struct file * file, char * buf, size_t count, loff_t *of
 	return count;
 }
 
+/* This code is copied from exif_read, consider replacing it with this function invocation */
+size_t exif_get_data(int sensor_port, unsigned short meta_index, void *buff, size_t buff_sz)
+{
+	size_t ret = 0;
+	size_t count = exif_template_size;
+	loff_t off;
+	int start_p, page_p, i;
+	char *metap;
+
+	//will truncate by the end of current page
+	if (!aexif_enabled[sensor_port])
+		return 0;
+	off = meta_index * exif_template_size;
+	D(printk("%s: count= 0x%x, *off= 0x%x, i=0x%x, exif_template_size=0x%x\n", __func__, (int) count, (int) off, (int) meta_index, (int) exif_template_size));
+	start_p = meta_index * exif_template_size;
+	page_p = off - start_p;
+	D(printk("%s: count= 0x%x, pos= 0x%x, start_p=0x%x, page_p=0x%x, i=0x%x, exif_template_size=0x%x\n", __func__, (int) count, (int) off, (int)start_p, (int)page_p,(int) meta_index, (int) exif_template_size));
+	metap = &ameta_buffer[sensor_port][meta_index * aexif_meta_size[sensor_port]]; // pointer to the start of the selected page in frame meta_buffer
+	if ((page_p + count) > exif_template_size)
+		count = exif_template_size - page_p;
+	memcpy(exif_tmp_buff, exif_template, exif_template_size);
+	D(printk("%s: count= 0x%x, pos= 0x%x, start_p=0x%x, page_p=0x%x\n", __func__, (int) count, (int) off, (int)start_p, (int)page_p));
+	for (i = 0; i < exif_fields; i++) {
+		memcpy(&exif_tmp_buff[dir_table[i].dst], &metap[dir_table[i].src], dir_table[i].len);
+	}
+	memcpy(buff, &exif_tmp_buff[page_p], count);
+	return count;
+}
+EXPORT_SYMBOL_GPL(exif_get_data);
 
 //!++++++++++++++++++++++++++++++++++++ _init() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
