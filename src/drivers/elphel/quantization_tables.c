@@ -133,11 +133,11 @@ struct qtables_set_t {
 	int            qtable_cache_next[QTABLE_HEAD_CACHE] ;              ///< index of the next (not used longer than this) slot
 	int            qtable_cache_mre;                                   ///< index of most recently used slot
 
-	int            qtable_fpga_values [FPGA_NQTAB];                    ///< quality values for the tables in FPGA
-	int            qtable_fpga_next[FPGA_NQTAB] ;                      ///< index of the next (not used longer than this) slot in FPGA quantization tables
-	int            qtable_fpga_mre;                                    ///< index of most recently used slot
+	int            qtable_fpga_values [SENSOR_PORTS][FPGA_NQTAB];      ///< quality values for the tables in FPGA
+	int            qtable_fpga_next[SENSOR_PORTS][FPGA_NQTAB] ;        ///< index of the next (not used longer than this) slot in FPGA quantization tables
+	int            qtable_fpga_mre[SENSOR_PORTS];                      ///< index of most recently used slot
 	int            qtable_cache_initialized;
-	int            qtable_fpga_initialized;
+	int            qtable_fpga_initialized[SENSOR_PORTS];
 };
 /** @brief \e qtables_set contains quantization tables caches for all compressor channels plus one common cache for all channels.
  * Common cache has fixed index #COMMON_CACHE_INDEX and will be used to save computational time in cases when all compressors have
@@ -181,7 +181,7 @@ void reset_qtables(unsigned int chn)
 {
 	int ind = get_cache_index(chn);
 	qtables_set[ind].qtable_cache_initialized = 0;
-	qtables_set[ind].qtable_fpga_initialized = 0;
+	qtables_set[ind].qtable_fpga_initialized[chn] = 0;
 }
 
 /**
@@ -204,15 +204,12 @@ void init_qtable_head_cache(unsigned int chn)
 	local_irq_restore(flags);
 }
 
-/**
- * @brief Calculates a pair of direct (JPEG header) tables for the specified quality (2-bytes )
- * @param[in]   quality2   single byte (standard) or a pair of bytes (see file header description)
- * @param[out]  y_tab      caller-provided pointer to a 64-byte Y (intensity) quantization table (NULL - don't copy)
- * @param[out]  c_tab      caller-provided pointer to a 64-byte C (color) quantization table (NULL - don't copy)
- * @param[in]   chn        compressor channel number
- * @return      0 - cache hit, 1 - cache miss (recalculated), -1 - invalid quality
- */
-int get_qtable(int quality2, unsigned char *y_tab, unsigned char *c_tab, unsigned int chn)
+/** Calculates a pair of direct (JPEG header) tables for the specified quality (2-bytes ) */
+int get_qtable(int quality2,         ///< single byte (standard) or a pair of bytes (see file header description)
+               unsigned char *y_tab, ///< caller-provided pointer to a 64-byte Y (intensity) quantization table (NULL - don't copy)
+               unsigned char *c_tab, ///< caller-provided pointer to a 64-byte C (color) quantization table (NULL - don't copy)
+               unsigned int chn)     ///< compressor channel number
+                                     ///< @return      0 - cache hit, 1 - cache miss (recalculated), -1 - invalid quality
 {
 	unsigned long flags;
 	int i, transpose;
@@ -239,7 +236,6 @@ int get_qtable(int quality2, unsigned char *y_tab, unsigned char *c_tab, unsigne
 	if (qtables_set[ind].qtable_cache_initialized == 0)
 		init_qtable_head_cache(chn);
 
-
 	dev_dbg(g_dev_ptr, "received quality2 = %d\n", quality2);
 
 	if (quality2 < 0) return -1;
@@ -248,7 +244,7 @@ int get_qtable(int quality2, unsigned char *y_tab, unsigned char *c_tab, unsigne
 	dev_dbg(g_dev_ptr, "transformed quality2 = %d\n", quality2);
 
 	local_irq_save(flags);
-	/// look if such q value is already in cache
+	// look if such q value is already in cache
 	cache_index = qtables_set[ind].qtable_cache_mre;
 	cache_index_prev = -1;
 	for (i = 0;
@@ -261,7 +257,7 @@ int get_qtable(int quality2, unsigned char *y_tab, unsigned char *c_tab, unsigne
 
 		dev_dbg(g_dev_ptr, "i = %d, cache_index_prev = %d, cache_index = %d\n", i, cache_index_prev, cache_index);
 	}
-	/// cache_index is invalid if (i==FPGA_NQTAB), but cache_index_prev is OK
+	// cache_index is invalid if (i==FPGA_NQTAB), but cache_index_prev is OK
 
 	/// End of cache?
 	if (i == QTABLE_HEAD_CACHE) {
@@ -344,11 +340,11 @@ void init_qtable_fpga(unsigned int chn)
 
 	local_irq_save(flags);
 	for (i = 0; i < FPGA_NQTAB; i++) {
-		qtables_set[ind].qtable_fpga_values[i] = -1;       // undefined
-		qtables_set[ind].qtable_fpga_next[i] = i + 1;      // last value is invalid, but that's OK - it should not be used
+		qtables_set[ind].qtable_fpga_values[chn][i] = -1;       // undefined
+		qtables_set[ind].qtable_fpga_next[chn][i] = i + 1;      // last value is invalid, but that's OK - it should not be used
 	}
-	qtables_set[ind].qtable_fpga_mre = 0;
-	qtables_set[ind].qtable_fpga_initialized = 1;
+	qtables_set[ind].qtable_fpga_mre[chn] = 0;
+	qtables_set[ind].qtable_fpga_initialized[chn] = 1;
 	local_irq_restore(flags);
 }
 
@@ -367,10 +363,10 @@ int set_qtable_fpga(int quality2,       ///< single byte (standard) or a pair of
 	x393_cmprs_table_addr_t table_addr;
 #endif
 	int ind = get_cache_index(chn);
-	int *qtable_fpga_values = qtables_set[ind].qtable_fpga_values;
-	int *qtable_fpga_next = qtables_set[ind].qtable_fpga_next;
+	int *qtable_fpga_values = qtables_set[ind].qtable_fpga_values[chn];
+	int *qtable_fpga_next = qtables_set[ind].qtable_fpga_next[chn];
 
-	if (qtables_set[ind].qtable_fpga_initialized == 0)
+	if (qtables_set[ind].qtable_fpga_initialized[chn] == 0)
 		init_qtable_fpga(chn);
 
 	dev_dbg(g_dev_ptr, "received quality2 = 0x%x\n", quality2);
@@ -381,8 +377,8 @@ int set_qtable_fpga(int quality2,       ///< single byte (standard) or a pair of
 	dev_dbg(g_dev_ptr, "transformed quality2 = 0x%x\n", quality2);
 
 //	local_ irq_save(flags);
-	/// look if such q value is already in cache
-	fpga_index = qtables_set[ind].qtable_fpga_mre;
+	/// look if such q value is already loaded to fpga
+	fpga_index = qtables_set[ind].qtable_fpga_mre[chn];
 	fpga_index_prev = -1;
 	for (i = 0;
 			(i < FPGA_NQTAB) &&
@@ -399,22 +395,22 @@ int set_qtable_fpga(int quality2,       ///< single byte (standard) or a pair of
 	/// End of cache?
 	if (i == FPGA_NQTAB) {
 		/// yes, re-use the LRE slot
-		qtable_fpga_next[fpga_index_prev] = qtables_set[ind].qtable_fpga_mre;
-		qtables_set[ind].qtable_fpga_mre = fpga_index_prev;
+		qtable_fpga_next[fpga_index_prev] = qtables_set[ind].qtable_fpga_mre[chn];
+		qtables_set[ind].qtable_fpga_mre[chn] = fpga_index_prev;
 
-		dev_dbg(g_dev_ptr, "qtable_fpga_mre = %d\n", qtables_set[ind].qtable_fpga_mre);
+		dev_dbg(g_dev_ptr, "qtable_fpga_mre[%d] = %d\n", chn, qtables_set[ind].qtable_fpga_mre[chn]);
 	} else if (fpga_index_prev >= 0) {
 		/// no, hit or never used so far, and not the latest - anyway use this slot
 		qtable_fpga_next[fpga_index_prev] = qtable_fpga_next[fpga_index]; /// bypass this
-		qtable_fpga_next[fpga_index] = qtables_set[ind].qtable_fpga_mre;  /// this points to the old mre
-		qtables_set[ind].qtable_fpga_mre = fpga_index;                    /// this is now mre
-		dev_dbg(g_dev_ptr, "qtable_fpga_mre = %d\n", qtables_set[ind].qtable_fpga_mre);
+		qtable_fpga_next[fpga_index] = qtables_set[ind].qtable_fpga_mre[chn];  /// this points to the old mre
+		qtables_set[ind].qtable_fpga_mre[chn] = fpga_index;                    /// this is now mre
+		dev_dbg(g_dev_ptr, "qtable_fpga_mre[%d] = %d\n", chn, qtables_set[ind].qtable_fpga_mre[chn]);
 	}
 
 	/// is it a hit or miss?
-	if (qtable_fpga_values[qtables_set[ind].qtable_fpga_mre] != quality2) {
+	if (qtable_fpga_values[qtables_set[ind].qtable_fpga_mre[chn]] != quality2) {
 		/// miss, calculate the table and send it to the FPGA
-		qtable_fpga_values[qtables_set[ind].qtable_fpga_mre] = quality2;
+		qtable_fpga_values[qtables_set[ind].qtable_fpga_mre[chn]] = quality2;
 		transpose = (quality2 >> 7) & 1; /// 0 - landscape mode, 1 - portrait mode
 		for (q_type = 0; q_type < 2; q_type++) { //Y/C
 			quality = q_type ? ((quality2 >> 8) ^ 0x80) : (quality2 & 0x7f);
@@ -462,8 +458,8 @@ int set_qtable_fpga(int quality2,       ///< single byte (standard) or a pair of
 #if 0
 		table_addr.type = TABLE_TYPE_QUANT;
 		// **** NC393 TODO: Find why address should be x4 - answer: it is in bytes in FPGA ****
-//		table_addr.addr32 = qtables_set[ind].qtable_fpga_mre * QTABLE_SIZE;
-        table_addr.addr32 = qtables_set[ind].qtable_fpga_mre * QTABLE_SIZE*4;
+//		table_addr.addr32 = qtables_set[ind].qtable_fpga_mre[chn] * QTABLE_SIZE;
+        table_addr.addr32 = qtables_set[ind].qtable_fpga_mre[chn] * QTABLE_SIZE*4;
         dev_dbg(g_dev_ptr, "table_addr=0x%08x\n", table_addr.d32);
 
 		x393_cmprs_tables_address(table_addr, chn);
@@ -475,16 +471,16 @@ int set_qtable_fpga(int quality2,       ///< single byte (standard) or a pair of
 #endif
         write_compressor_table(chn,
                                TABLE_TYPE_QUANT,
-                               qtables_set[ind].qtable_fpga_mre,
+                               qtables_set[ind].qtable_fpga_mre[chn],
                                QTABLE_SIZE,
                                qtable_fpga_dw );
 	} /// now table pair is calculated and stored in cache
 	///  copy tables to the FPGA
 //	local_ irq_restore(flags);
 
-	dev_dbg(g_dev_ptr, "qtable_fpga_mre = %d\n", qtables_set[ind].qtable_fpga_mre);
+	dev_dbg(g_dev_ptr, "qtable_fpga_mre[%d] = %d\n", chn, qtables_set[ind].qtable_fpga_mre[chn]);
 
-	return qtables_set[ind].qtable_fpga_mre;
+	return qtables_set[ind].qtable_fpga_mre[chn];
 }
 
 /**
