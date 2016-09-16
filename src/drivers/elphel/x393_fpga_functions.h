@@ -26,4 +26,4 @@ int compressor_dma_setup (int port_afi, int chn_mask, int reset, int status_mode
 sec_usec_t * get_fpga_rtc(sec_usec_t * ts);
 int          set_fpga_rtc (sec_usec_t ts);
 int          is_fpga_programmed(void);
-int          write_compressor_table(int chn, x393cmprs_tables_t type, int index, int num_items, unsigned long * data );
+int          write_compressor_table(int chn, x393cmprs_tables_t type, int index, int num_items, u32 * data );

@@ -358,7 +358,7 @@ int set_qtable_fpga(int quality2,       ///< single byte (standard) or a pair of
 	int i,transpose,fpga_index,fpga_index_prev,q_type,quality,temp,tstart;
 	unsigned short qtable_fpga[QTABLE_SIZE * 2];
 	unsigned short *tab;
-	unsigned long *qtable_fpga_dw = (unsigned long *)qtable_fpga;
+	u32 *qtable_fpga_dw = (u32 *) qtable_fpga;
 #if 0
 	x393_cmprs_table_addr_t table_addr;
 #endif
@@ -488,7 +488,7 @@ int set_qtable_fpga(int quality2,       ///< single byte (standard) or a pair of
  * min = 0, max = 10, step = 0.1;
  * see coring_filter_setup.php to generate this table (with parameter '?C').
  */
-static unsigned long coring_tables[] = {
+static u32 coring_tables[] = {
 		// filter=0
 		0x00000000, 0x11111111, 0x11111111, 0x22222222, 0x22222222, 0x33333333, 0x33333333, 0x44444444,
 		0x44444444, 0x55555555, 0x55555555, 0x66666666, 0x66666666, 0x77777777, 0x77777777, 0x88888888,
@@ -1003,7 +1003,7 @@ void set_coring_fpga(unsigned int coring_number, ///< [in]   0..99 - function nu
                      int fpga_tbl_num,           ///< [in]   0..15 - FPGA table number
                      unsigned int chn)           ///< [in]   compressor channel number
 {
-	int i;
+//	int i;
 //    unsigned long flags;
 //	x393_cmprs_table_addr_t table_addr;
 

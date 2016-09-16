@@ -51,7 +51,7 @@
 #include "quantization_tables.h"
 #include "x393_macro.h"
 #include "x393.h"
-#include "x393_helpers.h"
+//#include "x393_helpers.h"
 
 #include <asm/delay.h> // just for usleep1000()
 

@@ -213,7 +213,7 @@ int          write_compressor_table(int chn,      // compressor channel (0..3)
                                     x393cmprs_tables_t type,     // table type (
                                     int index,
                                     int num_items,
-                                    unsigned long * data )
+                                    u32 * data )
 {
     x393_cmprs_table_addr_t table_addr;
     int i;

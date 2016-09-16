@@ -708,7 +708,7 @@ void jpeg_htable_fpga_pgm(unsigned int chn)
                            TABLE_TYPE_HUFFMAN,
                            0,
                            len,
-                           (u32*) huff_tables->fpga_huffman_table );
+                           huff_tables->fpga_huffman_table );
 
 
 	jpeghead_priv[chn].fpga_programmed = 1;
