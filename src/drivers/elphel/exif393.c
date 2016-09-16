@@ -1,52 +1,22 @@
-/*!********************************************************************************
- *! FILE NAME  : exif353.c
- *! DESCRIPTION: Drivers for Exif manipulation
- *! Copyright (C) 2008 Elphel, Inc.
- *! -----------------------------------------------------------------------------**
- *!
- *!  This program is free software: you can redistribute it and/or modify
- *!  it under the terms of the GNU General Public License as published by
- *!  the Free Software Foundation, either version 3 of the License, or
- *!  (at your option) any later version.
- *!
- *!  This program is distributed in the hope that it will be useful,
- *!  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *!  GNU General Public License for more details.
- *!
- *!  You should have received a copy of the GNU General Public License
- *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *! -----------------------------------------------------------------------------**
- *!  $Log: exif353.c,v $
- *!  Revision 1.2  2009/02/18 06:27:34  elphel
- *!  fixed system date calculation fro Exif (was 2 days ahead in the years after leap)
- *!
- *!  Revision 1.1.1.1  2008/11/27 20:04:00  elphel
- *!
- *!
- *!  Revision 1.3  2008/09/20 00:29:49  elphel
- *!  moved driver major/minor numbers to a single file - include/asm-cris/elphel/driver_numbers.h
- *!
- *!  Revision 1.2  2008/09/12 00:23:59  elphel
- *!  removed cc353.c, cc353.h
- *!
- *!  Revision 1.4  2008/04/25 21:28:56  elphel
- *!  added more functions for access from the IRQ, changed them to inline
- *!
- *!  Revision 1.3  2008/04/11 23:16:51  elphel
- *!  removed unneeded local_irq_disable() after local_irq_save_flags()
- *!
- *!  Revision 1.2  2008/04/07 09:45:30  elphel
- *!  removed unused variable
- *!
- *!  Revision 1.1  2008/04/07 09:09:07  elphel
- *!  New driver to handle Exif
- *!
- *!
+/*!****************************************************************************//**
+ * @file   exif393.c
+ * @brief  Drivers for Exif manipulation
+ * @copyright Copyright (C) 2008-2016 Elphel, Inc.
+ * @par <b>License</b>
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 
-//copied freom cxi2c.c - TODO:remove unneeded
+//copied from cxi2c.c - TODO:remove unneeded
 
 #include <linux/module.h>
 #include <linux/sched.h>
@@ -58,6 +28,8 @@
 #include <linux/init.h>
 //#include <linux/autoconf.h>
 #include <linux/vmalloc.h>
+#include <linux/platform_device.h> // dev_*
+
 
 //#include <asm/system.h>
 //#include <asm/svinto.h>
@@ -69,9 +41,9 @@
 #include <asm/delay.h>
 #include <asm/uaccess.h>
 
-#include <elphel/driver_numbers.h>
-#include <elphel/c313a.h>
-#include <elphel/exifa.h>
+#include <uapi/elphel/c313a.h>
+#include <uapi/elphel/exifa.h>
+#include <uapi/elphel/x393_devices.h>
 
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
 //
@@ -82,7 +54,7 @@
 #include "exif393.h"
 
 #define D(x)
-//#define D(x) printk("%s:%d:",__FILE__,__LINE__);x
+//#define D(x) printk(">>> %s:%d:",__FILE__,__LINE__);x
 
 
 //Major
@@ -91,15 +63,18 @@
 //#define X3X3_EXIF_EXIF    0 // read encoded Exif data (SEEK_END,
 //#define X3X3_EXIF_META    1 // write metadata, concurently opened files. All writes atomic
 // control/setup devices
-//#define X3X3_EXIF_TEMPLATE 2 // write Exif template
-//#define X3X3_EXIF_METADIR  3 // write metadata to Exif header translation (dir_table[MAX_EXIF_FIELDS])
+//#define DEV393_MINOR(DEV393_EXIF_TEMPLATE) 2 // write Exif template
+//#define DEV393_MINOR(DEV393_EXIF_METADIR)  3 // write metadata to Exif header translation (dir_table[MAX_EXIF_FIELDS])
 // those 2 files will disable exif_enabled and exif_valid, truncate file size to file pointer on release.
-//#define X3X3_EXIF_TIME     4 // write today/tomorrow date (YYYY:MM:DD) and number of seconds at today/tomorrow
+//#define DEV393_MINOR(DEV393_EXIF_TIME)     4 // write today/tomorrow date (YYYY:MM:DD) and number of seconds at today/tomorrow
 // midnight (00:00:00) in seconds from epoch (long, startting from LSB)
 
 
 
-#define  X3X3_EXIF_DRIVER_NAME "Elphel (R) model 353 Exif device driver"
+#define  X3X3_EXIF_DRIVER_DESCRIPTION "Elphel (R) model 393 Exif device driver"
+/** @brief Global pointer to basic device structure. This pointer is used in debugfs output functions */
+static struct device *g_devfp_ptr = NULL;
+
 static DEFINE_SPINLOCK(lock);
 
 //#define MAX_EXIF_FIELDS  256 // number of Exif tags in the header
@@ -115,6 +90,7 @@ static int aexif_wp[SENSOR_PORTS]  =       {1,1,1,1}; // frame write pointer in 
 static int aexif_enabled[SENSOR_PORTS] =   {0,0,0,0}; // enable storing of frame meta data, enable reading Exif data
 static int aexif_valid[SENSOR_PORTS] =     {0,0,0,0}; // Exif tables and buffer are valid.
 static char * ameta_buffer[SENSOR_PORTS]=  {NULL,NULL,NULL,NULL}; // dynamically allocated buffer to store frame meta data.
+static char exif_tmp_buff[MAX_EXIF_SIZE];
 
 //static char * meta_buffer=NULL; // dynamically allocated buffer to store frame meta data.
 // page 0 - temporary storage, 1..MAX_EXIF_FRAMES - buffer
@@ -135,11 +111,12 @@ static struct exif_datetime_t {
 
 
 
-static int        exif_open   (struct inode *inode, struct file *filp);
-static int        exif_release(struct inode *inode, struct file *filp);
-static loff_t     exif_lseek  (struct file * file, loff_t offset, int orig);
-static ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff_t *off);
-static ssize_t    exif_read   (struct file * file, char * buf, size_t count, loff_t *off);
+
+int        exif_open   (struct inode *inode, struct file *filp);
+int        exif_release(struct inode *inode, struct file *filp);
+loff_t     exif_lseek  (struct file * file, loff_t offset, int orig);
+ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff_t *off);
+ssize_t    exif_read   (struct file * file, char * buf, size_t count, loff_t *off);
 static int __init exif_init(void);
 
 static struct file_operations exif_fops = {
@@ -153,44 +130,44 @@ static struct file_operations exif_fops = {
 ssize_t minor_file_size(int minor) { //return current file size for different minors
 	int sensor_port;
 	switch (minor) {
-	case X3X3_EXIF_TEMPLATE:
+	case DEV393_MINOR(DEV393_EXIF_TEMPLATE):
 		return exif_template_size;
-	case X3X3_EXIF_EXIF_CHN_0:
-	case X3X3_EXIF_EXIF_CHN_1:
-	case X3X3_EXIF_EXIF_CHN_2:
-	case X3X3_EXIF_EXIF_CHN_3:
-		sensor_port = minor - X3X3_EXIF_EXIF_CHN_0;
+	case DEV393_MINOR(DEV393_EXIF0):
+	case DEV393_MINOR(DEV393_EXIF1):
+	case DEV393_MINOR(DEV393_EXIF2):
+	case DEV393_MINOR(DEV393_EXIF3):
+		sensor_port = minor - DEV393_MINOR(DEV393_EXIF0);
 		return aexif_enabled[sensor_port]? (exif_template_size * (MAX_EXIF_FRAMES+1)):0;
-	case X3X3_EXIF_META_CHN_0:
-	case X3X3_EXIF_META_CHN_1:
-	case X3X3_EXIF_META_CHN_2:
-	case X3X3_EXIF_META_CHN_3:
-		sensor_port = minor - X3X3_EXIF_META_CHN_0;
+	case DEV393_MINOR(DEV393_EXIF_META0):
+	case DEV393_MINOR(DEV393_EXIF_META1):
+	case DEV393_MINOR(DEV393_EXIF_META2):
+	case DEV393_MINOR(DEV393_EXIF_META3):
+		sensor_port = minor - DEV393_MINOR(DEV393_EXIF_META0);
 		return aexif_meta_size[sensor_port];
-	case X3X3_EXIF_METADIR:
+	case DEV393_MINOR(DEV393_EXIF_METADIR):
 		return exif_fields * sizeof(struct exif_dir_table_t);
-	case X3X3_EXIF_TIME:
+	case DEV393_MINOR(DEV393_EXIF_TIME):
 		return sizeof(struct exif_time_t);
 	default:return 0;
 	}
 }
 ssize_t minor_max_size(int minor) { //return max file size for different minors
 	switch (minor) {
-	case X3X3_EXIF_TEMPLATE:
+	case DEV393_MINOR(DEV393_EXIF_TEMPLATE):
 		return MAX_EXIF_SIZE;
-	case X3X3_EXIF_EXIF_CHN_0:
-	case X3X3_EXIF_EXIF_CHN_1:
-	case X3X3_EXIF_EXIF_CHN_2:
-	case X3X3_EXIF_EXIF_CHN_3:
+	case DEV393_MINOR(DEV393_EXIF0):
+	case DEV393_MINOR(DEV393_EXIF1):
+	case DEV393_MINOR(DEV393_EXIF2):
+	case DEV393_MINOR(DEV393_EXIF3):
 		return MAX_EXIF_SIZE * (MAX_EXIF_FRAMES+1);
-	case X3X3_EXIF_META_CHN_0:
-	case X3X3_EXIF_META_CHN_1:
-	case X3X3_EXIF_META_CHN_2:
-	case X3X3_EXIF_META_CHN_3:
+	case DEV393_MINOR(DEV393_EXIF_META0):
+	case DEV393_MINOR(DEV393_EXIF_META1):
+	case DEV393_MINOR(DEV393_EXIF_META2):
+	case DEV393_MINOR(DEV393_EXIF_META3):
 		return MAX_EXIF_SIZE;
-	case X3X3_EXIF_METADIR:
+	case DEV393_MINOR(DEV393_EXIF_METADIR):
 		return MAX_EXIF_FIELDS * sizeof(struct exif_dir_table_t);
-	case X3X3_EXIF_TIME:
+	case DEV393_MINOR(DEV393_EXIF_TIME):
 		return sizeof(struct exif_time_t);
 	default:
 		return 0;
@@ -234,12 +211,12 @@ int exif_rebuild_chn(int sensor_port, int frames) {
 		if (ml > aexif_meta_size[sensor_port]) aexif_meta_size[sensor_port] = ml;
 	}
 	if (aexif_meta_size[sensor_port] > MAX_EXIF_SIZE) {
-		printk ("%s:%d: Meta frame size (0x%x) is too big (>0x%x)\n",__FILE__,__LINE__, aexif_meta_size[sensor_port], MAX_EXIF_SIZE);
+	    dev_warn(g_devfp_ptr,"%s:%d: Meta frame size (0x%x) is too big (>0x%x)\n",__FILE__,__LINE__, aexif_meta_size[sensor_port], MAX_EXIF_SIZE);
 		return -1;
 	}
 	meta_buffer= vmalloc(aexif_meta_size[sensor_port] * (MAX_EXIF_FRAMES+1));
 	if (!meta_buffer) {
-		printk ("%s:%d: Failed to allocate memory (%d bytes)\n",__FILE__,__LINE__, aexif_meta_size[sensor_port] * (MAX_EXIF_FRAMES+1));
+	    dev_warn(g_devfp_ptr,"%s:%d: Failed to allocate memory (%d bytes)\n",__FILE__,__LINE__, aexif_meta_size[sensor_port] * (MAX_EXIF_FRAMES+1));
 		return -1;
 	}
 	memset(meta_buffer, 0, aexif_meta_size[sensor_port] * (MAX_EXIF_FRAMES+1));
@@ -378,11 +355,13 @@ int putlong_meta(int sensor_port, unsigned long data, int * indx,  unsigned long
 // Uses struct exif_time that should be updated from the user space (once a day),
 // calculates date/time ignoring leap seconds if not updated in time
 /*
- * 393: Continue to use same static buffers for exif_time
+ * 393: Continue to use same static buffers for exif_time - common to all channels
  */
 char * encode_time(char buf[27], unsigned long sec, unsigned long usec) {
 	unsigned long s,d,m,y,y4,lp,h;
-	spin_lock(&lock);
+	unsigned long flags;
+    spin_lock_irqsave(&lock,flags);
+
 	if (((sec-exif_time.today_sec)>86400) || (sec < exif_time.today_sec)) {// today's time is not valid, try tomorrow:
 		memcpy(&exif_time.today_date[0],&exif_time.tomorrow_date[0],sizeof(exif_time.today_date)+sizeof(exif_time.today_sec));
 		if (((sec-exif_time.today_sec)>86400) || (sec < exif_time.today_sec)) {// today's time is _still_ not valid, has to do it itself :-(
@@ -441,41 +420,43 @@ char * encode_time(char buf[27], unsigned long sec, unsigned long usec) {
 	sprintf(&now_datetime.subsec[0],"%06ld",usec);
 	memcpy(buf,&now_datetime.datetime[0],sizeof(now_datetime));
 	//  return &now_datetime.datetime[0];
-	spin_unlock(&lock);
+    spin_unlock_irqrestore(&lock,flags);
 	return buf;
 }
 
 int store_meta(int sensor_port) { //called from IRQ service - put current metadata to meta_buffer, return page index
+    int meta_index;
 	if (!aexif_enabled[sensor_port]) return 0;
-	int retval=aexif_wp[sensor_port];
-	memcpy(&ameta_buffer[sensor_port][aexif_wp[sensor_port] * aexif_meta_size[sensor_port]], ameta_buffer[sensor_port],aexif_meta_size[sensor_port]);
+	meta_index=aexif_wp[sensor_port];
+	memcpy(&ameta_buffer[sensor_port][meta_index * aexif_meta_size[sensor_port]], ameta_buffer[sensor_port], aexif_meta_size[sensor_port]);
 	aexif_wp[sensor_port]++;
 	if (aexif_wp[sensor_port] > MAX_EXIF_FRAMES) aexif_wp[sensor_port] = 1;
-	return retval;
+	return meta_index;
 }
 
 //!++++++++++++++++++++++++++++++++++++ open() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-static int exif_open(struct inode *inode, struct file *filp) {
+//static
+int exif_open(struct inode *inode, struct file *filp) {
 	int p = MINOR(inode->i_rdev);
 	int * pd= (int *) &(filp->private_data);
 	switch (p) {
-	case X3X3_EXIF_EXIF_CHN_0:
-	case X3X3_EXIF_EXIF_CHN_1:
-	case X3X3_EXIF_EXIF_CHN_2:
-	case X3X3_EXIF_EXIF_CHN_3:
-	case X3X3_EXIF_META_CHN_0:
-	case X3X3_EXIF_META_CHN_1:
-	case X3X3_EXIF_META_CHN_2:
-	case X3X3_EXIF_META_CHN_3:
-	case X3X3_EXIF_TEMPLATE:
-	case X3X3_EXIF_METADIR:
-	case X3X3_EXIF_TIME:
+	case DEV393_MINOR(DEV393_EXIF0):
+	case DEV393_MINOR(DEV393_EXIF1):
+	case DEV393_MINOR(DEV393_EXIF2):
+	case DEV393_MINOR(DEV393_EXIF3):
+	case DEV393_MINOR(DEV393_EXIF_META0):
+	case DEV393_MINOR(DEV393_EXIF_META1):
+	case DEV393_MINOR(DEV393_EXIF_META2):
+	case DEV393_MINOR(DEV393_EXIF_META3):
+	case DEV393_MINOR(DEV393_EXIF_TEMPLATE):
+	case DEV393_MINOR(DEV393_EXIF_METADIR):
+	case DEV393_MINOR(DEV393_EXIF_TIME):
 		break;
 	default:return -EINVAL;
 	}
 
-	D(printk("exif_open, minor=%d\n",p));
+	dev_dbg(g_devfp_ptr,"exif_open, minor=%d\n",p);
 	inode->i_size=minor_file_size(p);
 	pd[0]=p; // just a minor number
 	return 0;
@@ -483,30 +464,31 @@ static int exif_open(struct inode *inode, struct file *filp) {
 
 //!++++++++++++++++++++++++++++++++++++ release() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-static int exif_release(struct inode *inode, struct file *filp){
+//static
+int exif_release(struct inode *inode, struct file *filp){
 	int p = MINOR(inode->i_rdev);
 	int * pd= (int *) &(filp->private_data);
 	switch (p) {
-	case X3X3_EXIF_EXIF_CHN_0:
-	case X3X3_EXIF_EXIF_CHN_1:
-	case X3X3_EXIF_EXIF_CHN_2:
-	case X3X3_EXIF_EXIF_CHN_3:
+	case DEV393_MINOR(DEV393_EXIF0):
+	case DEV393_MINOR(DEV393_EXIF1):
+	case DEV393_MINOR(DEV393_EXIF2):
+	case DEV393_MINOR(DEV393_EXIF3):
 		break;
-	case X3X3_EXIF_META_CHN_0:
-	case X3X3_EXIF_META_CHN_1:
-	case X3X3_EXIF_META_CHN_2:
-	case X3X3_EXIF_META_CHN_3:
+	case DEV393_MINOR(DEV393_EXIF_META0):
+	case DEV393_MINOR(DEV393_EXIF_META1):
+	case DEV393_MINOR(DEV393_EXIF_META2):
+	case DEV393_MINOR(DEV393_EXIF_META3):
 		break;
-	case X3X3_EXIF_TEMPLATE:
+	case DEV393_MINOR(DEV393_EXIF_TEMPLATE):
 		break;
-	case X3X3_EXIF_METADIR:
+	case DEV393_MINOR(DEV393_EXIF_METADIR):
 		break;
-	case X3X3_EXIF_TIME:
+	case DEV393_MINOR(DEV393_EXIF_TIME):
 		break;
 	default:return -EINVAL;
 	}
 
-	D(printk("exif_open, minor=%d\n",p));
+	dev_dbg(g_devfp_ptr,"exif_open, minor=%d\n",p);
 	inode->i_size=minor_file_size(p);
 	pd[0]=p; // just a minor number
 	return 0;
@@ -514,12 +496,14 @@ static int exif_release(struct inode *inode, struct file *filp){
 
 //!++++++++++++++++++++++++++++++++++++ lseek() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-static loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
+//static
+loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
 	int p=(int)file->private_data;
 	int thissize=minor_file_size(p);
 	int maxsize=minor_max_size(p);
+//    int fp;
+    dev_dbg(g_devfp_ptr,"exif_lseek, minor=%d, offset = 0x%llx, orig=%d\n",p,offset,orig);
 	//   int sensor_port;
-	int fp;
 	switch (orig) {
 	case SEEK_SET:
 		file->f_pos = offset;
@@ -534,7 +518,7 @@ static loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
 		} else {
 
 			switch (p) {
-			case X3X3_EXIF_TEMPLATE: //enable/disable
+			case DEV393_MINOR(DEV393_EXIF_TEMPLATE): //enable/disable
 				switch (offset) {
 				case EXIF_LSEEK_DISABLE:
 					exif_enable(0);
@@ -551,27 +535,25 @@ static loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
 				default:return -EINVAL;
 				}
 				break;
-			case X3X3_EXIF_EXIF_CHN_0:
-			case X3X3_EXIF_EXIF_CHN_1:
-			case X3X3_EXIF_EXIF_CHN_2:
-			case X3X3_EXIF_EXIF_CHN_3:
-				//            sensor_port = p - X3X3_EXIF_EXIF_CHN_0;
+			case DEV393_MINOR(DEV393_EXIF0):
+			case DEV393_MINOR(DEV393_EXIF1):
+			case DEV393_MINOR(DEV393_EXIF2):
+			case DEV393_MINOR(DEV393_EXIF3):
+				//            sensor_port = p - DEV393_MINOR(DEV393_EXIF0);
 				if (offset > MAX_EXIF_FRAMES) return -EOVERFLOW; //larger than buffer
 				//            file->f_pos=exif_meta_size * offset;
 				file->f_pos=exif_template_size * offset;
 				break;
-			case X3X3_EXIF_META: // iterate
-				fp= dir_find_tag (offset);
-				if (fp < 0) return -EOVERFLOW; // tag is not in the directory
-				file->f_pos=fp;
-				break;
-			case X3X3_EXIF_META_CHN_0:
-			case X3X3_EXIF_META_CHN_1:
-			case X3X3_EXIF_META_CHN_2:
-			case X3X3_EXIF_META_CHN_3:
+			case DEV393_MINOR(DEV393_EXIF_META0):
+			case DEV393_MINOR(DEV393_EXIF_META1):
+			case DEV393_MINOR(DEV393_EXIF_META2):
+			case DEV393_MINOR(DEV393_EXIF_META3):
 				file->f_pos=offset*sizeof(struct exif_dir_table_t);
 				break;
-			case X3X3_EXIF_TIME:
+            case DEV393_MINOR(DEV393_EXIF_METADIR):
+                   file->f_pos=offset*sizeof(struct exif_dir_table_t);
+                break;
+			case DEV393_MINOR(DEV393_EXIF_TIME):
 				switch (offset) {
 				case EXIF_LSEEK_TOMORROW_DATE:
 					file->f_pos=exif_time.tomorrow_date - ((char *) &exif_time);
@@ -610,7 +592,8 @@ static loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
 
 //!++++++++++++++++++++++++++++++++++++ write() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-static ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff_t *off) {
+//static
+ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff_t *off) {
 	int p=(int)file->private_data;
 	int sensor_port;
 	//  int thissize=minor_file_size(p);
@@ -620,30 +603,30 @@ static ssize_t    exif_write  (struct file * file, const char * buf, size_t coun
 	unsigned long flags;
 	int disabled_err=0;
 	if ((*off+count)>maxsize) {
-		printk ("%s:%d: Data (0x%x) does not fit into 0x%x bytes\n",__FILE__,__LINE__, (int) (*off+count), maxsize);
+	    dev_warn(g_devfp_ptr,"%s:%d: Data (0x%x) does not fit into 0x%x bytes\n",__FILE__,__LINE__, (int) (*off+count), maxsize);
 		return -EOVERFLOW;
 	}
 	switch (p) {
-	case X3X3_EXIF_TEMPLATE:
+	case DEV393_MINOR(DEV393_EXIF_TEMPLATE):
 		exif_invalidate();
 		if (copy_from_user(&exif_template[*off], buf, count)) return -EFAULT;
 		exif_template_size=*off+count;
 		break;
-	case X3X3_EXIF_METADIR:
+	case DEV393_MINOR(DEV393_EXIF_METADIR):
 		exif_invalidate();
 		cp= (char *) &dir_table;
 		if (copy_from_user(&cp[*off], buf, count)) return -EFAULT;
 		exif_fields=(*off+count)/sizeof(struct exif_dir_table_t);
 		break;
-	case X3X3_EXIF_TIME: //write date/time first, then - midnight seconds
+	case DEV393_MINOR(DEV393_EXIF_TIME): //write date/time first, then - midnight seconds
 		cp= (char *) &exif_time;
 		if (copy_from_user(&cp[*off], buf, count)) return -EFAULT;
 		break;
-	case X3X3_EXIF_META_CHN_0:
-	case X3X3_EXIF_META_CHN_1:
-	case X3X3_EXIF_META_CHN_2:
-	case X3X3_EXIF_META_CHN_3:
-		sensor_port = p - X3X3_EXIF_META_CHN_0;
+	case DEV393_MINOR(DEV393_EXIF_META0):
+	case DEV393_MINOR(DEV393_EXIF_META1):
+	case DEV393_MINOR(DEV393_EXIF_META2):
+	case DEV393_MINOR(DEV393_EXIF_META3):
+		sensor_port = p - DEV393_MINOR(DEV393_EXIF_META0);
 		if (copy_from_user(tmp, buf, count)) return -EFAULT;
 		local_irq_save(flags);
 		//local_irq_disable();
@@ -651,26 +634,27 @@ static ssize_t    exif_write  (struct file * file, const char * buf, size_t coun
 		else disabled_err=1;
 		local_irq_restore(flags);
 		if (disabled_err) {
-			D(printk("tried to write meta channel %d while disabled\n",sensor_port));
+		    dev_warn(g_devfp_ptr,"tried to write meta channel %d while disabled\n",sensor_port);
 			count=0;
 		}
 		break;
-	case X3X3_EXIF_EXIF_CHN_0:
-	case X3X3_EXIF_EXIF_CHN_1:
-	case X3X3_EXIF_EXIF_CHN_2:
-	case X3X3_EXIF_EXIF_CHN_3:
+	case DEV393_MINOR(DEV393_EXIF0):
+	case DEV393_MINOR(DEV393_EXIF1):
+	case DEV393_MINOR(DEV393_EXIF2):
+	case DEV393_MINOR(DEV393_EXIF3):
 		return -EINVAL; // no writing - read only
 		break;
 	default:return -EINVAL;
 	}
 	*off+=count;
-	D(printk("count= 0x%x, pos= 0x%x\n", (int) count, (int)*off));
+	 dev_dbg(g_devfp_ptr,"count= 0x%x, pos= 0x%x\n", (int) count, (int)*off);
 	return count;
 }
 
 //!++++++++++++++++++++++++++++++++++++ read() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-static ssize_t    exif_read   (struct file * file, char * buf, size_t count, loff_t *off) {
+//static
+ssize_t    exif_read   (struct file * file, char * buf, size_t count, loff_t *off) {
 	int p=(int)file->private_data;
 	int thissize=minor_file_size(p);
 	char * cp, * metap;
@@ -692,43 +676,43 @@ static ssize_t    exif_read   (struct file * file, char * buf, size_t count, lof
 	}
 
 	switch (p) {
-	case X3X3_EXIF_TEMPLATE:
+	case DEV393_MINOR(DEV393_EXIF_TEMPLATE):
 		if (copy_to_user(buf,  &exif_template[*off], count)) return -EFAULT;
 		break;
-	case X3X3_EXIF_METADIR:
+	case DEV393_MINOR(DEV393_EXIF_METADIR):
 		cp= (char *) &dir_table;
 		if (copy_to_user(buf,  &cp[*off], count)) return -EFAULT;
 		break;
-	case X3X3_EXIF_TIME:
+	case DEV393_MINOR(DEV393_EXIF_TIME):
 		cp= (char *) &exif_time;
 		if (copy_to_user(buf,  &cp[*off], count)) return -EFAULT;
 		break;
-	case X3X3_EXIF_META_CHN_0:
-	case X3X3_EXIF_META_CHN_1:
-	case X3X3_EXIF_META_CHN_2:
-	case X3X3_EXIF_META_CHN_3:
-		sensor_port = p - X3X3_EXIF_META_CHN_0;
+	case DEV393_MINOR(DEV393_EXIF_META0):
+	case DEV393_MINOR(DEV393_EXIF_META1):
+	case DEV393_MINOR(DEV393_EXIF_META2):
+	case DEV393_MINOR(DEV393_EXIF_META3):
+		sensor_port = p - DEV393_MINOR(DEV393_EXIF_META0);
 		if (!aexif_enabled[sensor_port]) return 0;
 		if (copy_to_user(buf,  &ameta_buffer[sensor_port][*off], count)) return -EFAULT;
 		break;
-	case X3X3_EXIF_EXIF_CHN_0:// generates exif data by merging exif_template with the selected meta_buffer page
-	case X3X3_EXIF_EXIF_CHN_1:
-	case X3X3_EXIF_EXIF_CHN_2:
-	case X3X3_EXIF_EXIF_CHN_3:
-		sensor_port = p - X3X3_EXIF_EXIF_CHN_0;
+	case DEV393_MINOR(DEV393_EXIF0):// generates exif data by merging exif_template with the selected meta_buffer page
+	case DEV393_MINOR(DEV393_EXIF1):
+	case DEV393_MINOR(DEV393_EXIF2):
+	case DEV393_MINOR(DEV393_EXIF3):
+		sensor_port = p - DEV393_MINOR(DEV393_EXIF0);
 		//will truncate by the end of current page
 		if (!aexif_enabled[sensor_port]) return 0;
 		i=((int) *off) / exif_template_size;
-		D(printk("count= 0x%x, *off= 0x%x, i=0x%x, exif_template_size=0x%x\n", (int) count, (int) *off, (int) i, (int) exif_template_size));
+		 dev_dbg(g_devfp_ptr,"count= 0x%x, *off= 0x%x, i=0x%x, exif_template_size=0x%x\n", (int) count, (int) *off, (int) i, (int) exif_template_size);
 		//arch/cris/arch-v32/drivers/elphel/exif353.c:590:count= 0x2000, *off= 0x410, i=0x82, exif_template_size=0x208
 		start_p=i*exif_template_size;
 		page_p= *off - start_p;
-		D(printk("count= 0x%x, pos= 0x%x, start_p=0x%x, page_p=0x%x, i=0x%x, exif_template_size=0x%x\n", (int) count, (int) *off, (int)start_p, (int)page_p,(int) i, (int) exif_template_size));
+		 dev_dbg(g_devfp_ptr,"count= 0x%x, pos= 0x%x, start_p=0x%x, page_p=0x%x, i=0x%x, exif_template_size=0x%x\n", (int) count, (int) *off, (int)start_p, (int)page_p,(int) i, (int) exif_template_size);
 		//arch/cris/arch-v32/drivers/elphel/exif353.c:591:count= 0x2000, pos= 0x410, start_p=0x10810, page_p=0xfffefc00, i=0x82, exif_template_size=0x208
 		metap= &ameta_buffer[sensor_port][i*aexif_meta_size[sensor_port]]; // pointer to the start of the selected page in frame meta_buffer
 		if ((page_p+count) > exif_template_size) count=exif_template_size-page_p;
 		memcpy(tmp,exif_template, exif_template_size);
-		D(printk("count= 0x%x, pos= 0x%x, start_p=0x%x, page_p=0x%x\n", (int) count, (int) *off, (int)start_p, (int)page_p));
+		 dev_dbg(g_devfp_ptr,"count= 0x%x, pos= 0x%x, start_p=0x%x, page_p=0x%x\n", (int) count, (int) *off, (int)start_p, (int)page_p);
 		for (i=0;i<exif_fields;i++){
 			memcpy(&tmp[dir_table[i].dst],&metap[dir_table[i].src], dir_table[i].len);
 		}
@@ -737,25 +721,54 @@ static ssize_t    exif_read   (struct file * file, char * buf, size_t count, lof
 	default:return -EINVAL;
 	}
 	*off+=count;
-	D(printk("count= 0x%x, pos= 0x%x\n", (int) count, (int)*off));
+	 dev_dbg(g_devfp_ptr,"count= 0x%x, pos= 0x%x\n", (int) count, (int)*off);
 	return count;
 }
 
+/* This code is copied from exif_read, consider replacing it with this function invocation */
+size_t exif_get_data(int sensor_port, unsigned short meta_index, void *buff, size_t buff_sz)
+{
+	size_t ret = 0;
+	size_t count = exif_template_size;
+	loff_t off;
+	int start_p, page_p, i;
+	char *metap;
+
+	//will truncate by the end of current page
+	if (!aexif_enabled[sensor_port])
+		return 0;
+	off = meta_index * exif_template_size;
+	D(printk("%s: count= 0x%x, *off= 0x%x, i=0x%x, exif_template_size=0x%x\n", __func__, (int) count, (int) off, (int) meta_index, (int) exif_template_size));
+	start_p = meta_index * exif_template_size;
+	page_p = off - start_p;
+	D(printk("%s: count= 0x%x, pos= 0x%x, start_p=0x%x, page_p=0x%x, i=0x%x, exif_template_size=0x%x\n", __func__, (int) count, (int) off, (int)start_p, (int)page_p,(int) meta_index, (int) exif_template_size));
+	metap = &ameta_buffer[sensor_port][meta_index * aexif_meta_size[sensor_port]]; // pointer to the start of the selected page in frame meta_buffer
+	if ((page_p + count) > exif_template_size)
+		count = exif_template_size - page_p;
+	memcpy(exif_tmp_buff, exif_template, exif_template_size);
+	D(printk("%s: count= 0x%x, pos= 0x%x, start_p=0x%x, page_p=0x%x\n", __func__, (int) count, (int) off, (int)start_p, (int)page_p));
+	for (i = 0; i < exif_fields; i++) {
+		memcpy(&exif_tmp_buff[dir_table[i].dst], &metap[dir_table[i].src], dir_table[i].len);
+	}
+	memcpy(buff, &exif_tmp_buff[page_p], count);
+	return count;
+}
+EXPORT_SYMBOL_GPL(exif_get_data);
 
 //!++++++++++++++++++++++++++++++++++++ _init() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 static int __init exif_init(void) {
 	int res;
-	res = register_chrdev(X3X3_EXIF_MAJOR, "Exif", &exif_fops);
+	res = register_chrdev(DEV393_MAJOR(DEV393_EXIF0), "Exif", &exif_fops);
 	if(res < 0) {
-		printk(KERN_ERR "\nexif_init: couldn't get a major number  %d.\n",X3X3_EXIF_MAJOR);
+	    dev_err(g_devfp_ptr,"\nexif_init: couldn't get a major number  %d.\n",DEV393_MAJOR(DEV393_EXIF0));
 		return res;
 	}
-	printk(X3X3_EXIF_DRIVER_NAME" - %d\n",X3X3_EXIF_MAJOR);
+	 dev_dbg(g_devfp_ptr,DEV393_NAME(DEV393_EXIF0)" - %d\n",DEV393_MAJOR(DEV393_EXIF0));
 	return 0;
 }
 
 module_init(exif_init);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-MODULE_DESCRIPTION(X3X3_EXIF_DRIVER_NAME);
+MODULE_DESCRIPTION(X3X3_EXIF_DRIVER_DESCRIPTION);

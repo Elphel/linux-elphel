@@ -24,12 +24,21 @@
 
 #include <linux/poll.h>
 
+struct fvec {
+	void *iov_base;                              ///< pointer to allocated buffer
+	size_t iov_len;                              ///< the size (in bytes) of allocated buffer; set after allocation and is not modified during buffer lifetime
+	dma_addr_t iov_dma;                          ///< buffer physical address
+};
+
 /** @brief Circular buffer private data */
 struct circbuf_priv_t {
 	int                 minor;                             ///< device file minor number
 	unsigned long       *buf_ptr;                          ///< pointer to circular buffer memory region
+	unsigned long       buf_size;                          ///< circular region size in bytes
+    unsigned long       buf_size32;                        ///< circular region size in dwords
 	dma_addr_t          phys_addr;                         ///< physical address of memory region reported by memory driver
 };
+struct  circbuf_priv_t *get_circbuf(int chn); // alternative to use of extern struct circbuf_priv_ptr;
 extern struct circbuf_priv_t *circbuf_priv_ptr;
 extern wait_queue_head_t circbuf_wait_queue;
 
@@ -48,11 +57,30 @@ ssize_t      circbuf_read  (struct file * file, char * buf, size_t count, loff_t
 int          circbuf_mmap  (struct file *file, struct vm_area_struct *vma);
 unsigned int circbuf_poll  (struct file *file,    poll_table *wait);
 
+#ifdef USE_OLD_CODE
+//int init_ccam_dma_buf_ptr(void);
+/*!======================================================================================
+ * Wait queue for the processes waiting for a new frame to appear in the circular buffer
+ *======================================================================================*/
+extern wait_queue_head_t circbuf_wait_queue;
+// private data
+struct circbuf_priv_t {
+	int                 minor;
+	unsigned long       *buf_ptr;
+	dma_addr_t          phys_addr;
+};
+extern struct circbuf_priv_t *circbuf_priv_ptr;
+#endif
+
 /* debug code follows */
+#ifdef PRE_FRAMEPARS
 extern unsigned short circbuf_quality;
 extern unsigned short circbuf_height;
 extern unsigned short circbuf_width;
 extern unsigned char  circbuf_byrshift;
+#endif
 /* end of debug code */
+
+ssize_t circbuf_get_ptr(int sensor_port, size_t offset, size_t len, struct fvec *vect_0, struct fvec *vect_1);
 
 #endif /* _CIRCBUF_H */

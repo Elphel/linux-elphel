@@ -1,22 +1,22 @@
 /*!***************************************************************************
- *! FILE NAME  : elphel393-mem.h
- *! DESCRIPTION:
- *! Copyright (C) 2015 Elphel, Inc.
- *! -----------------------------------------------------------------------------**
- *!
- *!  This program is free software: you can redistribute it and/or modify
- *!  it under the terms of the GNU General Public License as published by
- *!  the Free Software Foundation, either version 3 of the License, or
- *!  (at your option) any later version.
- *!
- *!  This program is distributed in the hope that it will be useful,
- *!  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *!  GNU General Public License for more details.
- *!
- *!  You should have received a copy of the GNU General Public License
- *!  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *!****************************************************************************/
+ * @file   elphel393-mem.h
+ * @brief 
+ * @copyright Copyright (C) 2015 Elphel, Inc.
+
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *****************************************************************************/
 struct elphel_buf_t
 {
 	// Coherent DMA buffer
@@ -38,6 +38,17 @@ struct elphel_buf_t
 	void      *bidir_vaddr;
 	dma_addr_t bidir_paddr;
 	ssize_t    bidir_size;
+
+    // Device to host stream DMA buffer for histograms
+    void      *histograms_vaddr;
+    dma_addr_t histograms_paddr;
+    ssize_t    histograms_size;
+
+    // Device to host stream DMA buffer for the logger
+    void      *logger_vaddr;
+    dma_addr_t logger_paddr;
+    ssize_t    logger_size;
+
 };
 extern struct elphel_buf_t *pElphel_buf;
 

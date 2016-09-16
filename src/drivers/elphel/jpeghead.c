@@ -3,7 +3,7 @@
  * @brief This file contains methods for JPEG tables and headers generation and
  * JPEG files composition from data compressed by FPGA.
  *
- * Copyright (C) 2016 Elphel, Inc
+ * @copyright Copyright (C) 2016 Elphel, Inc
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -51,7 +51,7 @@
 
 //#include <asm/delay.h>
 #include <asm/uaccess.h>
-#include <elphel/c313a.h>
+#include <uapi/elphel/c313a.h>
 //#include "fpga_io.h"//fpga_table_write_nice
 #include "jpeghead.h"
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
@@ -63,14 +63,13 @@
 //#include "circbuf.h"
 //#include "sensor_common.h"
 //#include "exif.h"
-#include "x393_macro.h"
+#include "x393_fpga_functions.h"
+#include "x393_macro.h" // X313_LENGTH_MASK
 #include "x393.h"
 
 static struct device *g_dev_ptr = NULL;
 
-/**
- * @brief All Huffman tables data to be read/written from the application
- */
+/** All Huffman tables data to be read/written from the user space */
 struct huff_tables_t {
 	struct huffman_encoded_t header_huffman_tables[4];
 	unsigned long            fpga_huffman_table[512];
@@ -109,8 +108,8 @@ static struct jpeghead_priv_t {
  */
 int qtables_create(struct interframe_params_t *params, unsigned char *buf, unsigned int chn)
 {
+    int rslt = get_qtable(params->quality2, &buf[0], &buf[64], chn); /// will copy both quantization tables
 	dev_dbg(g_dev_ptr, "params->quality2 = 0x%x\n", params->quality2);
-	int rslt = get_qtable(params->quality2, &buf[0], &buf[64], chn); /// will copy both quantization tables
 	if (rslt < 0) return rslt; /// bad quality table
 	return 128;
 }
@@ -328,22 +327,22 @@ int jpeghead_open(struct inode *inode, struct file *filp)
 }
 
 /*!=================================================================
- *! Overloading lseek with additional functionality (to avoid ioctls)
- *! with orig==SEEK_END lseek will treat (offset>0) as a byte pointer
- *! in (char *)ccam_dma_buf_ptr of a frame pointer and use quality,
- *! width and height to regenerate header.
- *! frame pointers are 32-bytes aligned, so adding 1 to offest
- *! will make sure it is always >0 (as offset=0, orig=SEEK_END
- *! will just move pointer to the end and return file length.
- *! 
- *! When called with orig==SEEK_END, offset>0 lseek will position
- *! file at the very beginning and return 0 if OK, -EINVAL if
- *! frame header is not found for the specified offset
- *!================================================================*/
+ * Overloading lseek with additional functionality (to avoid ioctls)
+ * with orig==SEEK_END lseek will treat (offset>0) as a byte pointer
+ * in (char *)ccam_dma_buf_ptr of a frame pointer and use quality,
+ * width and height to regenerate header.
+ * frame pointers are 32-bytes aligned, so adding 1 to offest
+ * will make sure it is always >0 (as offset=0, orig=SEEK_END
+ * will just move pointer to the end and return file length.
+ * 
+ * When called with orig==SEEK_END, offset>0 lseek will position
+ * file at the very beginning and return 0 if OK, -EINVAL if
+ * frame header is not found for the specified offset
+ *================================================================*/
 loff_t jpeghead_lseek(struct file *file, loff_t offset, int orig,
 		struct interframe_params_t *fp)
 {
-	int rp;
+//	int rp;
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
 	unsigned int chn = minor_to_chn(minor, NULL);
 
@@ -396,7 +395,7 @@ ssize_t jpeghead_read(struct file *file, char *buf, size_t count, loff_t *off)
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
 	unsigned int chn = minor_to_chn(minor, NULL);
 
-	dev_dbg(g_dev_ptr, "reading from jpeghead, minor = 0x%x, off = 0x%lld\n", minor, off);
+	dev_dbg(g_dev_ptr, "reading from jpeghead, minor = 0x%x, off = 0x%lld\n", minor, *off);
 
 	p = *off;
 	if (p >= jpeghead_priv[chn].jpeg_h_sz)
@@ -412,6 +411,22 @@ ssize_t jpeghead_read(struct file *file, char *buf, size_t count, loff_t *off)
 	return count;
 }
 
+ssize_t jpeghead_get_data(int sensor_port, void *buff, size_t buff_sz, size_t offset)
+{
+	unsigned long ptr = offset;
+	size_t count = jpeghead_priv[sensor_port].jpeg_h_sz;
+
+	if (ptr >= jpeghead_priv[sensor_port].jpeg_h_sz)
+		ptr = jpeghead_priv[sensor_port].jpeg_h_sz;
+	if ((ptr + count) > jpeghead_priv[sensor_port].jpeg_h_sz)
+		count = jpeghead_priv[sensor_port].jpeg_h_sz - ptr;
+	if (buff_sz < count)
+		return -EINVAL;
+	memcpy(buff, &jpeghead_priv[sensor_port].header[ptr], count);
+
+	return count;
+}
+EXPORT_SYMBOL_GPL(jpeghead_get_data);
 
 /**huffman_* file operations
  * write, read Huffman tables, initialize tables to default ones, program FPGA with the Huffman tables
@@ -429,18 +444,18 @@ int huffman_open(struct inode *inode, struct file *filp)
 }
 
 /*!=================================================================
- *! Overloading lseek with additional functionality
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_DC0 - position at Huffman DC0
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_AC0 - position at Huffman DC0
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_DC1 - position at Huffman DC0
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_AC1 - position at Huffman DC0
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGATAB - position at FPGA table
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_DEFAULT - fill in default tables
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGACALC - calculate FPGA table
- *! with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGAPGM - program FPGA table
- *! those commands do not move the file pointer (return current),
- *! or negative in the case of error (calculate FPGA table)
- *!================================================================*/
+ * Overloading lseek with additional functionality
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_DC0 - position at Huffman DC0
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_AC0 - position at Huffman DC0
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_DC1 - position at Huffman DC0
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_AC1 - position at Huffman DC0
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGATAB - position at FPGA table
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_DEFAULT - fill in default tables
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGACALC - calculate FPGA table
+ * with orig==SEEK_END , offset==LSEEK_HUFFMAN_FPGAPGM - program FPGA table
+ * those commands do not move the file pointer (return current),
+ * or negative in the case of error (calculate FPGA table)
+ *================================================================*/
 loff_t huffman_lseek(struct file *file, loff_t offset, int orig)
 {
 	unsigned int minor = MINOR(file->f_inode->i_rdev);
@@ -495,7 +510,7 @@ ssize_t huffman_read(struct file *file, char *buf, size_t count, loff_t *off)
 	unsigned int chn = minor_to_chn(minor, NULL);
 	unsigned char *uc_huff_tables = (unsigned char *) &jpeghead_priv[chn].huff_tables;
 
-	dev_dbg(g_dev_ptr, "reading from huffman, minor = 0x%x, off = 0x%llx\n", minor, off);
+	dev_dbg(g_dev_ptr, "reading from huffman, minor = 0x%x, off = 0x%llx\n", minor, *off);
 
 	p = *off;
 	if (p >= sizeof(struct huff_tables_t))
@@ -516,7 +531,7 @@ ssize_t huffman_write(struct file *file, const char *buf, size_t count, loff_t *
 	unsigned int chn = minor_to_chn(minor, NULL);
 	unsigned char * uc_huff_tables= (unsigned char *) &jpeghead_priv[chn].huff_tables;
 
-	dev_dbg(g_dev_ptr, "writing to huffman, minor = 0x%x, off = 0x%llx\n", minor, off);
+	dev_dbg(g_dev_ptr, "writing to huffman, minor = 0x%x, off = 0x%llx\n", minor, *off);
 
 	p = *off;
 	if (p >= sizeof(struct huff_tables_t))
@@ -676,17 +691,26 @@ void jpeg_htable_fpga_pgm(unsigned int chn)
 {
 	int i;
 	unsigned long flags;
-	x393_cmprs_table_addr_t table_addr;
 	struct huff_tables_t *huff_tables = &jpeghead_priv[chn].huff_tables;
-
+    int len = sizeof(huff_tables->fpga_huffman_table) / sizeof(huff_tables->fpga_huffman_table[0]);
+#if 0
+    x393_cmprs_table_addr_t table_addr;
 	table_addr.addr32 = 0;
 	table_addr.type = 3;
-	local_irq_save(flags);
+	local_ irq_save(flags);
 	x393_cmprs_tables_address(table_addr, chn);
-	for (i = 0; i < sizeof(huff_tables->fpga_huffman_table) / sizeof(huff_tables->fpga_huffman_table[0]); i++) {
+	for (i = 0; i < len; i++) {
 		x393_cmprs_tables_data((u32)huff_tables->fpga_huffman_table[i], chn);
 	}
-	local_irq_restore(flags);
+	local_ irq_restore(flags);
+#endif
+    write_compressor_table(chn,
+                           TABLE_TYPE_HUFFMAN,
+                           0,
+                           len,
+                           huff_tables->fpga_huffman_table );
+
+
 	jpeghead_priv[chn].fpga_programmed = 1;
 }
 

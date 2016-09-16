@@ -4,11 +4,11 @@ Debug
 Release
 linux
 sysroots
-.project
-.cproject
-.externalToolBuilders
-.settings
-.pydevproject
+/.project
+/.cproject
+/.externalToolBuilders
+/.settings
+/.pydevproject
 html
 *.directory
 doxygen.tag
@@ -21,3 +21,5 @@ src/drivers/elphel/x393_types.h
 all_sources.lst
 excluding.lst
 attic
+board_elphel393
+scp

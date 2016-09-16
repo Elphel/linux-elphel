@@ -1,5 +1,18 @@
-/*
- exif353.h
+/*!****************************************************************************//**
+ * @file   exif393.h
+ * @brief  Drivers for Exif manipulation
+ * @copyright Copyright (C) 2008-2016 Elphel, Inc.
+ * @par <b>License</b>
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef _EXIF_H
 #define _EXIF_H
@@ -40,5 +53,6 @@ int putlong_meta(int sensor_port, unsigned long data, int * indx,  unsigned long
 char * encode_time(char buf[27], unsigned long sec, unsigned long usec);
 int store_meta(int sensor_port); //called from IRQ service - put current metadata to meta_buffer, return page index
 
+size_t exif_get_data(int sensor_port, unsigned short meta_index, void * buff, size_t buff_sz);
 
 #endif

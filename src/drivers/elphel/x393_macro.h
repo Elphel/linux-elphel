@@ -19,7 +19,9 @@
 #ifndef _X393_MACRO
 #define _X393_MACRO
 
-#include <elphel/driver_numbers.h>
+#include <uapi/elphel/x393_devices.h>
+#include "circbuf.h" // for circbuf_priv (or disable X393_BUFSUB_CHN, X393_BUFADD_CHN if _CIRCBUF_H is not defined?
+
 
 /** @brief Resolution of current/OEF pointer in bits */
 #define OFFSET256_CNTR_RES   26
@@ -54,14 +56,22 @@
 
 #define X313_LENGTH_MASK      0xff000000
 /** @brief Subtract two offsets considering that the resulting offset can roll over the start of circular buffer */
-#define X393_BUFFSUB(x, y) (((x) >= (y)) ? ((x)-(y)) : ((x) + (CCAM_DMA_SIZE -(y))))
-/** @brief Add two offsets considering that the resulting offset car roll over the end of circular buffer */
-#define X393_BUFFADD(x, y) ((((x) + (y)) <= CCAM_DMA_SIZE) ? ((x) + (y)) : ((x) - (CCAM_DMA_SIZE -(y))))
+//#define X393__BUFFSUB(x, y) (((x) >= (y)) ? ((x)-(y)) : ((x) + (CCAM__DMA_SIZE -(y))))
+#define X393_BUFFSUB_CHN(x, y, chn) (((x) >= (y)) ? ((x)-(y)) : ((x) + (circbuf_priv_ptr[chn].buf_size -(y))))
+#define X393_BUFFSUB32(x, y, chn) (((x) >= (y)) ? ((x)-(y)) : ((x) + (circbuf_priv_ptr[chn].buf_size32 -(y))))
 
+
+/** @brief Add two offsets considering that the resulting offset can roll over the end of circular buffer */
+//#define X393__BUFFADD(x, y) ((((x) + (y)) <= CCAM__DMA_SIZE) ? ((x) + (y)) : ((x) - (CCAM__DMA_SIZE -(y))))
+#define X393_BUFFADD_CHN(x, y, chn) ((((x) + (y)) <= circbuf_priv_ptr[chn].buf_size) ? ((x) + (y)) : ((x) - (circbuf_priv_ptr[chn].buf_size -(y))))
+#define X393_BUFFADD32(x, y, chn)   ((((x) + (y)) <= circbuf_priv_ptr[chn].buf_size32) ? ((x) + (y)) : ((x) - (circbuf_priv_ptr[chn].buf_size32 -(y))))
+
+#if 0
 #define TABLE_TYPE_QUANT     0
 #define TABLE_TYPE_CORING    1
 #define TABLE_TYPE_FOCUS     2
 #define TABLE_TYPE_HUFFMAN   3
+#endif
 
 /**
  * @brief Converts file minor number to image compressor channel.
@@ -75,7 +85,7 @@
 static inline unsigned int minor_to_chn(unsigned int minor, unsigned int *dev_type)
 {
 	if (dev_type != NULL) {
-		if ((minor & 0xf0) == CIRCBUF_MINOR || (minor & 0xf0) == HUFFMAN_MINOR || (minor & 0xf0) == JPEGHEAD_MINOR)
+		if ((minor & 0xf0) == DEV393_MINOR(DEV393_CIRCBUF0) || (minor & 0xf0) == DEV393_MINOR(DEV393_HUFFMAN0) || (minor & 0xf0) == DEV393_MINOR(DEV393_JPEGHEAD0))
 			*dev_type = minor & 0xf0;
 		else
 			*dev_type = 0;

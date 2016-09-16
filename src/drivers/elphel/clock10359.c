@@ -1,25 +1,22 @@
-/*******************************************************************************
-* FILE NAME  : clock10359.c
-* DESCRIPTION: Control of the CY22393 clock on the 10359 multiplexer connected
+/***************************************************************************//**
+* @file   clock10359.c
+* @brief   Control of the CY22393 clock on the 10359 multiplexer connected
 * to the sensor port
-* Copyright 2002-2016 (C) Elphel, Inc.
-* -----------------------------------------------------------------------------*
-*
+* @copyright Copyright 2002-2016 (C) Elphel, Inc.
+* @par <b>License</b>
 *  This program is free software: you can redistribute it and/or modify
 *  it under the terms of the GNU General Public License as published by
 *  the Free Software Foundation, either version 2 of the License, or
 *  (at your option) any later version.
-*
 *  This program is distributed in the hope that it will be useful,
 *  but WITHOUT ANY WARRANTY; without even the implied warranty of
 *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 *  GNU General Public License for more details.
-*
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
 /****************** INCLUDE FILES SECTION ***********************************/
-#define DEBUG /* should be before linux/module.h - enables dev_dbg at boot in this file */
+//#define DEBUG /* should be before linux/module.h - enables dev_dbg at boot in this file */
 
 #include <linux/module.h>
 #include <linux/sched.h>
@@ -78,7 +75,6 @@ typedef struct {
 int calc_pll_params (unsigned int f, t_pll_params * pars); // f -in Hz
 
 int setCYField (int sensor_port, int addr, int mask, int value); /// bus==1 - FPGA (sensor bus through 10359), 0 - CPU bus
-int setClockFreq(int nclock, int freq); // freq now in Hz
 
 int calc_pll_params (unsigned int f, t_pll_params * pars) { // f -in Hz
 //   t_pll_params pars;
@@ -179,6 +175,7 @@ int setCYField (int sensor_port, int reg_addr, int mask, int value) {
 				sensor_port, reg_addr, mask, value,reg_data);
 		return error;
 	}
+	return 0;
 }
 
 int x393_getClockFreq(int sensor_port, int nclock) {
@@ -190,94 +187,95 @@ int x393_getClockFreq(int sensor_port, int nclock) {
 EXPORT_SYMBOL_GPL(x393_getClockFreq);
 
 
-int x393_setClockFreq(int sensor_port, int nclock, int freq) { // freq now in Hz
-	int err=0;
-	sensor_port &= 3;
-	nclock &= 3;
-	t_pll_params  pll_params;
-	int i,bp,bq,bdiv,pllc,fact;
-	bp=0; bq=0; bdiv=0; pllc= 0; // just to make gcc happy
-	fact=0;
-	dev_dbg(sdev, "setClockFreq(%d,%d,%d)\r\n",sensor_port,nclock,freq);
-	if ((freq!=0) && (nclock!=3) ){
-		if ( (i=calc_pll_params (freq, &pll_params)) !=0) {
-			dev_err(sdev, "bad frequency for clock %d - %d Hz, err=%d\n",nclock,freq,i);
-			return -EINVAL;
-		}
-		fact=CY22393_SCALE*(CY22393_XTAL*(pll_params.p+6)/(pll_params.q+2)/pll_params.dv);
-		bp=  pll_params.p;    // (freqtab[freq]>>20)&0x7ff;
-		bq=  pll_params.q;    // (freqtab[freq]>>12)&0xff;
-		bdiv=pll_params.dv;   // (freqtab[freq]>> 4)&0xff;
-		pllc=pll_params.corr; // freqtab[freq]     &0x0f;
-	}
-	switch (nclock) {
-		case 0:
-			if (freq==0) {
-				err |= setCYField (sensor_port,0x16, 0x40, 0x00); // turn off pll3
-				err |= setCYField (sensor_port,0x09, 0x7f, 0x00); // turn off divider- A
-				err |= setCYField (sensor_port,0x08, 0x7f, 0x00); // turn off divider- A
-			} else {
-				err |= setCYField (sensor_port,0x16, 0x7f, 0x40+(pllc<<3)+((bp & 1)<<2)+((bp & 0x600)>>9) );
-				err |= setCYField (sensor_port,0x15, 0xff, ((bp & 0x1fe)>>1) );
-				err |= setCYField (sensor_port,0x14, 0xff, bq );
-				err |= setCYField (sensor_port,0x09, 0x7f, bdiv); // set divider- A
-				err |= setCYField (sensor_port,0x08, 0x7f, bdiv); // set divider- A
-				err |= setCYField (sensor_port,0x0e, 0x03, 0x03); // set PLL3 as source for ClkA
-			}
-		//          fpga_state |= FPGA_STATE_CLOCKS;
-			break;
-		case 1:
-			if (freq==0) {
-				err |= setCYField (sensor_port,0x0b, 0x7f, 0x00); // turn off divider- B
-				err |= setCYField (sensor_port,0x0a, 0x7f, 0x00); // turn off divider- B
-				for (i=0;i<24;i+=3) err |= setCYField (sensor_port,0x42+i, 0x40, 0x00);  // turn off pll1
-			} else {
-				// progam all variants
-				for (i=0;i<24;i+=3) {
-				  err |= setCYField (sensor_port,0x42+i, 0x7f, 0x40+(pllc<<3)+((bp & 1)<<2)+((bp & 0x600)>>9) );
-				  err |= setCYField (sensor_port,0x41+i, 0xff, ((bp & 0x1fe)>>1) );
-				  err |= setCYField (sensor_port,0x40+i, 0xff, bq );
-				}
-				err |= setCYField (sensor_port,0x0b, 0x7f, bdiv); // set divider- B
-				err |= setCYField (sensor_port,0x0a, 0x7f, bdiv); // set divider- B
-				err |= setCYField (sensor_port,0x0e, 0x0c, 0x04); // set PLL1 as source for ClkB
-			}
-			break;
-		case 2:
-			if (freq==0) {
-				err |= setCYField (sensor_port,0x13, 0x40, 0x00); // turn off pll2
-				err |= setCYField (sensor_port,0x0d, 0x7f, 0x00); // turn off divider- D
-			} else {
-				err |= setCYField (sensor_port,0x13, 0x7f, 0x40+(pllc<<3)+((bp & 1)<<2)+((bp & 0x600)>>9) );
-				err |= setCYField (sensor_port,0x12, 0xff, ((bp & 0x1fe)>>1) );
-				err |= setCYField (sensor_port,0x11, 0xff, bq );
-				err |= setCYField (sensor_port,0x0d, 0x7f, bdiv); // set divider- D
-				err |= setCYField (sensor_port,0x0e, 0xc0, 0x80); // set PLL2 as source for ClkD
-			}
-			break;
-		case 3:
-			if ((freq!=0) && (freq!=CY22393_SCALE*CY22393_XTAL)) {
-				dev_err(sdev, "Only frequency 0 (off) and %d Hz (xtal) are allowed for channel 3\r\n",CY22393_SCALE*CY22393_XTAL);
-				return -EINVAL;
-			} else {
-			//  int setCYField (sensor_port,int devfd, int addr, int mask, int value) O_RDWR
-				if (freq==0) {
-				  err |= setCYField (sensor_port,0x0f, 0x04, 0x00);
-				} else {
-				  err |= setCYField (sensor_port,0x0f, 0x04, 0x04);
-				  fact= CY22393_SCALE*CY22393_XTAL;
-				}
-			}
-			break;
-		default: return -1; // wrong clock number
-	}
-	dev_dbg(sdev, "nclock=%d fact=%d\n",nclock,fact);
-	if (err != 0) {
-		dev_err(sdev, "Error programming clock %d fact=%d, err=0x%x\n",nclock,fact, err);
-		return err;
-	}
-	clock_frequency[(sensor_port << 2) + nclock] = fact;
-	return fact;
+int x393_setClockFreq(int sensor_port, int nclock, int freq)
+{ // freq now in Hz
+    int err=0;
+    sensor_port &= 3;
+    nclock &= 3;
+    t_pll_params  pll_params;
+    int i,bp,bq,bdiv,pllc,fact;
+    bp=0; bq=0; bdiv=0; pllc= 0; // just to make gcc happy
+    fact=0;
+    dev_dbg(sdev, "setClockFreq(%d,%d,%d)\r\n",sensor_port,nclock,freq);
+    if ((freq!=0) && (nclock!=3) ){
+        if ( (i=calc_pll_params (freq, &pll_params)) !=0) {
+            dev_err(sdev, "bad frequency for clock %d - %d Hz, err=%d\n",nclock,freq,i);
+            return -EINVAL;
+        }
+        fact=CY22393_SCALE*(CY22393_XTAL*(pll_params.p+6)/(pll_params.q+2)/pll_params.dv);
+        bp=  pll_params.p;    // (freqtab[freq]>>20)&0x7ff;
+        bq=  pll_params.q;    // (freqtab[freq]>>12)&0xff;
+        bdiv=pll_params.dv;   // (freqtab[freq]>> 4)&0xff;
+        pllc=pll_params.corr; // freqtab[freq]     &0x0f;
+    }
+    switch (nclock) {
+    case 0:
+        if (freq==0) {
+            err |= setCYField (sensor_port,0x16, 0x40, 0x00); // turn off pll3
+            err |= setCYField (sensor_port,0x09, 0x7f, 0x00); // turn off divider- A
+            err |= setCYField (sensor_port,0x08, 0x7f, 0x00); // turn off divider- A
+        } else {
+            err |= setCYField (sensor_port,0x16, 0x7f, 0x40+(pllc<<3)+((bp & 1)<<2)+((bp & 0x600)>>9) );
+            err |= setCYField (sensor_port,0x15, 0xff, ((bp & 0x1fe)>>1) );
+            err |= setCYField (sensor_port,0x14, 0xff, bq );
+            err |= setCYField (sensor_port,0x09, 0x7f, bdiv); // set divider- A
+            err |= setCYField (sensor_port,0x08, 0x7f, bdiv); // set divider- A
+            err |= setCYField (sensor_port,0x0e, 0x03, 0x03); // set PLL3 as source for ClkA
+        }
+        //          fpga_state |= FPGA_STATE_CLOCKS;
+        break;
+    case 1:
+        if (freq==0) {
+            err |= setCYField (sensor_port,0x0b, 0x7f, 0x00); // turn off divider- B
+            err |= setCYField (sensor_port,0x0a, 0x7f, 0x00); // turn off divider- B
+            for (i=0;i<24;i+=3) err |= setCYField (sensor_port,0x42+i, 0x40, 0x00);  // turn off pll1
+        } else {
+            // progam all variants
+            for (i=0;i<24;i+=3) {
+                err |= setCYField (sensor_port,0x42+i, 0x7f, 0x40+(pllc<<3)+((bp & 1)<<2)+((bp & 0x600)>>9) );
+                err |= setCYField (sensor_port,0x41+i, 0xff, ((bp & 0x1fe)>>1) );
+                err |= setCYField (sensor_port,0x40+i, 0xff, bq );
+            }
+            err |= setCYField (sensor_port,0x0b, 0x7f, bdiv); // set divider- B
+            err |= setCYField (sensor_port,0x0a, 0x7f, bdiv); // set divider- B
+            err |= setCYField (sensor_port,0x0e, 0x0c, 0x04); // set PLL1 as source for ClkB
+        }
+        break;
+    case 2:
+        if (freq==0) {
+            err |= setCYField (sensor_port,0x13, 0x40, 0x00); // turn off pll2
+            err |= setCYField (sensor_port,0x0d, 0x7f, 0x00); // turn off divider- D
+        } else {
+            err |= setCYField (sensor_port,0x13, 0x7f, 0x40+(pllc<<3)+((bp & 1)<<2)+((bp & 0x600)>>9) );
+            err |= setCYField (sensor_port,0x12, 0xff, ((bp & 0x1fe)>>1) );
+            err |= setCYField (sensor_port,0x11, 0xff, bq );
+            err |= setCYField (sensor_port,0x0d, 0x7f, bdiv); // set divider- D
+            err |= setCYField (sensor_port,0x0e, 0xc0, 0x80); // set PLL2 as source for ClkD
+        }
+        break;
+    case 3:
+        if ((freq!=0) && (freq!=CY22393_SCALE*CY22393_XTAL)) {
+            dev_err(sdev, "Only frequency 0 (off) and %d Hz (xtal) are allowed for channel 3\r\n",CY22393_SCALE*CY22393_XTAL);
+            return -EINVAL;
+        } else {
+            //  int setCYField (sensor_port,int devfd, int addr, int mask, int value) O_RDWR
+            if (freq==0) {
+                err |= setCYField (sensor_port,0x0f, 0x04, 0x00);
+            } else {
+                err |= setCYField (sensor_port,0x0f, 0x04, 0x04);
+                fact= CY22393_SCALE*CY22393_XTAL;
+            }
+        }
+        break;
+    default: return -1; // wrong clock number
+    }
+    dev_dbg(sdev, "nclock=%d fact=%d\n",nclock,fact);
+    if (err != 0) {
+        dev_err(sdev, "Error programming clock %d fact=%d, err=0x%x\n",nclock,fact, err);
+        return err;
+    }
+    clock_frequency[(sensor_port << 2) + nclock] = fact;
+    return fact;
 }
 EXPORT_SYMBOL_GPL(x393_setClockFreq);
 

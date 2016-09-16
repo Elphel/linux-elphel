@@ -23,3 +23,15 @@ obj-$(CONFIG_ELPHEL393)           += quantization_tables.o
 obj-$(CONFIG_ELPHEL393)           += circbuf.o
 obj-$(CONFIG_ELPHEL393)           += jpeghead.o
 
+obj-$(CONFIG_ELPHEL393)           += gamma_tables.o
+obj-$(CONFIG_ELPHEL393)           += histograms.o
+obj-$(CONFIG_ELPHEL393)           += pgm_functions.o
+obj-$(CONFIG_ELPHEL393)           += mt9x001.o
+obj-$(CONFIG_ELPHEL393)           += multi10359.o
+obj-$(CONFIG_ELPHEL393)           += imu_log393.o
+
+obj-$(CONFIG_ELPHEL393)           += cxi2c.o
+obj-$(CONFIG_ELPHEL393)           += x393_videomem.o
+obj-$(CONFIG_ELPHEL393)           += detect_sensors.o
+obj-$(CONFIG_ELPHEL393)           += x393_fpga_functions.o
+obj-$(CONFIG_ELPHEL393)           += klogger_393.o
