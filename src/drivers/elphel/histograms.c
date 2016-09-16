@@ -110,7 +110,7 @@
 // ##include <asm/dma-mapping.h>
 
 #include <uapi/elphel/x393_devices.h>
-#include <uapi/elphel/c313a.h>
+//#include <uapi/elphel/c313a.h>
 #include <uapi/elphel/exifa.h>
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
 //#include "fpga_io.h"//fpga_table_write_nice
@@ -166,8 +166,8 @@ struct histogram_stuct_t * histograms_p; ///< alias of histogram_stuct_t
 /** @brief Global pointer to basic device structure. This pointer is used in debugfs output functions */
 static struct device *g_dev_ptr;
 
-wait_queue_head_t hist_y_wait_queue;    ///< wait queue for the G1 histogram (used as Y)
-wait_queue_head_t hist_c_wait_queue;    ///< wait queue for all the other (R,G2,B) histograms (color)
+wait_queue_head_t ahist_y_wait_queue[SENSOR_PORTS];    ///< wait queue for the G1 histogram (used as Y)
+wait_queue_head_t ahist_c_wait_queue[SENSOR_PORTS];    ///< wait queue for all the other (R,G2,B) histograms (color)
 void init_histograms(int chn_mask); ///< combined subchannels and ports Save mask to global P-variable
 int histograms_init_hardware(void);
 static volatile int histograms_initialized = 0; ///< 0 - not initialized, 1 - structures only, 2 structures and hardware NC393: initialize when first used?
@@ -206,7 +206,7 @@ int histograms_check_init(void)
 struct histograms_pd {
     int                minor;
     unsigned long      frame;             ///< absolute frame number requested
-    int                frame_index;       ///< histogram fame index (in cache and when accessing through mmap), -1 if invalid,
+    int                frame_index;       ///< histogram frame index (in cache and when accessing through mmap), -1 if invalid,
     int                needed;            ///< bits specify what histograms (color, type) are requested
                                           ///<  each group of 4 bits covers 4 colors of the same type:
                                           ///<  - bits 0..3 - read raw histograms from the FPGA - normally called from IRQ/tasklet (use just 1 color for autoexposure to speed up?)
@@ -312,7 +312,7 @@ void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask
     histograms_p= (struct histogram_stuct_t *) histograms;
 //    MDF21(printk("\n"));
 #ifdef HISTOGRAMS_DISABLE_IRQ
-    local_irq_save(flags);
+    local_ irq_save(flags);
 #endif
     dev_dbg(g_dev_ptr, "Histograms structures, channel mask = 0x%x",chn_mask);
     for (s=0; s<numHistChn; s++) {
@@ -322,7 +322,7 @@ void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask
         }
     }
 #ifdef HISTOGRAMS_DISABLE_IRQ
-    local_irq_restore(flags);
+    local_ irq_restore(flags);
 #endif
     dev_dbg(g_dev_ptr, "Histograms structures initialized");
 
@@ -469,7 +469,7 @@ int  get_histograms(int sensor_port,     ///< sensor port number (0..3)
     }
     index=GLOBALPARS(sensor_port, G_HIST_LAST_INDEX+sensor_chn); // set_histograms may increment G_HIST_LAST_INDEX+sensor_chn
     for (i=0;i<HISTOGRAM_CACHE_NUMBER;i++) {
-        dev_dbg(g_dev_ptr, "index=%d, needed=0x%x\n",index,needed);
+        dev_dbg(g_dev_ptr, "hist_indx= %d, index=%d, needed=0x%x\n",hist_indx, index,needed);
         if ((histograms[hist_indx][index].frame <= frame) && ((histograms[hist_indx][index].valid & raw_needed)==raw_needed)) break;
         index = (index-1) & (HISTOGRAM_CACHE_NUMBER-1);
     }
@@ -666,142 +666,144 @@ loff_t histograms_lseek (struct file * file,
     dev_dbg(g_dev_ptr, "histograms_lseek: offset=%d(0x%x), orig=0x%x, getThisFrameNumber(%d)=0x%x\n", (int) offset, (int) offset, (int) orig, privData->port, (int)getThisFrameNumber(privData->port));
     switch (privData->minor) {
     case DEV393_MINOR(DEV393_HISTOGRAM) :
-        switch(orig) {
-        case SEEK_CUR: // ignore offset - in NC353 it was get latest?
-//            offset = -1; // for now - just make "latest"
+                switch(orig) {
+                case SEEK_CUR: // ignore offset - in NC353 it was get latest?
+                    //            offset = -1; // for now - just make "latest"
 #if 0
-            offset+=(privData-> wait_mode)?
-                    GLOBALPARS(privData->port,G_HIST_C_FRAME+privData->subchannel):
-                    GLOBALPARS(privData->port,G_HIST_Y_FRAME+privData->subchannel);
+                    offset+=(privData-> wait_mode)?
+                            GLOBALPARS(privData->port,G_HIST_C_FRAME+privData->subchannel):
+                            GLOBALPARS(privData->port,G_HIST_Y_FRAME+privData->subchannel);
 #endif
 
-            offset+=getThisFrameNumber(privData->port); // get relative to current frame (-1 - latest)
-            //no break (CDT understands this)
-        case SEEK_SET: // negative - make relative to current (-1 - latest, -2 - before latest - up to 15 before)
-            if (offset <0){
-                dev_dbg(g_dev_ptr, "offset= %lld (0x%llx) changing to previous frame \n",offset,offset);
-                offset += getThisFrameNumber(privData->port);
-            }
-            privData->frame=offset;
-            // Try to make some precautions to avoid waiting forever - if the past frame is requested - request histogram for the current frame,
-            // if the "immediate" future (fits into the array of frames) one  - request that frame's  histogram
-            // if in the far future (unsafe) do nothing -NOTE: far future should be avoided if the histograms are set request-only
-            // NOTE: there could be another wrong condition - request written w/o "JUST_THIS" modifier - then it will turn to always on until cleared.
-            // TODO: Save time on always enabled histograms? Don't request them additionally?
-            if (privData->request_en) {
-                reqAddr=(privData-> wait_mode)?P_HISTRQ_C:P_HISTRQ_Y;
-                reqFrame=getThisFrameNumber(privData->port);
-                dev_dbg(g_dev_ptr, "offset= %d (0x%x), reqFrame=%d (0x%x) \n",(int) offset,(int) offset,(int) reqFrame,(int) reqFrame);
-                if (offset > reqFrame) {
-                    if (offset > (reqFrame+5)) reqFrame+=5; // What is this 5?
-                    else                       reqFrame=offset;
-                    dev_dbg(g_dev_ptr, "offset= %d (0x%x), modified reqFrame for future request =%d (0x%x) \n",(int) offset,(int) offset,(int) reqFrame,(int) reqFrame);
-                }
-                if (offset < reqFrame) { // just debugging
-                    dev_dbg(g_dev_ptr, "offset < reqFrame, will run get_histograms (%d, %d, 0x%x, 0x%x) \n",
-                            privData->port, privData->subchannel, (int) offset, (int) privData->needed);
-                }
-                if ((offset < reqFrame) && // if the requested frame is in the past - try to get it first before requesting a new
-                        (((privData->frame_index = get_histograms (privData->port, privData->subchannel, offset, privData->needed))) >=0)) {
-//                    file->f_pos=privData->frame_index;
-                    if (((index = get_hist_index(privData->port, privData->subchannel))) <0)
-                        return -ENODEV; // requested combination of port and subchannel does not exist
-                    file->f_pos=privData->frame_index + HISTOGRAM_CACHE_NUMBER * get_hist_index(privData->port, privData->subchannel);
-                    dev_dbg(g_dev_ptr, "Returning %d (0x%x)\n", (int) file->f_pos, (int) file->f_pos);
-                    return file->f_pos;
-                }
-                // request histogram(s)
-                //             setFramePar(&framepars[reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
-                dev_dbg(g_dev_ptr, "setFrameParLocked(%d, &aframepars[%d][0x%x], 0x%lx, 1)\n",
-                        privData->port, privData->port, (int) (reqFrame & PARS_FRAMES_MASK), reqAddr);
-                setFrameParLocked(privData->port, &aframepars[privData->port][reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
-                // make sure (harmful) interrupt did not happen since getThisFrameNumber()
-                if (reqFrame < getThisFrameNumber(privData->port)) {
-                    dev_dbg(g_dev_ptr, "setFrameParLocked(%d, &aframepars[%d][0x%lx], 0x%lx, 1)\n",
-                            privData->port, privData->port, getThisFrameNumber(privData->port) & PARS_FRAMES_MASK, reqAddr);
-                    setFrameParLocked(privData->port, &aframepars[privData->port][getThisFrameNumber(privData->port) & PARS_FRAMES_MASK], reqAddr, 1);
-                }
-            } else { // debug
-                dev_dbg(g_dev_ptr, "privData->request_en=0\n");
-            }
+                    offset+=getThisFrameNumber(privData->port); // get relative to current frame (-1 - latest)
+                    //no break (CDT understands this)
+                case SEEK_SET: // negative - make relative to current (-1 - latest, -2 - before latest - up to 15 before)
+                    if (offset <0){
+                        dev_dbg(g_dev_ptr, "offset= %lld (0x%llx) changing to previous frame \n",offset,offset);
+                        offset += getThisFrameNumber(privData->port);
+                    }
+                    privData->frame=offset;
+                    // Try to make some precautions to avoid waiting forever - if the past frame is requested - request histogram for the current frame,
+                    // if the "immediate" future (fits into the array of frames) one  - request that frame's  histogram
+                    // if in the far future (unsafe) do nothing -NOTE: far future should be avoided if the histograms are set request-only
+                    // NOTE: there could be another wrong condition - request written w/o "JUST_THIS" modifier - then it will turn to always on until cleared.
+                    // TODO: Save time on always enabled histograms? Don't request them additionally?
+                    if (privData->request_en) {
+                        reqAddr=(privData-> wait_mode)?P_HISTRQ_C:P_HISTRQ_Y;
+                        reqFrame=getThisFrameNumber(privData->port);
+                        dev_dbg(g_dev_ptr, "offset= %d (0x%x), reqFrame=%d (0x%x) \n",(int) offset,(int) offset,(int) reqFrame,(int) reqFrame);
+                        if (offset > reqFrame) {
+                            if (offset > (reqFrame+5)) reqFrame+=5; // What is this 5?
+                            else                       reqFrame=offset;
+                            dev_dbg(g_dev_ptr, "offset= %d (0x%x), modified reqFrame for future request =%d (0x%x) \n",(int) offset,(int) offset,(int) reqFrame,(int) reqFrame);
+                        }
+                        if (offset < reqFrame) { // just debugging
+                            dev_dbg(g_dev_ptr, "offset < reqFrame, will run get_histograms (%d, %d, 0x%x, 0x%x) \n",
+                                    privData->port, privData->subchannel, (int) offset, (int) privData->needed);
+                        }
+                        if ((offset < reqFrame) && // if the requested frame is in the past - try to get it first before requesting a new
+                                (((privData->frame_index = get_histograms (privData->port, privData->subchannel, offset, privData->needed))) >=0)) {
+                            //                    file->f_pos=privData->frame_index;
+                            if (((index = get_hist_index(privData->port, privData->subchannel))) <0)
+                                return -ENODEV; // requested combination of port and subchannel does not exist
+                            file->f_pos=privData->frame_index + HISTOGRAM_CACHE_NUMBER * get_hist_index(privData->port, privData->subchannel);
+                            dev_dbg(g_dev_ptr, "Returning %d (0x%x)\n", (int) file->f_pos, (int) file->f_pos);
+                            return file->f_pos;
+                        }
+                        // request histogram(s)
+                        //             setFramePar(&framepars[reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
+                        dev_dbg(g_dev_ptr, "setFrameParLocked(%d, &aframepars[%d][0x%x], 0x%lx, 1)\n",
+                                privData->port, privData->port, (int) (reqFrame & PARS_FRAMES_MASK), reqAddr);
+                        setFrameParLocked(privData->port, &aframepars[privData->port][reqFrame & PARS_FRAMES_MASK], reqAddr, 1);
+                        // make sure (harmful) interrupt did not happen since getThisFrameNumber()
+                        if (reqFrame < getThisFrameNumber(privData->port)) {
+                            dev_dbg(g_dev_ptr, "setFrameParLocked(%d, &aframepars[%d][0x%lx], 0x%lx, 1)\n",
+                                    privData->port, privData->port, getThisFrameNumber(privData->port) & PARS_FRAMES_MASK, reqAddr);
+                            setFrameParLocked(privData->port, &aframepars[privData->port][getThisFrameNumber(privData->port) & PARS_FRAMES_MASK], reqAddr, 1);
+                        }
+                    } else { // debug
+                        dev_dbg(g_dev_ptr, "privData->request_en=0\n");
+                    }
 #if 0
-            if (privData-> wait_mode)  wait_event_interruptible (hist_c_wait_queue,GLOBALPARS(privData->port,G_HIST_C_FRAME + privData->subchannel)>=offset);
-            else                       wait_event_interruptible (hist_y_wait_queue,GLOBALPARS(privData->port,G_HIST_Y_FRAME + privData->subchannel)>=offset);
+                    if (privData-> wait_mode)  wait_event_interruptible (ahist_c_wait_queue[privData->port],GLOBALPARS(privData->port,G_HIST_C_FRAME + privData->subchannel)>=offset);
+                    else                       wait_event_interruptible (ahist_y_wait_queue[privData->port],GLOBALPARS(privData->port,G_HIST_Y_FRAME + privData->subchannel)>=offset);
 #endif
-            dev_dbg(g_dev_ptr, "Before waiting: frame = 0x%x, offset=0x%x privData-> wait_mode=%d\n",
-                    (int) getThisFrameNumber(privData->port), (int) offset, privData-> wait_mode);
-            // neded next frame after requested (modify php too?)
-            if (privData-> wait_mode)  wait_event_interruptible (hist_c_wait_queue,getThisFrameNumber(privData->port)>offset);
-            else                       wait_event_interruptible (hist_y_wait_queue,getThisFrameNumber(privData->port)>offset);
-            dev_dbg(g_dev_ptr, "After waiting: frame = 0x%x\n", (int) getThisFrameNumber(privData->port));
-            privData->frame_index = get_histograms (privData->port, privData->subchannel, offset, privData->needed);
-            if (privData->frame_index <0) {
-                return -EFAULT;
-            } else {
-//                file->f_pos=privData->frame_index;
-                file->f_pos=privData->frame_index + HISTOGRAM_CACHE_NUMBER * get_hist_index(privData->port, privData->subchannel);
-                dev_dbg(g_dev_ptr, "file->f_pos (full histogram number - cache and port/channel combined) = 0x%x\n", (int) file->f_pos);
-                return file->f_pos;
-            }
-            break; // just in case
-        case SEEK_END:
-            if (offset < 0) {
-                return -EINVAL;
-            } else {
-                if (offset < LSEEK_HIST_NEEDED) {
-                    //#define      LSEEK_HIST_SET_CHN   0x30 ///< ..2F Select channel to wait for (4*port+subchannel)
-                    if ((offset & ~0xf) == LSEEK_HIST_SET_CHN){
-                        p = (offset >> 2)  & 3;
-                        s = (offset >> 0)  & 3;
-                        if (get_hist_index(p,s)<0)
-                            return -ENXIO; // invalid port/channel combination
-                        privData->port =       p;
-                        privData->subchannel = s;
+                    dev_dbg(g_dev_ptr, "Before waiting: frame = 0x%x, offset=0x%x privData-> wait_mode=%d\n",
+                            (int) getThisFrameNumber(privData->port), (int) offset, privData-> wait_mode);
+                    // neded next frame after requested (modify php too?)
+                    if (privData-> wait_mode)  wait_event_interruptible (ahist_c_wait_queue[privData->port],getThisFrameNumber(privData->port)>offset);
+                    else                       wait_event_interruptible (ahist_y_wait_queue[privData->port],getThisFrameNumber(privData->port)>offset);
+                    dev_dbg(g_dev_ptr, "After waiting: frame = 0x%x\n", (int) getThisFrameNumber(privData->port));
+                    privData->frame_index = get_histograms (privData->port, privData->subchannel, offset, privData->needed);
+                    if (privData->frame_index <0) {
+                        return -EFAULT;
+                    } else {
+                        //                file->f_pos=privData->frame_index;
                         file->f_pos=privData->frame_index + HISTOGRAM_CACHE_NUMBER * get_hist_index(privData->port, privData->subchannel);
-                    } else switch (offset) {
-                    case 0:
-                        break;
-                    case  LSEEK_HIST_REQ_EN: // enable requesting histogram for the specified frame (0 - rely on the available ones)
-                        privData->request_en=1; ///default after open
-                        break;
-                    case  LSEEK_HIST_REQ_DIS: // disable requesting histogram for the specified frame, rely on the available ones
-                        privData->request_en=0;
-                        break;
-                    case  LSEEK_HIST_WAIT_Y: // set histogram waiting for the Y (actually G1) histogram (default after open)
-                        privData-> wait_mode=0;
-                        break;
-                    case  LSEEK_HIST_WAIT_C: // set histogram waiting for the C (actually R, G2, B) histograms to become available - implies G1 too
-                        privData-> wait_mode=1;
-                        break;
-                    default:
-                        switch (offset & ~0x1f) {
-                        case  LSEEK_DAEMON_HIST_Y: // wait for daemon enabled and histograms Y ready
-                            dev_dbg(g_dev_ptr, "wait_event_interruptible (hist_y_wait_queue,0x%x & 0x%x)\n",(int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f)));
-                            wait_event_interruptible (hist_y_wait_queue, get_imageParamsThis(privData->port, P_DAEMON_EN) & (1<<(offset & 0x1f)));
-                            break;
-                        case  LSEEK_DAEMON_HIST_C: // wait for daemon enabled and histograms Y ready
-                            dev_dbg(g_dev_ptr, "wait_event_interruptible (hist_c_wait_queue,0x%x & 0x%x)\n",(int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f)));
-                            wait_event_interruptible (hist_c_wait_queue, get_imageParamsThis(privData->port, P_DAEMON_EN) & (1<<(offset & 0x1f)));
-                            break;
-                        default:
+                        dev_dbg(g_dev_ptr, "file->f_pos (full histogram number - cache and port/channel combined) = 0x%x\n", (int) file->f_pos);
+                        return file->f_pos;
+                    }
+                    break; // just in case
+                case SEEK_END:
+                    if (offset < 0) {
+                        return -EINVAL;
+                    } else {
+                        if (offset < LSEEK_HIST_NEEDED) {
+                            //#define      LSEEK_HIST_SET_CHN   0x30 ///< ..2F Select channel to wait for (4*port+subchannel)
+                            if ((offset & ~0xf) == LSEEK_HIST_SET_CHN){
+                                p = (offset >> 2)  & 3;
+                                s = (offset >> 0)  & 3;
+                                if (get_hist_index(p,s)<0)
+                                    return -ENXIO; // invalid port/channel combination
+                                privData->port =       p;
+                                privData->subchannel = s;
+                                file->f_pos=privData->frame_index + HISTOGRAM_CACHE_NUMBER * get_hist_index(privData->port, privData->subchannel);
+                            } else switch (offset) {
+                            case 0:
+                                break;
+                            case  LSEEK_HIST_REQ_EN: // enable requesting histogram for the specified frame (0 - rely on the available ones)
+                                privData->request_en=1; ///default after open
+                                break;
+                            case  LSEEK_HIST_REQ_DIS: // disable requesting histogram for the specified frame, rely on the available ones
+                                privData->request_en=0;
+                                break;
+                            case  LSEEK_HIST_WAIT_Y: // set histogram waiting for the Y (actually G1) histogram (default after open)
+                                privData-> wait_mode=0;
+                                break;
+                            case  LSEEK_HIST_WAIT_C: // set histogram waiting for the C (actually R, G2, B) histograms to become available - implies G1 too
+                                privData-> wait_mode=1;
+                                break;
+                            default:
+                                switch (offset & ~0x1f) {
+                                case  LSEEK_DAEMON_HIST_Y: // wait for daemon enabled and histograms Y ready
+                                    dev_dbg(g_dev_ptr, "wait_event_interruptible (ahist_y_wait_queue[%d],0x%x & 0x%x)\n",privData->port, (int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f)));
+                                    wait_event_interruptible (ahist_y_wait_queue[privData->port], get_imageParamsThis(privData->port, P_DAEMON_EN) & (1<<(offset & 0x1f)));
+                                    break;
+                                case  LSEEK_DAEMON_HIST_C: // wait for daemon enabled and histograms Y ready
+                                    dev_dbg(g_dev_ptr, "wait_event_interruptible (ahist_c_wait_queue[%d],0x%x & 0x%x)\n",privData->port, (int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f)));
+                                    wait_event_interruptible (ahist_c_wait_queue[privData->port], get_imageParamsThis(privData->port, P_DAEMON_EN) & (1<<(offset & 0x1f)));
+                                    break;
+                                default:
+                                    return -EINVAL;
+                                }
+                            }
+                        } else if (offset < (LSEEK_HIST_NEEDED + 0x10000)) {
+                            privData->needed= (offset & 0xffff);
+                        } else  {
                             return -EINVAL;
                         }
+                        file->f_pos= HISTOGRAMS_FILE_SIZE;
+                        dev_dbg(g_dev_ptr, "file->f_pos = HISTOGRAMS_FILE_SIZE = 0x%x\n", (int) file->f_pos);
+                        return file->f_pos;
                     }
-                } else if (offset < (LSEEK_HIST_NEEDED + 0x10000)) {
-                    privData->needed= (offset & 0xffff);
-                } else  {
+                    break;
+                default:  // not SEEK_SET/SEEK_CUR/SEEK_END
                     return -EINVAL;
-                }
-                file->f_pos= HISTOGRAMS_FILE_SIZE;
-                return file->f_pos;
-            }
-            break;
-        default:  // not SEEK_SET/SEEK_CUR/SEEK_END
-            return -EINVAL;
-        } // switch (orig)
-        return  file->f_pos ;
-        default: // other minors
-            return -EINVAL;
+                } // switch (orig)
+    dev_dbg(g_dev_ptr, "file->f_pos = 0x%x\n", (int) file->f_pos);
+    return  file->f_pos ;
+                default: // other minors
+                    return -EINVAL;
     }
 }
 /**
@@ -834,7 +836,7 @@ int histograms_mmap (struct file *file, struct vm_area_struct *vma) {
  * @return 0
  */
 int histograms_init(struct platform_device *pdev) {
-    int res;
+    int res,i;
     int sz, pages;
     struct device *dev = &pdev->dev;
 //    const struct of_device_id *match; // not yet used
@@ -846,8 +848,10 @@ int histograms_init(struct platform_device *pdev) {
         return res;
     }
     //   init_waitqueue_head(&histograms_wait_queue);
-    init_waitqueue_head(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
-    init_waitqueue_head(&hist_c_wait_queue);    // wait queue for all the other (R,G2,B) histograms (color)
+    for (i = 0; i < SENSOR_PORTS; i++) {
+        init_waitqueue_head(&ahist_y_wait_queue[i]);    // wait queue for the G1 histogram (used as Y)
+        init_waitqueue_head(&ahist_c_wait_queue[i]);    // wait queue for all the other (R,G2,B) histograms (color)
+    }
     dev_info(dev, DEV393_NAME(DEV393_HISTOGRAM)": registered MAJOR: %d\n", DEV393_MAJOR(DEV393_HISTOGRAM));
     histograms_initialized = 0;
     // NC393: Did not find a way to get memory when histograms a first needed:

@@ -279,7 +279,7 @@ int initSequencers(int sensor_port)
     }
 	dev_dbg(g_devfp_ptr,"port= %d,initSequencers:resetting both sequencers (not really?)\n", sensor_port);
 #ifdef TEST_DISABLE_CODE
-	local_irq_save(flags);
+	local_ irq_save(flags);
 	X3X3_SEQ_RESET;
 	i2c_reset_wait();
 	local_irq_restore(flags);
@@ -826,7 +826,7 @@ inline void _processParsASAP(int sensor_port,                   ///< sensor port
 //#define G_CALLNEXT3      122 // bitmask of actions to be three or more frames ahead of the programmed one (OR-ed with G_CALLNEXT4)
 //#define G_CALLNEXT4      123 // bitmask of actions to be four  or more frames ahead of the programmed one
 
-/** Process parameters that are overdue or due in ASAP mode (not through the sequencer)
+/** Process parameters in "normal way" - not ASAP or overdue
  * Called twice from processPars - at the beginning and at the end to finish off any derivatives (needed?)
  * Should never be called from outside processPars() where there is a per-port lock */
 

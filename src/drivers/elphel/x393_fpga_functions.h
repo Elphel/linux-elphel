@@ -17,6 +17,7 @@
 //typedef enum {DIRECT,ABSOLUTE,RELATIVE} x393cmd_t;
 #include "x393.h"
 
+
 int compressor_dma_setup (int port_afi, int chn_mask, int reset, int status_mode,  int report_mode,
         dma_addr_t cmprs0_sa, u32 cmprs0_len, dma_addr_t cmprs1_sa, u32 cmprs1_len,
         dma_addr_t cmprs2_sa, u32 cmprs2_len,  dma_addr_t cmprs3_sa, u32 cmprs3_len);
@@ -25,4 +26,4 @@ int compressor_dma_setup (int port_afi, int chn_mask, int reset, int status_mode
 sec_usec_t * get_fpga_rtc(sec_usec_t * ts);
 int          set_fpga_rtc (sec_usec_t ts);
 int          is_fpga_programmed(void);
-
+int          write_compressor_table(int chn, x393cmprs_tables_t type, int index, int num_items, unsigned long * data );

@@ -216,6 +216,7 @@
 #include "sensor_i2c.h"
 #include "x393_videomem.h"
 #include "detect_sensors.h"
+#include "x393_fpga_functions.h"
 
 // NC393 debug macros
 #include "debug393.h"
@@ -2401,7 +2402,7 @@ int pgm_focusmode  (int sensor_port,               ///< sensor port number (0..3
 {
     unsigned long flags;
     int i;
-    x393_cmprs_table_addr_t table_addr;
+//    x393_cmprs_table_addr_t table_addr;
     struct {
         short left;
         short right;
@@ -2453,6 +2454,7 @@ int pgm_focusmode  (int sensor_port,               ///< sensor port number (0..3
         // from that file are replaced, but we still need table write with disabling IRQ
 
 #ifndef NC353
+    #if 0
         table_addr.type =   X393_TABLE_FOCUS_TYPE;
         // Each focus page has 64 of 16-bit entries, total 16 pages (2KB). Configuration uses first 8 of 16-bit words in last page,
         // And FPGA accepts 32-bit data (16-bit ones merged in pairs). So address is 32*15
@@ -2460,12 +2462,19 @@ int pgm_focusmode  (int sensor_port,               ///< sensor port number (0..3
 
         //focus_setup_data32
 
-        local_irq_save(flags);
+        local_ irq_save(flags);
         x393_cmprs_tables_address(table_addr, sensor_port);
         for (i = 0; i < 4; i++) {
             x393_cmprs_tables_data(focus_setup_data32[i], sensor_port);
         }
-        local_irq_restore(flags);
+        local_ irq_restore(flags);
+    #endif
+        write_compressor_table(sensor_port,
+                               TABLE_TYPE_FOCUS,
+                               8*15, // to adress short (4-dwords) instead of full(32-dwords) page #15, multiply by 8
+                               4,    // dwords to write
+                               focus_setup_data32);
+
 //        print_hex_dump_bytes("", DUMP_PREFIX_NONE, &focus_setup_data32[0], sizeof (focus_setup_data));
         MDP(DBGB_PADD, sensor_port,"focus_setup_data left=%d, right=%d, top=%d, bottom=%d, total width=%d, filter_no=%d, show1=%d\n",
                 focus_setup_data.left,focus_setup_data.right,focus_setup_data.top,focus_setup_data.bottom,

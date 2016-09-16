@@ -132,14 +132,6 @@
 #include "x393.h"
 #include "detect_sensors.h"
 #include "x393_fpga_functions.h" // to check bitsteram
-#ifdef USE_GAMMA_LOCK
-    #define GAMMA_LOCK_BH(x)    spin_lock_bh(x)
-    #define GAMMA_UNLOCK_BH(x)  spin_unlock_bh(x)
-#else
-    #define GAMMA_LOCK_BH(x)    {}
-    #define GAMMA_UNLOCK_BH(x)  {}
-
-#endif
 
 /**
  * @brief optional debug output 
@@ -176,12 +168,23 @@
 static struct device *g_dev_ptr;
 
 static DEFINE_SPINLOCK(gamma_lock);   ///< Non port-specific lock
-static DEFINE_SPINLOCK(gamma_lock_0); ///<
-static DEFINE_SPINLOCK(gamma_lock_1); ///<
-static DEFINE_SPINLOCK(gamma_lock_2); ///<
-static DEFINE_SPINLOCK(gamma_lock_3); ///<
+//static DEFINE_SPINLOCK(gamma_lock_0); ///<
+//static DEFINE_SPINLOCK(gamma_lock_1); ///<
+//static DEFINE_SPINLOCK(gamma_lock_2); ///<
+//static DEFINE_SPINLOCK(gamma_lock_3); ///<
 /** Define array of pointers to locks - hardware allows concurrent writes to different ports tables */
-spinlock_t * gamma_locks[4] = {&gamma_lock_0, &gamma_lock_1, &gamma_lock_2, &gamma_lock_3};
+//spinlock_t * gamma_locks[4] = {&gamma_lock_0, &gamma_lock_1, &gamma_lock_2, &gamma_lock_3};
+
+#ifdef USE_GAMMA_LOCK
+    #define GAMMA_LOCK_BH(x)    spin_lock_bh(x)
+    #define GAMMA_UNLOCK_BH(x)  spin_unlock_bh(x)
+#else
+    #define GAMMA_LOCK_BH(x)    {}
+    #define GAMMA_UNLOCK_BH(x)  {}
+
+#endif
+
+
 
 static struct gamma_stuct_t gammas[GAMMA_CACHE_NUMBER] __attribute__ ((aligned (PAGE_SIZE)));
 struct gamma_stuct_t * gammas_p; // to use with mmap
@@ -377,7 +380,7 @@ int unlock_gamma_node  (int color,         ///< color channel 0..3
     int index;
     int cps = PORT_CHN_COLOR(color,sensor_port,sensor_subchn);
     dev_dbg(g_dev_ptr,"color=0x%x, cps = 0x%x\n",color,cps);
-    //  local_irq_save(flags);
+    //  local_ irq_save(flags);
     GAMMA_LOCK_BH(&gamma_lock);
     index =gammas[0].locked_chn_color[cps];
     if (index) {
@@ -542,7 +545,7 @@ int set_gamma_table (unsigned short hash16,        ///< 16-bit unique (non-scale
         dev_dbg(g_dev_ptr, "Using non-linear table\n"); ///NOTE: here
     }
     ///disable interrupts here
-    //  D1I(local_irq_save(flags));
+    //  D1I(local_ irq_save(flags));
     GAMMA_LOCK_BH(&gamma_lock);
     // look for the matching hash
     tmp_p=gammas[0].newest_non_scaled;
@@ -592,7 +595,7 @@ int set_gamma_table (unsigned short hash16,        ///< 16-bit unique (non-scale
             // let interrupts to take place, and disable again - not needed with a tasklet
             //          D1I(local_irq_restore(flags));
             //          MDF10(printk("Interrupts reenabled, tmp_p=0x%x\n", tmp_p));
-            //          D1I(local_irq_save(flags));
+            //          D1I(local_ irq_save(flags));
             // check if it is still there (likely so, but allow it to fail).
             if (unlikely(!is_gamma_current (hash16, 0, tmp_p))) {
                 //              D1I(local_irq_restore(flags));
@@ -649,7 +652,7 @@ int set_gamma_table (unsigned short hash16,        ///< 16-bit unique (non-scale
         if ((mode & GAMMA_MODE_NOT_NICE)==0) {
             // let interrupts to take place, and disable again - not needed with tasklets
             //          D1I(local_irq_restore(flags));
-            //          D1I(local_irq_save(flags));
+            //          D1I(local_ irq_save(flags));
             // check if it is still there (likely so, but allow it to fail).
             if (unlikely(!is_gamma_current (hash16, scale, tmp_p1))) {
                 //              D1I(local_irq_restore(flags));
@@ -715,8 +718,8 @@ int set_gamma_table (unsigned short hash16,        ///< 16-bit unique (non-scale
         if ((gammas[tmp_p1].valid & GAMMA_VALID_REVERSE)==0) {
             if ((mode & GAMMA_MODE_NOT_NICE)==0) {
                 // let interrupts to take place, and disable again // not needed with tasklets
-                //              D1I(local_irq_restore(flags));
-                //              D1I(local_irq_save(flags));
+                //              D1I(local_ irq_restore(flags));
+                //              D1I(local_ irq_save(flags));
                 // check if it is still there (likely so, but allow it to fail).
                 if (unlikely(!is_gamma_current (hash16, 0, tmp_p))) {
                     //                  D1I(local_irq_restore(flags));
@@ -736,8 +739,7 @@ int set_gamma_table (unsigned short hash16,        ///< 16-bit unique (non-scale
 }
 
 /** Writing gamma table to FPGA (1 color, 1 sub-channel) enabling IRQ after transferring each FPGA_TABLE_CHUNK DWORDs
- *
- * This code may be called from the IRQ context, and from the different CPU */
+* This function is only called from tasklet context, no extra locking is required */
 
 int fpga_gamma_write_nice(int color,         ///< Color (0..3)
         int sensor_port,   ///< sensor port (0..3)
@@ -756,7 +758,7 @@ int fpga_gamma_write_nice(int color,         ///< Color (0..3)
     gamma_tbl_a.a_n_d = 1;
     gamma_tbl_a.color = color;
     gamma_tbl_a.sub_chn = sensor_subchn;
-    GAMMA_LOCK_BH(gamma_locks[sensor_port]);
+//    GAMMA_LOCK_BH(gamma_locks[sensor_port]);
     for (addr32 = 0; addr32 < gamma_size; addr32 += FPGA_TABLE_CHUNK){
         len32 = FPGA_TABLE_CHUNK;
         if (unlikely(addr32 + len32 > gamma_size))
@@ -768,7 +770,7 @@ int fpga_gamma_write_nice(int color,         ///< Color (0..3)
             x393_sens_gamma_tbl(gamma_tbl_d, sensor_port);
         }
     }
-    GAMMA_UNLOCK_BH(gamma_locks[sensor_port]);
+//    GAMMA_UNLOCK_BH(gamma_locks[sensor_port]);
     return 0;
 }
 

@@ -814,9 +814,9 @@ void tasklet_cmdseq_function(unsigned long arg)
 #endif // ifdef ISR_HISTOGRAMS
 #if HISTOGRAMS_WAKEUP_ALWAYS
     }
-    wake_up_interruptible(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
+    wake_up_interruptible(&ahist_y_wait_queue[sensor_port]);    // wait queue for the G1 histogram (used as Y)
 #else
-    wake_up_interruptible(&hist_y_wait_queue);    // wait queue for the G1 histogram (used as Y)
+    wake_up_interruptible(&ahist_y_wait_queue[sensor_port]);    // wait queue for the G1 histogram (used as Y)
     }
 #endif
     // Process parameters
@@ -877,9 +877,9 @@ void tasklet_cmdseq_function(unsigned long arg)
 #endif // ifdef ISR_HISTOGRAMS
 #if HISTOGRAMS_WAKEUP_ALWAYS
     }
-    wake_up_interruptible(&hist_c_wait_queue);     // wait queue for all the other (R,G2,B) histograms (color)
+    wake_up_interruptible(&ahist_c_wait_queue[sensor_port]);     // wait queue for all the other (R,G2,B) histograms (color)
 #else
-        wake_up_interruptible(&hist_c_wait_queue);   // wait queue for all the other (R,G2,B) histograms (color)
+        wake_up_interruptible(&ahist_c_wait_queue[sensor_port]);   // wait queue for all the other (R,G2,B) histograms (color)
     }
 #endif
 }

@@ -824,7 +824,8 @@ unsigned int circbuf_poll (struct file *file, poll_table *wait)
 	int rslt;
 	dev_dbg(g_dev_ptr, "minor = 0x%x\n", minor);
 
-	rslt = circbufValidPointer(&file->f_pos, &fp, chn);
+//	rslt = circbufValidPointer(&file->f_pos, &fp, chn);
+    rslt = circbufValidPointer(file->f_pos, &fp, chn);
 	if (rslt < 0) {
 		// not a valid read pointer, probable buffer overrun
 		dev_dbg(g_dev_ptr, "invalid pointer file->f_pos = 0x%llx\n", file->f_pos);

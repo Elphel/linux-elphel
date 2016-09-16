@@ -68,8 +68,9 @@
 //#include "fpga_io.h"//fpga_table_write_nice
 
 #include "quantization_tables.h"
-#include "x393_macro.h"
+//#include "x393_macro.h"
 #include "x393.h"
+#include "x393_fpga_functions.h"
 
 /** @brief Number of elements in quantization table */
 #define QTABLE_SIZE          64
@@ -127,15 +128,14 @@ static unsigned int std_quant_tbls[4 * QTABLE_SIZE] = { /// make it possible to 
 /// with a number of programmed tables equal to PARS_FRAMES, and that "this" table is not needed it will always be possible to find an unused table slot
 /// LRU cache for JPEG headers
 struct qtables_set_t {
-	unsigned char  qtable_cache [QTABLE_SIZE * 2 * QTABLE_HEAD_CACHE]; ///quantization tables cache
-	int            qtable_cache_values [QTABLE_HEAD_CACHE]; /// quality values for the tables in cache
-	int            qtable_cache_next[QTABLE_HEAD_CACHE] ; /// index of the next (not used longer than this) slot
-	int            qtable_cache_mre; ///index of most recently used slot
+	unsigned char  qtable_cache [QTABLE_SIZE * 2 * QTABLE_HEAD_CACHE]; ///< quantization tables cache
+	int            qtable_cache_values [QTABLE_HEAD_CACHE];            ///< quality values for the tables in cache
+	int            qtable_cache_next[QTABLE_HEAD_CACHE] ;              ///< index of the next (not used longer than this) slot
+	int            qtable_cache_mre;                                   ///< index of most recently used slot
 
-	int            qtable_fpga_values [FPGA_NQTAB]; /// quality values for the tables in FPGA
-	int            qtable_fpga_next[FPGA_NQTAB] ; /// index of the next (not used longer than this) slot in FPGA quantization tables
-	int            qtable_fpga_mre; ///index of most recently used slot
-
+	int            qtable_fpga_values [FPGA_NQTAB];                    ///< quality values for the tables in FPGA
+	int            qtable_fpga_next[FPGA_NQTAB] ;                      ///< index of the next (not used longer than this) slot in FPGA quantization tables
+	int            qtable_fpga_mre;                                    ///< index of most recently used slot
 	int            qtable_cache_initialized;
 	int            qtable_fpga_initialized;
 };
@@ -352,21 +352,20 @@ void init_qtable_fpga(unsigned int chn)
 	local_irq_restore(flags);
 }
 
-/**
- * @brief Finds an already programmed FPGA page or calculates (and programs FPGA with) a new one
- * @param[in]   quality2   single byte (standard) or a pair of bytes (see file header description)
- * @param[in]   chn        compressor channel number
- * @return      table page number used (0..7) or -1 - invalid q
- */
+/** Finds an already programmed FPGA page or calculates (and programs FPGA with) a new one
+ * It is only called from pgm_functions (tasklet context, already spin-locked for a channel), so no locking is needed */
 //TODO 393: Change to spinlock_irq_save!
-int set_qtable_fpga(int quality2, unsigned int chn)
+int set_qtable_fpga(int quality2,       ///< single byte (standard) or a pair of bytes (see file header description)
+                    unsigned int chn)   ///< compressor channel number
+                                        ///< @return table page number (hardware) used (0..7) or -1 - invalid q
 {
-	unsigned long flags;
 	int i,transpose,fpga_index,fpga_index_prev,q_type,quality,temp,tstart;
 	unsigned short qtable_fpga[QTABLE_SIZE * 2];
 	unsigned short *tab;
 	unsigned long *qtable_fpga_dw = (unsigned long *)qtable_fpga;
+#if 0
 	x393_cmprs_table_addr_t table_addr;
+#endif
 	int ind = get_cache_index(chn);
 	int *qtable_fpga_values = qtables_set[ind].qtable_fpga_values;
 	int *qtable_fpga_next = qtables_set[ind].qtable_fpga_next;
@@ -381,7 +380,7 @@ int set_qtable_fpga(int quality2, unsigned int chn)
 
 	dev_dbg(g_dev_ptr, "transformed quality2 = 0x%x\n", quality2);
 
-	local_irq_save(flags);
+//	local_ irq_save(flags);
 	/// look if such q value is already in cache
 	fpga_index = qtables_set[ind].qtable_fpga_mre;
 	fpga_index_prev = -1;
@@ -460,22 +459,28 @@ int set_qtable_fpga(int quality2, unsigned int chn)
 			}
 		}
 
+#if 0
 		table_addr.type = TABLE_TYPE_QUANT;
-		//NC393 TODO: Find why address should be x4
+		// **** NC393 TODO: Find why address should be x4 - answer: it is in bytes in FPGA ****
 //		table_addr.addr32 = qtables_set[ind].qtable_fpga_mre * QTABLE_SIZE;
         table_addr.addr32 = qtables_set[ind].qtable_fpga_mre * QTABLE_SIZE*4;
-        dev_dbg(g_dev_ptr, "table_addr=0x%08x\n", table_addr);
+        dev_dbg(g_dev_ptr, "table_addr=0x%08x\n", table_addr.d32);
 
 		x393_cmprs_tables_address(table_addr, chn);
 		for (i = 0; i < QTABLE_SIZE; i++) {
 			x393_cmprs_tables_data(qtable_fpga_dw[i], chn);
 		}
-
 		print_hex_dump_bytes("", DUMP_PREFIX_NONE, qtable_fpga, QTABLE_SIZE * 2);
 		print_hex_dump_bytes("", DUMP_PREFIX_NONE, std_quant_tbls, QTABLE_SIZE * 2);
+#endif
+        write_compressor_table(chn,
+                               TABLE_TYPE_QUANT,
+                               qtables_set[ind].qtable_fpga_mre,
+                               QTABLE_SIZE,
+                               qtable_fpga_dw );
 	} /// now table pair is calculated and stored in cache
 	///  copy tables to the FPGA
-	local_irq_restore(flags);
+//	local_ irq_restore(flags);
 
 	dev_dbg(g_dev_ptr, "qtable_fpga_mre = %d\n", qtables_set[ind].qtable_fpga_mre);
 
@@ -995,8 +1000,7 @@ static unsigned long coring_tables[] = {
 		0xcccccccc, 0xddddddcc, 0xdddddddd, 0xeeeeeeed, 0xeeeeeeee, 0xfffffffe, 0xffffffff, 0xffffffff
 };
 
-/**
- * @brief Directly set one of the coring LUTs (currently 100: 0.0 to 9.9 with 0.1 step)
+/** Directly set one of the coring LUTs (currently 100: 0.0 to 9.9 with 0.1 step)
  *        to one of 16 FPGA tables (even - for Y, odd - for C)
  * Table is rather small, so turn off IRQ  for the whole duration */
 void set_coring_fpga(unsigned int coring_number, ///< [in]   0..99 - function number
@@ -1004,23 +1008,30 @@ void set_coring_fpga(unsigned int coring_number, ///< [in]   0..99 - function nu
                      unsigned int chn)           ///< [in]   compressor channel number
 {
 	int i;
-    unsigned long flags;
-	x393_cmprs_table_addr_t table_addr;
+//    unsigned long flags;
+//	x393_cmprs_table_addr_t table_addr;
 
 	if (coring_number >= sizeof(coring_tables) / (4 * CORING_SIZE))
 		coring_number = sizeof(coring_tables) / (4 * CORING_SIZE);
 
+#if 0
 	dev_dbg(g_dev_ptr, "coring_number = 0x%x, fpga_number = 0x%x\n", coring_number, fpga_tbl_num);
 
 	table_addr.type = TABLE_TYPE_CORING;
 	table_addr.addr32 = fpga_tbl_num * CORING_SIZE;
-    local_irq_save(flags);
+    local_ irq_save(flags);
 	x393_cmprs_tables_address(table_addr, chn);
 	for (i = 0; i < CORING_SIZE; i++) {
 		x393_cmprs_tables_data(coring_tables[coring_number * CORING_SIZE + i], chn);
 	}
-    local_irq_restore(flags);
+    local_ irq_restore(flags);
 	print_hex_dump_bytes("", DUMP_PREFIX_NONE, &coring_tables[coring_number * CORING_SIZE], CORING_SIZE * 4);
+#endif
+    write_compressor_table(chn,
+                           TABLE_TYPE_CORING,
+                           coring_number,
+                           CORING_SIZE,
+                           &coring_tables[coring_number * CORING_SIZE]);
 }
 
 void qt_init(struct platform_device *pdev)

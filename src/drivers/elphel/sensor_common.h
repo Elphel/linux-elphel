@@ -46,13 +46,6 @@ void camSeqSetJPEG_rp(unsigned int chn, int ptr);
 ///CIRCBUF macros
 extern unsigned long  * ccam_dma_buf_ptr[SENSOR_PORTS];
 
-/* move these lines to x313_macro.h
-#define X313_LENGTH_MASK      0xff000000
-#define X313_PADDED_FRAME(x)((((x)+67+CCAM_MMAP_META ) >>2) & 0xfffffff8)
-#define X313_BUFFSUB(x,y) (((x)>=(y))? ((x)-(y)) : ((x)+ (CCAM__DMA_SIZE-(y))))
-#define X313_BUFFADD(x,y) ((((x) + (y))<=CCAM__DMA_SIZE)? ((x) + (y)) : ((x) - (CCAM__DMA_SIZE-(y))))
-*/
-
 //int init_FPGA(void); /// can be initialized only after FPGA is configured, not at module init (NOTE was static??)
 ///can be verified with if (!X313_IS_SDRAM_ON)
 int init_compressor_dma(int chn_mask, int reset);

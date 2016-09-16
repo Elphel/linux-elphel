@@ -80,7 +80,26 @@
 #define DEV393_HUFFMAN3       ("huffman3",          "circbuf",       135, 67, "0666", "c")  ///< Huffman table for channel 3
 
 #define DEV393_GAMMA          ("gamma_cache","gamma_tables_operations",137,17,"0666", "c")  ///< Cache for calculated gamma tables (common for all ports/channels/colors)
-#define DEV393_HISTOGRAM      ("histogram_cache","histograms_operations",138,18,"0666","c") ///< Access to acquired/calculated histograms for all ports/channels/colors
+#ifdef INDIVIDUAL_HISTOGRAMS
+#define DEV393_HISTOGRAM00    ("histogram_cache00","histograms_operations",138,80,"0666","c") ///< Access to acquired/calculated histograms for port 0 /subcchanne 0
+#define DEV393_HISTOGRAM01    ("histogram_cache01","histograms_operations",138,81,"0666","c") ///< Access to acquired/calculated histograms for port 0 /subcchanne 1
+#define DEV393_HISTOGRAM02    ("histogram_cache02","histograms_operations",138,82,"0666","c") ///< Access to acquired/calculated histograms for port 0 /subcchanne 2
+#define DEV393_HISTOGRAM03    ("histogram_cache03","histograms_operations",138,83,"0666","c") ///< Access to acquired/calculated histograms for port 0 /subcchanne 3
+#define DEV393_HISTOGRAM10    ("histogram_cache10","histograms_operations",138,84,"0666","c") ///< Access to acquired/calculated histograms for port 1 /subcchanne 0
+#define DEV393_HISTOGRAM11    ("histogram_cache11","histograms_operations",138,85,"0666","c") ///< Access to acquired/calculated histograms for port 1 /subcchanne 1
+#define DEV393_HISTOGRAM12    ("histogram_cache12","histograms_operations",138,86,"0666","c") ///< Access to acquired/calculated histograms for port 1 /subcchanne 2
+#define DEV393_HISTOGRAM13    ("histogram_cache13","histograms_operations",138,87,"0666","c") ///< Access to acquired/calculated histograms for port 1 /subcchanne 3
+#define DEV393_HISTOGRAM20    ("histogram_cache20","histograms_operations",138,88,"0666","c") ///< Access to acquired/calculated histograms for port 2 /subcchanne 0
+#define DEV393_HISTOGRAM21    ("histogram_cache21","histograms_operations",138,89,"0666","c") ///< Access to acquired/calculated histograms for port 2 /subcchanne 1
+#define DEV393_HISTOGRAM22    ("histogram_cache22","histograms_operations",138,90,"0666","c") ///< Access to acquired/calculated histograms for port 2 /subcchanne 2
+#define DEV393_HISTOGRAM23    ("histogram_cache23","histograms_operations",138,91,"0666","c") ///< Access to acquired/calculated histograms for port 2 /subcchanne 3
+#define DEV393_HISTOGRAM30    ("histogram_cache30","histograms_operations",138,92,"0666","c") ///< Access to acquired/calculated histograms for port 3 /subcchanne 0
+#define DEV393_HISTOGRAM31    ("histogram_cache31","histograms_operations",138,93,"0666","c") ///< Access to acquired/calculated histograms for port 3 /subcchanne 1
+#define DEV393_HISTOGRAM32    ("histogram_cache32","histograms_operations",138,94,"0666","c") ///< Access to acquired/calculated histograms for port 3 /subcchanne 2
+#define DEV393_HISTOGRAM33    ("histogram_cache33","histograms_operations",138,95,"0666","c") ///< Access to acquired/calculated histograms for port 3 /subcchanne 3
+#else
+#define DEV393_HISTOGRAM      ("histogram_cache","histograms_operations",138,18,"0666","c") ///< Access to acquired/calculated histograms for all ports/subchannels
+#endif
 
 #define DEV393_LOGGER         ("imu",               "imu_logger",    141,  1, "0666", "c")  ///< IMU/GPS/images logs data access
 #define DEV393_LOGGER_CTRL    ("imu_ctl",           "imu_logger",    141,  2, "0666", "c")  ///< IMU/GPS/images logger control
