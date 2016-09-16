@@ -15,7 +15,6 @@ obj-$(CONFIG_ELPHEL393)           += clock10359.o
 #obj-$(CONFIG_ELPHEL393_EXTERNAL)  += fpgajtag.o
 
 obj-$(CONFIG_ELPHEL393)           += exif393.o
-obj-$(CONFIG_ELPHEL393)           += x393_helpers.o
 obj-$(CONFIG_ELPHEL393)           += framepars.o
 obj-$(CONFIG_ELPHEL393)           += sensor_common.o
 obj-$(CONFIG_ELPHEL393)           += x393.o
