@@ -24,6 +24,12 @@
 
 #include <linux/poll.h>
 
+struct fvec {
+	void *iov_base;                              ///< pointer to allocated buffer
+	size_t iov_len;                              ///< the size (in bytes) of allocated buffer; set after allocation and is not modified during buffer lifetime
+	dma_addr_t iov_dma;                          ///< buffer physical address
+};
+
 /** @brief Circular buffer private data */
 struct circbuf_priv_t {
 	int                 minor;                             ///< device file minor number
@@ -74,5 +80,7 @@ extern unsigned short circbuf_width;
 extern unsigned char  circbuf_byrshift;
 #endif
 /* end of debug code */
+
+ssize_t circbuf_get_ptr(int sensor_port, size_t offset, size_t len, struct fvec *vect_0, struct fvec *vect_1);
 
 #endif /* _CIRCBUF_H */
