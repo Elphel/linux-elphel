@@ -1852,7 +1852,7 @@ struct gamma_stuct_t {
 };
 
 ///histograms related structure
-#define HISTOGRAM_CACHE_NUMBER 8 // number of frames histograms are kept after acquisition (should be 2^n)
+#define HISTOGRAM_CACHE_NUMBER 8 // 16   // Was 8 // number of frames histograms are kept after acquisition (should be 2^n)
 #define COLOR_RED            0
 #define COLOR_GREEN1         1
 #define COLOR_GREEN2         2 

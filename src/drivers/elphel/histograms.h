@@ -17,12 +17,12 @@
 #ifndef HISTOGRAMS_H
 #define HISTOGRAMS_H
 #undef ISR_HISTOGRAMS // to histograms-related disable code in ISR - not needed in NC393
-
+#include <uapi/elphel/c313a.h>
 // These wait queues will be advanced each frame after the histogram data is transferred to the FPGA.
 // It will happen even if the corresponding task is disabled, with the only exception:
 // hist_c_wait_queue will not be awaken in the current frame if it is too late (frame counter incremented while serving tasklet)
-extern wait_queue_head_t hist_y_wait_queue; /// wait queue for the G1 histogram (used as Y)
-extern wait_queue_head_t hist_c_wait_queue; /// wait queue for all the other (R,G2,B) histograms (color)
+extern wait_queue_head_t ahist_y_wait_queue[SENSOR_PORTS]; /// wait queue for the G1 histogram (used as Y)
+extern wait_queue_head_t ahist_c_wait_queue[SENSOR_PORTS]; /// wait queue for all the other (R,G2,B) histograms (color)
 
 // void init_histograms(int chn_mask);
 int histograms_check_init(void);

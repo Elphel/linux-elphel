@@ -213,12 +213,12 @@ int          write_compressor_table(int chn,      // compressor channel (0..3)
                                     x393cmprs_tables_t type,     // table type (
                                     int index,
                                     int num_items,
-                                    u32 * data )
+                                    unsigned long * data )
 {
     x393_cmprs_table_addr_t table_addr;
     int i;
     table_addr.type = (int) type;
-    table_addr.addr32 = index * type*4;
+    table_addr.addr32 = index * num_items*4;
 //    dev_dbg(g_dev_ptr, "table_addr=0x%08x\n", table_addr.d32);
     x393_cmprs_tables_address(table_addr, chn);
     for (i = 0; i < num_items; i++) {
