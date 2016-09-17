@@ -1,0 +1,20 @@
+diff -Naur a/drivers/Kconfig b/drivers/Kconfig
+--- a/drivers/Kconfig	2016-01-25 18:31:43.309779723 -0700
++++ b/drivers/Kconfig	2016-01-25 18:48:17.521798388 -0700
+@@ -182,4 +182,6 @@
+ 
+ source "drivers/android/Kconfig"
+ 
++source "drivers/elphel/Kconfig"
++
+ endmenu
+diff -Naur a/drivers/Makefile b/drivers/Makefile
+--- a/drivers/Makefile	2016-01-25 18:31:43.309779723 -0700
++++ b/drivers/Makefile	2016-01-25 18:50:39.545801055 -0700
+@@ -165,3 +165,6 @@
+ obj-$(CONFIG_THUNDERBOLT)	+= thunderbolt/
+ obj-$(CONFIG_CORESIGHT)		+= coresight/
+ obj-$(CONFIG_ANDROID)		+= android/
++
++obj-$(CONFIG_ELPHEL393)		+= elphel/
++obj-$(CONFIG_ELPHELDRVONMICROZED)	+= elphel/

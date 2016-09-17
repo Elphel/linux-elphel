@@ -1,0 +1,13 @@
+diff -Naur a/drivers/tty/serial/xilinx_uartps.c b/drivers/tty/serial/xilinx_uartps.c
+--- a/drivers/tty/serial/xilinx_uartps.c	2016-02-19 13:41:58.380680377 -0700
++++ b/drivers/tty/serial/xilinx_uartps.c	2016-02-19 13:47:50.776674338 -0700
+@@ -704,6 +704,9 @@
+ 	ctrl_reg |= CDNS_UART_CR_TXRST | CDNS_UART_CR_RXRST;
+ 	cdns_uart_writel(ctrl_reg, CDNS_UART_CR_OFFSET);
+ 
++	while (cdns_uart_readl(CDNS_UART_CR_OFFSET) &
++			(CDNS_UART_CR_TXRST | CDNS_UART_CR_RXRST))
++		cpu_relax();
+ 	/*
+ 	 * Clear the RX disable and TX disable bits and then set the TX enable
+ 	 * bit and RX enable bit to enable the transmitter and receiver.

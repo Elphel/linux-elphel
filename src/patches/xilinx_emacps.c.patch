@@ -1,0 +1,73 @@
+diff -Naur a/drivers/net/ethernet/xilinx/xilinx_emacps.c b/drivers/net/ethernet/xilinx/xilinx_emacps.c
+--- a/drivers/net/ethernet/xilinx/xilinx_emacps.c	2016-01-25 18:34:24.065782741 -0700
++++ b/drivers/net/ethernet/xilinx/xilinx_emacps.c	2016-01-25 19:03:50.781815909 -0700
+@@ -479,6 +479,10 @@
+ #define XEMACPS_PTP_CC_MULT		(1 << 31)
+ #endif
+ 
++/* Elphel */
++#define AT803X_PHY_ID          0x004dd072 /*Particular one, AR8035 but we'll use a broad mask */
++#define AT803X_PHY_ID_MASK     0xffffffe0
++
+ #define xemacps_read(base, reg)						\
+ 	readl_relaxed(((void __iomem *)(base)) + (reg))
+ #define xemacps_write(base, reg, val)					\
+@@ -871,6 +875,49 @@
+ 	return 0;
+ }
+ 
++/* http://www.spinics.net/lists/devicetree/msg06322.html */
++static int ar8035_phy_fixup(struct phy_device *dev)
++{
++	u16 val;
++	struct net_local *lp = dev->bus->priv;
++	dev_dbg(&lp->pdev->dev,"fixup start");
++
++	/* Ar803x phy SmartEEE feature cause link status generates glitch,
++	* which cause ethernet link down/up issue, so disable SmartEEE
++	*/
++	phy_write(dev, 0xd, 0x3);
++	phy_write(dev, 0xe, 0x805d);
++	phy_write(dev, 0xd, 0x4003);
++
++	val = phy_read(dev, 0xe);
++	phy_write(dev, 0xe, val & ~(1 << 8));
++	/*Enable if needed */
++#if 0
++	/* To enable AR8031 output a 125MHz clk from CLK_25M */
++	phy_write(dev, 0xd, 0x7);
++	phy_write(dev, 0xe, 0x8016);
++	phy_write(dev, 0xd, 0x4007);
++
++	val = phy_read(dev, 0xe);
++	val &= 0xffe3;
++	val |= 0x18;
++	phy_write(dev, 0xe, val);
++#endif
++/* Next one what is really needed for Elphel 393 */
++	/* introduce tx clock delay */
++	phy_write(dev, 0x1d, 0x5);
++	val = phy_read(dev, 0x1e);
++	val |= 0x0100;
++	phy_write(dev, 0x1e, val);
++
++	/*check phy power*/
++	val = phy_read(dev, 0x0);
++	if (val & BMCR_PDOWN)
++		phy_write(dev, 0x0, val & ~BMCR_PDOWN);
++	dev_dbg(&lp->pdev->dev,"fixup end");
++	return 0;
++}
++
+ /**
+  * xemacps_mii_init - Initialize and register mii bus to network device
+  * @lp: local device instance pointer
+@@ -883,6 +930,8 @@
+ 	struct device_node *np = of_get_parent(lp->phy_node);
+ 	struct device_node *npp;
+ 
++	phy_register_fixup_for_uid(AT803X_PHY_ID,  AT803X_PHY_ID_MASK,  ar8035_phy_fixup);
++	
+ 	lp->mii_bus = of_mdio_find_bus(np);
+ 	if (!lp->has_mdio && lp->mii_bus)
+ 		return 0;
