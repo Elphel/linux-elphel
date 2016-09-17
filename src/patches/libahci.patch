@@ -1,0 +1,19 @@
+--- a/drivers/ata/libahci.c	2016-09-13 17:18:35.579259846 -0600
++++ b/drivers/ata/libahci.c	2016-07-27 20:25:34.217095567 -0600
+@@ -1826,7 +1826,7 @@ static irqreturn_t ahci_multi_irqs_intr(
+ 	return IRQ_WAKE_THREAD;
+ }
+ 
+-static irqreturn_t ahci_single_irq_intr(int irq, void *dev_instance)
++irqreturn_t ahci_single_irq_intr(int irq, void *dev_instance)
+ {
+ 	struct ata_host *host = dev_instance;
+ 	struct ahci_host_priv *hpriv;
+@@ -1885,6 +1885,7 @@ static irqreturn_t ahci_single_irq_intr(
+ 
+ 	return IRQ_RETVAL(handled);
+ }
++EXPORT_SYMBOL_GPL(ahci_single_irq_intr);
+ 
+ unsigned int ahci_qc_issue(struct ata_queued_cmd *qc)
+ {

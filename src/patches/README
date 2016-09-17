@@ -1,0 +1,1 @@
+Patches from this directory are applied by 'meta-elphel393/recipes-kernel/linux/linux-xlnx' bitbake recipe. To add a new patch, append SRC_URI variable in the recipe.
