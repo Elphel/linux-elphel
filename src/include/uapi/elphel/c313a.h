@@ -905,8 +905,7 @@
 #define PASTPARS_SAVE_ENTRIES       (PARS_FRAMES << 7)
 #define PASTPARS_SAVE_ENTRIES_MASK ((PARS_FRAMES << 7)-1)  ///< Mask for save entry numbers 0x7ff
 
-/** @brief Parameters block, maintained for each frame (0..15 in 393) of each sensor channel
- */
+/** Parameters block, maintained for each frame (0..15 in NC393) of each sensor channel */
 struct framepars_t {
         unsigned long pars[927];      ///< parameter values (indexed by P_* constants)
         unsigned long functions;      ///< each bit specifies function to be executed (triggered by some parameters change)
@@ -914,9 +913,12 @@ struct framepars_t {
         unsigned long modsince32;     ///< parameters modified after this frame super index - non-zero elements in in mod[31]  (bit 31 is not used)
         unsigned long mod[31];        ///< modified parameters - each bit corresponds to one element in in par[960] (bit 31 is not used)
         unsigned long mod32;          ///< super index - non-zero elements in in mod[31]  (bit 31 is not used)
-        unsigned long needproc[31];   ///< FIXME: REMOVE parameters "modified and not yet processed" (some do not need any processing)
-        unsigned long needproc32;     ///< FIXME: REMOVE parameters "modified and not yet processed" frame super index - non-zero elements in in mod[31]  (bit 31 is not used)
 };
+
+//        unsigned long needproc[31];   ///< FIXME: REMOVE parameters "modified and not yet processed" (some do not need any processing)
+//        unsigned long needproc32;     ///< FIXME: REMOVE parameters "modified and not yet processed" frame super index - non-zero elements in in mod[31]  (bit 31 is not used)
+
+
 
 //TODO: rearrange onchage_* - functions will be executed in this sequence (from 0 to 31)
 // pgm_memcompressor             uses pgm_memsensor
