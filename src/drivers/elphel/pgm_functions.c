@@ -731,7 +731,7 @@ typedef union {
 
   camsync_mode.en =       1;
   camsync_mode.en_set =   1;
-  camsync_mode.ext =      0;
+  camsync_mode.ext =      1; // 0;
   camsync_mode.ext_set =  1;
   camsync_mode.trig =     0;
   camsync_mode.trig_set = 1;
@@ -2496,12 +2496,23 @@ int pgm_focusmode  (int sensor_port,               ///< sensor port number (0..3
  * TODO: 393 reimplement
  * Was for 353: can not use sequencer as data is more than 24 bit wide
  * In NC393  P_TRIG_DELAY and P_XMIT_TIMESTAMP are per-channel, other parameters are common (Last modified takes control).
- * Master channel is set to the current channels when any of the common parameters is set */
+ * Master channel is set to the current channels when any of the common parameters is set
+ * P_TRIG_OUT (outputs):
+ * off:      0x55555
+ * external: 0x56555
+ * internal: 0x65555
+ * both:     0x66555
+ * P_TRIG_IN (inputs):
+ * off:      0x55555
+ * external: 0x95555
+ * internal: 0x59555
+ * both:     0x99555
+ */
 int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3)
-        struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
-        struct framepars_t * thispars, ///< sensor current parameters
-        struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
-        int frame16)                   ///< 4-bit (hardware) frame number parameters should be applied to,  negative - ASAP
+                    struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+                    struct framepars_t * thispars, ///< sensor current parameters
+                    struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+                    int frame16)                   ///< 4-bit (hardware) frame number parameters should be applied to,  negative - ASAP
                                        ///< @return OK - 0, <0 - error
 {
     struct frameparspair_t pars_to_update[10]; // ??? needed, increase if more entries will be added - just one

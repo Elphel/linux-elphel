@@ -913,10 +913,10 @@ struct framepars_t {
         unsigned long modsince32;     ///< parameters modified after this frame super index - non-zero elements in in mod[31]  (bit 31 is not used)
         unsigned long mod[31];        ///< modified parameters - each bit corresponds to one element in in par[960] (bit 31 is not used)
         unsigned long mod32;          ///< super index - non-zero elements in in mod[31]  (bit 31 is not used)
+        unsigned long needproc[31];   ///< FIXME: unused ( but total size should be 1024, increase pars[927] if removed)
+        unsigned long needproc32;     ///< FIXME: unused ( but total size should be 1024, increase pars[927] if removed)
 };
 
-//        unsigned long needproc[31];   ///< FIXME: REMOVE parameters "modified and not yet processed" (some do not need any processing)
-//        unsigned long needproc32;     ///< FIXME: REMOVE parameters "modified and not yet processed" frame super index - non-zero elements in in mod[31]  (bit 31 is not used)
 
 
 
