@@ -712,9 +712,11 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     //    unsigned char chipver_reg=P_MT9X001_CHIPVER;
     int sensor_subtype=0;
     int i;
+    int sensor_multi_regs_number;
     struct sensor_t * psensor; // current sensor
     x393_sensio_ctl_t sensio_ctl = {.d32=0};
-    dev_dbg(g_dev_ptr,"**mt9x001_pgm_detectsensor**: {%d}  frame16=%d, thispars->pars[P_SENSOR]= 0x%x\n",sensor_port,frame16, thispars->pars[P_SENSOR]);
+    unsigned short * sensor_multi_regs;
+    dev_dbg(g_dev_ptr,"**mt9x001_pgm_detectsensor**: {%d}  frame16=%d, thispars->pars[P_SENSOR]= 0x%lx\n",sensor_port,frame16, thispars->pars[P_SENSOR]);
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     //  MDD1(printk("sensor=0x%x\n", (int)sensor));
     if (thispars->pars[P_SENSOR]!=0) { ///already initialized - called second time after common pgm_detectsensor(), first time is inside pgm_detectsensor()
@@ -759,7 +761,7 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     x393_sensio_ctrl(sensio_ctl,sensor_port);
     udelay(50); // is it needed?
     X3X3_I2C_RCV2(sensor_port, psensor->i2c_addr, P_MT9X001_CHIPVER, &i2c_read_dataw);
-    dev_dbg(g_dev_ptr,"Read i2c (port = %d, sa7=0x%x, reg=0x%x) chip ID=%x\n",sensor_port, psensor->i2c_addr, P_MT9X001_CHIPVER, i2c_read_dataw);
+    dev_dbg(g_dev_ptr,"Read i2c (port = %d, sa7=0x%lx, reg=0x%x) chip ID=%x\n",sensor_port, psensor->i2c_addr, P_MT9X001_CHIPVER, i2c_read_dataw);
     if (((i2c_read_dataw ^ MT9P001_PARTID) & MT9X001_PARTIDMASK)==0) {
         dev_dbg(g_dev_ptr,"Found MT9P001 2592x1944 sensor, chip ID=%x\n",i2c_read_dataw);
         sensor_subtype=MT9P_TYP; //1;
@@ -832,8 +834,6 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     //  setFramePar(thispars, P_SENSOR  | FRAMEPAIR_FORCE_NEWPROC,  sensor->sensorType); // force actions
     //  MDD1(dev_dbg(g_dev_ptr,"\n"));
     ///TODO: Fill G_MULTI_REGSM+i - which registers need individual values in multi-sensor applications
-    unsigned short * sensor_multi_regs;
-    int sensor_multi_regs_number;
     for (i=0; i<8; i++ ) GLOBALPARS(sensor_port, G_MULTI_REGSM+i)=0; // erase old (or should we keep them?)
     if (GLOBALPARS(sensor_port,G_SENS_AVAIL)!=0) {
         switch (sensor_subtype) {
@@ -892,15 +892,15 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     int first_sensor_i2c;
     unsigned short * sensor_register_overwrites;
     x393_sensio_ctl_t sensio_ctl = {.d32=0};
-
-    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
-    if (frame16 >= 0) return -1; // should be ASAP
-//    int fpga_addr=(frame16 <0) ? X313_I2C_ASAP : (X313_I2C_FRAME0+frame16);
-//    unsigned char    i2c_read_data[512]; // each two bytes - one short word, big endian
     u32 i2c_read_data_dw[256];
     int nupdate=0;
     int i,color;
     int regval, regnum, mreg, j;
+    int sensor_register_overwrites_number;
+    int sensor_subtype;
+
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+    if (frame16 >= 0) return -1; // should be ASAP
     // reset sensor by applying MRST (low):
 #ifdef NC353
     CCAM_MRST_ON;
@@ -973,8 +973,7 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
 #endif
     if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
     dev_dbg(g_dev_ptr,"Initializing MT9X001 registers with default values:\n");
-    int              sensor_register_overwrites_number;
-    int              sensor_subtype=sensor->sensorType  - SENSOR_MT9X001;
+    sensor_subtype=sensor->sensorType  - SENSOR_MT9X001;
     switch (sensor_subtype) {
     case MT9M_TYP:
         sensor_register_overwrites=         (unsigned short *) &mt9m001_inits; // why casting is needed?
@@ -1071,9 +1070,9 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
     int i,dv,dh,bv,bh,ww,wh,wl,wt,flip,flipX,flipY,d, v;
     struct frameparspair_t  pars_to_update[29];
     int nupdate=0;
-    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
-    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     int styp = sensor->sensorType & 7;
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     dh=  thispars->pars[P_DCM_HOR];
     dv=  thispars->pars[P_DCM_VERT];
     bh=  thispars->pars[P_BIN_HOR];
@@ -1229,6 +1228,11 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     int hor_blank=0;
     int p1,p2, pix_period, sclk,fp1000s;
     int styp = sensor->sensorType & 7;
+    int height;
+    int virt_height;
+    int vert_blank;
+
+
 #if USELONGLONG
     uint64_t ull_fp1000s;
 #endif
@@ -1346,8 +1350,8 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
   int height = 2 * (wh / (2 * dv));
   if((height * dv) < wh) height++;
      */
-    int height=       thispars->pars[P_SENSOR_PIXV];
-    int virt_height = height + sensor->minVertBlank;
+    height=       thispars->pars[P_SENSOR_PIXV];
+    virt_height = height + sensor->minVertBlank;
     if (thispars->pars[P_VIRT_KEEP]) {
         if (virt_height < thispars->pars[P_VIRT_HEIGHT]) {
             virt_height = thispars->pars[P_VIRT_HEIGHT];
@@ -1363,7 +1367,7 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
         dev_dbg(g_dev_ptr,"{%d} height =%d(0x%x), modified virt_height=%d(0x%x)\n",sensor_port,height,height,virt_height,virt_height);
     }
 
-    int vert_blank= virt_height - height;
+    vert_blank= virt_height - height;
     if(vert_blank > sensor->maxVertBlank) {
         vert_blank = sensor->maxVertBlank;
         virt_height = vert_blank + height;
@@ -1433,10 +1437,8 @@ int mt9x001_pgm_exposure       (int sensor_port,               ///< sensor port 
     int fp1000s;
     struct frameparspair_t pars_to_update[16]; // maximum 7? registers updated
     int nupdate=0;
-    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     int video_exposure =  thispars->pars[P_VEXPOS];
     int exposure;
-    dev_dbg(g_dev_ptr,"{%d} sensor_port=%d,  frame16=%d, frame=0x%lx (%s)exposure=0x%lx, (%s)video_exposure=0x%lx\n",sensor_port, sensor_port, frame16, thispars->pars[P_FRAME], FRAMEPAR_MODIFIED(P_EXPOS)?"*":" ",thispars->pars[P_EXPOS],FRAMEPAR_MODIFIED(P_VEXPOS)?"*":" ",thispars->pars[P_VEXPOS] );
     int use_vexp=0;
     int sclk=thispars->pars[P_CLK_SENSOR] ; // pixel clock, in Hz
     int vert_blank;
@@ -1446,6 +1448,11 @@ int mt9x001_pgm_exposure       (int sensor_port,               ///< sensor port 
 
     // NOTE: Is decimation taken care of here ??? FIXME: probably not (here and when deciding to use exposure, not number of lines)!!!
     int row_time_in_pixels=thispars->pars[P_VIRT_WIDTH ];
+    int pix_period;
+
+
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+    dev_dbg(g_dev_ptr,"{%d} sensor_port=%d,  frame16=%d, frame=0x%lx (%s)exposure=0x%lx, (%s)video_exposure=0x%lx\n",sensor_port, sensor_port, frame16, thispars->pars[P_FRAME], FRAMEPAR_MODIFIED(P_EXPOS)?"*":" ",thispars->pars[P_EXPOS],FRAMEPAR_MODIFIED(P_VEXPOS)?"*":" ",thispars->pars[P_VEXPOS] );
     dev_dbg(g_dev_ptr,"{%d}  row_time_in_pixels=0x%x\n",sensor_port, row_time_in_pixels); // 0
     vert_blank=        thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK ];
     dev_dbg(g_dev_ptr,"{%d}  vert_blank=0x%x\n",sensor_port,vert_blank); // 0
@@ -1513,7 +1520,7 @@ int mt9x001_pgm_exposure       (int sensor_port,               ///< sensor port 
     }
 
     // is exposure longer then maximal period (specified for constant fps?
-    int pix_period=video_exposure*row_time_in_pixels;
+    pix_period=video_exposure*row_time_in_pixels;
     if (thispars->pars[P_FPSFLAGS] & 2) {
         if (pix_period > thispars->pars[P_PERIOD_MAX]) {
             video_exposure=thispars->pars[P_PERIOD_MAX]/row_time_in_pixels;
@@ -1599,11 +1606,12 @@ unsigned long gain_ajust_mt9x001(
         unsigned long   maxGain)    ///< maximal allowed value of the analog gain (normally 0xfc000 ~ 15.75)
                                     ///< @return residual value of the digital gain (>=1.0 0x10000) except limited by the minGain
 {
-    dev_dbg(g_dev_ptr,"gain=0x%lx, curRegGain=0x%lx, minGain=0x%lx, maxGain=0x%lx\n",gain,curRegGain,minGain,maxGain);
     int g=gain;
     int gainIndex;     // index of the gain value in the table (each register value has index, each index has preferrable register value)
     int curGainIndex;  // current index in the gains table matching sensor register value
     uint64_t ull_gain;
+
+    dev_dbg(g_dev_ptr,"gain=0x%lx, curRegGain=0x%lx, minGain=0x%lx, maxGain=0x%lx\n",gain,curRegGain,minGain,maxGain);
     curRegGain &=0x7f;    // ignoring sensor digital gains
     // find out gain index for the current value of the sensor gain register
     curGainIndex=(curRegGain<=32)?curRegGain:((curRegGain>=80)?(curRegGain-48):
@@ -1716,6 +1724,13 @@ int mt9x001_pgm_gains      (int sensor_port,               ///< sensor port numb
     unsigned long maxGain;
     int limitsModified=0;
     int gaingModified=FRAMEPAR_MODIFIED(P_GAING);
+    unsigned long gainr, gaing, gaingb, gainb;
+    unsigned long rscale_all, gscale_all, bscale_all;
+    unsigned long rscale, gscale, bscale, rscale_ctl, gscale_ctl, bscale_ctl;
+    unsigned long newval;
+
+
+
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     ///make sure limits are OK. Allow violating minimal gain here
@@ -1736,20 +1751,19 @@ int mt9x001_pgm_gains      (int sensor_port,               ///< sensor port numb
     //  maxGain= maxAnaGain * (MAX_DIGITAL_GAIN >> 8);
     maxGain= (maxAnaGain * MAX_DIGITAL_GAIN)  >> 8; ///should not overflow for Micron as max digital gain <4.0 (0x400), max analog <0x100000)
 
-    unsigned long gainr= thispars->pars[P_GAINR ];
-    unsigned long gaing= thispars->pars[P_GAING ];
-    unsigned long gaingb=thispars->pars[P_GAINGB];
-    unsigned long gainb= thispars->pars[P_GAINB ];
-    unsigned long rscale_all=thispars->pars[P_RSCALE_ALL];
-    unsigned long gscale_all=thispars->pars[P_GSCALE_ALL];
-    unsigned long bscale_all=thispars->pars[P_BSCALE_ALL];
-    unsigned long rscale=rscale_all & ((1<<CSCALES_WIDTH)-1);
-    unsigned long gscale=gscale_all & ((1<<CSCALES_WIDTH)-1);
-    unsigned long bscale=bscale_all & ((1<<CSCALES_WIDTH)-1);
-    unsigned long rscale_ctl=(rscale_all >> CSCALES_CTL_BIT) & ((1<<CSCALES_CTL_WIDTH)-1);
-    unsigned long gscale_ctl=(gscale_all >> CSCALES_CTL_BIT) & ((1<<CSCALES_CTL_WIDTH)-1);
-    unsigned long bscale_ctl=(bscale_all >> CSCALES_CTL_BIT) & ((1<<CSCALES_CTL_WIDTH)-1);
-    unsigned long newval;
+    gainr= thispars->pars[P_GAINR ];
+    gaing= thispars->pars[P_GAING ];
+    gaingb=thispars->pars[P_GAINGB];
+    gainb= thispars->pars[P_GAINB ];
+    rscale_all=thispars->pars[P_RSCALE_ALL];
+    gscale_all=thispars->pars[P_GSCALE_ALL];
+    bscale_all=thispars->pars[P_BSCALE_ALL];
+    rscale=rscale_all & ((1<<CSCALES_WIDTH)-1);
+    gscale=gscale_all & ((1<<CSCALES_WIDTH)-1);
+    bscale=bscale_all & ((1<<CSCALES_WIDTH)-1);
+    rscale_ctl=(rscale_all >> CSCALES_CTL_BIT) & ((1<<CSCALES_CTL_WIDTH)-1);
+    gscale_ctl=(gscale_all >> CSCALES_CTL_BIT) & ((1<<CSCALES_CTL_WIDTH)-1);
+    bscale_ctl=(bscale_all >> CSCALES_CTL_BIT) & ((1<<CSCALES_CTL_WIDTH)-1);
 
     ///
     // FIXME: use different gain limitation when anaGainEn==0 (from current analog channel gain to that * MAX_DIGITAL_GAIN>>8),
@@ -1969,12 +1983,17 @@ int mt9x001_pgm_triggermode        (int sensor_port,               ///< sensor p
                                                                    ///< be applied to,  negative - ASAP
                                                                    ///< @return 0 - OK, negative - error
 {
-    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     struct frameparspair_t pars_to_update[4]; ///
     int nupdate=0;
+    unsigned long newreg;
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-    unsigned long newreg= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1] & 0xfeff) | ((thispars->pars[P_TRIG] & 4)?0x100:0);
+    newreg= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1] & 0xfeff) | ((thispars->pars[P_TRIG] & 4)?0x100:0);
     if (newreg != thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1]) {
+        // turn off triggered mode immediately, turn on later (or should made at leas before changing camsync parameters)
+        if (!(thispars->pars[P_TRIG] & 4)){
+            frame16 = -1;
+        }
         SET_SENSOR_MBPAR(sensor_port, frame16,sensor->i2c_addr, P_MT9X001_RMODE1, newreg);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_RMODE1, (int) newreg);
     }
@@ -1994,8 +2013,6 @@ int mt9x001_pgm_sensorregs     (int sensor_port,               ///< sensor port 
                                                                ///< @return 0 - OK, negative - error
 
 {
-    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
-    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     //  send all parameters marked as "needed to be processed" to the sensor, clear those flags
     // mask out all non sensor pars
     //  unsigned long bmask32= ((thispars->mod32) >> (P_SENSOR_REGS>>5)) & (P_SENSOR_NUMREGS-1) ;
@@ -2004,12 +2021,13 @@ int mt9x001_pgm_sensorregs     (int sensor_port,               ///< sensor port 
 
     //  unsigned long bmask32= ((thispars->mod32) >> (P_SENSOR_REGS>>5)) & (P_SENSOR_NUMREGS-1) ; // wromg!, only valid for P_SENSOR_NUMREGS==256 (that is the case, actually)
     unsigned long bmask32= ((thispars->mod32) >> (P_SENSOR_REGS>>5)) & (( 1 << (P_SENSOR_NUMREGS >> 5))-1) ;
-
-    dev_dbg(g_dev_ptr,"{%d}  bmask32=0x%lx, thispars->mod32=0x%lx, P_SENSOR_REGS=0x%x, P_SENSOR_NUMREGS=0x%x\n",sensor_port,bmask32,thispars->mod32,P_SENSOR_REGS,P_SENSOR_NUMREGS);
     unsigned long mask;
     int index,index32;
     struct frameparspair_t pars_to_update[2*P_MULTI_NUMREGS*MAX_SENSORS]; ///
     int nupdate=0;
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+    dev_dbg(g_dev_ptr,"{%d}  bmask32=0x%lx, thispars->mod32=0x%lx, P_SENSOR_REGS=0x%x, P_SENSOR_NUMREGS=0x%x\n",sensor_port,bmask32,thispars->mod32,P_SENSOR_REGS,P_SENSOR_NUMREGS);
 
     if (GLOBALPARS(sensor_port, G_MULTI_NUM)==0) { // single sensor,don't bother with individual registers, do all old way.
         if (bmask32) {
@@ -2189,7 +2207,7 @@ static int elphel393_mt9x001_sysfs_register(struct platform_device *pdev)
 
 int mt9x001_init(struct platform_device *pdev)
 {
-    int res;
+//    int res;
     struct device *dev = &pdev->dev;
 //    const struct of_device_id *match;
     int sensor_port;
