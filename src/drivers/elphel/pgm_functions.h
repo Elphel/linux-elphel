@@ -87,24 +87,25 @@ int add_sensor_proc(int port, int index, int (*sens_func)(int sensor_port, struc
 #define SET_SENSOR_MBPAR(p,f,s,r,v)  { pars_to_update[nupdate  ].num= P_SENSOR_REGS+(r) ;\
                                        pars_to_update[nupdate++].val=(v);\
                                        X3X3_I2C_SEND2((p), (f), (s), (r), (v)); \
-                                       int _MINDEX= MULTIREG(p,P_SENSOR_REGS+(r),0); \
-                                       if (_MINDEX) { \
+                                       {int _MINDEX= MULTIREG(p,P_SENSOR_REGS+(r),0); \
+                                         if (_MINDEX) { \
                        EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
-                                         if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
-                                           pars_to_update[nupdate  ].num= _MINDEX ;\
-                                           pars_to_update[nupdate++].val=(v);\
-                                         } \
-                                         _MINDEX++ ;\
+                                           if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
+                                             pars_to_update[nupdate  ].num= _MINDEX ;\
+                                             pars_to_update[nupdate++].val=(v);\
+                                           } \
+                                           _MINDEX++ ;\
                        EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
-                                         if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
-                                           pars_to_update[nupdate  ].num= _MINDEX ;\
-                                           pars_to_update[nupdate++].val=(v);\
-                                         } \
-                                         _MINDEX++ ;\
+                                           if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
+                                             pars_to_update[nupdate  ].num= _MINDEX ;\
+                                             pars_to_update[nupdate++].val=(v);\
+                                           } \
+                                           _MINDEX++ ;\
                        EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
-                                         if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
-                                           pars_to_update[nupdate  ].num= _MINDEX ;\
-                                           pars_to_update[nupdate++].val=(v);\
+                                           if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
+                                             pars_to_update[nupdate  ].num= _MINDEX ;\
+                                             pars_to_update[nupdate++].val=(v);\
+                                           } \
                                          } \
                                        } \
                                      }
@@ -120,28 +121,29 @@ int add_sensor_proc(int port, int index, int (*sens_func)(int sensor_port, struc
  * @param v value to set (16 bits)
  * @see SET_SENSOR_MBPAR */
 #define SET_SENSOR_MBOPAR(p,f,s,r,v)  { X3X3_I2C_SEND2((p), (f), (s), (r), (v)); \
-                                       int _MINDEX= MULTIREG(p,P_SENSOR_REGS+(r),0); \
+                                        { \
+                                          int _MINDEX= MULTIREG(p,P_SENSOR_REGS+(r),0); \
                        EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
-                                       if (_MINDEX) { \
-                                         if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
-                                           pars_to_update[nupdate  ].num= _MINDEX ;\
-                                           pars_to_update[nupdate++].val=(v);\
-                                         } \
-                                         _MINDEX++ ;\
+                                          if (_MINDEX) { \
+                                            if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
+                                              pars_to_update[nupdate  ].num= _MINDEX ;\
+                                              pars_to_update[nupdate++].val=(v);\
+                                            } \
+                                            _MINDEX++ ;\
                        EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
-                                         if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
-                                           pars_to_update[nupdate  ].num= _MINDEX ;\
-                                           pars_to_update[nupdate++].val=(v);\
-                                         } \
-                                         _MINDEX++ ;\
+                                            if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
+                                              pars_to_update[nupdate  ].num= _MINDEX ;\
+                                              pars_to_update[nupdate++].val=(v);\
+                                            } \
+                                            _MINDEX++ ;\
                        EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
-                                         if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
-                                           pars_to_update[nupdate  ].num= _MINDEX ;\
-                                           pars_to_update[nupdate++].val=(v);\
-                                         } \
-                                       } \
+                                            if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
+                                              pars_to_update[nupdate  ].num= _MINDEX ;\
+                                              pars_to_update[nupdate++].val=(v);\
+                                            } \
+                                          } \
+                                        } \
                                      }
-
 
 
 /**Set individual (multiplexed) sensor parameter (and send to hardware i2c sequencer)
