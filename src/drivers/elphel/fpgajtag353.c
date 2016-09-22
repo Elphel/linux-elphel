@@ -422,6 +422,10 @@ static int fpga_jtag_release(struct inode *inode, struct file *filp) {
     if (JTAG_channels[chn].wp > 0) { // anything written?
         res=JTAG_configure (chn, JTAG_channels[chn].dbuf, JTAG_channels[chn].wp);
         JTAG_resetChannel (chn);
+        if (res <0) {
+            dev_dbg(NULL, "fpga_jtag_release:  failure, returned %d\n",res);
+        }
+
         if ((res >=0) & (chn == JTAG_MAIN_FPGA)) {
             // read FPGA model number/revision and OR it with current state
             //fpga_state =  (fpga_state & ~0xffff) | (port_csp0_addr[X313__RA__MODEL] & 0xffff);
@@ -641,8 +645,8 @@ static loff_t  fpga_jtag_lseek(struct file * file, loff_t offset, int orig) {
 // Initialize GPIOs of the CPU to access JTAG/programming of the main FPGA
 void initPortC(void) {
     // connect 8 lower bits of port C to GPIO, disconnect from IOP
-    unsigned long tmp;
 #ifdef TEST_DISABLE_CODE
+    unsigned long tmp;
     reg_pinmux_rw_pc_iop    pinmux_c_iop;
     reg_pinmux_rw_pc_gio    pinmux_c_gio;
     reg_gio_rw_pc_oe        pc_oe;
@@ -758,7 +762,7 @@ inline u32 read_tdo_byte(int sens_num)
 // set FPGA in programming/JTAG mode (only for sensor board)
 // NOP for the main board FPGA configuration
 void set_pgm_mode (int chn, int en) {
-    u32 seq_num;
+//    u32 seq_num;
     x393_sensio_jtag_t data;
     dev_dbg(NULL, "set_pgm_mode (%d,%d)\n",chn,en);
 
@@ -782,7 +786,7 @@ void set_pgm_mode (int chn, int en) {
 }
 
 void set_pgm (int chn, int pgmon) {
-    u32 seq_num;
+//    u32 seq_num;
     x393_sensio_jtag_t data;
     dev_dbg(NULL, "set_pgm (%d,%d)\n",chn,pgmon);
 
@@ -809,8 +813,7 @@ void set_pgm (int chn, int pgmon) {
 
 int read_done (int chn) {
     x393_status_sens_io_t stat;
-    x393_sensio_jtag_t data;
-
+//    x393_sensio_jtag_t data;
     switch (chn >> 2) {
 #ifdef TEST_DISABLE_CODE
     case JTAG_MAIN_FPGA:
@@ -833,7 +836,7 @@ int read_done (int chn) {
 int jtag_send (int chn, int tms, int len, int d) {
     int sens_num = chn & 3;
     x393_sensio_jtag_t data;
-    x393_status_sens_io_t stat;
+//    x393_status_sens_io_t stat;
     //	u32 seq_num;
     int i, bm = 0; //,m;
     int r=0;
@@ -941,7 +944,7 @@ int jtag_write_bits (int chn,
     int bm = 0;
     int d,d0;
     //	u32 seq_num;
-    x393_status_sens_io_t stat;
+//    x393_status_sens_io_t stat;
     x393_sensio_jtag_t data;
 
     dev_dbg(NULL, "jtag_write_bits(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\r\n", (int) chn, (int) buf, len, check, last);
@@ -1356,7 +1359,7 @@ int JTAG_EXTEST (int chn, unsigned char * buf, int len) {
 #ifdef JTAG_DISABLE_IRQ
     unsigned long flags;
 #endif
-    int i; // only in debug
+//    int i; // only in debug
 #ifdef JTAG_DISABLE_IRQ
     local_irq_save(flags);
     //local_irq_disable();

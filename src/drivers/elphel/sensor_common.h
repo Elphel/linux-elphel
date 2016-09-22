@@ -123,7 +123,7 @@ long long get_frame_pos(unsigned int chn, unsigned int pos);
  * @param reg sensor register address (8-bit)
  * @param datap pointer to receive data
  * @return  0 on success, < 0 - error (ETIMEDOUT) */
-#define X3X3_I2C_RCV2(port,sa7,reg,datap) legacy_read_i2c_reg((port),(LEGACY_READ_PAGE2),(sa7),(reg),2,(datap))
+#define X3X3_I2C_RCV2(port,sa7,reg,datap) legacy_read_i2c_reg((port),(LEGACY_READ_PAGE2),(sa7),(reg),2, (int*)(datap))
 
 /** Perform I2C read (8  bits address, 32 bits data in "legacy" mode (10359 in 32-bit mode),
  * page LEGACY_READ_PAGE2 (==0xff) should be registered - legacy_i2c.
@@ -134,7 +134,7 @@ long long get_frame_pos(unsigned int chn, unsigned int pos);
  * @param reg sensor register address (8-bit)
  * @param datap pointer to receive data
  * @return  0 on success, < 0 - error (ETIMEDOUT) */
-#define X3X3_I2C_RCV4(port,sa7,reg,datap) legacy_read_i2c_reg((port),(LEGACY_READ_PAGE4),(sa7),(reg),4,(datap))
+#define X3X3_I2C_RCV4(port,sa7,reg,datap) legacy_read_i2c_reg((port),(LEGACY_READ_PAGE4),(sa7),(reg),4,(int*)(datap))
 
 int legacy_i2c  (int ports);
 void udelay1000(int ms);

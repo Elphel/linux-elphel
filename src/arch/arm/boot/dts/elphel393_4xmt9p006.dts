@@ -252,11 +252,11 @@
 
     elphel393_detect_sensors: elphel393-detect_sensors@0 {
         compatible = "elphel,elphel393-detect_sensors-1.00";
-        elphel393-detect_sensors,port-mux = "mux10359 mux10359 mux10359 mux10359"; /* "none", "detect" or "mux10359" */
-        elphel393-detect_sensors,sensors =  "mt9p006 mt9p006 mt9p006", // Line per port, may contain up to 4 sensors (3 with 10359)
-                                            "mt9p006 mt9p006 mt9p006",
-                                            "mt9p006 mt9p006 mt9p006",
-                                            "mt9p006 mt9p006 mt9p006";
+        elphel393-detect_sensors,port-mux = "none none none none"; /* "none", "detect" or "mux10359" */
+        elphel393-detect_sensors,sensors =  "mt9p006", // Line per port, may contain up to 4 sensors (3 with 10359)
+                                            "mt9p006",
+                                            "mt9p006",
+                                            "mt9p006";
     };
     
     elphel393_sensor_i2c: elphel393-sensor-i2c@0 {
