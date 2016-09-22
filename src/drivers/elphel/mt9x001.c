@@ -1988,9 +1988,11 @@ int mt9x001_pgm_triggermode        (int sensor_port,               ///< sensor p
     unsigned long newreg;
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-    newreg= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1] & 0xfeff) | ((thispars->pars[P_TRIG] & 4)?0x100:0);
+    newreg= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1] & 0xfe7f) | // old value without snamshot and GRR bits
+            ((thispars->pars[P_TRIG] & 4)?0x100:0) |                    // snapshot mode for P_TRIG==4 or 5
+            ((thispars->pars[P_TRIG] & 1)?0x80:0);                      // GRR mode for P_TRIG==5 (no effect for 1
     if (newreg != thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1]) {
-        // turn off triggered mode immediately, turn on later (or should made at leas before changing camsync parameters)
+        // turn off triggered mode immediately, turn on later (or should made at least before changing camsync parameters)
         if (!(thispars->pars[P_TRIG] & 4)){
             frame16 = -1;
         }

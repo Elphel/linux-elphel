@@ -1,0 +1,294 @@
+/* welcome to elphel393 device tree */
+/include/ "elphel393-zynq-base.dtsi"
+/include/ "elphel393-bootargs.dtsi"
+
+/ {
+	model = "Elphel 10393";
+	
+	ps7_axi_interconnect_0: amba@0 {
+		
+		ps7_i2c_0: ps7-i2c@e0004000 {
+			bus-id = <0>;
+			i2c-clk = <400000>;
+			rtc@68 {
+				compatible = "stm,m41t62";
+				reg = <0x68>;
+			};
+			
+			vsc330x@1 {
+				compatible = "vsc,vsc3304";
+				reg = <0x01>;
+				vsc330x,configuration_name = "elphel393: from external";
+				/* configuration below is for external eSATA host accessing SSD. Will chnage
+					* when the SATA controller code will be operational
+					* TODO: specify optimal drive strength, pre-emphasis, etc.
+					* All parameters are exported to sysfs for run-time modification
+					*/
+				vsc330x,configuration_data=<
+				0x11080101 /*page 0x11, register 0x08, data=0x1 (inverted input), write enabled mask=0x1 */
+				0x11090001
+				0x110a0101
+				0x110b0101
+				0x110e0001
+				0x110f0101
+
+				0x230a0b1f /* set output mode for port 10 as non-inverted, forwarding OOB enabled */
+				0x230b151f /* set output mode for port 11 as     inverted, forwarding OOB enabled */
+				0x230c151f
+				0x230d0b1f
+				0x230e151f
+				0x230f151f
+
+				0xff750101 /* freeze configuration to enable simultaneous modification */
+				0x110e0002 /* enable channel 14 input */
+				0x11090002 /* enable channel  9 input */
+
+				0x000b091f /* connect port 11 output to input 9 */
+				0x000c0e1f /* connect port 12 output to input 14 */
+				0xff750001 /* un-freeze configuration to apply connection modifications */
+				>;
+			};
+
+			si5338@70 {
+				compatible = "sil,si5338";
+				reg = <0x70>;
+				si5338,init="always"; /* initialize PLL if chip was not programmed, wait for lock. Other option is 'if off' */
+				/* low-level masked register writes, may be used to load frequency plan */
+				/*si5338,configuration_data=< 0x1ffcf0 >;*/ /* just for testing: write data 0xfc with write enable mask 0xf0 to register 0x01f */
+				si5338,in_frequency3= < 25000000>; /* 25MHz on input 3 (other inputs are '12",'4','56' and '12xo' */
+				/* PLL may be set either directly (pll_freq_fract,pll_freq_int) or to match some output (pll_by_out_fract, pll_by_out_int)
+					* _int suffix forces to find integer divisors, _fract - allows fractional ones */
+				si5338,pll_by_out_int=<150000000>;  /* 150Mhz May have 3 values: integer, nominator and denominator */
+				si5338,out3_freq_int= <150000000>;  /* 150Mhz. May have 3 values: integer, nominator and denominator */
+				si5338,out2_select= "in3/2/32";  /* connect out2 to IN3, divided by 2 (input stage) and then by 32 (output stage)*/
+				si5338,2V5_LVPECL=  <1 2>; /* set output standard for channels 1 and 2 */
+				si5338,1V5_HSTL_A+= <0>;   /* set output standard for channel 0, only A output is used (noninverted) */
+				si5338,1V8_LVDS=    <3>;
+				/* Disabled state for outputs:  */
+				si5338,dis_hi-z=    <0 1 2 3>; /* Disabled state for listed outputs, also possible: "dis_hi-z","dis_low","dis_high","dis_always_on" */
+				si5338,output_en=   < 3>; /* Which outputs should be initially enabled */
+				si5338,spread_spectrum_3= <1 50 31500>; /* Set spread spectrum for channel3 : enabled, 0.5%, 31.5KHz */
+				si5338,out0_freq_int= <15000000>;  /* 15Mhz to output 0 */
+				si5338,spread_spectrum_0= <1 500 31500>; /* Set spread spectrum for channel0 : enabled, 5%, 31.5KHz - high value, for testing */
+			};
+			
+			ltc3589@34 {
+				compatible = "ltc,ltc3589";
+				reg = <0x34>;
+			};
+
+			gpio@20{
+				compatible = "ti,tca6408";
+				reg = <0x20>;
+			};
+			gpio@21{
+				compatible = "ti,tca6408";
+				reg = <0x21>;
+			};
+			gpio@25{
+				compatible = "nxp,pca8574";
+				reg = <0x25>;
+			};
+			/* Use 'spd' instead of '24c02' for read only access*/
+			stts2002@31 {
+				compatible = "at,24c02";
+				reg = <0x31>;
+			};
+			hwmon@1a { /*hwmon@19*/
+				compatible = "stm,jc42";
+				reg = <0x1a>;
+			};
+		};
+		
+		ps7_ethernet_0: ps7-ethernet@e000b000 {
+			local-mac-address = [00 0e 64 10 00 00];
+			phy-handle = <&phy3>;
+			phy-mode = "rgmii-id";
+			mdio {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				phy3: phy@3 {
+					compatible = "atheros,8035";
+					device_type = "ethernet-phy";
+					reg = <0x3>;
+				};
+			};
+		};
+		
+		ps7_smcc_0: ps7-smcc@e000e000 {
+			ps7_nand_0: ps7-nand@e1000000 {
+				compatible = "arm,pl353-nand-r2p1";
+				reg = < 0xe1000000 0x1000000 >;
+				/*arm,nand-clk-freq-hz = <0x5f5e100>;*/
+				arm,nand-width = <0x8>;
+				arm,nand-cycle-t0 = <0x4>;
+				arm,nand-cycle-t1 = <0x4>;
+				arm,nand-cycle-t2 = <0x1>;
+				arm,nand-cycle-t3 = <0x2>;
+				arm,nand-cycle-t4 = <0x2>;
+				arm,nand-cycle-t5 = <0x2>;
+				arm,nand-cycle-t6 = <0x4>;
+				#address-cells = <0x1>;
+				#size-cells = <0x1>;
+				partition@0 {
+					label = "u-boot-spl";
+					reg = <0x0 0x100000>;/*1MB for backup spl image(s)*/
+				};
+				partition@1 {
+					label = "u-boot";
+					reg = <0x100000 0x400000>;/*4MB*/
+				};
+				partition@2 {
+					label = "device-tree";
+					reg = <0x500000 0x100000>;/*1MB*/
+				};
+				partition@3 {
+					label = "kernel";
+					reg = <0x600000 0x1000000>;/*16MB*/
+				};
+				partition@4 {
+					label = "rootfs";
+					reg = <0x1600000 0x10000000>;/*256MB*/
+				};
+			} ;
+		} ;
+		
+		elphel_ahci: elphel-ahci@80000000 {
+			compatible = "elphel,elphel-ahci";
+			interrupt-parent = <&ps7_scugic_0>;
+			interrupts = <0x0 0x1d 0x4>; /* interrupt number (middle of 3) is by 0x20 less, than shown as ID in TRM */
+			reg = <0x80000000 0x1000>;
+			clb_offs = <0x800>;
+			fb_offs = <0xc00>;
+		};
+	};
+	
+	elphel393_pwr: elphel393-pwr@0 {
+		compatible = "elphel,elphel393-pwr-1.00";
+		elphel393_pwr,simulate=          <0>;
+		elphel393_pwr,i2c_chips=         <0x20 0x21 0x25 0x34>;
+		elphel393_pwr,vp15.r1=           <357000>;
+		elphel393_pwr,vp15.r2=           <287000>;
+		elphel393_pwr,vcc_sens01.r1=     <787000>;
+		elphel393_pwr,vcc_sens01.r2=     <287000>;
+		elphel393_pwr,vcc_sens23.r1=     <787000>;
+		elphel393_pwr,vcc_sens23.r2=     <287000>;
+		elphel393_pwr,vp5.r1=            <523000>;
+		elphel393_pwr,vp5.r2=            <100000>;
+		elphel393_pwr,vldo18.r1=         <357000>;
+		elphel393_pwr,vldo18.r2=         <287000>;
+		elphel393_pwr,channels_disable= "vcc_sens23 vp33sens23 vcc_sens01 vp33sens01";
+		elphel393_pwr,pinstrapped_oven=  <1>;
+		elphel393_pwr,vcc_sens01_mv=     <2800>; /* set sensor intreface voltage to 2.8V */
+		elphel393_pwr,channels_enable=  "vp5";
+/*		elphel393_pwr,channels_enable=  "vcc_sens01 vp33sens01"; */
+	} ;
+	
+	elphel393_mem: elphel393-mem@0 {
+		compatible = "elphel,elphel393-mem-1.00";
+		/*memsize = <25600>;*/
+		memsize = <76800>;
+	} ;
+	
+	elphel393_init: elphel393-init {
+		compatible = "elphel,elphel393-init-1.00";
+	} ;
+	
+	elphel393_circbuf: elphel393-circbuf@0 {
+		compatible = "elphel,elphel393-circbuf-1.00";
+		/* set this to "disable" to disable drivers */
+		status = "okay";
+		interrupt-parent = <&ps7_scugic_0>;
+		 /* interrupt number (middle of 3) is by 0x20 less, than shown as ID in TRM */
+		interrupts =      <0x0 0x34 0x4>, <0x0 0x35 0x4>, <0x0 0x36 0x4>, <0x0 0x37 0x4>,
+		                  <0x0 0x38 0x4>, <0x0 0x39 0x4>, <0x0 0x3A 0x4>, <0x0 0x3B 0x4>;
+/*        reg = <0x80000000 0x1000>; */
+		interrupt-names = "frame_sync_irq_0", "frame_sync_irq_1", "frame_sync_irq_2", "frame_sync_irq_3",
+		                  "compr_irq_0", "compr_irq_1", "compr_irq_2", "compr_irq_3";
+	};
+
+    elphel393_logger: elphel393-logger@0 {
+        compatible = "elphel,elphel393-logger-1.00";
+        /* set this to "disable" to disable drivers */
+        status = "okay";
+        interrupt-parent = <&ps7_scugic_0>;
+         /* interrupt number (middle of 3) is by 0x20 less, than shown as ID in TRM */
+        interrupts =      <0x0 0x21 0x4>, <0x0 0x22 0x4>, <0x0 0x23 0x4>, <0x0 0x24 0x4>;
+/*        reg = <0x80000000 0x1000>; */
+        interrupt-names = "mult_saxi_0", "mult_saxi_1", "mult_saxi_2", "mult_saxi_3";
+    };
+	
+    elphel393_videomem: elphel393-videomem@0 {
+        compatible = "elphel,elphel393-videomem-1.00";
+        /* set this to "disable" to disable drivers */
+        status = "okay";
+        interrupt-parent = <&ps7_scugic_0>;
+         /* interrupt number (middle of 3) is by 0x20 less, than shown as ID in TRM */
+        interrupts =      <0x0 0x20 0x4>;
+/*        reg = <0x80000000 0x1000>; */
+        interrupt-names = "membridge_irq";
+        /* maximal dimesions that use all 512M memory for 4 channels. May be changed when doing processing*/
+        frame_full_width = <8192>; /* in bytes, will be transformed to bursts (16 bytes). 1 memory page is 2048 bytes (128 bursts) */
+        frame_height     = <8192>; /* in pixel lines */
+        frames_in_buffer = <2>;    /* Each channel has this number of frames in buffer */
+        
+        frame_start_chn0 =     <0x00000000>;      /* Channel 0 frame start (in bytes) */
+        frame_start_chn1 =     <0x08000000>;      /* Channel 1 frame start (in bytes) */
+        frame_start_chn2 =     <0x10000000>;      /* Channel 2 frame start (in bytes) */
+        frame_start_chn3 =     <0x18000000>;      /* Channel 3 frame start (in bytes) */
+        frame_full_width_chn0 =      <8192>;      /* Channel 0 frame full width (in bytes). 1 memory page is 2048 bytes (128 bursts) */
+        frame_full_width_chn1 =      <8192>;      /* Channel 1 frame full width (in bytes). 1 memory page is 2048 bytes (128 bursts) */
+        frame_full_width_chn2 =      <8192>;      /* Channel 2 frame full width (in bytes). 1 memory page is 2048 bytes (128 bursts) */
+        frame_full_width_chn3 =      <8192>;      /* Channel 3 frame full width (in bytes). 1 memory page is 2048 bytes (128 bursts) */
+        frame_height_chn0 =          <8192>;      /* Channel 0 maximal frame height in pixel lines */
+        frame_height_chn1 =          <8192>;      /* Channel 1 maximal frame height in pixel lines */
+        frame_height_chn2 =          <8192>;      /* Channel 2 maximal frame height in pixel lines */
+        frame_height_chn3 =          <8192>;      /* Channel 3 maximal frame height in pixel lines */
+        frames_in_buffer_chn0 =         <2>;      /* Number of frames in channel 0 buffer */
+        frames_in_buffer_chn1 =         <2>;      /* Number of frames in channel 1 buffer */
+        frames_in_buffer_chn2 =         <2>;      /* Number of frames in channel 2 buffer */
+        frames_in_buffer_chn3 =         <2>;      /* Number of frames in channel 3 buffer */
+    };
+
+    elphel393_detect_sensors: elphel393-detect_sensors@0 {
+        compatible = "elphel,elphel393-detect_sensors-1.00";
+        elphel393-detect_sensors,port-mux = "mux10359 mux10359 mux10359 mux10359"; /* "none", "detect" or "mux10359" */
+        elphel393-detect_sensors,sensors =  "mt9p006 mt9p006 mt9p006", // Line per port, may contain up to 4 sensors (3 with 10359)
+                                            "mt9p006 mt9p006 mt9p006",
+                                            "mt9p006 mt9p006 mt9p006",
+                                            "mt9p006 mt9p006 mt9p006";
+    };
+    
+    elphel393_sensor_i2c: elphel393-sensor-i2c@0 {
+                compatible = "elphel,elphel393-sensor-i2c-1.00";
+                /* Add known devices: name, slave address (7-bit), number of address bytes, number of data bytes, SCL frequency (kHz) */
+                elphel393-sensor-i2c,i2c_devices = "mt9f002 0x10 2 2 500",
+                                                   "mt9p006 0x48 1 2 500",
+                                                   "el10359 0x08 1 2 500",
+                                                   "pca9500_eeprom 0x50 1 1 100",
+                                                   "cy22393 0x69 1 1 100";
+    } ;
+
+    framepars_operations: elphel393-framepars@0 {
+        compatible = "elphel,elphel393-framepars-1.00";
+    };
+    
+    histograms_operations: elphel393-histograms@0 {
+        compatible = "elphel,elphel393-histograms-1.00";
+    };
+
+    gamma_tables_operations: elphel393-gamma_tables@0 {
+        compatible = "elphel,elphel393-gamma_tables-1.00";
+    };
+
+    elphel393_mt9x001: elphel393-mt9x001@0 {
+        compatible = "elphel,elphel393-mt9x001-1.00";
+    };
+
+    klogger_393: klogger-393@0 {
+        compatible = "elphel,klogger-393-1.00";
+        klogger-393,buffer_size = <1048576>; 
+    } ;
+    
+    
+};
