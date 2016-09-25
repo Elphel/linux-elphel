@@ -213,7 +213,7 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
     int frame_full_width = buffer_settings.frame_full_width[num_sensor] >> 4;
     int frame_sa_inc =     frame_full_width * (buffer_settings.frame_height[num_sensor] >>3);
     int last_frame_num =   buffer_settings.frames_in_buffer[num_sensor] - 1;
-    int byte32 =           1;   ///< 1 - 32-byte columns (currently used), 0 - 16 byte columns
+//    int byte32 =           1;   ///< 1 - 32-byte columns (currently used), 0 - 16 byte columns
 
    x393_mcntrl_window_frame_sa_t          window_frame_sa =       {.d32=0};
    x393_mcntrl_window_frame_sa_inc_t      window_frame_sa_inc =   {.d32=0};
@@ -554,7 +554,7 @@ static int videomem_probe(struct platform_device *pdev)
     int res;
     struct device *dev = &pdev->dev;
     const struct of_device_id *match;
-    const __be32 *bufsize_be;
+//    const __be32 *bufsize_be;
     struct device_node *node;
 
     elphel393_videomem_sysfs_register(pdev);

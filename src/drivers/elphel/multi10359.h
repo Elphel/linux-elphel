@@ -51,7 +51,7 @@
 //#define I2C359_I2CMUX              0x07
 //  #define I2C359_I2CMUX_2MEM          0x1
 //  #define I2C359_I2CMUX_2SENSORS     0x0
-#define I2C359_CLKSRC              0x08    ///< register address: clock source
+#define I2C359_CLKSRC              0x08    ///< register address: clock source // does not read back
   #define I2C359_CLKSRC_SYSTEM        0x00 ///< clock source: system (from the system board over)
   #define I2C359_CLKSRC_LOCAL         0x01 ///< clock source: local (clock generator on the 10359 board
 #define I2C359_MODE                0x09    ///< register address: mode register

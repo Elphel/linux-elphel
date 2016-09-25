@@ -75,6 +75,9 @@ static u32 i2c_pages_shadow[4][256]; ///< Mostly for debugging to analyze i2c pa
 static int sysfs_page[4];            ///< when positive - page locked for exclusive access
 static struct device *sdev = NULL;   ///< store this device here
 static u32    i2c_read_data[4];      ///< last data read from i2c device
+static int    scale_i2c_speed = 256; // scale i2c speed for all devices, coefficint is scale_i2c_speed/256
+static int    max_unbalanced_writes = 32; // debug feature used in multi10359 - maximal writes to i2c w/o read
+static int unbalanced_writes [SENSOR_PORTS] = {0,0,0,0};
 
 //static DEFINE_SPINLOCK(lock);
 static DEFINE_SPINLOCK(sensori2c_lock_0); ///<
@@ -84,6 +87,39 @@ static DEFINE_SPINLOCK(sensori2c_lock_3); ///<
 /** Define array of pointers to locks - hardware allows concurrent writes to different ports tables */
 spinlock_t * sensori2c_locks[4] = {&sensori2c_lock_0, &sensori2c_lock_1, &sensori2c_lock_2, &sensori2c_lock_3};
 
+/** Set status to autoupdate mode and wait for updated result (if it was not in autoupdate mode yet) */
+void i2c_autoupdate_status(int chn)  ///< Sensor port
+{
+#ifndef LOCK_BH_SENSORI2C
+    unsigned long flags;
+#endif
+    x393_status_sens_i2c_t  status;
+    x393_status_ctrl_t status_ctrl = get_x393_sensi2c_status_ctrl(chn); // last written data to status_cntrl
+    if (status_ctrl.mode != 3){
+#ifdef LOCK_BH_SENSORI2C
+        spin_lock_bh(sensori2c_locks[chn]);
+#else
+        spin_lock_irqsave(sensori2c_locks[chn],flags);
+#endif
+        status =  x393_sensi2c_status (chn);
+        status_ctrl.mode = 3;
+        status_ctrl.seq_num = status.seq_num ^ 0x20;
+        set_x393_sensi2c_status_ctrl(status_ctrl, chn);
+        {
+            int i;
+            for (i = 0; i < 10; i++) {
+                status = x393_sensi2c_status(chn);
+                if (likely(status.seq_num = status_ctrl.seq_num)) break;
+            }
+        }
+#ifdef LOCK_BH_SENSORI2C
+        spin_unlock_bh(sensori2c_locks[chn]);
+#else
+        spin_unlock_irqrestore(sensori2c_locks[chn],flags);
+#endif
+        dev_dbg(sdev, "read_xi2c_fifo(%d): mode set to 3, status updated to 0x%08x\n",chn, (int) status.d32);
+    }
+}
 
 /** I2C sequencer stop/run/reset (also programs status if run)*/
 int i2c_stop_run_reset(int chn,  ///< Sensor port
@@ -190,7 +226,7 @@ int i2c_page_alloc(int chn)
 #else
     spin_unlock_irqrestore(sensori2c_locks[chn],flags);
 #endif
-    dev_dbg(sdev, "Allocated page= %d for port %d, is RESET(group= 0x%08x bits = 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x )\n",
+    dev_dbg(sdev, "Allocated page= %d for port %d, (group= 0x%08x bits = 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x )\n",
             (g << 5) + b, chn,free_i2c_groups[chn],
             free_i2c_pages[chn][0],free_i2c_pages[chn][1],free_i2c_pages[chn][2],free_i2c_pages[chn][3],
             free_i2c_pages[chn][4],free_i2c_pages[chn][5],free_i2c_pages[chn][6],free_i2c_pages[chn][7]);
@@ -277,7 +313,9 @@ void i2c_page_free(int chn, int page)
 #else
     spin_unlock_irqrestore(sensori2c_locks[chn],flags);
 #endif
+    dev_dbg(sdev, "Freed chn=%d, page=%d\n", chn, page);
 }
+
 EXPORT_SYMBOL_GPL(i2c_page_free);
 
 /** Calculate value of SCLK 1/4 period delay from maximal SCL frequency
@@ -288,7 +326,10 @@ int get_bit_delay(int khz)
     int dly;
     if (!khz)
         return 0;
-    dly = (1000 * mclk_mhz / 4)/khz;
+// Modified FPGA - added extra division
+//    dly = (1000 * mclk_mhz / 4)/khz;
+//    dly = (1000 * mclk_mhz / 8 )/khz; //
+    dly = (32000 * mclk_mhz / scale_i2c_speed )/khz; //
     if (dly > 255)
         dly = 255;
     return dly;
@@ -322,6 +363,8 @@ void set_xi2c_raw(int chn,    ///< Sensor port number
 #endif
 //    i2c_pages_shadow[(chn << 8) + page] =tb_data.d32;
     i2c_pages_shadow[chn][page] =tb_data.d32;
+    dev_dbg(sdev, "Channel = %d, page = %d, raw data = 0x%08x\n", chn, page, tb_data.d32);
+
 }
 EXPORT_SYMBOL_GPL(set_xi2c_raw);
 
@@ -446,6 +489,8 @@ void set_xi2c_wr(int chn,        ///< sensor port
 #endif
 //    i2c_pages_shadow[(chn << 8) + page] =tb_data.d32;
     i2c_pages_shadow[chn][page] =tb_data.d32;
+    dev_dbg(sdev, "chn=%d, page = %d, tb_addr.d32=0x%08x, tb_data.d32 = 0x%08x\n",chn,page,tb_addr.d32,tb_data.d32);
+
 }
 EXPORT_SYMBOL_GPL(set_xi2c_wr);
 
@@ -485,6 +530,7 @@ void set_xi2c_rd(int chn,           ///< sensor port
 #endif
 //    i2c_pages_shadow[(chn << 8) + page] =tb_data.d32;
     i2c_pages_shadow[chn][page] =tb_data.d32;
+    dev_dbg(sdev, "chn=%d, page = %d, tb_addr.d32=0x%08x, tb_data.d32 = 0x%08x\n",chn,page,tb_addr.d32,tb_data.d32);
 }
 EXPORT_SYMBOL_GPL(set_xi2c_rd);
 
@@ -540,6 +586,7 @@ int write_xi2c_rel (int chn,    ///< sensor port
     } else {
         x393_sensi2c_rel (data[0], chn, offs);
     }
+    dev_dbg(sdev, "chn=%d, offs = %d, data[0] = 0x%08x\n",chn,offs,data[0]);
     return 0;
 }
 EXPORT_SYMBOL_GPL(write_xi2c_rel);
@@ -582,18 +629,37 @@ int write_xi2c_abs (int chn,    ///< sensor port
     } else {
         x393_sensi2c_abs (data[0], chn, offs);
     }
+    dev_dbg(sdev, "chn=%d, offs = %d, data[0] = 0x%08x\n",chn,offs,data[0]);
     return 0;
 }
 EXPORT_SYMBOL_GPL(write_xi2c_abs);
+
+u32 i2c_combine_page_addr_data8_16( int chn,  ///< sensor port
+                                    int page, ///< index in the table (8 bits)
+                                    int addr, ///< register address (single byte for 8-bit data, LSB for 16 bit data)
+                                    int data) ///< 8/16 bit data to write
+                                              ///< @ return combined page/address/data
+{
+    x393_i2c_ctltbl_t i2c_ctltbl = {.d32= i2c_pages_shadow[chn][page]};
+//    i2c_ctltbl.d32 = i2c_pages_shadow[chn][page];
+//    if ((((x393_i2c_ctltbl_t) i2c_pages_shadow[chn][page]).nbwr > 2))
+    if (i2c_ctltbl.nbwr > 2)
+        return ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+    else
+        return ((page & 0xff) << 24) | ((addr & 0xff) <<  8) | (data & 0xff);
+}
 
 /** Write sensor 16 bit (or 8 bit as programmed in the table) data in immediate mode */
 void  write_xi2c_reg16  (int chn,  ///< sensor port
         int page, ///< index in the table (8 bits)
         int addr, ///< low byte of the register address (high is in the table), 8 bits
-        u32 data) ///< 16 or 8-bit data (LSB aligned)
+        u32 data) ///< 16 or 8-bit data (LSB aligned), 16 address only for 16 bit data
 {
-    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+//    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+    u32 dw = i2c_combine_page_addr_data8_16(chn, page, addr, data);
     x393_sensi2c_rel (dw, chn, 0);
+    dev_dbg(sdev, "i2c_pages_shadow[%d][0x%x]= 0x%08x addr=0x%x data=0x%x dw=0x%08x\n",
+            chn,page,i2c_pages_shadow[chn][page], addr,data, (int) dw);
 }
 EXPORT_SYMBOL_GPL(write_xi2c_reg16);
 
@@ -602,9 +668,10 @@ void  write_xi2c_reg16_rel (int chn,  ///< sensor port
         int page, ///< index in the table (8 bits)
         int frame, ///< relative frame number modulo PARS_FRAMES
         int addr, ///< low byte of the register address (high is in the table), 8 bits
-        u32 data) ///< 16 or 8-bit data (LSB aligned)
+        u32 data) ///< 16 or 8-bit data (LSB aligned), 16 address only for 16 bit data
 {
-    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+//    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+    u32 dw = i2c_combine_page_addr_data8_16(chn, page, addr, data);
     x393_sensi2c_rel (dw, chn, frame & PARS_FRAMES_MASK);
 }
 EXPORT_SYMBOL_GPL(write_xi2c_reg16_rel);
@@ -614,9 +681,10 @@ void  write_xi2c_reg16_abs (int chn,  ///< sensor port
         int page, ///< index in the table (8 bits)
         int frame, ///< absolute frame number modulo PARS_FRAMES
         int addr, ///< low byte of the register address (high is in the table), 8 bits
-        u32 data) ///< 16 or 8-bit data (LSB aligned)
+        u32 data) ///< 16 or 8-bit data (LSB aligned), 16 address only for 16 bit data
 {
-    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+//    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+    u32 dw = i2c_combine_page_addr_data8_16(chn, page, addr, data);
     x393_sensi2c_abs (dw, chn, frame & PARS_FRAMES_MASK);
 }
 EXPORT_SYMBOL_GPL(write_xi2c_reg16_abs);
@@ -627,9 +695,10 @@ void  write_xi2c_reg16_abs_asap (int chn,  ///< sensor port
         int page, ///< index in the table (8 bits)
         int frame, ///< absolute frame number modulo PARS_FRAMES
         int addr, ///< low byte of the register address (high is in the table), 8 bits
-        u32 data) ///< 16 or 8-bit data (LSB aligned)
+        u32 data) ///< 16 or 8-bit data (LSB aligned), 16 address only for 16 bit data
 {
-    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+//    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
+    u32 dw = i2c_combine_page_addr_data8_16(chn, page, addr, data);
     if (frame<0) x393_sensi2c_rel (dw, chn, 0);
     else x393_sensi2c_abs (dw, chn, frame & PARS_FRAMES_MASK);
 }
@@ -646,8 +715,11 @@ void  read_xi2c (x393_i2c_device_t * dc, ///< device class
 {
     u32 dw = ((page & 0xff) << 24)  | (dc -> slave7 << 17) | (addr & 0xffff);
     x393_sensi2c_rel (dw, chn, 0);
+    dev_dbg(sdev, "chn=%d, page = %d, addr = %d\n",chn,page, addr);
+
 }
 EXPORT_SYMBOL_GPL(read_xi2c);
+
 
 
 /** Initiate sensor i2c read in immediate mode, specify 7-bit slave address
@@ -667,33 +739,8 @@ EXPORT_SYMBOL_GPL(read_xi2c_sa7);
 int read_xi2c_frame(int chn) ///< sensor port number
 ///< @return i2c sequencer frame number (4 bits)
 {
-#ifndef LOCK_BH_SENSORI2C
-    unsigned long flags;
-#endif
-    int i;
     x393_status_sens_i2c_t  status;
-    x393_status_ctrl_t status_ctrl = get_x393_sensi2c_status_ctrl(chn); /* last written data to status_cntrl */
-    if (status_ctrl.mode != 3){
-#ifdef LOCK_BH_SENSORI2C
-        spin_lock_bh(sensori2c_locks[chn]);
-#else
-        spin_lock_irqsave(sensori2c_locks[chn],flags);
-#endif
-        status =  x393_sensi2c_status (chn);
-        status_ctrl.mode = 3;
-        status_ctrl.seq_num = status.seq_num ^ 0x20;
-        set_x393_sensi2c_status_ctrl(status_ctrl, chn);
-        for (i = 0; i < 10; i++) {
-            status = x393_sensi2c_status(chn);
-            if (likely(status.seq_num = status_ctrl.seq_num)) break;
-        }
-#ifdef LOCK_BH_SENSORI2C
-        spin_unlock_bh(sensori2c_locks[chn]);
-#else
-        spin_unlock_irqrestore(sensori2c_locks[chn],flags);
-#endif
-        dev_dbg(sdev, "read_xi2c_frame(%d): mode set to 3, status updated to 0x%08x\n",chn, (int) status.d32);
-    }
+    i2c_autoupdate_status(chn);
     status =  x393_sensi2c_status (chn);
     return (int) status.frame_num;
 }
@@ -704,34 +751,10 @@ EXPORT_SYMBOL_GPL(read_xi2c_frame);
 int read_xi2c_fifo(int chn) ///< sensor port
 ///< @return byte or -1 if no data available, -EIO - error
 {
-#ifndef LOCK_BH_SENSORI2C
-    unsigned long flags;
-#endif
     int fifo_lsb, rslt,i;
     x393_i2c_ctltbl_t i2c_cmd;
     x393_status_sens_i2c_t  status;
-    x393_status_ctrl_t status_ctrl = get_x393_sensi2c_status_ctrl(chn); /* last written data to status_cntrl */
-    if (status_ctrl.mode != 3){
-#ifdef LOCK_BH_SENSORI2C
-        spin_lock_bh(sensori2c_locks[chn]);
-#else
-        spin_lock_irqsave(sensori2c_locks[chn],flags);
-#endif
-        status =  x393_sensi2c_status (chn);
-        status_ctrl.mode = 3;
-        status_ctrl.seq_num = status.seq_num ^ 0x20;
-        set_x393_sensi2c_status_ctrl(status_ctrl, chn);
-        for (i = 0; i < 10; i++) {
-            status = x393_sensi2c_status(chn);
-            if (likely(status.seq_num = status_ctrl.seq_num)) break;
-        }
-#ifdef LOCK_BH_SENSORI2C
-        spin_unlock_bh(sensori2c_locks[chn]);
-#else
-        spin_unlock_irqrestore(sensori2c_locks[chn],flags);
-#endif
-        dev_dbg(sdev, "read_xi2c_fifo(%d): mode set to 3, status updated to 0x%08x\n",chn, (int) status.d32);
-    }
+    i2c_autoupdate_status(chn);
     status =  x393_sensi2c_status (chn);
     //	dev_dbg(sdev, "read_xi2c_fifo(%d): status = 0x%08x\n",chn, (int) status.d32);
     if (!status.i2c_fifo_nempty) return -1; // No data available
@@ -779,7 +802,7 @@ int x393_xi2c_write_reg(const char * cname,    ///< device class name
     /* Set table entry for writing */
     memcpy(&ds, dc, sizeof(ds));
     ds.slave7 = dc->slave7 + sa7_offs;
-    set_xi2c_wrc(&ds,                     // device class
+    set_xi2c_wrc(&ds,                // device class
             chn,                     // sensor port
             page,                    // index in lookup table
             (reg_addr >> 8) & 0xff); // High byte of the i2c register address
@@ -831,7 +854,7 @@ int x393_xi2c_read_reg( const char * cname,    ///< device class name
 
     /* Flush channel i2c read FIFO to make sure it is empty, status mode will be set, if needed */
     while (read_xi2c_fifo(chn) >= 0) ; // includes waiting for status propagate
-    dev_dbg(sdev, "Flushed i2c read fifo for channel %d\n",chn);
+    dev_dbg(sdev, "Flushed i2c read fifo for channel, running read_xi2c_sa7(%d,0x%x,0x%x, 0x%x)\n",chn, page & 0xff, (dc->slave7 + sa7_offs) & 0x7f,  reg_addr & 0xffff);
 
     /* Initiate i2c read */
     read_xi2c_sa7 (chn,
@@ -859,11 +882,51 @@ int x393_xi2c_read_reg( const char * cname,    ///< device class name
     }
 
     /* Free table page */
-    dev_dbg(sdev, "Freeing i2c page %d\n",page);
+    dev_dbg(sdev, "Freeing i2c page %d, got data 0x%x\n",page, datap[0]);
     i2c_page_free(chn, page);
     return 0;
 }
 EXPORT_SYMBOL_GPL(x393_xi2c_read_reg);
+
+/** Test if i2c sequencer can accept more data (valid only for the same frame as last written
+ * In ASAP mode ready means that at least 64/4=16 locations is empty, this can be used when sequencer
+ * is stopped (no frame pulses) and data to be written is >64 items (i.e. programming 10359)
+ * in non-ASAP mode can be tested only after writing if needs to write more to the same page
+ * It will be ready again only if writing to a different page */
+int x393_xi2c_ready_wr(int chn)  ///< sensor port number
+                                 ///< @return - 1 - ready, 0 - busy
+{
+    x393_status_sens_i2c_t  status;
+    i2c_autoupdate_status(chn);
+    status =  x393_sensi2c_status (chn);
+    return status.wr_full? 0 : 1;
+}
+EXPORT_SYMBOL_GPL(x393_xi2c_ready_wr);
+
+
+/** Wait for channel sequencer ready to accept more data
+ * It is valid for the same page as last written, most useful when writing ~>64 times in ASAP mode */
+int x393_xi2c_wait_wr(int chn)  ///< sensor port number
+                                ///< @return - OK, <0 -ETIMEDOUT
+{
+    int rdy;
+    unsigned long       timeout_end;
+
+    dev_dbg(sdev, "Waitoing i2c sequencer ready for channel %d\n",chn);
+    timeout_end = jiffies + tenth_sec;
+    while (jiffies < timeout_end){
+        if ((rdy=x393_xi2c_ready_wr( chn)))
+            break;
+    }
+    if (!rdy) {
+        dev_dbg(sdev, "Timeout waiting for i2c sequencer channel %d ready to accept more data\n",chn);
+        return -ETIMEDOUT;
+    }
+    return 0;
+}
+EXPORT_SYMBOL_GPL(x393_xi2c_wait_wr);
+
+
 
 /** Single-command i2c read register compatible with legacy code. Device class(es) should already be registered, len parameter should
  * match pre-programmed length */
@@ -906,6 +969,7 @@ int legacy_read_i2c_reg( int          chn,      ///< sensor port number
         }
         *datap = (*datap <<8) | (db & 0xff);
     }
+    reset_unbalanced_writes(chn);
     return 0;
 }
 EXPORT_SYMBOL_GPL(legacy_read_i2c_reg);
@@ -1344,7 +1408,8 @@ static ssize_t set_i2c_tbl_rd_human(struct device *dev,              ///< Linux 
  *  - device register address,
  *
  *  Additional parameter
- *  - data to write identifies write operation, if it is missing i2c read will be issued */
+ *  - data to write identifies write operation, if it is missing i2c read will be issued
+ *  This command wait for sequencer ready after writing */
 static ssize_t i2c_store(struct device *dev,              ///< Linux kernel basic device structure
         struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
         const char *buf,                 ///< 4K buffer with what was written
@@ -1381,6 +1446,8 @@ static ssize_t i2c_store(struct device *dev,              ///< Linux kernel basi
                 sa7_offset, // slave address (7-bit) offset from the class defined slave address
                 reg_addr,   // register address (width is defined by class)
                 reg_data);  // data to write (width is defined by class)
+        if (rslt < 0) return rslt;
+        if ((rslt = x393_xi2c_wait_wr(chn)) < 0) return rslt;
     }
     return count;
 }
@@ -1459,12 +1526,69 @@ static ssize_t i2c_frame_store(struct device *dev,              ///< Linux kerne
         default:
             return - EINVAL;
         }
-
     }
-
+    return count;
+}
+//scale_i2c_speed
+/** Show i2c speed scale (256 - normal speed, 128 - 1/2, 512 - 2x) */
+static ssize_t i2c_speed_show(struct device *dev,            ///< Linux kernel basic device structure
+                              struct device_attribute *attr, ///< Linux kernel interface for exporting device attributes
+                              char *buf)                     ///< 4K buffer to receive response
+                                                             ///< @return offset to the end of the output data in the *buf buffer
+{
+    return sprintf(buf,"%d\n",scale_i2c_speed);
+}
+static ssize_t i2c_speed_store(struct device *dev,              ///< Linux kernel basic device structure
+        struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+        const char *buf,                 ///< 4K buffer with what was written
+        size_t count)                    ///< offset to the end of buffer data
+///< @return new offset to the end of buffer data
+{
+    if (sscanf(buf, "%i", &scale_i2c_speed)> 0) {
+        if (scale_i2c_speed<1) scale_i2c_speed = 1;
+    }
     return count;
 }
 
+/** Show i2c speed scale (256 - normal speed, 128 - 1/2, 512 - 2x) */
+static ssize_t i2c_max_unbalanced_writes_show(struct device *dev,            ///< Linux kernel basic device structure
+                              struct device_attribute *attr, ///< Linux kernel interface for exporting device attributes
+                              char *buf)                     ///< 4K buffer to receive response
+                                                             ///< @return offset to the end of the output data in the *buf buffer
+{
+    return sprintf(buf,"%d\n",max_unbalanced_writes);
+}
+static ssize_t i2c_max_unbalanced_writes_store(struct device *dev,              ///< Linux kernel basic device structure
+        struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
+        const char *buf,                 ///< 4K buffer with what was written
+        size_t count)                    ///< offset to the end of buffer data
+///< @return new offset to the end of buffer data
+{
+    sscanf(buf, "%i", &max_unbalanced_writes);
+    return count;
+}
+int i2c_get_max_unbalanced_writes(void) // ///@return - maximal number of unbalanced writes (w/o reads) - debug feature
+{
+    return max_unbalanced_writes;
+}
+void reset_unbalanced_writes(int chn)
+{
+    unbalanced_writes[chn]=0;
+}
+void inc_unbalanced_writes(int chn)
+{
+    unbalanced_writes[chn]++;
+}
+int check_unbalanced_writes(int chn)
+{
+    return unbalanced_writes[chn] > max_unbalanced_writes;
+}
+int get_unbalanced_writes(int chn)
+{
+    return unbalanced_writes[chn];
+}
+
+//max_unbalanced_writes
 // Sysfs top
 /* alloc*: read - allocate and return page, write (any data) - free page */
 static DEVICE_ATTR(i2c_all ,       SYSFS_PERMISSIONS                 ,    i2c_class_show ,       i2c_class_store);
@@ -1497,6 +1621,8 @@ static DEVICE_ATTR(i2c_frame0 ,    SYSFS_PERMISSIONS                 ,    i2c_fr
 static DEVICE_ATTR(i2c_frame1 ,    SYSFS_PERMISSIONS                 ,    i2c_frame_show,        i2c_frame_store);
 static DEVICE_ATTR(i2c_frame2 ,    SYSFS_PERMISSIONS                 ,    i2c_frame_show,        i2c_frame_store);
 static DEVICE_ATTR(i2c_frame3 ,    SYSFS_PERMISSIONS                 ,    i2c_frame_show,        i2c_frame_store);
+static DEVICE_ATTR(i2c_speed,      SYSFS_PERMISSIONS                 ,    i2c_speed_show,        i2c_speed_store);
+static DEVICE_ATTR(max_unbalanced_writes, SYSFS_PERMISSIONS          ,  i2c_max_unbalanced_writes_show,i2c_max_unbalanced_writes_store);
 static DEVICE_ATTR(help,           SYSFS_PERMISSIONS & SYSFS_READONLY,    get_i2c_help,          NULL);
 
 /** Contains entries for the root node (directory) of the sysfs representation for sensor-port i2c devices */
@@ -1530,6 +1656,8 @@ static struct attribute *root_dev_attrs[] = {
         &dev_attr_i2c_frame1.attr,
         &dev_attr_i2c_frame2.attr,
         &dev_attr_i2c_frame3.attr,
+        &dev_attr_i2c_speed.attr,
+        &dev_attr_max_unbalanced_writes.attr,
         &dev_attr_help.attr,
         NULL
 };
@@ -1665,7 +1793,7 @@ static int elphel393_sensor_i2c_remove(struct platform_device *pdev) ///< Platfo
     dev_info(&pdev->dev,"Removing elphel393-sensor-i2c");
     return 0;
 }
-/** Compatible records in Device Tree fro this driver */
+/** Compatible records in Device Tree for this driver */
 static struct of_device_id elphel393_sensor_i2c_of_match[] = {
         { .compatible = "elphel,elphel393-sensor-i2c-1.00", }, ///< Compatibility data
         { /* end of table */}

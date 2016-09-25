@@ -213,15 +213,15 @@ int setup_i2c_pages(int ports) ///< bitmask of the sensor ports to use
 #ifdef NC353 // to hide old code
 #define MULTISENSOR_WRITE_I2C(sa,ra,v,sz) \
     {rslt |= multisensor_write_i2c((sa),(ra),(v),(sz)) ; \
-     dev_dbg(g_dev_ptr,"%s  multisensor_write_i2c(0x%x, 0x%x, 0x%x, %d) -> %d\n",__func__,(int)(sa),(int)(ra),(int)(v),(int)(sz),rslt);}
+     dev_dbg(g_dev_ptr,"multisensor_write_i2c(0x%x, 0x%x, 0x%x, %d) -> %d\n",(int)(sa),(int)(ra),(int)(v),(int)(sz),rslt);}
 #define MULTISENSOR_WRITE_I2C16(ra,v) \
     {rslt |= multisensor_write_i2c((I2C359_SLAVEADDR),(ra),(v),2) ; \
-     dev_dbg(g_dev_ptr,"%s  multisensor_write_i2c(0x%x, 0x%x, 0x%x, %d) -> %d\n",__func__,(int)(I2C359_SLAVEADDR),(int)(ra),(int)(v),2,rslt);}
+     dev_dbg(g_dev_ptr,"multisensor_write_i2c(0x%x, 0x%x, 0x%x, %d) -> %d\n",(int)(I2C359_SLAVEADDR),(int)(ra),(int)(v),2,rslt);}
 #define MULTISENSOR_WRITE_I2C32(ra,v) \
     {rslt |= multisensor_write_i2c((I2C359_SLAVEADDR),(I2C359_MSW),(v)>>16,2) ; \
-     dev_dbg(g_dev_ptr,"%s  multisensor_write_i2c(0x%x, 0x%x, 0x%x, %d) -> %d\n",__func__,(int)(I2C359_SLAVEADDR),I2C359_MSW,(int)(v)>>16,2,rslt); \
+     dev_dbg(g_dev_ptr,"multisensor_write_i2c(0x%x, 0x%x, 0x%x, %d) -> %d\n",(int)(I2C359_SLAVEADDR),I2C359_MSW,(int)(v)>>16,2,rslt); \
      rslt |= multisensor_write_i2c((I2C359_SLAVEADDR),(ra),(v) & 0xffff,2) ; \
-     dev_dbg(g_dev_ptr,"%s  multisensor_write_i2c(0x%x, 0x%x, 0x%x, %d) -> %d\n",__func__,(int)(I2C359_SLAVEADDR),(int)(ra),(int)(v)&0xffff,2,rslt); \
+     dev_dbg(g_dev_ptr,"multisensor_write_i2c(0x%x, 0x%x, 0x%x, %d) -> %d\n",(int)(I2C359_SLAVEADDR),(int)(ra),(int)(v)&0xffff,2,rslt); \
 }
 #else
 // using new access in immediate mode by class name
@@ -257,7 +257,7 @@ int setup_i2c_pages(int ports) ///< bitmask of the sensor ports to use
     { pars_to_update[nupdate  ].num= P_M10359_REGS+(r) ;\
       pars_to_update[nupdate++].val=(v);\
       X3X3_I2C_SEND2((p), (f), (I2C359_SLAVEADDR), (r), (v)); \
-      dev_dbg(g_dev_ptr,"%s  X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",__func__,(int)(f),(int)(I2C359_SLAVEADDR),(int)(r),(int)(v));\
+      dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",(int)(f),(int)(I2C359_SLAVEADDR),(int)(r),(int)(v));\
     }
 
 #define SET_10359_PAR32(p,f,r,v) \
@@ -268,8 +268,8 @@ int setup_i2c_pages(int ports) ///< bitmask of the sensor ports to use
       X3X3_I2C_SEND2((p), (f), (I2C359_SLAVEADDR), (I2C359_MSW), (v)>>16); \
       X3X3_I2C_SEND2((p), (f), (I2C359_SLAVEADDR), (r), (v) & 0xffff); \
       local_irq_restore(flags); \
-      dev_dbg(g_dev_ptr,"%s  X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",__func__,(int)(f),(int)(I2C359_SLAVEADDR),(int)(I2C359_MSW),(int)(v)>>16);\
-      dev_dbg(g_dev_ptr,"%s  X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",__func__,(int)(f),(int)(I2C359_SLAVEADDR),(int)(r),(int)(v) & 0xffff);\
+      dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",(int)(f),(int)(I2C359_SLAVEADDR),(int)(I2C359_MSW),(int)(v)>>16);\
+      dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",(int)(f),(int)(I2C359_SLAVEADDR),(int)(r),(int)(v) & 0xffff);\
     }
 
 #define SET_10359_PAR(p, f,r,v) \
@@ -285,7 +285,7 @@ int setup_i2c_pages(int ports) ///< bitmask of the sensor ports to use
 // same functions, but do not schedule updating parameter shadows, just send i2c
 #define SET_10359_REG16(p, f,r,v) \
     { X3X3_I2C_SEND2((p), (f), (I2C359_SLAVEADDR), (r), (v)); \
-      dev_dbg(g_dev_ptr,"%s  X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",__func__,(int)(f),(int)(I2C359_SLAVEADDR),(int)(r),(int)(v));\
+      dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",(int)(f),(int)(I2C359_SLAVEADDR),(int)(r),(int)(v));\
     }
 
 #define SET_10359_REG32(p, f,r,v) \
@@ -294,8 +294,8 @@ int setup_i2c_pages(int ports) ///< bitmask of the sensor ports to use
       X3X3_I2C_SEND2((p), (f), (I2C359_SLAVEADDR), (I2C359_MSW), (v)>>16); \
       X3X3_I2C_SEND2((p), (f), (I2C359_SLAVEADDR), (r), (v) & 0xffff); \
       local_irq_restore(flags); \
-      dev_dbg(g_dev_ptr,"%s  X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",__func__,(int)(f),(int)(I2C359_SLAVEADDR),(int)(I2C359_MSW),(int)(v)>>16);\
-      dev_dbg(g_dev_ptr,"%s  X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",__func__,(int)(f),(int)(I2C359_SLAVEADDR),(int)(r),(int)(v) & 0xffff);\
+      dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",(int)(f),(int)(I2C359_SLAVEADDR),(int)(I2C359_MSW),(int)(v)>>16);\
+      dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n",(int)(f),(int)(I2C359_SLAVEADDR),(int)(r),(int)(v) & 0xffff);\
     }
 
 #define SET_10359_REG(p,f,r,v) \
@@ -337,9 +337,10 @@ int multisensor_pgm_window_safe    (int sensor_port, struct sensor_t * sensor,  
 int multisensor_pgm_window_common  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16) ;
 
 // These two parameters are copied from sensor
- static int multi_phases_initialized;
- static struct sensorproc_t s_sensorproc_phys; // physical sensor parameters and functions to call
- struct sensorproc_t * sensorproc_phys = &s_sensorproc_phys;
+static int multi_phases_initialized;
+static struct sensorproc_t s_sensorproc_phys; // physical sensor parameters and functions to call
+struct sensorproc_t * sensorproc_phys = &s_sensorproc_phys;
+// test feature - reading i2c after certain writes to prevent FIFO over (should be unneded with FPGA status bit, just testing)
 
 /** program sensor WOI and mirroring
  * Validating, changing related parameters/scheduling actions, scheduling i2c commands
@@ -354,7 +355,7 @@ int multisensor_pgm_window      (int sensor_port,               ///< sensor port
 															    ///< @return always 0
 {
   int rslt;
-  dev_dbg(g_dev_ptr,"%s  frame16=%d\n",__func__,frame16);
+  dev_dbg(g_dev_ptr,"frame16=%d\n",frame16);
   rslt = multisensor_pgm_window_common (sensor_port, sensor,  thispars, prevpars, frame16);
   return rslt;
 
@@ -373,7 +374,7 @@ int multisensor_pgm_window_safe (int sensor_port,               ///< sensor port
 																///< @return always 0
 {
   int rslt;
-  dev_dbg(g_dev_ptr,"%s  frame16=%d\n",__func__,frame16);
+  dev_dbg(g_dev_ptr,"frame16=%d\n",frame16);
   rslt = multisensor_pgm_window_common (sensor_port, sensor,  thispars, prevpars, frame16);
   return rslt;
 }
@@ -486,7 +487,7 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
   dev_dbg(g_dev_ptr,"frame16=%d\n",frame16);
 
   if (composite && (!async)) {
-    printk("*** ERROR (Should be disabled in multisensor_pgm_multisens() ) CANNOT USE COMPOSITE MODE WITH FREE RUNNING SENSOR ***\n");
+      dev_err(g_dev_ptr,"*** ERROR (Should be disabled in multisensor_pgm_multisens() ) CANNOT USE COMPOSITE MODE WITH FREE RUNNING SENSOR ***\n");
     composite=0;
     SETFRAMEPARS_SET(P_MULTI_MODE,0); // Do we need to force anything here? If it was async->free transition? Or just TRIG mode should have all the dependencies of P_MULTI_MODE
   }
@@ -502,13 +503,17 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
     sFlipY[i]=flipY ^ (composite ?((thispars->pars[P_MULTI_FLIPV] & (1<<i))?1:0):0); // in single (non -composite) mode use just flipY
   }
 //sFlip* are now per-sensor absolute flips
-  dev_dbg(g_dev_ptr,"%s selected=%x flipX=%x flipY=%x sFlipX[0]=%x sFlipY[0]=%x sFlipX[1]=%x sFlipY[1]=%x sFlipX[2]=%x sFlipY[2]=%x\n",__func__, selected, flipX,flipY,sFlipX[0],sFlipY[0],sFlipX[1],sFlipY[1],sFlipX[2],sFlipY[2]);
+  dev_dbg(g_dev_ptr,"selected=%x flipX=%x flipY=%x sFlipX[0]=%x sFlipY[0]=%x sFlipX[1]=%x sFlipY[1]=%x sFlipX[2]=%x sFlipY[2]=%x\n", selected, flipX,flipY,sFlipX[0],sFlipY[0],sFlipX[1],sFlipY[1],sFlipX[2],sFlipY[2]);
 // calculations valid for individual and composite frames
   styp = sensor->sensorType & 7;
   dh=  thispars->pars[P_DCM_HOR];
   dv=  thispars->pars[P_DCM_VERT];
   bh=  thispars->pars[P_BIN_HOR];
   bv=  thispars->pars[P_BIN_VERT];
+  dh = dh?dh:1;
+  dv = dv?dv:1;
+  bh = bh?bh:1;
+  bv = bv?bv:1;
   ww=  thispars->pars[P_SENSOR_PIXH] * dh;
 //  SETFRAMEPARS_SET(P_SENSOR_PIXV,  height+(2 * COLOR_MARGINS)); // full height for the sensor (after decimation), including margins
   wh=  thispars->pars[P_SENSOR_PIXV] * dv; // number of scan lines read from the sensor multipled by decimation
@@ -528,7 +533,7 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
   wt = thispars->pars[P_WOI_TOP];
 // flip margins for mirrored images (except oversized, not to rely on sensor->clearWidth/sensor->clearHeight
 //-------------------------
-  dev_dbg(g_dev_ptr,"%s dv=0x%x dh=0x%x ww=0x%x wh=0x%x wl=0x%x wt=0x%x \n",__func__,dv,dh,ww,wh,wl,wt);
+  dev_dbg(g_dev_ptr,"dv=0x%x dh=0x%x ww=0x%x wh=0x%x wl=0x%x wt=0x%x \n",dv,dh,ww,wh,wl,wt);
 
   memcpy(wois, &(thispars->pars[P_MULTI_WOI]), sizeof(wois)); // copy WOI parameters for 3 sensors
   if (composite && flipY) { // reverse sequence
@@ -596,7 +601,7 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
       }
     }
     for (i=0; (v=SENSOR_IN_SEQ(i,sequence))>=0;i++) active  |= (1<<v);
-  dev_dbg(g_dev_ptr,"%s height1=0x%x height2=0x%x height3=0x%x\n",__func__,height1, height2, height3);
+  dev_dbg(g_dev_ptr,"height1=0x%x height2=0x%x height3=0x%x\n",height1, height2, height3);
 
 
 
@@ -613,19 +618,19 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
       }
     }
 // multiFlip* are set in the sub-frame sequence (accounting for the global FLIP_V, bit 0 - top subframe,1 - middle, 2 - last
-    dev_dbg(g_dev_ptr,"%s multiFlipX=0x%x multiFlipY=0x%x\n",__func__,multiFlipX, multiFlipY);
+    dev_dbg(g_dev_ptr,"multiFlipX=0x%x multiFlipY=0x%x\n",multiFlipX, multiFlipY);
 
 // modify - multiFlipX,multiFlipY applies to sensors, not frames ???? No, they apply to sub-frames
     relFlipX= (multiFlipX ^ (multiFlipX>>1))& 3;
     relFlipY= (multiFlipY ^ (multiFlipY>>1))& 3;
-    dev_dbg(g_dev_ptr,"%s relFlipX=0x%x relFlipY=0x%x\n",__func__,relFlipX, relFlipY);
+    dev_dbg(g_dev_ptr,"relFlipX=0x%x relFlipY=0x%x\n",relFlipX, relFlipY);
     if (relFlipY & 1) vblank2+=dv;
     if (relFlipY & 2) vblank3+=((vblank3>=dv) && (vblank2>vblank3))?-dv:dv; // Keep the total height constant, if possible. If not possible - increase
 
     hactDelay=(relFlipX ^ (relFlipX << 1)) & 3;
 
 
-    dev_dbg(g_dev_ptr,"%s hactDelay=0x%x vblank2=0x%x, vblank3=0x%x\n",__func__,hactDelay, vblank2, vblank3);
+    dev_dbg(g_dev_ptr,"hactDelay=0x%x vblank2=0x%x, vblank3=0x%x\n",hactDelay, vblank2, vblank3);
 // Apply height1, height2, height3
     wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+SENSOR_IN_SEQ(0,sequence)]=height1; // always on,>= other frame heights
     if ((SENSOR_IN_SEQ(1,sequence)>=0) && (SENSOR_IN_SEQ(1,sequence)!=SENSOR_IN_SEQ(0,sequence))) {
@@ -649,10 +654,10 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
     wois[(P_MULTI_WIDTH1-P_MULTI_WOI)+0]=ww; // all channels - same width, include margins (before decimation)
     wois[(P_MULTI_WIDTH1-P_MULTI_WOI)+1]=ww;
     wois[(P_MULTI_WIDTH1-P_MULTI_WOI)+2]=ww;
-    dev_dbg(g_dev_ptr,"%s wois[LEFT1]=0x%lx, wois[LEFT2]=0x%lx, wois[LEFT3]=0x%lx\n",__func__, wois[(P_MULTI_LEFT1-P_MULTI_WOI)+0],wois[(P_MULTI_LEFT1-P_MULTI_WOI)+1],wois[(P_MULTI_LEFT1-P_MULTI_WOI)+2] );
-    dev_dbg(g_dev_ptr,"%s wois[WIDTH1]=0x%lx\n",__func__, wois[(P_MULTI_WIDTH1-P_MULTI_WOI)+0] );
-    dev_dbg(g_dev_ptr,"%s wois[TOP1]=0x%lx, wois[TOP2]=0x%lx, wois[TOP3]=0x%lx\n",__func__, wois[(P_MULTI_TOP1-P_MULTI_WOI)+0],wois[(P_MULTI_TOP1-P_MULTI_WOI)+1],wois[(P_MULTI_TOP1-P_MULTI_WOI)+2] );
-    dev_dbg(g_dev_ptr,"%s wois[HEIGHT1]=0x%lx, wois[HEIGHT2]=0x%lx, wois[HEIGHT3]=0x%lx\n",__func__, wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+0],wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+1],wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+2] );
+    dev_dbg(g_dev_ptr,"wois[LEFT1]=0x%lx, wois[LEFT2]=0x%lx, wois[LEFT3]=0x%lx\n", wois[(P_MULTI_LEFT1-P_MULTI_WOI)+0],wois[(P_MULTI_LEFT1-P_MULTI_WOI)+1],wois[(P_MULTI_LEFT1-P_MULTI_WOI)+2] );
+    dev_dbg(g_dev_ptr,"wois[WIDTH1]=0x%lx\n", wois[(P_MULTI_WIDTH1-P_MULTI_WOI)+0] );
+    dev_dbg(g_dev_ptr,"wois[TOP1]=0x%lx, wois[TOP2]=0x%lx, wois[TOP3]=0x%lx\n", wois[(P_MULTI_TOP1-P_MULTI_WOI)+0],wois[(P_MULTI_TOP1-P_MULTI_WOI)+1],wois[(P_MULTI_TOP1-P_MULTI_WOI)+2] );
+    dev_dbg(g_dev_ptr,"wois[HEIGHT1]=0x%lx, wois[HEIGHT2]=0x%lx, wois[HEIGHT3]=0x%lx\n", wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+0],wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+1],wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+2] );
 
 
 // TODO: Apply required height to the channels. If nothing but the direct channel is needed - apply it to sensor parameters
@@ -660,14 +665,14 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
 // Modify first sensor height even if it is increased to include part of the gap and minHeight
       wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+SENSOR_IN_SEQ(0,sequence)]= wh;
       sequence &= 3; // turn off frames 2, 3
-      dev_dbg(g_dev_ptr,"%s sequence=%x height1=0x%x vblank2=0x%x height2=0x%x vblank3=0x%x height3=0x%x \n",__func__,sequence, height1, vblank2, height2, vblank3 ,height3 );
+      dev_dbg(g_dev_ptr,"sequence=%x height1=0x%x vblank2=0x%x height2=0x%x vblank3=0x%x height3=0x%x \n",sequence, height1, vblank2, height2, vblank3 ,height3 );
     } else if ((wt+wh-height1-vblank2) < (height2+vblank3+(sensor->minHeight*dv))) { // Only first 2 sensors are needed - reduce second frame (10359, not the sensor)
       height2=wh+wt-height1-vblank2; // only 10359, not the sensor
       sequence &= 0xf; // turn off frame  3
-      dev_dbg(g_dev_ptr,"%s sequence=%x height1=0x%x vblank2=0x%x height2=0x%x vblank3=0x%x height3=0x%x \n",__func__,sequence, height1, vblank2, height2, vblank3 ,height3 );
+      dev_dbg(g_dev_ptr,"sequence=%x height1=0x%x vblank2=0x%x height2=0x%x vblank3=0x%x height3=0x%x \n",sequence, height1, vblank2, height2, vblank3 ,height3 );
     } else { // all 3 sensors needed, adjust height3 to make sure 10359 sends out exactly wh/dv lines (vblank* could be adjusted to compensate for Bayer when flipping)
       height3=wh+wt-height1-vblank2-height2-vblank3;
-      dev_dbg(g_dev_ptr,"%s sequence=%x height1=0x%x vblank2=0x%x height2=0x%x vblank3=0x%x height3=0x%x \n",__func__,sequence, height1, vblank2, height2, vblank3 ,height3 );
+      dev_dbg(g_dev_ptr,"sequence=%x height1=0x%x vblank2=0x%x height2=0x%x vblank3=0x%x height3=0x%x \n",sequence, height1, vblank2, height2, vblank3 ,height3 );
     }
 
 // zero out unused frames/blanks before them
@@ -687,7 +692,7 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
       vblank3/=dv;
       height3/=dv;
     }
-    dev_dbg(g_dev_ptr,"%s height1=0x%x vblank2=0x%x height2=0x%x vblank3=0x%x height3=0x%x \n",__func__,height1, vblank2, height2, vblank3 ,height3 );
+    dev_dbg(g_dev_ptr,"height1=0x%x vblank2=0x%x height2=0x%x vblank3=0x%x height3=0x%x \n",height1, vblank2, height2, vblank3 ,height3 );
 // un-apply dh from ww - number of pixels to be read in a line in frames2,3
     if (dh>1) ww/=dh;
     w359=ww;
@@ -698,7 +703,7 @@ int multisensor_pgm_window_common  (int sensor_port,               ///< sensor p
                           ((multiFlipY & 1)<<1) | ((multiFlipY & 2) << 2)  | ((multiFlipY & 4) << 3) | 0x40; // 0x40 as a composite frame mark (test with &0xc0!=0 - future)
     if (flipX)  multi_mode_flips ^= 0x15;
     if (flipY)  multi_mode_flips ^= 0x2a;
-    dev_dbg(g_dev_ptr,"%s sequence=0x%x flipX=%x flipY=%x multi_mode_flips=0x%x \n",__func__,sequence,flipX,flipY,multi_mode_flips );
+    dev_dbg(g_dev_ptr,"sequence=0x%x flipX=%x flipY=%x multi_mode_flips=0x%x \n",sequence,flipX,flipY,multi_mode_flips );
     SETFRAMEPARS_COND(P_MULTI_MODE_FLIPS,    multi_mode_flips);
 //    subtract (2 * COLOR_MARGINS) from the first and last frame
 
@@ -902,7 +907,7 @@ int multisensor_write_i2c(unsigned char theSlave, unsigned char theRegister, uns
   return 0;
 }
 #else
-/** Write (2 bytes) to 10359 board or sensor*/
+/** Write (2 bytes) to 10359 board or sensor in ASAP mode*/
 int multisensor_write_i2c(int          sensor_port,///< sensor port number
                           const char * class_name, ///< device class name ("el10359", "mt9p006")
 						  int          sa7_offs,   ///< 0 for 10359 and sensor broadcast, 2/4/6 for sensor channels
@@ -910,14 +915,56 @@ int multisensor_write_i2c(int          sensor_port,///< sensor port number
 		                  u32 reg_data)            ///< data to send (2 bytes)
 		                                           ///< @return 0: success, negative - error
 {
-	return x393_xi2c_write_reg(class_name,       // device class name
-							   sensor_port,      // sensor port number
-							   sa7_offs,         // slave address (7-bit) offset from the class defined slave address
-							   reg_addr,         // register address (width is defined by class)
-							   reg_data);        // data to write (width is defined by class)
+    int rslt;
+    inc_unbalanced_writes(sensor_port);
+    rslt =  x393_xi2c_write_reg(class_name,       // device class name
+            sensor_port,      // sensor port number
+            sa7_offs,         // slave address (7-bit) offset from the class defined slave address
+            reg_addr,         // register address (width is defined by class)
+            reg_data);        // data to write (width is defined by class)
+    if (rslt <0) return rslt;
+    if (check_unbalanced_writes(sensor_port)){
+        unsigned long    bitstream_version;
+//        X3X3_I2C_RCV4(sensor_port, I2C359_SLAVEADDR, I2C359_VERSION, &bitstream_version);
+        X3X3_I2C_RCV2(sensor_port, I2C359_SLAVEADDR, I2C359_VERSION, &bitstream_version); // just 2 bytes, not 4
+        dev_dbg(g_dev_ptr,"Exceeded number of unbalanced writes on port %d: (%d > %d), reading i2c, got 0x%lx\n",sensor_port, get_unbalanced_writes(sensor_port) ,i2c_get_max_unbalanced_writes(),bitstream_version);
+    }
+    // wait for the write buffer to have some room
+    if (!x393_xi2c_ready_wr (sensor_port)){
+        dev_dbg(g_dev_ptr,"Had to wait for the i2c sequencer while multisensor_write_i2c(%d, %s, 0x%x, 0x%x, 0x%x)\n",
+                sensor_port, class_name, sa7_offs,reg_addr, reg_data);
+        return x393_xi2c_wait_wr(sensor_port);
+    }
+    return 0;
 }
 #endif
+/*
+ *   unsigned long    bitstream_version;
+  unsigned long    sensor_id[MAX_SENSORS];
+  int rslt=0; // or-ed by MULTISENSOR_WRITE_I2C(sa,ra,v,sz)
+  int i;
+  int this_sensor_type;
 
+  long * multiOutDelay;
+//   .hact_delay  = -2500,    // -2.5ns delay in ps
+//   .sensorDelay = 2460,     // Delay from sensor clock at FPGA output to pixel data transition (FPGA input), short cable (ps)
+  multi_unitialized=0; // reset this static variable - it will prevent copying individual flips to multiple until composite mode is used
+  dev_dbg(g_dev_ptr,"frame16=%d\n",frame16);
+  GLOBALPARS(sensor_port,G_SENS_AVAIL)=0; // no 10359A board present
+  if (frame16 >= 0) return -1; // can only work in ASAP mode
+  if (thispars->pars[P_SENSOR]) return 0; // Sensor is already detected - do not bother (to re-detect it P_SENSOR should be set to 0)
+#ifdef NC353
+  dev_dbg(g_dev_ptr,"Probing 10359 board, i2c bitdelays=0x%08x, hardware_i2c_running=%d\n",i2c_delays(0),i2s_running());
+  if (multisensor_read_i2c(I2C359_SLAVEADDR, I2C359_VERSION, &bitstream_version, 4)<0) return -1;
+#else
+  if (X3X3_I2C_RCV4(sensor_port, I2C359_SLAVEADDR, I2C359_VERSION, &bitstream_version)<0) return -1;
+#endif
+ *
+    unbalanced_writes[sensor_port]=0;
+//  int unbalanced_writes [SENSOR_PORTS];
+//  #define MAX_UNBALANCED_WRITES 32
+
+ */
 
 static int multi_unitialized=0; ///< temporary hack to resolve race between individual and multi_ flips at startup
 
@@ -958,12 +1005,12 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
 //   .hact_delay  = -2500,    // -2.5ns delay in ps
 //   .sensorDelay = 2460,     // Delay from sensor clock at FPGA output to pixel data transition (FPGA input), short cable (ps)
   multi_unitialized=0; // reset this static variable - it will prevent copying individual flips to multiple until composite mode is used
-  dev_dbg(g_dev_ptr,"%s  frame16=%d\n",__func__,frame16);
+  dev_dbg(g_dev_ptr,"frame16=%d\n",frame16);
   GLOBALPARS(sensor_port,G_SENS_AVAIL)=0; // no 10359A board present
   if (frame16 >= 0) return -1; // can only work in ASAP mode
   if (thispars->pars[P_SENSOR]) return 0; // Sensor is already detected - do not bother (to re-detect it P_SENSOR should be set to 0)
 #ifdef NC353
-  dev_dbg(g_dev_ptr,"%s Probing 10359 board, i2c bitdelays=0x%08x, hardware_i2c_running=%d\n",__func__,i2c_delays(0),i2s_running());
+  dev_dbg(g_dev_ptr,"Probing 10359 board, i2c bitdelays=0x%08x, hardware_i2c_running=%d\n",i2c_delays(0),i2s_running());
   if (multisensor_read_i2c(I2C359_SLAVEADDR, I2C359_VERSION, &bitstream_version, 4)<0) return -1;
 #else
   if (X3X3_I2C_RCV4(sensor_port, I2C359_SLAVEADDR, I2C359_VERSION, &bitstream_version)<0) return -1;
@@ -975,18 +1022,18 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   add_sensor_proc(sensor_port,onchange_sensorphase,    &multisensor_pgm_sensorphase);     // set clock/phase for the 10359A
 
   if ((((bitstream_version ^ I2C359_MINVERSION) & 0xffff0000)!=0) || ((bitstream_version & 0xffff) < (I2C359_MINVERSION & 0xffff))) {
-    printk ("invalid 10359 bitstream version, found 0x%08lx, required >= 0x%08x\n",bitstream_version, I2C359_MINVERSION );
+      dev_err(g_dev_ptr,"invalid 10359 bitstream version, found 0x%08lx, required >= 0x%08x\n",bitstream_version, I2C359_MINVERSION );
     setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType);
     return -1;
   }
-  printk("10359 bitstream version =0x%08lx\n",bitstream_version);
+  dev_dbg(g_dev_ptr,"10359 bitstream version =0x%08lx\n",bitstream_version);
 // now set sensor clock in both system board and 10359A to 96MHz - currently we support only 5MPix in thias mode
 #ifdef NC353
   setFramePar(sensor_port, thispars, P_CLK_FPGA,  getClockFreq(0)); // just in case - read the actual fpga clock frequency and store it (no actions)
   setFramePar(sensor_port, thispars, P_CLK_SENSOR,  96000000);
   setClockFreq(sensor_port, 1, thispars->pars[P_CLK_SENSOR]);
 #endif
-  printk("10353 sensor clock set to %d\n",(int) thispars->pars[P_CLK_SENSOR]);
+  dev_info(g_dev_ptr,"10353 sensor clock set to %d\n",(int) thispars->pars[P_CLK_SENSOR]);
 
   udelay (100);// 0.0001 sec to stabilize clocks
 //  X3X3_RSTSENSDCM;  // FPGA DCM can fail after clock change, needs to be reset
@@ -1018,11 +1065,11 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   }
 #endif
   rslt=multisensor_set_freq  (sensor_port, 1, thispars); // first time (1)
-  if (rslt>0)       printk("10359A sensor clock set to %d\n", rslt);
-  else if (rslt==0) printk("10359A sensors are using 10353 system clock, as set in configuration\n");
-  else              printk("10359  sensor clock failure, will use system clock from 10353 board\n");
+  if (rslt>0)       dev_info(g_dev_ptr,"10359A sensor clock set to %d\n", rslt);
+  else if (rslt==0) dev_info(g_dev_ptr,"10359A sensors are using 10353 system clock, as set in configuration\n");
+  else              dev_info(g_dev_ptr,"10359  sensor clock failure, will use system clock from 10353 board\n");
 // Try to read chip version from each of the 3 possible sensors
-  printk("removing MRST from the sensor\n");
+  dev_info(g_dev_ptr,"removing MRST from the sensor\n");
 //
   sensio_ctl.d32 = 0;
   sensio_ctl.mrst =     1;
@@ -1036,9 +1083,10 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   udelay (100);
 
   GLOBALPARS(sensor_port,G_SENS_AVAIL) |= 1<< (GLOBALPARS(sensor_port,G_SENS_AVAIL)); // temporary to indicate sensor detection functions that they need to initialize multisensor registers
-  for (i=0;i<MAX_SENSORS;i++) {
+//  for (i=0;i<MAX_SENSORS;i++) {
+  for (i=0;i<3;i++) { // 10359 only supports 3 sesnors, not 4
 #ifdef NC353
-      dev_dbg(g_dev_ptr,"%s Probing sensor port %d, i2c bitdelays=0x%08x\n",__func__,i,i2c_delays(0));
+      dev_dbg(g_dev_ptr,"Probing sensor port %d, i2c bitdelays=0x%08x\n",i,i2c_delays(0));
     rslt=  multisensor_read_i2c(sensor_port,
                                 MT9P001_I2C_ADDR + ((i+1) * I2C359_INC),
                                 P_MT9X001_CHIPVER,
@@ -1050,35 +1098,37 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
                           P_MT9X001_CHIPVER,
                           &sensor_id[i]);
 #endif
-//    dev_dbg(g_dev_ptr,"%s Probing sensor port %d, i2c bitdelays=0x%08x, rslt=0x%x\n",__func__,i,i2c_delays(0),rslt);
+//    dev_dbg(g_dev_ptr,"Probing sensor port %d, i2c bitdelays=0x%08x, rslt=0x%x\n",i,i2c_delays(0),rslt);
     if (rslt==0) {
        if (((sensor_id[i] ^ MT9P001_PARTID) & MT9X001_PARTIDMASK)==0) {
-          printk("Found MT9P001 2592x1944 sensor on 10359A port %d, chip ID=%lx\n",(i+1), sensor_id[i]);
-          GLOBALPARS(sensor_port,G_SENS_AVAIL) |= 1<<i;
+           dev_info(g_dev_ptr,"Found MT9P001 2592x1944 sensor on 10359A port %d, chip ID=%lx\n",(i+1), sensor_id[i]);
+           GLOBALPARS(sensor_port,G_SENS_AVAIL) |= 1<<i;
+       } else if (sensor_id[i] == 0xffff){
+           sensor_id[i]=0;
        } else {
-          printk("Found UNSUPPORTED sensor on port %d, chip ID=0x%lx\n",(i+1),sensor_id[i]);
+           dev_warn(g_dev_ptr,"Found UNSUPPORTED sensor on port %d, chip ID=0x%lx\n",(i+1),sensor_id[i]);
        }
     } else sensor_id[i]=0;
   }
   GLOBALPARS(sensor_port,G_SENS_AVAIL) &= (1<< (GLOBALPARS(sensor_port,G_SENS_AVAIL)))-1; // remove flag used to indicate sensor detection functions that they need to initialize multisesnor registers
   if (GLOBALPARS(sensor_port,G_SENS_AVAIL)==0) {
-    printk ("No supported sensors connected to 10359A board\n");
+      dev_warn(g_dev_ptr,"No supported sensors connected to 10359A board\n");
     setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType);
     if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
     return 0;
   }
-  printk ("Setting internal HACT generation\n");
+  dev_info(g_dev_ptr,"Setting internal HACT generation\n");
   MULTISENSOR_WRITE_I2C16_SHADOW(sensor_port, I2C359_HACT_MODE, 7);
 // At least one MT9P0X1 sensor found, initializing them in broadcast mode (will still need to modify phases - both 10353 and 10359
   this_sensor_type=mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
 //  for (i=0;i<8;i++) {
-//    dev_dbg(g_dev_ptr,"%s i=%d, m=0x%lx\n",__func__,i,GLOBALPARS(G_MULTI_REGSM+i));
+//    dev_dbg(g_dev_ptr,"i=%d, m=0x%lx\n",i,GLOBALPARS(G_MULTI_REGSM+i));
 //  }
   initMultiPars(sensor_port); // this time the registors that need to have individual shadows are known, initialize the corresponding data structures
 //  memcpy(psensor, sensor, sizeof(struct sensor_t)); // copy physical sensor definitions to the save area (so some can be replaced by modified ones)
-//  dev_dbg(g_dev_ptr,"%s  before: sensorproc_phys->sensor.sensorDelay=0x%x\n",__func__, sensorproc_phys->sensor.sensorDelay);
+//  dev_dbg(g_dev_ptr,"before: sensorproc_phys->sensor.sensorDelay=0x%x\n", sensorproc_phys->sensor.sensorDelay);
   copy_sensorproc(sensor_port, sensorproc_phys);                // save physical sensor functions
-//  dev_dbg(g_dev_ptr,"%s  after: sensorproc_phys->sensor.sensorDelay=0x%x\n",__func__, sensorproc_phys->sensor.sensorDelay);
+//  dev_dbg(g_dev_ptr,"after: sensorproc_phys->sensor.sensorDelay=0x%x\n", sensorproc_phys->sensor.sensorDelay);
 
   // Now calculate phases, swap ones from the sensor
   multiOutDelay= (long *) &GLOBALPARS(sensor_port, G_DLY359_OUT);
@@ -1086,7 +1136,7 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
 
   sensor->hact_delay=0; // No hact delay on 10359 output
   sensor->sensorDelay=multiOutDelay[0];
-  dev_dbg(g_dev_ptr,"%s replaced: sensor->sensorDelay=0x%x\n",__func__, sensor->sensorDelay);
+  dev_dbg(g_dev_ptr,"replaced: sensor->sensorDelay=0x%x\n", sensor->sensorDelay);
 //sensorproc_phys->sensor
 /*
 Now overwrite sensor functions with it's own (originals (physical sensor ones) are already copied to the local structure
@@ -1218,20 +1268,20 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
   int new_sensor=selected-1;     // >=0
 
 
-  dev_dbg(g_dev_ptr,"%s  frame16=%d\n",__func__,frame16);
+  dev_dbg(g_dev_ptr,"frame16=%d\n",frame16);
 
   if (!sensor_mask) sensor_mask=GLOBALPARS(sensor_port, G_SENS_AVAIL) ;// if none sensors were enabled - enable all what is available (same as with WOI size)
 
   if (composite && (!async)) {
-    printk("*** CANNOT USE COMPOSITE MODE WITH FREE RUNNING SENSOR ***\n");
-    composite=0;
-    SETFRAMEPARS_SET(P_MULTI_MODE,0); // Do we need to force anything here? If it was async->free transition? Or just TRIG mode should have all the dependencies of P_MULTI_MODE
+      dev_err(g_dev_ptr,"*** CANNOT USE COMPOSITE MODE WITH FREE RUNNING SENSOR ***\n");
+      composite=0;
+      SETFRAMEPARS_SET(P_MULTI_MODE,0); // Do we need to force anything here? If it was async->free transition? Or just TRIG mode should have all the dependencies of P_MULTI_MODE
   }
 // TODO: recalculate sequence when MULTISENS_EN is chnaged (tried 5 - did not modify sequence, showed first frame only)
 // Here - only recalculate SENSOR_HEIGHT, skipping disabled sensors. in multisensor_pgm_window() will need to skip disabled also
 // No above is not really needed, sequence+enable can be handled by application software
-  dev_dbg(g_dev_ptr,"%s  composite=0x%x\n",__func__,composite);
-  dev_dbg(g_dev_ptr,"%s  sequence=0x%x\n",__func__,    sequence);
+  dev_dbg(g_dev_ptr,"composite=0x%x\n",composite);
+  dev_dbg(g_dev_ptr,"sequence=0x%x\n", sequence);
 // if sequence is zero, put "1-2-3"
   if (sequence==0) {
     j=1;
@@ -1262,9 +1312,9 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
   }
   if ((selected==0) || !((1 << (selected-1)) & GLOBALPARS(sensor_port, G_SENS_AVAIL))) selected=sequence & 3; // if not set or invalid - set to first in sequence
 
-  dev_dbg(g_dev_ptr,"%s  selected=0x%x, thispars->pars[P_MULTI_SELECTED]=0x%x\n",__func__,    selected, (int) thispars->pars[P_MULTI_SELECTED]);
-  dev_dbg(g_dev_ptr,"%s  sequence=0x%x\n",__func__,    sequence);
-  dev_dbg(g_dev_ptr,"%s  sensor_mask=0x%x\n",__func__, sensor_mask);
+  dev_dbg(g_dev_ptr,"selected=0x%x, thispars->pars[P_MULTI_SELECTED]=0x%x\n",  selected, (int) thispars->pars[P_MULTI_SELECTED]);
+  dev_dbg(g_dev_ptr,"sequence=0x%x\n",  sequence);
+  dev_dbg(g_dev_ptr,"sensor_mask=0x%x\n", sensor_mask);
   SETFRAMEPARS_COND(P_MULTI_SELECTED, selected);
   SETFRAMEPARS_COND(P_MULTI_SEQUENCE, sequence);
   SETFRAMEPARS_COND(P_MULTISENS_EN,   sensor_mask);
@@ -1274,14 +1324,14 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
 //  int old_sensor=prev_selected-1; // may be <0
 //  int new_sensor=selected-1;     // >=0
   if (multi_unitialized && (!prev_composite) && (old_sensor>=0)) { // was single-sensor mode, copy P_WOI_* to individual sensor WOI and FLIPS
-    dev_dbg(g_dev_ptr,"%s  multi_unitialized=%d  old_sensor=%x, multi_fliph=%x multi_flipv=%x\n",__func__,  multi_unitialized,  old_sensor, multi_fliph,multi_flipv);
+    dev_dbg(g_dev_ptr,"multi_unitialized=%d  old_sensor=%x, multi_fliph=%x multi_flipv=%x\n", multi_unitialized,  old_sensor, multi_fliph,multi_flipv);
     wois[(P_MULTI_WIDTH1- P_MULTI_WOI)+old_sensor]= prevpars->pars[P_WOI_WIDTH];
     wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+old_sensor]= prevpars->pars[P_WOI_HEIGHT];
     wois[(P_MULTI_LEFT1-  P_MULTI_WOI)+old_sensor]= prevpars->pars[P_WOI_LEFT];
     wois[(P_MULTI_TOP1-   P_MULTI_WOI)+old_sensor]= prevpars->pars[P_WOI_TOP];
     multi_fliph=    (multi_fliph & (~(1<<old_sensor)))  | ((prevpars->pars[P_FLIPH] & 1) << old_sensor);
     multi_flipv=    (multi_flipv & (~(1<<old_sensor)))  | ((prevpars->pars[P_FLIPV] & 1) << old_sensor);
-    dev_dbg(g_dev_ptr,"%s  multi_unitialized=%d old_sensor=%x, multi_fliph=%x multi_flipv=%x\n",__func__,  multi_unitialized,  old_sensor, multi_fliph,multi_flipv);
+    dev_dbg(g_dev_ptr,"multi_unitialized=%d old_sensor=%x, multi_fliph=%x multi_flipv=%x\n", multi_unitialized,  old_sensor, multi_fliph,multi_flipv);
   }
   if (multi_unitialized && (!composite) && (prev_composite || ((new_sensor>=0) && (old_sensor!=new_sensor)))) { // now single-sensor mode, set P_WOI* from saved parameters
     if ((wois[(P_MULTI_WIDTH1-  P_MULTI_WOI)+new_sensor]==0) || (wois[(P_MULTI_HEIGHT1-  P_MULTI_WOI)+new_sensor]==0)) {
@@ -1295,7 +1345,7 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
             wois[(P_MULTI_LEFT1-  P_MULTI_WOI)+new_sensor]= 0;
             wois[(P_MULTI_TOP1-   P_MULTI_WOI)+new_sensor]= 0;
             multi_fliph=    (multi_fliph & (~(1<<new_sensor))); // =0
-    dev_dbg(g_dev_ptr,"%s  new_sensor=%x old_sensor=%x, multi_fliph=%x multi_flipv=%x\n",__func__,  new_sensor,  old_sensor, multi_fliph,multi_flipv);
+    dev_dbg(g_dev_ptr,"new_sensor=%x old_sensor=%x, multi_fliph=%x multi_flipv=%x\n", new_sensor,  old_sensor, multi_fliph,multi_flipv);
             multi_flipv=    (multi_flipv & (~(1<<new_sensor))); // =0
       } else { // was one single channel, now the different (not initialized window) one - copy window parameters
         wois[(P_MULTI_WIDTH1- P_MULTI_WOI)+new_sensor]= prevpars->pars[P_WOI_WIDTH];
@@ -1304,7 +1354,7 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
         wois[(P_MULTI_TOP1-   P_MULTI_WOI)+new_sensor]= prevpars->pars[P_WOI_TOP];
         multi_fliph=    (multi_fliph & (~(1<<new_sensor)))  | ((prevpars->pars[P_FLIPH] & 1) << new_sensor);
         multi_flipv=    (multi_flipv & (~(1<<new_sensor)))  | ((prevpars->pars[P_FLIPV] & 1) << new_sensor);
-    dev_dbg(g_dev_ptr,"%s  new_sensor=%x old_sensor=%x, multi_fliph=%x multi_flipv=%x\n",__func__,  new_sensor,  old_sensor, multi_fliph,multi_flipv);
+    dev_dbg(g_dev_ptr,"new_sensor=%x old_sensor=%x, multi_fliph=%x multi_flipv=%x\n", new_sensor,  old_sensor, multi_fliph,multi_flipv);
       }
     }
  // saved sensor WOI are OK (or just fixed), use them
@@ -1314,7 +1364,7 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
     SETFRAMEPARS_COND(P_WOI_TOP,    wois[(P_MULTI_TOP1-    P_MULTI_WOI)+new_sensor] );
     SETFRAMEPARS_COND(P_FLIPH,      (multi_fliph>>new_sensor) & 1);
     SETFRAMEPARS_COND(P_FLIPV,      (multi_flipv>>new_sensor) & 1);
-    dev_dbg(g_dev_ptr,"%s  new_sensor=%x old_sensor=%x, multi_fliph=%x multi_flipv=%x\n",__func__,  new_sensor,  old_sensor, multi_fliph,multi_flipv);
+    dev_dbg(g_dev_ptr,"new_sensor=%x old_sensor=%x, multi_fliph=%x multi_flipv=%x\n", new_sensor,  old_sensor, multi_fliph,multi_flipv);
   }
 // Validate hights for all enabled channels (OK to skip disabled here)
   oversize=thispars->pars[P_OVERSIZE];
@@ -1330,30 +1380,30 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
   else if ((!oversize) && (height1 > sensor->imageHeight)) height1=sensor->imageHeight; // use clearHeight here?
   wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+SENSOR_IN_SEQ(0,sequence)]=height1;
   total_height=height1;
-  dev_dbg(g_dev_ptr,"%s  total_height=0x%x\n",__func__,total_height);
+  dev_dbg(g_dev_ptr,"total_height=0x%x\n",total_height);
 // is there frame 2 enabled?
   multi_frame=0;
   if (composite && SENSOR_IN_SEQ_EN(1,sequence,sensor_mask)) {  // specified in sequence is enabled
     multi_frame=1;
     total_height+=(vblank+(2 * COLOR_MARGINS))*dv;
-  dev_dbg(g_dev_ptr,"%s  total_height=0x%x\n",__func__,total_height);
+  dev_dbg(g_dev_ptr,"total_height=0x%x\n",total_height);
     if      (!height2)                      height2=sensor->imageHeight;
     if      (height2 < sensor->minHeight)   height2=sensor->minHeight;
     else if (height2 > sensor->arrayHeight) height2=sensor->arrayHeight;
     else if ((!oversize) && (height2 > sensor->imageHeight)) height2=sensor->imageHeight; // use clearHeight here?
     wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+SENSOR_IN_SEQ(1,sequence)]=height2;
     total_height+=height2;
-  dev_dbg(g_dev_ptr,"%s  total_height=0x%x\n",__func__,total_height);
+  dev_dbg(g_dev_ptr,"total_height=0x%x\n",total_height);
     if (SENSOR_IN_SEQ_EN(2,sequence,sensor_mask)) {
       total_height+=(vblank+(2 * COLOR_MARGINS))*dv;
-  dev_dbg(g_dev_ptr,"%s  total_height=0x%x\n",__func__,total_height);
+  dev_dbg(g_dev_ptr,"total_height=0x%x\n",total_height);
       if      (!height3)                      height3=sensor->imageHeight;
       if      (height3 < sensor->minHeight)   height3=sensor->minHeight;
       else if (height3 > sensor->arrayHeight) height3=sensor->arrayHeight;
       else if ((!oversize) && (height2 > sensor->imageHeight)) height3=sensor->imageHeight; // use clearHeight here?
       wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+SENSOR_IN_SEQ(2,sequence)]=height3;
       total_height+=height3;
-  dev_dbg(g_dev_ptr,"%s  total_height=0x%x\n",__func__,total_height);
+  dev_dbg(g_dev_ptr,"total_height=0x%x\n",total_height);
     }
   }
   if (composite) {
@@ -1393,7 +1443,7 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
   }
   SETFRAMEPARS_COND(P_MULTI_FLIPH, multi_fliph);
   SETFRAMEPARS_COND(P_MULTI_FLIPV, multi_flipv);
-  dev_dbg(g_dev_ptr,"%s  total_height=0x%x\n",__func__,total_height);
+  dev_dbg(g_dev_ptr,"total_height=0x%x\n",total_height);
   SETFRAMEPARS_COND(P_SENSOR_HEIGHT, total_height);
   if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes, schedule functions
 
@@ -1414,10 +1464,10 @@ int calcThisPhase(int clk_period,   ///< cklock period (Hz)
 {
     int px_delay=-(clk_period/2 - FPGADelay- cableDelay - sensorDelay) ; // static int sensorDelay
     int px_delay90=(4*px_delay+clk_period/2)/clk_period;
-    MDF16(printk ("cableDelay1=%ld, FPGADelay1=%ld, clk_period=%d\r\n",cableDelay, FPGADelay, clk_period));
-    MDF16(printk ("px_delay1=%d\r\n",px_delay));
+    MDF16(printk ("cableDelay1=%ld, FPGADelay1=%ld, clk_period=%d\n",cableDelay, FPGADelay, clk_period));
+    MDF16(printk ("px_delay1=%d\n",px_delay));
     px_delay -= (px_delay90*clk_period)/4; // -clk_period/8<= now px_delay <= +clk_period/8
-    MDF16(printk ("px_delay=%d, px_delay90=%d\r\n",px_delay,px_delay90));
+    MDF16(printk ("px_delay=%d, px_delay90=%d\n",px_delay,px_delay90));
     px_delay/= FPGA_DCM_STEP; // in DCM steps
     return (px_delay & 0xffff) | ((px_delay90 & 3) <<16) | 0x80000;
 }
@@ -1444,41 +1494,46 @@ int multisensor_pgm_sensorphase(int sensor_port,               ///< sensor port 
   int thisPhase1=    thispars->pars[P_MULTI_PHASE1];
   int thisPhase2=    thispars->pars[P_MULTI_PHASE2];
   int thisPhase3=    thispars->pars[P_MULTI_PHASE3];
+  unsigned long sensor_clk = 90000000; // just deafult if not yet set up
   uint64_t ull_result = 1000000000000LL;
-  dev_dbg(g_dev_ptr,"%s  frame16=%d\n",__func__,frame16);
+  dev_dbg(g_dev_ptr,"frame16=%d\n",frame16);
   if (frame16 >= 0) return -1; // can only work in ASAP mode
  //changed (just set) clock frequency initiates calculation of phase settings
   if (!multi_phases_initialized || (thispars->pars[P_CLK_SENSOR] != prevpars->pars[P_CLK_SENSOR]))  { // system clock is already set to the new frequency
     if (thispars->pars[P_CLK_SENSOR] == prevpars->pars[P_CLK_SENSOR]) {
-     printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__); printk ("WARNING: ((thispars->pars[P_CLK_SENSOR] == prevpars->pars[P_CLK_SENSOR])) but multi_phases_initialized is not yet set (re-init?)\n");
+        dev_warn(g_dev_ptr,"WARNING: ((thispars->pars[P_CLK_SENSOR] == prevpars->pars[P_CLK_SENSOR])) but multi_phases_initialized is not yet set (re-init?)\n");
     }
     multisensor_set_freq (sensor_port,  0, thispars); // not the first time. Assuming no clock chip if clock4 is not set
     reset=1;
     // TODO: put here calculation of the sensor phases in 10359 from bitstream data and clock rate
 //    clk_period= 1000000000000.0f/thispars->pars[P_CLK_SENSOR];  // period in ps
+    if (!thispars->pars[P_CLK_SENSOR]){
+        dev_warn(g_dev_ptr,"Sensor clock is not set, using default 0x%lx\n",sensor_clk);
+    } else {
+        sensor_clk = thispars->pars[P_CLK_SENSOR];
+    }
     do_div(ull_result,thispars->pars[P_CLK_SENSOR]);
     clk_period= ull_result;
 // Now for each of 3 sensor ports of the 10359
     cableDelay= (long *) &GLOBALPARS(sensor_port, G_DLY359_C1);
     FPGADelay=  (long *) &GLOBALPARS(sensor_port, G_DLY359_P1);
     thisPhase1=calcThisPhase(clk_period, FPGADelay[0], cableDelay[0], sensorproc_phys->sensor.sensorDelay) | 0x80000;
-    dev_dbg(g_dev_ptr,"%s cableDelay1=0x%lx FPGADelay1= 0x%lx sensorproc_phys->sensor.sensorDelay=0x%x, thisPhase1=0x%x\n",__func__,cableDelay[0] ,FPGADelay[0], sensorproc_phys->sensor.sensorDelay,thisPhase1);
+    dev_dbg(g_dev_ptr,"cableDelay1=0x%lx FPGADelay1= 0x%lx sensorproc_phys->sensor.sensorDelay=0x%x, thisPhase1=0x%x\n",cableDelay[0] ,FPGADelay[0], sensorproc_phys->sensor.sensorDelay,thisPhase1);
 
     cableDelay= (long *) &GLOBALPARS(sensor_port, G_DLY359_C2);
     FPGADelay=  (long *) &GLOBALPARS(sensor_port, G_DLY359_P2);
     thisPhase2=calcThisPhase(clk_period, FPGADelay[0], cableDelay[0], sensorproc_phys->sensor.sensorDelay) | 0x80000;
-    dev_dbg(g_dev_ptr,"%s cableDelay2=0x%lx FPGADelay2= 0x%lx sensorproc_phys->sensor.sensorDelay=0x%x, thisPhase3=0x%x\n",__func__,cableDelay[0] ,FPGADelay[0], sensorproc_phys->sensor.sensorDelay,thisPhase2);
+    dev_dbg(g_dev_ptr,"cableDelay2=0x%lx FPGADelay2= 0x%lx sensorproc_phys->sensor.sensorDelay=0x%x, thisPhase3=0x%x\n",cableDelay[0] ,FPGADelay[0], sensorproc_phys->sensor.sensorDelay,thisPhase2);
 
     cableDelay= (long *) &GLOBALPARS(sensor_port, G_DLY359_C3);
     FPGADelay=  (long *) &GLOBALPARS(sensor_port, G_DLY359_P3);
     thisPhase3=calcThisPhase(clk_period, FPGADelay[0], cableDelay[0], sensorproc_phys->sensor.sensorDelay) | 0x80000;
-    dev_dbg(g_dev_ptr,"%s cableDelay3=0x%lx FPGADelay3= 0x%lx sensorproc_phys->sensor.sensorDelay=0x%x, thisPhase3=0x%x\n",__func__,cableDelay[0] ,FPGADelay[0], sensorproc_phys->sensor.sensorDelay,thisPhase3);
+    dev_dbg(g_dev_ptr,"cableDelay3=0x%lx FPGADelay3= 0x%lx sensorproc_phys->sensor.sensorDelay=0x%x, thisPhase3=0x%x\n",cableDelay[0] ,FPGADelay[0], sensorproc_phys->sensor.sensorDelay,thisPhase3);
 
 // TODO: calculate SDRAM phase here too.
     adjustSDRAMNeed=1;
     multi_phases_initialized=1;
   }
-
   if (reset) {
     MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_DCM_SYSTEM,  I2C359_DCM_RESET | I2C359_DCM_RESET90);
     MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_DCM_SDRAM,   I2C359_DCM_RESET | I2C359_DCM_RESET90);
@@ -1489,24 +1544,23 @@ int multisensor_pgm_sensorphase(int sensor_port,               ///< sensor port 
       thisPhaseSDRAM=multisensor_adjustSDRAM (sensor_port, FPGA_DCM_RANGE);
       if (thisPhaseSDRAM>=0) {
          SETFRAMEPARS_SET(P_MULTI_PHASE_SDRAM,  thisPhaseSDRAM);
-         printk("10359 SDRAM clock phase is set to %d/%s%d\n",
+         dev_info(g_dev_ptr,"10359 SDRAM clock phase is set to %d/%s%d\n",
                90*((thisPhaseSDRAM>>16) & 3),
               (thisPhaseSDRAM & 0x8000)?"-":"+",
               (thisPhaseSDRAM & 0x8000)?(0x10000-(thisPhaseSDRAM & 0xffff)):(thisPhaseSDRAM & 0xffff));
       } else {
-         printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);
-         printk ("**** ERROR adjusting SDRAM clock phase in %s:%d:%s, result=0x%x\n",__FILE__,__LINE__,__FUNCTION__,thisPhaseSDRAM);
+         dev_warn (g_dev_ptr,"**** ERROR adjusting SDRAM clock phase in %s:%d:%s, result=0x%x\n",__FILE__,__LINE__,__FUNCTION__,thisPhaseSDRAM);
       }
     } else {
       resetThisDCM=reset || (thisPhaseSDRAM & 0x80000);
       rslt= multisensor_set_phase (sensor_port, I2C359_DCM_SDRAM, resetThisDCM, thisPhaseSDRAM, prevpars->pars[P_MULTI_PHASE_SDRAM]);
       if ((rslt>=0) && (rslt != thisPhaseSDRAM)) SETFRAMEPARS_SET(P_MULTI_PHASE_SDRAM,  rslt);
       if (resetThisDCM) {
-         dev_dbg(g_dev_ptr,"%s re-initializing SDRAM on 10359 after DCM reset\n",__func__);
+         dev_dbg(g_dev_ptr,"re-initializing SDRAM on 10359 after DCM reset\n");
          multisensor_initSDRAM(sensor_port, thispars); // init 10359 SDRAM
       }
 // Test memory phase here
-      printk ("\nMULTI_PHASE_SDRAM=%01x %04x\n", (rslt>>16), rslt & 0xffff);
+      dev_dbg(g_dev_ptr,"\nMULTI_PHASE_SDRAM=%01x %04x\n", (rslt>>16), rslt & 0xffff);
       if (thisPhaseSDRAM & 0x100000) {
         for (rslt=0;rslt<16;rslt++) {
           multisensor_memphase_debug(sensor_port, -1);
@@ -1557,21 +1611,26 @@ int multisensor_set_freq  (int sensor_port,                ///< sensor port numb
   int rslt=0;
   int i;
   int was_sensor_freq=0;
-  if (!(GLOBALPARS(sensor_port, G_MULTI_CFG) && (1<<G_MULTI_CFG_SYSCLK))) { // skip local clock if disabled in configuration
-//    was_sensor_freq=getClockFreq(I2C359_CLK_NUMBER);
-    was_sensor_freq=x393_getClockFreq(sensor_port, I2C359_CLK_NUMBER & 3); // clock 0
-    if (first || (was_sensor_freq !=0)) { // Otherwise it is likely rev 0 - no clock
-//      was_sensor_freq=getClockFreq(1);
+  int clock_src= (GLOBALPARS(sensor_port, G_MULTI_CFG) && (1<<G_MULTI_CFG_SYSCLK))?I2C359_CLKSRC_SYSTEM:I2C359_CLKSRC_LOCAL;
+  was_sensor_freq=x393_getClockFreq(sensor_port, I2C359_CLK_NUMBER & 3); // clock 0
+  dev_dbg(g_dev_ptr,"GLOBALPARS(%d, G_MULTI_CFG) = 0x%lx, was_sensor_freq=%d\n",sensor_port, GLOBALPARS(sensor_port, G_MULTI_CFG),was_sensor_freq);
+  if (first || (was_sensor_freq !=0)) { // Otherwise it is likely rev 0 - no clock
+      //      was_sensor_freq=getClockFreq(1);
       was_sensor_freq=90000000; // TODO: Find out how to read actual clock frequency for sensor ports
-//      i=setClockFreq(I2C359_CLK_NUMBER, was_sensor_freq);
-      i=x393_setClockFreq(sensor_port, I2C359_CLK_NUMBER & 3, was_sensor_freq);
-      if (i>0) {
-        MULTISENSOR_WRITE_I2C16_SHADOW(sensor_port, I2C359_CLKSRC, I2C359_CLKSRC_LOCAL);
-        mdelay (50); // 0.05 sec to stabilize clocks - will miss multiple frames
+      //      i=setClockFreq(I2C359_CLK_NUMBER, was_sensor_freq);
+
+      // CY22393 probably has insufficient voltage to operate, bypassing it completely
+      if (clock_src == I2C359_CLKSRC_LOCAL) {
+          i=x393_setClockFreq(sensor_port, I2C359_CLK_NUMBER & 3, was_sensor_freq);
       } else {
-        was_sensor_freq=-1; // error
+          i=was_sensor_freq;
       }
-    }
+      if (i>0) {
+          MULTISENSOR_WRITE_I2C16_SHADOW(sensor_port, I2C359_CLKSRC, clock_src);
+          mdelay (50); // 0.05 sec to stabilize clocks - will miss multiple frames
+      } else {
+          was_sensor_freq=-1; // error
+      }
   }
   MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_DCM_SENSOR1, I2C359_DCM_RESET | I2C359_DCM_RESET90 | I2C359_DCM_HACT_RESET);
   MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_DCM_SENSOR2, I2C359_DCM_RESET | I2C359_DCM_RESET90 | I2C359_DCM_HACT_RESET);
@@ -1673,7 +1732,7 @@ int multisensor_set_phase_recover(int           sensor_port, ///< sensor port nu
             else        goodPhase = newPhase;
         }
         rslt=goodPhase;
-        dev_dbg(g_dev_ptr,"%s Reduced NewPhase, goodPhase= 0x%lx oldPhase= 0x%lx\r\n",__func__, goodPhase, oldPhase );
+        dev_dbg(g_dev_ptr,"Reduced NewPhase, goodPhase= 0x%lx oldPhase= 0x%lx\n", goodPhase, oldPhase );
     }
     return rslt;
 }
@@ -1689,48 +1748,48 @@ int multisensor_set_phase (int           sensor_port, ///< sensor port number (0
 													  ///< @return >= 0 - OK (returns new combined phase),
 													  ///< - -1 - no communication with 10359
 {
-  int old_phase;
-  int old_phase90;
-  int phase;
-  int phase90;
-  int diff_phase;
-  int diff_phase90;
-  int rslt=0;
-  int i;
-  MDF24(printk("reg_addr=0x%x resetDCM=%d newPhase90=0x%lx newPhase= 0x%lx oldPhase= 0x%lx\r\n",\
-                reg_addr, resetDCM, newPhase>>16, newPhase & 0xffff, oldPhase ));
-  if (resetDCM || (newPhase & 0x8000)) {
-    MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_RESET | I2C359_DCM_RESET90);
-    oldPhase=0;
-  }
-  if (newPhase!=oldPhase) {
-   dev_dbg(g_dev_ptr,"%s newPhase= 0x%lx oldPhase= 0x%lx\r\n",__func__, newPhase, oldPhase );
-     old_phase= oldPhase & 0xffff;  if (old_phase>=0x8000) old_phase-=0x10000; // make it signed
-     old_phase90= (oldPhase >> 16) & 3;
-     if ((old_phase > 255) || (old_phase < -255)) {
-       MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_RESET | I2C359_DCM_RESET90);
-       old_phase=   0;
-       old_phase90= 0;
-     }
-     phase=   newPhase & 0xffff;    if (phase>=    0x8000) phase-=    0x10000; // make it signed
-     phase90=(newPhase >> 16) & 3;
-     if      (phase >  255) phase=  255;
-     else if (phase < -255) phase= -255;
-     diff_phase=  phase-  old_phase;
-     diff_phase90=phase90-old_phase90;
-     if (diff_phase90>2) diff_phase90-=4;
-     else if (diff_phase90<-1)diff_phase90+=4;
-   dev_dbg(g_dev_ptr,"%s old_phase= 0x%x old_phase90= 0x%x\r\n",__func__, old_phase, old_phase90 );
-   dev_dbg(g_dev_ptr,"%s phase=     0x%x phase90=     0x%x\r\n",__func__, phase, phase90 );
-   dev_dbg(g_dev_ptr,"%s diff_phase=0x%x diff_phase90=0x%x\r\n",__func__, diff_phase, diff_phase90 );
-     if      (diff_phase > 0) for (i=diff_phase; i > 0; i--)      MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_INC   )
-     else if (diff_phase < 0) for (i=diff_phase; i < 0; i++)      MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_DEC   )
-     if      (diff_phase90 > 0) for (i=diff_phase90; i > 0; i--)  MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_INC90 )
-     else if (diff_phase90 < 0) for (i=diff_phase90; i < 0; i++)  MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_DEC90 )
-    if (rslt) return -1;
-    return (phase & 0xffff) | (phase90 << 16);
-  }
-  return 0;
+    int old_phase;
+    int old_phase90;
+    int phase;
+    int phase90;
+    int diff_phase;
+    int diff_phase90;
+    int rslt=0;
+    int i;
+    MDF24(printk("reg_addr=0x%x resetDCM=%d newPhase90=0x%lx newPhase= 0x%lx oldPhase= 0x%lx\n",\
+            reg_addr, resetDCM, newPhase>>16, newPhase & 0xffff, oldPhase ));
+    if (resetDCM || (newPhase & 0x8000)) {
+        MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_RESET | I2C359_DCM_RESET90);
+        oldPhase=0;
+    }
+    if (newPhase!=oldPhase) {
+        dev_dbg(g_dev_ptr,"newPhase= 0x%lx oldPhase= 0x%lx\n", newPhase, oldPhase );
+        old_phase= oldPhase & 0xffff;  if (old_phase>=0x8000) old_phase-=0x10000; // make it signed
+        old_phase90= (oldPhase >> 16) & 3;
+        if ((old_phase > 255) || (old_phase < -255)) {
+            MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_RESET | I2C359_DCM_RESET90);
+            old_phase=   0;
+            old_phase90= 0;
+        }
+        phase=   newPhase & 0xffff;    if (phase>=    0x8000) phase-=    0x10000; // make it signed
+        phase90=(newPhase >> 16) & 3;
+        if      (phase >  255) phase=  255;
+        else if (phase < -255) phase= -255;
+        diff_phase=  phase-  old_phase;
+        diff_phase90=phase90-old_phase90;
+        if (diff_phase90>2) diff_phase90-=4;
+        else if (diff_phase90<-1)diff_phase90+=4;
+        dev_dbg(g_dev_ptr,"old_phase= 0x%x old_phase90= 0x%x\n", old_phase, old_phase90 );
+        dev_dbg(g_dev_ptr,"phase=     0x%x phase90=     0x%x\n", phase, phase90 );
+        dev_dbg(g_dev_ptr,"diff_phase=0x%x diff_phase90=0x%x\n", diff_phase, diff_phase90 );
+        if      (diff_phase > 0) for (i=diff_phase; i > 0; i--)      MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_INC   )
+        else if (diff_phase < 0) for (i=diff_phase; i < 0; i++)      MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_DEC   )
+        if      (diff_phase90 > 0) for (i=diff_phase90; i > 0; i--)  MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_INC90 )
+        else if (diff_phase90 < 0) for (i=diff_phase90; i < 0; i++)  MULTISENSOR_WRITE_I2C16(sensor_port, reg_addr, I2C359_DCM_DEC90 )
+        if (rslt) return -1;
+        return (phase & 0xffff) | (phase90 << 16);
+    }
+    return 0;
 }
 
 
@@ -1803,18 +1862,18 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
        }
      }
      if (low90 < 0){
-         printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);
-         printk ("**** ERROR adjusting SDRAM clock phase in %s:%d:%s\n",__FILE__,__LINE__,__FUNCTION__);
-         printk ("oks90=%d, ok90=0x%x, centroids90=0x%x  0x%x 0x%x 0x%x\n",oks90,ok90,centroids90[0],centroids90[1],centroids90[2],centroids90[3]);
+         dev_err(g_dev_ptr,"%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);
+         dev_err(g_dev_ptr,"**** ERROR adjusting SDRAM clock phase in %s:%d:%s\n",__FILE__,__LINE__,__FUNCTION__);
+         dev_err(g_dev_ptr,"oks90=%d, ok90=0x%x, centroids90=0x%x  0x%x 0x%x 0x%x\n",oks90,ok90,centroids90[0],centroids90[1],centroids90[2],centroids90[3]);
          return -1;
      }
      break;
 // was: fall through to default branch
      default:
-       printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);
-       printk ("**** ERROR adjusting SDRAM clock phase in %s:%d:%s\n",__FILE__,__LINE__,__FUNCTION__);
-       printk ("oks90=%d, ok90=0x%x, centroids90=0x%x  0x%x 0x%x 0x%x\n",oks90,ok90,centroids90[0],centroids90[1],centroids90[2],centroids90[3]);
-       return -1;
+         dev_err(g_dev_ptr,"%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);
+         dev_err(g_dev_ptr,"**** ERROR adjusting SDRAM clock phase in %s:%d:%s\n",__FILE__,__LINE__,__FUNCTION__);
+         dev_err(g_dev_ptr,"oks90=%d, ok90=0x%x, centroids90=0x%x  0x%x 0x%x 0x%x\n",oks90,ok90,centroids90[0],centroids90[1],centroids90[2],centroids90[3]);
+         return -1;
   }
 // now find low margin
   if (results90 [low90]) { // was bad
@@ -1832,18 +1891,18 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
   if (oldPhase<0) return oldPhase;  // any error is fatal here - fine phase is 0
   needReset=0;
   while ((low_h-low_l)>1) {
-    i=(low_l+low_h)/2;
-    oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, (low90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
-    if (oldPhase<0)  {
-  MDF24 (printk(" DCM error=%d\n",-oldPhase));
-      needReset=1;
-      if ((oldPhase!=-I2C359_DCM_ERR_OVFL) && (oldPhase!=-I2C359_DCM_ERR_NODONE))  return oldPhase; // other errors fatal
-      else                                low_l=i; // bad
-    } else {
-      needReset=0;
-      if (multisensor_memphase (sensor_port,NULL)==0) low_h=i; // good
-      else                                            low_l=i; // bad
-   }
+      i=(low_l+low_h)/2;
+      oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, (low90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
+      if (oldPhase<0)  {
+          dev_dbg(g_dev_ptr," DCM error=%d\n",-oldPhase);
+          needReset=1;
+          if ((oldPhase!=-I2C359_DCM_ERR_OVFL) && (oldPhase!=-I2C359_DCM_ERR_NODONE))  return oldPhase; // other errors fatal
+          else                                low_l=i; // bad
+      } else {
+          needReset=0;
+          if (multisensor_memphase (sensor_port,NULL)==0) low_h=i; // good
+          else                                            low_l=i; // bad
+      }
   }
 // now find high margin
   if (results90 [high90]) { // was bad
@@ -1857,35 +1916,35 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
   if (oldPhase<0) return oldPhase;  // any error is fatal here - fine phase is 0
   needReset=0;
   while ((high_h-high_l)>1) {
-    i=(high_h+high_l)/2;
-    oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, (high90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
-    if (oldPhase<0)  {
-  MDF24 (printk(" DCM error=%d\n",-oldPhase));
-      needReset=1;
-      if ((oldPhase!=-I2C359_DCM_ERR_OVFL) && (oldPhase!=-I2C359_DCM_ERR_NODONE))  return oldPhase; // other errors fatal
-      else                                high_h=i; // bad
-    } else {
-      needReset=0;
-      if (multisensor_memphase (sensor_port,NULL)==0) high_l=i; // good
-      else                                            high_h=i; // bad
-    }
+      i=(high_h+high_l)/2;
+      oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, (high90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
+      if (oldPhase<0)  {
+          dev_dbg(g_dev_ptr," DCM error=%d\n",-oldPhase);
+          needReset=1;
+          if ((oldPhase!=-I2C359_DCM_ERR_OVFL) && (oldPhase!=-I2C359_DCM_ERR_NODONE))  return oldPhase; // other errors fatal
+          else                                high_h=i; // bad
+      } else {
+          needReset=0;
+          if (multisensor_memphase (sensor_port,NULL)==0) high_l=i; // good
+          else                                            high_h=i; // bad
+      }
   }
-  MDF24 (printk(" low90=%d, low=%d, high90=%d, high=%d\n",low90,low_h,high90,high_l));
+  dev_dbg(g_dev_ptr,"low90=%d, low=%d, high90=%d, high=%d\n",low90,low_h,high90,high_l);
   if (high90==low90) { // 0,1 OK phases
-    if (high_l>low_h) { // 0,1 OK phases
-      i= (high90<<16) | (((high_l+low_h)>>1) & 0xffff);
-      oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, i, oldPhase); // middle phase, same 90-degree
-      if (oldPhase<0) return oldPhase;
-// Verify that final phase is OK
-      if (multisensor_memphase (sensor_port,NULL)==0)      return i;
-       printk ("**** ERROR adjusting SDRAM clock phase (bad between two good points) in %s:%d:%s\n",__FILE__,__LINE__,__FUNCTION__);
-       printk ("low90=%d, low_l=%d, high90=%d, high_l=%d, i=0x%x\n",low90, low_l, high90, high_l,i);
-       return -10;
-    } else {
-       printk ("**** ERROR adjusting SDRAM clock phase in %s:%d:%s\n",__FILE__,__LINE__,__FUNCTION__);
-       printk ("low90=%d, low_l=%d, high90=%d, high_l=%d\n",low90, low_l, high90, high_l);
-       return -1;
-    }
+      if (high_l>low_h) { // 0,1 OK phases
+          i= (high90<<16) | (((high_l+low_h)>>1) & 0xffff);
+          oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, i, oldPhase); // middle phase, same 90-degree
+          if (oldPhase<0) return oldPhase;
+          // Verify that final phase is OK
+          if (multisensor_memphase (sensor_port,NULL)==0)      return i;
+          dev_err(g_dev_ptr,"**** ERROR adjusting SDRAM clock phase (bad between two good points) in %s:%d:%s\n",__FILE__,__LINE__,__FUNCTION__);
+          dev_err(g_dev_ptr,"low90=%d, low_l=%d, high90=%d, high_l=%d, i=0x%x\n",low90, low_l, high90, high_l,i);
+          return -10;
+      } else {
+          dev_err(g_dev_ptr,"**** ERROR adjusting SDRAM clock phase in %s:%d:%s\n",__FILE__,__LINE__,__FUNCTION__);
+          dev_err(g_dev_ptr,"low90=%d, low_l=%d, high90=%d, high_l=%d\n",low90, low_l, high90, high_l);
+          return -1;
+      }
   }
 // There were two good quarter phases (high90!=low90)
 // two solution: 1 - put 45 calculate phase knowing the period and DCM step or
@@ -1902,7 +1961,7 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
       i=(low_l+low_h)/2;
       oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, (low90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
       if (oldPhase<0)  {
-  MDF24 (printk(" DCM error=%d\n",-oldPhase));
+          dev_dbg(g_dev_ptr,"DCM error=%d\n",-oldPhase);
         needReset=1;
         if ((oldPhase!=-I2C359_DCM_ERR_OVFL) && (oldPhase!=-I2C359_DCM_ERR_NODONE)) return oldPhase; // other errors fatal
         else                                low_l=i; // bad
@@ -1920,31 +1979,31 @@ int  multisensor_adjustSDRAM (int sensor_port, ///< sensor_port Sensor port (0..
     if (oldPhase<0) return oldPhase;  // any error is fatal here - fine phase is 0
     needReset=0;
     while ((high_h-high_l)>1) {
-      i=(high_h+high_l)/2;
-      oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, (high90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
-      if (oldPhase<0)  {
-  MDF24 (printk(" DCM error=%d\n",-oldPhase));
-        needReset=1;
-        if ((oldPhase!=-I2C359_DCM_ERR_OVFL) && (oldPhase!=-I2C359_DCM_ERR_NODONE)) return oldPhase; // other errors fatal
-        else                                high_h=i; // bad
-      } else {
-        needReset=0;
-        if (multisensor_memphase (sensor_port, NULL)==0) high_l=i; // good
-        else                                             high_h=i; // bad
-      }
+        i=(high_h+high_l)/2;
+        oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, (high90<<16) | (i & 0xffff), oldPhase); // try middle phase, no DCM reset
+        if (oldPhase<0)  {
+            dev_dbg(g_dev_ptr,"DCM error=%d\n",-oldPhase);
+            needReset=1;
+            if ((oldPhase!=-I2C359_DCM_ERR_OVFL) && (oldPhase!=-I2C359_DCM_ERR_NODONE)) return oldPhase; // other errors fatal
+            else                                high_h=i; // bad
+        } else {
+            needReset=0;
+            if (multisensor_memphase (sensor_port, NULL)==0) high_l=i; // good
+            else                                             high_h=i; // bad
+        }
     }
   }
-  MDF24 (printk("Re-measured to the same 90-degree phase low90=%d, low=%d, high90=%d, high=%d\n",low90,low_h,high90,high_l));
+  dev_dbg(g_dev_ptr,"Re-measured to the same 90-degree phase low90=%d, low=%d, high90=%d, high=%d\n",low90,low_h,high90,high_l);
   if (high_l>low_h) { // 0,1 OK phases
       i= (high90<<16) | (((high_l+low_h)>>1) & 0xffff);
       oldPhase= multisensor_set_phase_verify (sensor_port, I2C359_DCM_SDRAM, needReset, i, oldPhase); // middle phase, same 90-degree
       return oldPhase; // (both >=0 or error (<0)
   } else { // something strange - should not get here
-       printk("%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);
-       printk ("**** BUG - should not get here (there were two good 90-degree phases, now none)\n");
-       printk ("ERROR adjusting SDRAM clock phase in %s:%d:%s\n",__FILE__,__LINE__,__FUNCTION__);
-       printk ("low90=%d, low_l=%d, high90=%d, high_l=%d\n",low90, low_l, high90, high_l);
-       return -1;
+      dev_err(g_dev_ptr,"%s:%d:%s ",__FILE__,__LINE__,__FUNCTION__);
+      dev_err(g_dev_ptr,"**** BUG - should not get here (there were two good 90-degree phases, now none)\n");
+      dev_err(g_dev_ptr,"ERROR adjusting SDRAM clock phase in %s:%d:%s\n",__FILE__,__LINE__,__FUNCTION__);
+      dev_err(g_dev_ptr,"low90=%d, low_l=%d, high90=%d, high_l=%d\n",low90, low_l, high90, high_l);
+      return -1;
   }
 }
 /** Measure SDRAM on 10359 board phase? */
@@ -1962,7 +2021,7 @@ int multisensor_memphase (int sensor_port,          ///< Sensor port
     MULTISENSOR_WRITE_I2C32(sensor_port, I2C359_SDRAM_CHEN,  I2C359_SDRAM_STOP(4) | I2C359_SDRAM_STOP(5)); // initialize write and read channels, reset SDRAM and buffer addresses
     MULTISENSOR_WRITE_I2C32(sensor_port, I2C359_SDRAM_CHEN,  I2C359_SDRAM_RUN(4)  | I2C359_SDRAM_RUN(5));  // enable write and read channels
     for (i=0; i<64;i++) {
-        MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_DATA, (((i&7)==3) || ((i&7)==4) || ((i&7)==5))?0xffff:0); // pattern of 5 zeores, 3 ffff-s
+        MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_DATA, (((i&7)==3) || ((i&7)==4) || ((i&7)==5))?0xffff:0); // pattern of 5 zeros, 3 ffff-s
     }
     MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_PAGE_WR, 0);                  // start page write
     MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_SDRAM_PAGE_RD, 0);                  // start page read (expecting i2c to be much slower than page wr/rd
@@ -1990,7 +2049,7 @@ int multisensor_memphase (int sensor_port,          ///< Sensor port
     //    for (i=0; i<8;i++)    printk (" %03x ",setbits[i]); printk("\n");
     n=(0x10000*sx)/s;
     if (centroid0x10000) centroid0x10000[0]=n;
-    MDF24 (printk("centroid=0x%x, OK=%d\n",n,OK));
+    dev_err(g_dev_ptr,"centroid=0x%x, OK=%d\n",n,OK);
     return OK?0:(n?n:1); // so if !OK but n=0 - return n=1 (1/0x10000, actually)
 }
 
@@ -2074,16 +2133,16 @@ int multisensor_pgm_sensorregs (int sensor_port,               ///< sensor port 
   unsigned long bmask32= ((thispars->mod32) >> (P_M10359_REGS>>5)) & (( 1 << (P_M10359_NUMREGS >> 5))-1) ;
   unsigned long mask;
   int index,index32;
-  dev_dbg(g_dev_ptr,"%s  frame16=%d\n",__func__,frame16);
+  dev_dbg(g_dev_ptr,"frame16=%d\n",frame16);
   if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-  dev_dbg(g_dev_ptr,"%s  bmask32=0x%lx, thispars->mod32=0x%lx, P_M10359_REGS=0x%x, P_M10359_NUMREGS=0x%x\n",__func__,bmask32,thispars->mod32,P_M10359_REGS,P_M10359_NUMREGS);
+  dev_dbg(g_dev_ptr,"bmask32=0x%lx, thispars->mod32=0x%lx, P_M10359_REGS=0x%x, P_M10359_NUMREGS=0x%x\n",bmask32,thispars->mod32,P_M10359_REGS,P_M10359_NUMREGS);
 
   if (bmask32) {
     for (index32=(P_M10359_REGS>>5); bmask32; index32++, bmask32 >>= 1) {
-       dev_dbg(g_dev_ptr,"%s  index32=0x%x, bmask32=0x%lx\n",__func__,index32,bmask32);
+       dev_dbg(g_dev_ptr,"index32=0x%x, bmask32=0x%lx\n",index32,bmask32);
        if (bmask32 & 1) {
          mask=thispars->mod[index32];
-         dev_dbg(g_dev_ptr,"%s  mask=0x%lx\n",__func__,mask);
+         dev_dbg(g_dev_ptr,"mask=0x%lx\n",mask);
          for (index=(index32<<5); mask; index++, mask >>= 1) {
            if (mask & 1) {
              SET_10359_REG (sensor_port, fpga_addr, (index-P_M10359_REGS), thispars->pars[index]);

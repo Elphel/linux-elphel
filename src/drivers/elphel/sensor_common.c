@@ -1141,16 +1141,21 @@ int legacy_i2c(int ports) ///< bitmask of the sensor ports to use
     for (sensor_port=0; sensor_port< SENSOR_PORTS; sensor_port++) if (ports & (1 << sensor_port)) {
         i2c_page_alloc_init(sensor_port); // reset all pages allocation
         i2c_page_register(sensor_port, class_10359->slave7);
+        dev_dbg(g_dev_ptr, "Reset previously allocated pages for port= %d\n",sensor_port);
+        dev_dbg(g_dev_ptr, "Setting 10359 page for port %d, slave= 0x%x\n",sensor_port,class_10359->slave7);
         set_xi2c_wrc(class_10359, sensor_port, class_10359->slave7, 0);
         for (subchn = 0; subchn <4; subchn++){ // subchn == 0 - broadcast
             dev_sensor.slave7 = class_sensor->slave7 + I2C359_INC * subchn;
+            dev_dbg(g_dev_ptr, "Setting sensor page for port %d, slave= 0x%x\n",sensor_port,dev_sensor.slave7);
             i2c_page_register(sensor_port, dev_sensor.slave7);
             set_xi2c_wrc(&dev_sensor, sensor_port, dev_sensor.slave7, 0);
         }
         // Now register one page for reading 10359 and the sensor using sensor speed data
         memcpy(&dev_sensor, class_sensor, sizeof(x393_i2c_device_t)); // dev_sensor));
+        dev_dbg(g_dev_ptr, "Registering page to read senors 16-bit on port %d, page= 0x%x\n",sensor_port,LEGACY_READ_PAGE2);
         i2c_page_register(sensor_port, LEGACY_READ_PAGE2);
         set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE2);
+        dev_dbg(g_dev_ptr, "Registering page to read 32-bit data for 10359 on port %d, page= 0x%x\n",sensor_port,LEGACY_READ_PAGE4);
         i2c_page_register(sensor_port, LEGACY_READ_PAGE4);
         dev_sensor.data_bytes=4; // for reading 10359 in 32-bit mode
         set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE4);

@@ -1096,6 +1096,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     }
     // dh (decimation changed)?
     dh = thispars->pars[P_DCM_HOR];
+    dh = dh?dh:1;
     if (FRAMEPAR_MODIFIED(P_DCM_HOR)) {
         if (dh<1) dh=1; else if (dh>32) dh=32;
         while ((dh>1) && !(sensor->dcmHor  & (1 << (dh-1)))) dh--; // adjust decimation to maximal supported (if requested is not supported)
@@ -1103,6 +1104,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     }
     // dv (decimation changed)?
     dv = thispars->pars[P_DCM_VERT];
+    dv = dv?dv:1;
     if (FRAMEPAR_MODIFIED(P_DCM_VERT)) {
         if (dv<1) dv=1; else if (dv>32) dv=32;
         while ((dv>1) && !(sensor->dcmVert  & (1 << (dv-1)))) dv--; // adjust decimation to maximal supported (if requested is not supported)
@@ -1110,6 +1112,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     }
     // bh (binning changed)?
     bh = thispars->pars[P_BIN_HOR];
+    dv = dv?dv:1;
     if (FRAMEPAR_MODIFIED(P_BIN_HOR)) {
         if (bh<1) bh=1; else if (bh>dh) bh=dh;
         while ((bh>1) && !(sensor->binHor  & (1 << (bh-1)))) bh--; // adjust binning to maximal supported (if requested is not supported)
@@ -1117,6 +1120,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     }
     // bv (binning changed)?
     bv = thispars->pars[P_BIN_VERT];
+    bv = bv?bv:1;
     if (FRAMEPAR_MODIFIED(P_BIN_VERT)) {
         if (bv<1) bv=1; else if (bv>dv) bv=dv;
         while ((bv>1) && !(sensor->binVert  & (1 << (bv-1)))) bv--; // adjust binning to maximal supported (if requested is not supported)

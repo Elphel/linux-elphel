@@ -1219,7 +1219,7 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
 {
     struct frameparspair_t pars_to_update[16]; // maximum 7 registers updated (need to recount)
     int nupdate=0;
-    int dh=  thispars->pars[P_DCM_HOR];
+    int dh=  thispars->pars[P_DCM_HOR]?thispars->pars[P_DCM_HOR]:1;
     int ww=  thispars->pars[P_SENSOR_PIXH] * dh;
     int binning_cost = 0;
     int width,i;

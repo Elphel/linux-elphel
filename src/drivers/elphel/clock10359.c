@@ -84,25 +84,25 @@ int calc_pll_params (unsigned int f, t_pll_params * pars) { // f -in Hz
 	unsigned int fpmx= CY22393_XTAL * (CY22393_PMAX + 6);
 	int divmn, divmx, err1,err, div,q,qmn,qmx,qmx1,fdv,p, e,fdvq;
 	pars->rslt=3; // other error
-	dev_dbg(sdev, "f0=%d,f=%d, CY22393_OUTMAX=%d\r\n",f0,f,CY22393_OUTMAX);
+	dev_dbg(sdev, "f0=%d,f=%d, CY22393_OUTMAX=%d\n",f0,f,CY22393_OUTMAX);
 
 	f/=CY22393_SCALE; // to fit into 32-bit calculations
-	dev_dbg(sdev, "f0=%d,f=%d, CY22393_OUTMAX=%d\r\n",f0,f,CY22393_OUTMAX);
+	dev_dbg(sdev, "f0=%d,f=%d, CY22393_OUTMAX=%d\n",f0,f,CY22393_OUTMAX);
 	if (f>CY22393_OUTMAX) {
 	 pars->rslt=2;
-		dev_dbg(sdev, "f0=%d,f=%d, CY22393_OUTMAX=%d\r\n",f0,f,CY22393_OUTMAX);
+		dev_dbg(sdev, "f0=%d,f=%d, CY22393_OUTMAX=%d\n",f0,f,CY22393_OUTMAX);
 	 return pars->rslt;
 	}
 	if (f <=0 ) {
 	 pars->rslt=1;
-		dev_dbg(sdev, "f0=%d,f=%d, CY22393_OUTMAX=%d\r\n",f0,f,CY22393_OUTMAX);
+		dev_dbg(sdev, "f0=%d,f=%d, CY22393_OUTMAX=%d\n",f0,f,CY22393_OUTMAX);
 	 return pars->rslt;
 	}
 	divmx=CY22393_PLLMAX/f; if (divmx > 127) divmx=127; // could not be <1
 	divmn=CY22393_PLLMIN/f; if (divmn < 1)   divmn=1;
 	if (divmn >127) {
 	 pars->rslt=1;
-		dev_dbg(sdev, "f0=%d,f=%d, CY22393_OUTMAX=%d, divmn=%d\r\n",f0,f,CY22393_OUTMAX,divmn);
+		dev_dbg(sdev, "f0=%d,f=%d, CY22393_OUTMAX=%d, divmn=%d\n",f0,f,CY22393_OUTMAX,divmn);
 	 return pars->rslt;
 	}
 	err1=f;
@@ -113,7 +113,7 @@ int calc_pll_params (unsigned int f, t_pll_params * pars) { // f -in Hz
 		qmn=fpmn/fdv-2; if (qmn < 0) qmn=0;
 		qmx=fpmx/fdv-2; if (qmx >255) qmx=255;
 		// recalculate qmn to avoid same div*qmn as already tried with lover div
-		dev_dbg(sdev, "div=%d,qmn=%d, qmx=%d\r\n",div,qmn,qmx);
+		dev_dbg(sdev, "div=%d,qmn=%d, qmx=%d\n",div,qmn,qmx);
 		if (div==1) qmx1=qmx;
 		else if ((qmn*div) < qmx1) qmn=qmx1/div;
 		for (q=qmn+2;q<=qmx+2; q++) {
@@ -127,10 +127,10 @@ int calc_pll_params (unsigned int f, t_pll_params * pars) { // f -in Hz
 				pars->dv=div;
 				err1=e/q/div;
 				err=err1*div;
-				dev_dbg(sdev, "f=%d, div=%d, p=%d,q=%d, err1=%d\r\n", (f0*p)/q/div, div,p, q, err1);
+				dev_dbg(sdev, "f=%d, div=%d, p=%d,q=%d, err1=%d\n", (f0*p)/q/div, div,p, q, err1);
 				if (err1==0) {
 					pars->corr=(pars->p<226)?0:((pars->p<621)?1:((pars->p<829)?2:((pars->p<1038)?3:4)));
-					dev_dbg(sdev, "f=%d, div=%d, p=%d,q=%d, err1=%d, rslt=%d\r\n",
+					dev_dbg(sdev, "f=%d, div=%d, p=%d,q=%d, err1=%d, rslt=%d\n",
 									(f0*(pars->p+6))/(pars->q+2)/pars->dv,
 									pars->dv,
 									(pars->p+6),
@@ -142,7 +142,7 @@ int calc_pll_params (unsigned int f, t_pll_params * pars) { // f -in Hz
 			}
 		}
 	}
-	dev_dbg(sdev, "f=%d, div=%d, p=%d,q=%d, err1=%d, rslt=%d\r\n",
+	dev_dbg(sdev, "f=%d, div=%d, p=%d,q=%d, err1=%d, rslt=%d\n",
 				   (f0*(pars->p+6))/(pars->q+2)/pars->dv,
 				   pars->dv,
 				   (pars->p+6),
@@ -156,6 +156,7 @@ int calc_pll_params (unsigned int f, t_pll_params * pars) { // f -in Hz
 int setCYField (int sensor_port, int reg_addr, int mask, int value) {
 	int error;
 	int reg_data;
+    dev_dbg(sdev,"setCYField(%d, 0x%x, 0x%x,0x%x)\n",sensor_port, reg_addr, mask, value);
 	if ((error = x393_xi2c_read_reg(CLOCK_NAME,       // device class name
 									sensor_port,      // sensor port number
 				                    0,                // slave address (7-bit) offset from the class defined slave address
@@ -165,6 +166,7 @@ int setCYField (int sensor_port, int reg_addr, int mask, int value) {
 				sensor_port, reg_addr, mask, value);
 		return error;
 	}
+    dev_dbg(sdev,"setCYField(%d, 0x%x, 0x%x,0x%x)=>0x%x\n",sensor_port, reg_addr, mask, value,reg_data);
 	reg_data ^= (reg_data ^ value) & mask;
 	if ((error = x393_xi2c_write_reg(CLOCK_NAME,       // device class name
 									 sensor_port,      // sensor port number
@@ -179,24 +181,45 @@ int setCYField (int sensor_port, int reg_addr, int mask, int value) {
 }
 
 int x393_getClockFreq(int sensor_port, int nclock) {
-  if ((sensor_port < 0) || (sensor_port > 3) || (nclock < 0) || (nclock > 3))return -EINVAL; // bad clock number
-  else {
-    return clock_frequency[(sensor_port << 2) || nclock];
-  }
+    if ((sensor_port < 0) || (sensor_port > 3) || (nclock < 0) || (nclock > 3))return -EINVAL; // bad clock number
+    else {
+        dev_dbg(sdev, "clock_frequency[%d]\n",(sensor_port << 2) + nclock);
+        return clock_frequency[(sensor_port << 2) + nclock];
+    }
 }
+
 EXPORT_SYMBOL_GPL(x393_getClockFreq);
 
 
 int x393_setClockFreq(int sensor_port, int nclock, int freq)
 { // freq now in Hz
     int err=0;
+    int i,bp,bq,bdiv,pllc,fact;
+    t_pll_params  pll_params;
     sensor_port &= 3;
     nclock &= 3;
-    t_pll_params  pll_params;
-    int i,bp,bq,bdiv,pllc,fact;
     bp=0; bq=0; bdiv=0; pllc= 0; // just to make gcc happy
     fact=0;
-    dev_dbg(sdev, "setClockFreq(%d,%d,%d)\r\n",sensor_port,nclock,freq);
+    dev_dbg(sdev, "setClockFreq(%d,%d,%d)\n",sensor_port,nclock,freq);
+
+// Just temporary debug:
+#if 1
+    for (i = 0; i< 24; i++) {
+        int reg_data;
+//        dev_dbg(sdev,"setCYField(%d, 0x%x, 0x%x,0x%x)\n",sensor_port, reg_addr, mask, value);
+        if ((err = x393_xi2c_read_reg(CLOCK_NAME,       // device class name
+                sensor_port,      // sensor port number
+                0,                // slave address (7-bit) offset from the class defined slave address
+                i,               // register address (width is defined by class)
+                &reg_data)) <0) { // pointer to a data receiver (read data width is defined by class)
+            dev_err(sdev,"x393_xi2c_read_reg(%d, 0, 0x%x, 0x%x) failed reading i2c register\n", sensor_port, i, reg_data);
+            break;
+        }
+        dev_err(sdev,"CY22393 port %d: [0x%x] => 0x%x\n", sensor_port, i, reg_data);
+    }
+
+#endif
+
     if ((freq!=0) && (nclock!=3) ){
         if ( (i=calc_pll_params (freq, &pll_params)) !=0) {
             dev_err(sdev, "bad frequency for clock %d - %d Hz, err=%d\n",nclock,freq,i);
@@ -255,7 +278,7 @@ int x393_setClockFreq(int sensor_port, int nclock, int freq)
         break;
     case 3:
         if ((freq!=0) && (freq!=CY22393_SCALE*CY22393_XTAL)) {
-            dev_err(sdev, "Only frequency 0 (off) and %d Hz (xtal) are allowed for channel 3\r\n",CY22393_SCALE*CY22393_XTAL);
+            dev_err(sdev, "Only frequency 0 (off) and %d Hz (xtal) are allowed for channel 3\n",CY22393_SCALE*CY22393_XTAL);
             return -EINVAL;
         } else {
             //  int setCYField (sensor_port,int devfd, int addr, int mask, int value) O_RDWR
@@ -275,6 +298,7 @@ int x393_setClockFreq(int sensor_port, int nclock, int freq)
         return err;
     }
     clock_frequency[(sensor_port << 2) + nclock] = fact;
+    dev_dbg(sdev, "clock_frequency[%d]\n",(sensor_port << 2) + nclock);
     return fact;
 }
 EXPORT_SYMBOL_GPL(x393_setClockFreq);
@@ -400,7 +424,7 @@ static void elphel393_clock10359_init_of(struct platform_device *pdev)
 static int elphel393_clock10359_probe(struct platform_device *pdev)
 {
 	sdev =&pdev->dev;
-	dev_dbg(&pdev->dev,"Probing elphel_clock10359\n");
+	dev_info(&pdev->dev,"Probing elphel_clock10359\n");
 
 	elphel393_clock10359_sysfs_register(pdev);
 	dev_dbg(&pdev->dev,"elphel393_clock10359_sysfs_register() done\n");
