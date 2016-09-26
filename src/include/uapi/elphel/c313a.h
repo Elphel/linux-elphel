@@ -303,7 +303,9 @@
 <li>                     bit 0  - "old" external mode (0 - internal, 1 - external )
 <li>                     bit 1 - enable(1) or disable(0) external trigger to stop clip
 <li>                     bit 2 - async (snapshot, ext trigger) mode, 0 - continuous NOTE: Only this bit is used now
-<li>                     bit 3 - no overlap,  single frames: program - acquire/compress same frame</ul>*/
+<li>                     bit 3 - no overlap,  single frames: program - acquire/compress same frame
+<li>                     bit 4 - global reset release (GRR) mode - (only when combined with bit 2)
+</ul>*/
 #define P_BGFRAME       16 ///< Background measurement mode - will use 16-bit mode and no FPN correction
 //#define P_IMGSZMEM      17 ///< image size in video memory (calculated when channel 0 is programmed) NC393: Not used ???
 //#define P_COMP_BAYER    17 ///< -> 119 derivative, readonly - calculated from P_BAYER and COMPMOD_BYRSH to separate sensor and compressor channels

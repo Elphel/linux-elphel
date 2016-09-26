@@ -1441,7 +1441,7 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     x393_gamma_ctl_t      gamma_ctl =    {.d32=0};
     int bayer;
 
-    int n_scan_lines, n_ph_lines;
+    int n_scan_lines; //, n_ph_lines;
     int flips;
     int bayer_modified;
     x393_mcntrl_frame_start_dly_t start_dly ={.d32=0};
@@ -1529,8 +1529,8 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
 
     if (FRAMEPAR_MODIFIED(P_MEMSENSOR_DLY) && ((start_dly.start_dly = thispars->pars[P_MEMSENSOR_DLY]))){
         X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_mcntrl_scanline_start_delay, start_dly);
-        dev_dbg(g_dev_ptr,"{%d}  Setting sensor-to-memory frame sync delay  to %ld (0x%lx)\n",sensor_port, start_dly.start_dly,start_dly.start_dly);
-        MDP(DBGB_PADD, sensor_port,"Setting sensor-to-memory frame sync delay  to %ld (0x%lx)\n", start_dly.start_dly,start_dly.start_dly)
+        dev_dbg(g_dev_ptr,"{%d}  Setting sensor-to-memory frame sync delay  to %d (0x%x)\n",sensor_port, start_dly.start_dly,start_dly.start_dly);
+        MDP(DBGB_PADD, sensor_port,"Setting sensor-to-memory frame sync delay  to %d (0x%x)\n", start_dly.start_dly,start_dly.start_dly)
     }
 
 
@@ -2404,8 +2404,8 @@ int pgm_focusmode  (int sensor_port,               ///< sensor port number (0..3
 												   ///< be applied to,  negative - ASAP
 												   ///< @return OK - 0, <0 - error
 {
-    unsigned long flags;
-    int i;
+//    unsigned long flags;
+//    int i;
 //    x393_cmprs_table_addr_t table_addr;
     struct {
         short left;
@@ -2888,7 +2888,7 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
                                frame16);
-    dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
+    dev_dbg(g_dev_ptr,"{%d}@0x%lx: X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, getThisFrameNumber(sensor_port), sensor_port, frame16, cmprs_mode.d32);
     MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32)
     return 0;
 
@@ -2917,7 +2917,7 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     int disable_need =  1; // TODO: Use some G_* parameter
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     int reset_frame = 0;
-    int just_started = 0;
+//    int just_started = 0;
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",
             sensor_port,frame16, (int) prevpars->pars[P_COMPRESSOR_RUN], (int) thispars->pars[P_COMPRESSOR_RUN]);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",
@@ -2962,7 +2962,8 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
     }
 
-    dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
+    dev_dbg(g_dev_ptr,"{%d}@0x%lx: X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, getThisFrameNumber(sensor_port), sensor_port, frame16, cmprs_mode.d32);
+
     MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32)
     return 0;
 

@@ -320,6 +320,7 @@ int multisensor_read_i2c           (int sensor_port, const char * class_name, in
 int multisensor_write_i2c          (int sensor_port, const char * class_name,int sa7_offs, u32 reg_addr, u32 reg_data);
 int multisensor_pgm_multisens      (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int multisensor_pgm_sensorphase    (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int multisensor_pgm_sdram_phase    (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int multisensor_set_freq           (int sensor_port, int first, struct framepars_t * thispars);
 int multisensor_set_phase_verify   (int sensor_port, int reg_addr, int resetDCM, unsigned long newPhase, unsigned long oldPhase);
 int multisensor_set_phase_recover  (int sensor_port, int reg_addr, int resetDCM, unsigned long newPhase, unsigned long oldPhase);
@@ -1000,8 +1001,13 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   int rslt=0; // or-ed by MULTISENSOR_WRITE_I2C(sa,ra,v,sz)
   int i;
   int this_sensor_type;
-
   long * multiOutDelay;
+  x393_sens_mode_t sens_mode =  {.d32=0}; // to disable senosr channel and prevent SoF pulses while 10359 memory is being trained
+  sens_mode.chn_en =     0;
+  sens_mode.chn_en_set = 1;
+  X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_mode, sens_mode);
+  dev_dbg(g_dev_ptr,"{%d}@0x%lx:  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x) disabling SoF - init_sesnor will reenable: 0x%x\n",
+          sensor_port, getThisFrameNumber(sensor_port), sensor_port, frame16, sens_mode.d32, getHardFrameNumber(sensor_port,0));
 //   .hact_delay  = -2500,    // -2.5ns delay in ps
 //   .sensorDelay = 2460,     // Delay from sensor clock at FPGA output to pixel data transition (FPGA input), short cable (ps)
   multi_unitialized=0; // reset this static variable - it will prevent copying individual flips to multiple until composite mode is used
@@ -1045,9 +1051,13 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
 
 // reset system and SDRAM DCMs on 10359
   MULTISENSOR_WRITE_I2C16(sensor_port,I2C359_DCM_SYSTEM,  I2C359_DCM_RESET | I2C359_DCM_RESET90);
+  rslt=0;
+
+#ifdef ADJUST_SDRAM_AT_SENSORPHASE
   MULTISENSOR_WRITE_I2C16(sensor_port,I2C359_DCM_SDRAM,   I2C359_DCM_RESET | I2C359_DCM_RESET90);
   multisensor_initSDRAM(sensor_port, thispars); // init 10359 SDRAM
-  rslt=0;
+#endif
+
 // TODO: read other?
 //  MULTISENSOR_WRITE_I2C16_SHADOW(I2C359_I2CMUX, I2C359_I2CMUX_2MEM);
 
@@ -1068,6 +1078,11 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   if (rslt>0)       dev_info(g_dev_ptr,"10359A sensor clock set to %d\n", rslt);
   else if (rslt==0) dev_info(g_dev_ptr,"10359A sensors are using 10353 system clock, as set in configuration\n");
   else              dev_info(g_dev_ptr,"10359  sensor clock failure, will use system clock from 10353 board\n");
+
+#ifndef ADJUST_SDRAM_AT_SENSORPHASE
+  rslt = multisensor_pgm_sdram_phase (sensor_port, sensor,  thispars, prevpars, frame16);
+#endif
+
 // Try to read chip version from each of the 3 possible sensors
   dev_info(g_dev_ptr,"removing MRST from the sensor\n");
 //
@@ -1221,6 +1236,7 @@ Now overwrite sensor functions with it's own (originals (physical sensor ones) a
   CCAM_ENDFRAMES_EN ;    // Enable ending frame being compressed if no more data will be available (frame ended before specified number of blocks compressed)
 #endif
   if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
+  dev_dbg(g_dev_ptr,"Done with multisensor_pgm_detectsensor thisFframe= 0x%lx hard frame = 0x%x\n", getThisFrameNumber(sensor_port),  getHardFrameNumber(sensor_port,0));
   return this_sensor_type;
 }
 
@@ -1488,9 +1504,9 @@ int multisensor_pgm_sensorphase(int sensor_port,               ///< sensor port 
   long * cableDelay;
   long * FPGADelay;
   int clk_period;
-  long sdram_chen=thispars->pars[P_M10359_REGS+I2C359_SDRAM_CHEN];
-  int adjustSDRAMNeed=0;
-  int thisPhaseSDRAM=thispars->pars[P_MULTI_PHASE_SDRAM];
+//  long sdram_chen=thispars->pars[P_M10359_REGS+I2C359_SDRAM_CHEN];
+//  int adjustSDRAMNeed=0;
+//  int thisPhaseSDRAM=thispars->pars[P_MULTI_PHASE_SDRAM];
   int thisPhase1=    thispars->pars[P_MULTI_PHASE1];
   int thisPhase2=    thispars->pars[P_MULTI_PHASE2];
   int thisPhase3=    thispars->pars[P_MULTI_PHASE3];
@@ -1531,51 +1547,53 @@ int multisensor_pgm_sensorphase(int sensor_port,               ///< sensor port 
     dev_dbg(g_dev_ptr,"cableDelay3=0x%lx FPGADelay3= 0x%lx sensorproc_phys->sensor.sensorDelay=0x%x, thisPhase3=0x%x\n",cableDelay[0] ,FPGADelay[0], sensorproc_phys->sensor.sensorDelay,thisPhase3);
 
 // TODO: calculate SDRAM phase here too.
-    adjustSDRAMNeed=1;
+//    adjustSDRAMNeed=1;
     multi_phases_initialized=1;
   }
   if (reset) {
     MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_DCM_SYSTEM,  I2C359_DCM_RESET | I2C359_DCM_RESET90);
-    MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_DCM_SDRAM,   I2C359_DCM_RESET | I2C359_DCM_RESET90);
-    multisensor_initSDRAM(sensor_port, thispars); // init 10359 SDRAM
+//    MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_DCM_SDRAM,   I2C359_DCM_RESET | I2C359_DCM_RESET90);
+//    multisensor_initSDRAM(sensor_port, thispars); // init 10359 SDRAM
   }
+#ifdef ADJUST_SDRAM_AT_SENSORPHASE
   if ((thisPhaseSDRAM != prevpars->pars[P_MULTI_PHASE_SDRAM]) ||  adjustSDRAMNeed)  {
-    if (adjustSDRAMNeed || (thisPhaseSDRAM & 0x200000)) { // at boot, after frequency change or manually requested (0x200000)
-      thisPhaseSDRAM=multisensor_adjustSDRAM (sensor_port, FPGA_DCM_RANGE);
-      if (thisPhaseSDRAM>=0) {
-         SETFRAMEPARS_SET(P_MULTI_PHASE_SDRAM,  thisPhaseSDRAM);
-         dev_info(g_dev_ptr,"10359 SDRAM clock phase is set to %d/%s%d\n",
-               90*((thisPhaseSDRAM>>16) & 3),
-              (thisPhaseSDRAM & 0x8000)?"-":"+",
-              (thisPhaseSDRAM & 0x8000)?(0x10000-(thisPhaseSDRAM & 0xffff)):(thisPhaseSDRAM & 0xffff));
+      if (adjustSDRAMNeed || (thisPhaseSDRAM & 0x200000)) { // at boot, after frequency change or manually requested (0x200000)
+          thisPhaseSDRAM=multisensor_adjustSDRAM (sensor_port, FPGA_DCM_RANGE);
+          if (thisPhaseSDRAM>=0) {
+              SETFRAMEPARS_SET(P_MULTI_PHASE_SDRAM,  thisPhaseSDRAM);
+              dev_info(g_dev_ptr,"10359 SDRAM clock phase is set to %d/%s%d\n",
+                      90*((thisPhaseSDRAM>>16) & 3),
+                      (thisPhaseSDRAM & 0x8000)?"-":"+",
+                              (thisPhaseSDRAM & 0x8000)?(0x10000-(thisPhaseSDRAM & 0xffff)):(thisPhaseSDRAM & 0xffff));
+          } else {
+              dev_warn (g_dev_ptr,"**** ERROR adjusting SDRAM clock phase in %s:%d:%s, result=0x%x\n",__FILE__,__LINE__,__FUNCTION__,thisPhaseSDRAM);
+          }
       } else {
-         dev_warn (g_dev_ptr,"**** ERROR adjusting SDRAM clock phase in %s:%d:%s, result=0x%x\n",__FILE__,__LINE__,__FUNCTION__,thisPhaseSDRAM);
-      }
-    } else {
-      resetThisDCM=reset || (thisPhaseSDRAM & 0x80000);
-      rslt= multisensor_set_phase (sensor_port, I2C359_DCM_SDRAM, resetThisDCM, thisPhaseSDRAM, prevpars->pars[P_MULTI_PHASE_SDRAM]);
-      if ((rslt>=0) && (rslt != thisPhaseSDRAM)) SETFRAMEPARS_SET(P_MULTI_PHASE_SDRAM,  rslt);
-      if (resetThisDCM) {
-         dev_dbg(g_dev_ptr,"re-initializing SDRAM on 10359 after DCM reset\n");
-         multisensor_initSDRAM(sensor_port, thispars); // init 10359 SDRAM
-      }
-// Test memory phase here
-      dev_dbg(g_dev_ptr,"\nMULTI_PHASE_SDRAM=%01x %04x\n", (rslt>>16), rslt & 0xffff);
-      if (thisPhaseSDRAM & 0x100000) {
-        for (rslt=0;rslt<16;rslt++) {
-          multisensor_memphase_debug(sensor_port, -1);
-        }
-      } else {
-        multisensor_memphase_debug(sensor_port, 1);
+          resetThisDCM=reset || (thisPhaseSDRAM & 0x80000);
+          rslt= multisensor_set_phase (sensor_port, I2C359_DCM_SDRAM, resetThisDCM, thisPhaseSDRAM, prevpars->pars[P_MULTI_PHASE_SDRAM]);
+          if ((rslt>=0) && (rslt != thisPhaseSDRAM)) SETFRAMEPARS_SET(P_MULTI_PHASE_SDRAM,  rslt);
+          if (resetThisDCM) {
+              dev_dbg(g_dev_ptr,"re-initializing SDRAM on 10359 after DCM reset\n");
+              multisensor_initSDRAM(sensor_port, thispars); // init 10359 SDRAM
+          }
+          // Test memory phase here
+          dev_dbg(g_dev_ptr,"\nMULTI_PHASE_SDRAM=%01x %04x\n", (rslt>>16), rslt & 0xffff);
+          if (thisPhaseSDRAM & 0x100000) {
+              for (rslt=0;rslt<16;rslt++) {
+                  multisensor_memphase_debug(sensor_port, -1);
+              }
+          } else {
+              multisensor_memphase_debug(sensor_port, 1);
 #if 0
-        printk ("\n");
-        multisensor_memphase_debug(0);
-        printk ("\n");
-        multisensor_memphase_debug(0);
+              printk ("\n");
+              multisensor_memphase_debug(0);
+              printk ("\n");
+              multisensor_memphase_debug(0);
 #endif
-     }
-   }
+          }
+      }
   }
+#endif
   if (thisPhase1 != prevpars->pars[P_MULTI_PHASE1])  {
     resetThisDCM=reset || (thisPhase1 & 0x80000);
     rslt= multisensor_set_phase (sensor_port, I2C359_DCM_SENSOR1, resetThisDCM, thisPhase1, prevpars->pars[P_MULTI_PHASE1]);
@@ -1593,10 +1611,75 @@ int multisensor_pgm_sensorphase(int sensor_port,               ///< sensor port 
     rslt= multisensor_set_phase (sensor_port, I2C359_DCM_SENSOR3, resetThisDCM, thisPhase3, prevpars->pars[P_MULTI_PHASE3]);
     if ((rslt>=0) && (rslt != thisPhase3)) SETFRAMEPARS_SET(P_MULTI_PHASE3,  rslt);
   }
-  MULTISENSOR_WRITE_I2C32_SHADOW(sensor_port, I2C359_SDRAM_CHEN,    sdram_chen); // Restore 10359 SDRAM channels enable
+//  MULTISENSOR_WRITE_I2C32_SHADOW(sensor_port, I2C359_SDRAM_CHEN,    sdram_chen); // Restore 10359 SDRAM channels enable
   if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes, schedule functions
   return 0;
 }
+
+/** Adjust SDRAM phase - should be done when sensor is stopped, it is a long procedure*/
+int multisensor_pgm_sdram_phase(int sensor_port,               ///< sensor port number (0..3)
+                                struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+                                struct framepars_t * thispars, ///< sensor current parameters
+                                struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+                                int frame16)                   ///< 4-bit (hardware) frame number parameters should
+                                                               ///< be applied to,  negative - ASAP
+                                                               ///< @return always 0
+{
+    long sdram_chen=thispars->pars[P_M10359_REGS+I2C359_SDRAM_CHEN];
+    int adjustSDRAMNeed=0;
+    int thisPhaseSDRAM=thispars->pars[P_MULTI_PHASE_SDRAM];
+    int reset = 1; // always reset
+    int resetThisDCM;
+    int rslt=0;
+    struct frameparspair_t pars_to_update[6]; // ??? needed, increase if more entries will be added
+    int nupdate=0;
+    if (reset) {
+        MULTISENSOR_WRITE_I2C16(sensor_port, I2C359_DCM_SDRAM,   I2C359_DCM_RESET | I2C359_DCM_RESET90);
+        multisensor_initSDRAM(sensor_port, thispars); // init 10359 SDRAM
+    }
+    if ((thisPhaseSDRAM != prevpars->pars[P_MULTI_PHASE_SDRAM]) ||  adjustSDRAMNeed)  {
+        if (adjustSDRAMNeed || (thisPhaseSDRAM & 0x200000)) { // at boot, after frequency change or manually requested (0x200000)
+            thisPhaseSDRAM=multisensor_adjustSDRAM (sensor_port, FPGA_DCM_RANGE);
+            if (thisPhaseSDRAM>=0) {
+                SETFRAMEPARS_SET(P_MULTI_PHASE_SDRAM,  thisPhaseSDRAM);
+                dev_info(g_dev_ptr,"10359 SDRAM clock phase is set to %d/%s%d\n",
+                        90*((thisPhaseSDRAM>>16) & 3),
+                        (thisPhaseSDRAM & 0x8000)?"-":"+",
+                                (thisPhaseSDRAM & 0x8000)?(0x10000-(thisPhaseSDRAM & 0xffff)):(thisPhaseSDRAM & 0xffff));
+            } else {
+                dev_warn (g_dev_ptr,"**** ERROR adjusting SDRAM clock phase in %s:%d:%s, result=0x%x\n",__FILE__,__LINE__,__FUNCTION__,thisPhaseSDRAM);
+            }
+        } else {
+            resetThisDCM=reset || (thisPhaseSDRAM & 0x80000);
+            rslt= multisensor_set_phase (sensor_port, I2C359_DCM_SDRAM, resetThisDCM, thisPhaseSDRAM, prevpars->pars[P_MULTI_PHASE_SDRAM]);
+            if ((rslt>=0) && (rslt != thisPhaseSDRAM)) SETFRAMEPARS_SET(P_MULTI_PHASE_SDRAM,  rslt);
+            if (resetThisDCM) {
+                dev_dbg(g_dev_ptr,"re-initializing SDRAM on 10359 after DCM reset\n");
+                multisensor_initSDRAM(sensor_port, thispars); // init 10359 SDRAM
+            }
+            // Test memory phase here
+            dev_dbg(g_dev_ptr,"\nMULTI_PHASE_SDRAM=%01x %04x\n", (rslt>>16), rslt & 0xffff);
+            if (thisPhaseSDRAM & 0x100000) {
+                for (rslt=0;rslt<16;rslt++) {
+                    multisensor_memphase_debug(sensor_port, -1);
+                }
+            } else {
+                multisensor_memphase_debug(sensor_port, 1);
+#if 0
+                printk ("\n");
+                multisensor_memphase_debug(0);
+                printk ("\n");
+                multisensor_memphase_debug(0);
+#endif
+            }
+        }
+    }
+    MULTISENSOR_WRITE_I2C32_SHADOW(sensor_port, I2C359_SDRAM_CHEN,    sdram_chen); // Restore 10359 SDRAM channels enable
+    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes, schedule functions
+    return 0;
+
+}
+
 
 
 /** Set 10359A clock frequency (take care of 10359-0) */
