@@ -262,11 +262,14 @@
     elphel393_sensor_i2c: elphel393-sensor-i2c@0 {
                 compatible = "elphel,elphel393-sensor-i2c-1.00";
                 /* Add known devices: name, slave address (7-bit), number of address bytes, number of data bytes, SCL frequency (kHz) */
-                elphel393-sensor-i2c,i2c_devices = "mt9f002 0x10 2 2 500",
-                                                   "mt9p006 0x48 1 2 500",
-                                                   "el10359 0x08 1 2 500",
+                elphel393-sensor-i2c,i2c_devices = "mt9f002        0x10 2 2 500",
+                                                   "mt9p006        0x48 1 2 500",
+                                                   "el10359        0x08 1 2 500",
+                                                   "el10359_32     0x08 1 4 500",
                                                    "pca9500_eeprom 0x50 1 1 100",
-                                                   "cy22393 0x69 1 1 100";
+                                                   "sensor_eeprom  0x50 1 1 100",
+                                                   "sensor_temp    0x18 1 2 100",
+                                                   "cy22393        0x69 1 1 100";
     } ;
 
     framepars_operations: elphel393-framepars@0 {
@@ -283,6 +286,10 @@
 
     elphel393_mt9x001: elphel393-mt9x001@0 {
         compatible = "elphel,elphel393-mt9x001-1.00";
+    };
+
+    elphel393_clock10359:elphel393-clock10359@0{
+        compatible = "elphel,elphel393_clock10359-1.00";    
     };
 
     klogger_393: klogger-393@0 {
