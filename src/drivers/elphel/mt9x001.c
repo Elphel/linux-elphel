@@ -1219,7 +1219,7 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
 {
     struct frameparspair_t pars_to_update[16]; // maximum 7 registers updated (need to recount)
     int nupdate=0;
-    int dh=  thispars->pars[P_DCM_HOR];
+    int dh=  thispars->pars[P_DCM_HOR]?thispars->pars[P_DCM_HOR]:1;
     int ww=  thispars->pars[P_SENSOR_PIXH] * dh;
     int binning_cost = 0;
     int width,i;
@@ -1989,8 +1989,8 @@ int mt9x001_pgm_triggermode        (int sensor_port,               ///< sensor p
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     newreg= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1] & 0xfe7f) | // old value without snamshot and GRR bits
-            ((thispars->pars[P_TRIG] & 4)?0x100:0) |                    // snapshot mode for P_TRIG==4 or 5
-            ((thispars->pars[P_TRIG] & 1)?0x80:0);                      // GRR mode for P_TRIG==5 (no effect for 1
+            ((thispars->pars[P_TRIG] & 4)?0x100:0) |                    // snapshot mode for P_TRIG==4 or 20
+            ((thispars->pars[P_TRIG] & 0x10)?0x80:0);                   // GRR mode for P_TRIG==20
     if (newreg != thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1]) {
         // turn off triggered mode immediately, turn on later (or should made at least before changing camsync parameters)
         if (!(thispars->pars[P_TRIG] & 4)){

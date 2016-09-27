@@ -42,7 +42,7 @@ int read_xi2c_frame   (int chn);
 int i2c_page_alloc   (int chn);
 int i2c_page_register(int chn,  int page);
 void i2c_page_free   (int chn, int page);
-x393_i2c_device_t * xi2c_dev_get(const char * name);
+//x393_i2c_device_t * xi2c_dev_get(const char * name);
 void set_xi2c_raw    (int chn, int page, u32 data);
 void set_xi2c_wr     (int chn,int page, int sa7, int rah, int num_bytes, int bit_delay);
 void set_xi2c_wrc    (x393_i2c_device_t * dc, int chn, int page, int rah);
@@ -60,5 +60,13 @@ int   read_xi2c_fifo (int chn);
 x393_i2c_device_t * xi2c_dev_get(const char * name);
 int x393_xi2c_write_reg(const char * cname, int chn, int sa7_offs, int reg_addr, int   data);
 int x393_xi2c_read_reg (const char * cname, int chn, int sa7_offs, int reg_addr, int * datap);
+int x393_xi2c_ready_wr(int chn);
+int x393_xi2c_wait_wr(int chn);
 int legacy_read_i2c_reg(int chn, int page,           int sa7,      int reg_addr, int len, int * datap);
+int i2c_get_max_unbalanced_writes(void);
+void reset_unbalanced_writes(int chn);
+void inc_unbalanced_writes(int chn);
+int check_unbalanced_writes(int chn);
+int get_unbalanced_writes(int chn);
+
 #endif

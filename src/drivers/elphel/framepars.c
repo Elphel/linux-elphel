@@ -837,7 +837,7 @@ inline void _processParsSeq(int sensor_port,                   ///< sensor port 
 {
 	unsigned long todo, mask, remain;
 	int job_ahead;                  // doing job "job_ahead" ahead of needed
-	int pars_ahead;                 // considering parameter "pars_ahead" of the (frame16+job_ahead) mod 8
+	int pars_ahead;                 // considering parameter "pars_ahead" of the (frame16+job_ahead) mod 16
 	int frame_proc;                 // current frame for which parameters are considered
 	struct framepars_t * procpars;
 	struct framepars_t * prevpars;  // maybe - drop calculation for each function, move it to pgm_* where needed?
@@ -968,7 +968,10 @@ void _processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16
         dev_dbg(g_devfp_ptr,"port= %d (after second _processParsASAP),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
     }
     dev_dbg(g_devfp_ptr,"port= %d (after second _processParsASAP),  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
-    if (debug_flags)    debug_flags--;
+    if (debug_flags)   {
+        dev_dbg(g_devfp_ptr,"debug_flags= %d \n", debug_flags);
+        debug_flags--;
+    }
 
 }
 
@@ -1007,7 +1010,7 @@ int processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16, 
     if (debug_flags) {
         MDP(DBGB_FPPT,sensor_port,"==from tasklet: frame16=%d, maxahead=%d\n",
                 frame16, maxahead)
-        dev_dbg(g_devfp_ptr,"==from tasklet: port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
+        dev_dbg(g_devfp_ptr,"==from tasklet: port= %d,  frame16=%d, maxahead=%d  now=0x%lx\n", sensor_port, frame16, maxahead, getThisFrameNumber(sensor_port));
     }
 
     dev_dbg(g_devfp_ptr,"port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
@@ -1021,12 +1024,11 @@ int processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16, 
     if (debug_flags) {
         MDP(DBGB_FPPT,sensor_port,"==Done from tasklet: frame16=%d, maxahead=%d\n",
                 frame16, maxahead)
-        dev_dbg(g_devfp_ptr,"== Done from tasklet: port= %d,  frame16=%d, maxahead=%d\n", sensor_port, frame16, maxahead);
+        dev_dbg(g_devfp_ptr,"== Done from tasklet: port= %d,  frame16=%d, maxahead=%d now=0x%lx\n", sensor_port, frame16, maxahead, getThisFrameNumber(sensor_port));
     }
     return 0;
 }
 #endif
-
 
 /**
  * @brief schedule pgm_func to be executed for selected frame (frame16)
