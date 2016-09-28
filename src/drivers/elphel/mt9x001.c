@@ -1226,7 +1226,7 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     int row_time_in_pixels=0;
     int hor_blank_min;
     int hor_blank=0;
-    int p1,p2, pix_period, sclk,fp1000s;
+    int p1,p2, pix_period, sclk,fp1000s, trig_period;
     int styp = sensor->sensorType & 7;
     int height;
     int virt_height;
@@ -1390,7 +1390,10 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
         SETFRAMEPARS_SET(P_PERIOD, pix_period);
     }
     // Update period from external trigger (assuming internal/self trigger, we do not know real external trigger period)
-    if ((thispars->pars[P_TRIG]!=0) && (thispars->pars[P_TRIG_PERIOD] > pix_period))  pix_period=thispars->pars[P_TRIG_PERIOD];
+    if (thispars->pars[P_TRIG]!=0){
+        trig_period = camsync_to_sensor(thispars->pars[P_TRIG_PERIOD], thispars->pars[P_CLK_SENSOR]);
+        if (trig_period > pix_period)  pix_period=trig_period;
+    }
     // schedule updating P_FP1000S if it changed
     sclk=thispars->pars[P_CLK_SENSOR] ; ///pixel clock, in Hz
 #if USELONGLONG
