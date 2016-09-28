@@ -208,6 +208,18 @@
  */
 // parameter indexes will be updated to group-related ones into the same groups of 32
 // NOTE: P_* and G_* should not end with numbers - numbers will be used in PHP constants to add to the constant value (ELPHEL_AAA3 will be treated as ELPHEL_AAA+3)
+//TODO: Update CONST_NAME_ENTRY_* to new P_vars
+/// Parameters related to multi-sensor (10359A) setup
+
+//#define MAX_SENSORS 3 // maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
+/* Modified for 393 - using up to 4 sub-sensors (even as 10359 only supports 3 */
+#define CAMSYNC_FREQ 100000000 ///< 100MHz - frequency used for external trigger periods and delays
+#define MAX_SENSORS  4        ///< maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
+#define SENSOR_PORTS 4        ///< Number of sensor ports (each has individual framepars_all_t
+/* Notes for NC353:
+ * Parameters below are accessed through mmap, because of cache coherence problem it make sense to keep them compact (maybe group by 8 - cache line of 32 bytes)
+ */
+
 #define P_NUMBER         1024   //number of registers (was 64) - NOTE: obsolete?
 #define P_SENSOR            1   /**< if set to 0 - will (re)detect sensor, if set to None - won't bother <ul>
 <li>                        4  - ZR32112MLC - now there is no way to see color/mono
@@ -267,15 +279,6 @@
 #define SENSORWIDTH_IBIS51300  1280 ///< FillFactory IBIS51300 width
 #define SENSORHEIGHT_IBIS51300 1024 ///< FillFactory IBIS51300 height
 
-//TODO: Update CONST_NAME_ENTRY_* to new P_vars
-/// Parameters related to multi-sensor (10359A) setup
-//#define MAX_SENSORS 3 // maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
-/* Modified for 393 - using up to 4 sub-sensors (even as 10359 only supports 3 */
-#define MAX_SENSORS  4        ///< maximal number of sensor attached (modify some hard-wired constants below if this to be changed)
-#define SENSOR_PORTS 4        ///< Number of sensor ports (each has individual framepars_all_t
-/* Notes for NC353:
- * Parameters below are accessed through mmap, because of cache coherence problem it make sense to keep them compact (maybe group by 8 - cache line of 32 bytes)
- */
 #define P_SENSOR_RUN     4          ///< Sensor acquisition mode 0 - stop, 1 - single, 2 - run
   #define SENSOR_RUN_STOP   0       ///< Sensor acquisition mode: STOP
   #define SENSOR_RUN_SINGLE 1       ///< Sensor acquisition mode: SINGLE FRAME
@@ -296,8 +299,8 @@
 
 #define P_JPEG_WP       11 ///< Last reported JPEG write pointer in the circular buffer. ** OBSOLETE
                             // In new code use G_CIRCBUFWP instead!
-#define P_CLK_FPGA      12 ///< FPGA clock in MHz
-#define P_CLK_SENSOR    13 ///< Sensor clock in MHz
+#define P_CLK_FPGA      12 ///< FPGA clock in Hz
+#define P_CLK_SENSOR    13 ///< Sensor clock in Hz
 #define P_FPGA_XTRA     14 ///< Extra cycles needed to compressor (probably constant...)
 #define P_TRIG          15 /**< External trigger mode<ul>
 <li>                     bit 0  - "old" external mode (0 - internal, 1 - external )

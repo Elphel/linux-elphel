@@ -1230,7 +1230,25 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     return 0;
 }
 
+/** Convert time interval in camsync periods (10ns) to sensor pixel periods */
+unsigned long camsync_to_sensor(unsigned long camsync_time,  ///< time interval in camsync periods (@100MHz)
+                                unsigned long sensor_clk)    ///< sensor pixel clock in Hz
+                                                          ///< @return time interval in pixel clock periods
+{
+    uint64_t ull_period = (((long long) sensor_clk) * ((long long) camsync_time));
+    do_div(ull_period, CAMSYNC_FREQ);
+    return (unsigned long) ull_period;
+}
 
+/** Convert time interval sesnor pixel periods to camsync periods (10ns)*/
+unsigned long sensor_to_camsync(unsigned long pixel_time, ///< time interval in pixel clock periods
+                                unsigned long sensor_clk) ///< sensor pixel clock in Hz
+                                                          ///< @return time interval in camsync periods (@100MHz)
+{
+    uint64_t ull_period = (((long long) pixel_time) * ((long long) CAMSYNC_FREQ));
+    do_div(ull_period, sensor_clk);
+    return (unsigned long) ull_period;
+}
 
 /** Check if compressor can keep up, limit sensor FPS if needed.
  *  Apply both user FPS limits (both low and high), prepare data for the sensor function and sequencer.
@@ -1255,6 +1273,8 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     int period=0;
     int pfh;
     int n_stripes;
+    int min_period_camsync, period_camsync;
+    //#define CAMSYNC_FREQ 100000000 ///< 100MHz - frequency used for external trigger periods and delays
     u32 clk_sensor = thispars->pars[P_CLK_SENSOR];
     u32 clk_fpga = thispars->pars[P_CLK_FPGA];
 #if USELONGLONG
@@ -1278,7 +1298,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     default:
         cycles*=4;
     }
-//    cycles  *=64 *2; //cycles per frame (64 pixels/block, 2 clock cycles/pixel)
+    //    cycles  *=64 *2; //cycles per frame (64 pixels/block, 2 clock cycles/pixel)
     cycles  *=64; //cycles per frame (64 pixels/block, 1 clock cycles/pixel in NC393)
     dev_dbg(g_dev_ptr,"{%d}  cycles=%d(0x%x)\n",sensor_port,cycles,cycles);
     MDP(DBGB_PADD, sensor_port,"cycles=%d(0x%x)\n",cycles,cycles)
@@ -1298,7 +1318,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     __div64_32(&ull_min_period, clk_fpga);
 #else
     do_div(ull_min_period, clk_fpga);
-//    ull_min_period/=thispars->pars[P_CLK_FPGA];
+    //    ull_min_period/=thispars->pars[P_CLK_FPGA];
 #endif
     min_period= ull_min_period;
     dev_dbg(g_dev_ptr,"{%d} min_period =%d(0x%x)\n", sensor_port, min_period, min_period);
@@ -1329,7 +1349,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
         __div64_32(&ull_period, thispars->pars[P_FP1000SLIM]);
 #else
         do_div(ull_period, thispars->pars[P_FP1000SLIM]);
-//        ull_period /= thispars->pars[P_FP1000SLIM];
+        //        ull_period /= thispars->pars[P_FP1000SLIM];
 #endif
         period= ull_period;
         dev_dbg(g_dev_ptr,"{%d} period =%d(0x%x)\n", sensor_port, period, period);
@@ -1362,10 +1382,15 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     //  if (async && (thispars->pars[P_TRIG_PERIOD] !=1)) { // <256 - single trig, here only ==1 is for single
     // Update period to comply even if it is not in async mode
     if (thispars->pars[P_TRIG_PERIOD] !=1) { // <256 - single trig, here only ==1 is for single
-        if (thispars->pars[P_TRIG_PERIOD] < min_period) SETFRAMEPARS_SET(P_TRIG_PERIOD, min_period);  // set it (and propagate to the later frames)
-        if (async &&  (thispars->pars[P_FPSFLAGS] & 2) && (thispars->pars[P_TRIG_PERIOD] > period)) {
-            SETFRAMEPARS_SET(P_TRIG_PERIOD, period);  // set it (and propagate to the later frames)
-            MDP(DBGB_PADD, sensor_port,"SETFRAMEPARS_SET(P_TRIG_PERIOD, 0x%x)\n", period)
+        min_period_camsync = sensor_to_camsync(min_period, thispars->pars[P_CLK_SENSOR]);
+        if (thispars->pars[P_TRIG_PERIOD] < min_period_camsync) SETFRAMEPARS_SET(P_TRIG_PERIOD, min_period_camsync);  // set it (and propagate to the later frames)
+        //        if (async &&  (thispars->pars[P_FPSFLAGS] & 2) && (thispars->pars[P_TRIG_PERIOD] > period)) {
+        if (async &&  (thispars->pars[P_FPSFLAGS] & 2)) {
+            period_camsync = sensor_to_camsync(period, thispars->pars[P_CLK_SENSOR]);
+            if (thispars->pars[P_TRIG_PERIOD] > period_camsync) {
+                SETFRAMEPARS_SET(P_TRIG_PERIOD, period_camsync);  // set it (and propagate to the later frames)
+                MDP(DBGB_PADD, sensor_port,"SETFRAMEPARS_SET(P_TRIG_PERIOD, 0x%x)\n", period_camsync)
+            }
         }
     }
     if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions

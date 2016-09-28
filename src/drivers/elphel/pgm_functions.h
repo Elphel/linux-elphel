@@ -28,6 +28,8 @@
 void pgm_functions_set_device(struct device *dev);
 int init_pgm_proc(int sensor_port);
 int add_sensor_proc(int port, int index, int (*sens_func)(int sensor_port, struct sensor_t * ,  struct framepars_t * , struct framepars_t *, int ));
+unsigned long camsync_to_sensor(unsigned long camsync_time, unsigned long sensor_clk);
+unsigned long sensor_to_camsync(unsigned long pixel_time, unsigned long sensor_clk);
 
 /// Commands through sequencer: switch between ASAP (frame <0) and absolute
 /// @param port - sensor port (0..3)
