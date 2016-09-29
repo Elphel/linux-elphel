@@ -1432,6 +1432,9 @@ int pgm_triggermode(int sensor_port,               ///< sensor port number (0..3
     if (camsync_mode.trig) {  // if trigger mode, enable camsync module, if off - do nothing
         camsync_mode.en = 1;
         camsync_mode.en_set = 1;
+//When does it need to be disabled?
+        camsync_mode.ts_chns =     (thispars->pars[P_EXTERN_TIMESTAMP]?1:0) << sensor_port;
+        camsync_mode.ts_chns_set = 1 << sensor_port;
     }
     camsync_mode.trig_set = 1;
     // set directly, bypassing sequencer as it may fail with wrong trigger
@@ -2626,8 +2629,11 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
     }
     // P_XMIT_TIMESTAMP changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_XMIT_TIMESTAMP)) {
-        camsync_mode.ts_chns =     (thispars->pars[P_EXTERN_TIMESTAMP]?1:0) << sensor_port;
-        camsync_mode.ts_chns_set = 1 << sensor_port;
+        camsync_mode.en_snd =     (thispars->pars[P_XMIT_TIMESTAMP]?1:0);
+        camsync_mode.en_snd_set = 1;
+
+//        camsync_mode.ts_chns =     (thispars->pars[P_EXTERN_TIMESTAMP]?1:0) << sensor_port;
+//        camsync_mode.ts_chns_set = 1 << sensor_port;
     }
     if (update_master_channel){
         camsync_mode.master_chn = sensor_port;
