@@ -23,3 +23,5 @@ excluding.lst
 attic
 board_elphel393
 scp
+bitbake-logs
+device-tree-logs
