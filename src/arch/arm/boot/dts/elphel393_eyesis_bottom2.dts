@@ -181,6 +181,8 @@
 		elphel393_pwr,pinstrapped_oven=  <1>;
 		elphel393_pwr,vcc_sens01_mv=     <2800>; /* set sensor intreface voltage to 2.8V */
 		elphel393_pwr,channels_enable=  "vp5";
+        /* high byte - enable bits, low byte - value */
+		elphel393_pwr,10389-init-value=  <0x100>;
 /*		elphel393_pwr,channels_enable=  "vcc_sens01 vp33sens01"; */
 	} ;
 	
