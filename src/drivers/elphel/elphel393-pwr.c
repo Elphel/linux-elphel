@@ -1172,6 +1172,22 @@ static void elphel393_pwr_init_of(struct platform_device *pdev)
 	dev_info(&pdev->dev,"elphel393_pwr configuration done\n");
 }
 
+static void gpio_10389_initialize(struct platform_device *pdev){
+	const __be32 * config_data;
+	int len, init_value;
+	struct device_node *node = pdev->dev.of_node;
+
+	config_data = of_get_property(node, "elphel393_pwr,10389-init-value", &len);
+
+	if (config_data && (len>0)){
+		init_value = be32_to_cpup(&config_data[0]);
+		pr_debug("Found elphel393_pwr,10389-init-value=<%d>\n",init_value);
+		//reset for the gpios that are 1's on power on but 0's in the driver which cannot read them
+		gpio_10389_ctrl(&pdev->dev, (init_value & 0xf00) | 0xff);
+		gpio_10389_ctrl(&pdev->dev, init_value);
+	}
+}
+
 static int device_by_i2c_addr_match(struct device *dev, void *data)
 {
 	struct i2c_client *client = to_i2c_client(dev);
@@ -1306,13 +1322,9 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 	 */
 	pm_power_off = shutdown;
 
-	/*
 	if (base[2]!=NULL){
-		//turn off PCA9571
-		gpio_10389_ctrl(&pdev->dev, 0xf0f);
-		gpio_10389_ctrl(&pdev->dev, 0xf00);
+		gpio_10389_initialize(pdev);
 	}
-	*/
 
 	return 0;
 }	
