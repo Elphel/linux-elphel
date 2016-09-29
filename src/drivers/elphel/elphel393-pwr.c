@@ -1322,14 +1322,9 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 	 */
 	pm_power_off = shutdown;
 
-	/*
 	if (base[2]!=NULL){
-		//turn off PCA9571
-		gpio_10389_ctrl(&pdev->dev, 0xf0f);
-		gpio_10389_ctrl(&pdev->dev, 0xf00);
+		gpio_10389_initialize(pdev);
 	}
-	*/
-	gpio_10389_initialize(pdev);
 
 	return 0;
 }	
