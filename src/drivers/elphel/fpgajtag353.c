@@ -453,8 +453,8 @@ static int fpga_jtag_release(struct inode *inode, struct file *filp) {
     minors[p]=0;
     JTAG_channels[chn].mode=JTAG_MODE_CLOSED;
     //D(printk("fpga_jtag_release:  done\r\n"));
-    dev_dbg(NULL, "fpga_jtag_release:  done\r\n");
-    dev_info(NULL, "fpga_jtag_release:  done, res= %d\n",res);
+    dev_dbg(NULL, "fpga_jtag_release:  done, res= %d\n",res);
+//    dev_info(NULL, "fpga_jtag_release:  done, res= %d\n",res);
     return (res<0)?res:0;
 }
 
