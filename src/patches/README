@@ -1,1 +1,5 @@
 Patches from this directory are applied by 'meta-elphel393/recipes-kernel/linux/linux-xlnx' bitbake recipe. To add a new patch, append SRC_URI variable in the recipe.
+Short description of the paches:
+
+libata-eh.c.patch
+	This patch is a workaround for the situation when ESATA disk connection leads to kernel panic. Consider the following execution path in driver: libata-core.c:ata_exec_internal_sg -> error during command execution leading to command timeout -> libata-core.c:ata_qc_complete (or ata_port_freeze and finally to the same function) -> libata-core.c:ata_qc_schedule_eh where qc->scsicmd is a NULL pointer by the moment. This patch may not be needed when all hardware/software issues are rectified.
