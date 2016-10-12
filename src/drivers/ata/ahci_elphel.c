@@ -96,28 +96,19 @@ static int bitstream_loaded(u32 *ptr)
 		return 0;
 }
 
-static void elphel_defer_load(struct device *dev)
+static int elphel_check_load(struct device *dev)
 {
-	bool check_flag = true;
+	int ret = 0;
 	u32 *ctrl_ptr = ioremap_nocache(BITSTREAM_CTRL_ADDR, 4);
 
-	dev_info(dev, "AHCI driver loading is deferred. Load bitstream and write 1 into "
-			"/sys/devices/soc0/amba@0/80000000.elphel-ahci/load_module to continue\n");
-	while (check_flag) {
-		if (load_driver) {
-			if (bitstream_loaded(ctrl_ptr)) {
-				check_flag = false;
-			} else {
-				dev_err(dev, "FPGA bitstream is not loaded or bitstream "
-						"does not contain AHCI controller\n");
-				load_driver = false;
-			}
-		} else {
-			msleep(1000);
-		}
+	if (!bitstream_loaded(ctrl_ptr)) {
+		ret = -1;
+		dev_err(dev, "FPGA bitstream is not loaded or bitstream "
+				"does not contain AHCI controller. Remove driver, load bitstream and try again\n");
 	}
-	load_driver = false;
 	iounmap(ctrl_ptr);
+
+	return ret;
 }
 
 static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
@@ -274,12 +265,16 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	const struct of_device_id *match;
 	struct ata_host *host;
 
+	ret = elphel_check_load(dev);
+	if (ret < 0) {
+		return ret;
+	}
+
 	if (&dev->kobj) {
 		ret = sysfs_create_group(&dev->kobj, &dev_attr_root_group);
 		if (ret < 0)
 			return ret;
 	}
-	elphel_defer_load(dev);
 
 	dev_info(&pdev->dev, "probing Elphel AHCI driver");
 
