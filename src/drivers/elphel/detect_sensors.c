@@ -246,7 +246,6 @@ static int get_channel_sub_from_name(struct device_attribute *attr) ///< Linux k
 
 static ssize_t show_port_mux(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    int i;
     const char * name = get_name_by_code(get_detected_mux_code(get_channel_from_name(attr)), DETECT_MUX);
     if (name) return sprintf(buf,"%s\n", name);
     // Should never get here
@@ -254,7 +253,6 @@ static ssize_t show_port_mux(struct device *dev, struct device_attribute *attr, 
 }
 static ssize_t show_sensor(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    int i;
     int psch = get_channel_sub_from_name(attr);
     int port = (psch>>4) &3;
     int sub_chn = psch &3;
@@ -265,11 +263,11 @@ static ssize_t show_sensor(struct device *dev, struct device_attribute *attr, ch
 }
 static ssize_t store_port_mux(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-    size_t len;
+//    size_t len;
     char name[80];
     int port = get_channel_from_name(attr);
-    int i, code, rslt;
-    if (sscanf(buf, "%79s", name, &len)){
+    int rslt;
+    if (sscanf(buf, "%79s", name)){
         if ((rslt = set_detected_mux_code( port, get_code_by_name(name, DETECT_MUX)))<0)
             return rslt;
 
@@ -278,13 +276,13 @@ static ssize_t store_port_mux(struct device *dev, struct device_attribute *attr,
 }
 static ssize_t store_sensor(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-    size_t len;
+//    size_t len;
     char name[80];
     int psch = get_channel_sub_from_name(attr);
     int port = (psch>>4) &3;
     int sub_chn = psch &3;
-    int i, rslt;
-    if (sscanf(buf, "%79s", name, &len)){
+    int rslt;
+    if (sscanf(buf, "%79s", name)){
         if ((rslt = set_detected_sensor_code(port, sub_chn, get_code_by_name(name, DETECT_SENSOR)))<0)
             return rslt;
     }

@@ -94,6 +94,13 @@
 
 #include <asm/irq.h>
 
+#include <linux/platform_device.h> // For sysfs
+#include <linux/of_device.h>
+//#include <linux/of.h>
+//#include <linux/of_fdt.h>
+//#include <linux/of_net.h>
+#include <linux/sysfs.h>
+
 #include <asm/delay.h>
 #include <asm/uaccess.h>
 #include <uapi/elphel/x393_devices.h>
@@ -139,7 +146,7 @@
 //Just removing delays is absolutely wrong (does not work with other sensors) what can be done - replacing constants with some run-time value(s) and set them individually for different sensors. For now - I'll use the standard values again.
 
 #define i2c_delay(usecs) udelay(usecs)
-#define I2C_DELAY_SCALE 1
+#define I2C_DELAY_SCALE 1 // with I2C_DELAY_SCALE==1 SCL period is 900 KHz - using udelay?
 //#define X3X3_I2C_MAXMINOR 4  //
 //#define X3X3_I2C_CHANNELS 2  // number of i2c channels
 
@@ -149,10 +156,12 @@
 // currently delays are approximately  0.4usec+0.2usec*n and 0x01010000 works (~8usec/byte)
 // with deafult 20MHz pixel clock - 0x01010202, after clock is set to 48MHz 0x01010000 is enough
 //TODO: Make delays independent for 2 channels?
-
+static struct device *g_dev_ptr=NULL; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
 static struct i2c_timing_t bitdelays[X3X3_I2C_CHANNELS];
+static int xi2c_initialized=0; // configure GPIO puins access at first command;
+
 #ifdef NC353
-static int i2c_hardware_on=0; // shadow register fro FPFA I@C controller
+static int i2c_hardware_on=0; // shadow register for FPFA I2C controller
 #endif
 
 
@@ -170,6 +179,7 @@ int i2c_restart(int n);
 int i2c_stop(int n);
 int i2c_outbyte(int n, unsigned char d);
 unsigned char i2c_inbyte(int n, int more);
+static void test_init_GPIO(void);
 //void i2c_sendack(int n, int ackn); // ackn= 1 - send ackn (low level), 0 - no ackn.
 
 // the following functions should be called with IRQ off. Maybe will replace with FPGA register read
@@ -180,12 +190,15 @@ void i2c_run(void)       {X3X3_I2C_RUN;        i2c_hardware_on=1;}
 int  i2s_running(void)   {return i2c_hardware_on;}
 #endif
 
+#define i2c_ldelay(usecs) udelay(usecs)
+
+/*
 void i2c_ldelay(int dly){
     while (dly--) {
         __asm__ __volatile__("");
     }
 }
-
+*/
 // Low level i2c pin functions
 
 
@@ -238,8 +251,29 @@ X313_I2C_CMD
 #ifdef NC353
 #define X313_PIOR(x) ((port_csp0_addr[X313__RA__IOPINS] >> X313_PIOR__##x ) & 1)
 #else
-#define X313_PIOR(x) ((x393_gpio_status().d32 >> X313_PIOR__##x ) & 1)
+#define X313_PIOR(x) ((read_gpio() >> X313_PIOR__##x ) & 1)
 #endif
+
+
+u32 read_gpio(void)
+{
+    x393_gpio_status_t gpio_status;
+    x393_status_ctrl_t stat_ctrl;
+    int i;
+    stat_ctrl.d32 = 0;
+    gpio_status = x393_gpio_status();
+    stat_ctrl.seq_num = gpio_status.seq_num + 1;
+    stat_ctrl.mode = 1;
+    set_x393_gpio_status_control(stat_ctrl);
+    for (i = 0; i < 10; i++) {
+        gpio_status = x393_gpio_status();
+        if (likely(gpio_status.seq_num == stat_ctrl.seq_num)) {
+            return gpio_status.d32 & 0x3ff; // lower 10 bits
+        }
+    }
+    dev_err(NULL,"read_gpio(): failed to  get expected seq_num in 10 cycles, expected = 0x%x, got 0x%x\n",stat_ctrl.seq_num, gpio_status.seq_num);
+    return gpio_status.d32 & 0x3ff;
+}
 
 
 
@@ -264,6 +298,7 @@ int i2c_getbit(int n) {
     if (bitdelays[n].filter_sda)
         return    (((X313_PIOR(SDA1)) + (X313_PIOR(SDA1)) + (X313_PIOR(SDA1)) + (X313_PIOR(SDA1)) + (X313_PIOR(SDA1)) + (X313_PIOR(SDA1)) + (X313_PIOR(SDA1))) >> 2);
     else     return    X313_PIOR(SDA1);
+
 #endif
 }
 
@@ -341,9 +376,10 @@ void i2c_sda_strong (int n, int d) {    // will also force sda enable
 int    i2c_start(int n) {
     int i;
     unsigned long flags;
+    test_init_GPIO();
     local_irq_save(flags);
     //local_irq_disable();
-    D(printk("i2c_start:  bus=%x\r\n", n));
+    dev_dbg(g_dev_ptr, "i2c_start:  bus=%x\r\n", n);
     // both SCL and SDA are supposed to be high - no waiting is needed
     // set SCL=1, release SDA, wait SCL high time and verify.
     i2c_scl_1(n);
@@ -375,7 +411,7 @@ int i2c_stop(int n) {
     unsigned long flags;
     local_irq_save(flags);
     //local_irq_disable();
-    D(printk("i2c_stop:  bus=%x\r\n", n));
+    dev_dbg(g_dev_ptr, "i2c_stop:  bus=%x\r\n", n);
     // SCL=0, SDA - unknown. Wait for bus turnover
     i2c_sda_weak (n, 0);
     i2c_ldelay(bitdelays[n].slave2master*I2C_DELAY_SCALE); // maybe not needed  as it is 1->0 transition
@@ -394,7 +430,7 @@ int    i2c_restart(int n) {
     unsigned long flags;
     local_irq_save(flags);
     //local_irq_disable();
-    D(printk("i2c_restart:  bus=%x\r\n", n));
+    dev_dbg(g_dev_ptr, "i2c_restart:  bus=%x\r\n", n);
     // SCL=0, SDA - unknown. Wait for bus turnover
     i2c_sda_weak (n, 1);
     i2c_ldelay(bitdelays[n].slave2master*I2C_DELAY_SCALE); // time for slave to release the bus
@@ -417,7 +453,7 @@ int i2c_outbyte(int n, unsigned char d) {
     unsigned long flags;
     local_irq_save(flags);
     //local_irq_disable();
-    D(printk("i2c_outbyte:  bus=%x byte=%x\r\n", n, x));
+    dev_dbg(g_dev_ptr, "i2c_outbyte:  bus=%x byte=%x\r\n", n, x);
     i2c_sda_weak (n, 1);
     i2c_ldelay(bitdelays[n].slave2master * I2C_DELAY_SCALE); // time for slave to release the bus
     for (i = 0; i < 8; i++) { // assumed to be with SCL=0;
@@ -439,7 +475,7 @@ int i2c_outbyte(int n, unsigned char d) {
     i2c_ldelay(bitdelays[n].scl_high * I2C_DELAY_SCALE); // regular SCL=1 delay
     i= (1-i2c_getbit(n));
     i2c_scl_0(n);
-    D(printk("i2c_outbyte:  ACK=%x\r\n", i));
+    dev_dbg(g_dev_ptr, "i2c_outbyte:  ACK=%x\r\n", i);
     local_irq_restore(flags);
     return i;
 }
@@ -453,7 +489,7 @@ unsigned char i2c_inbyte(int n, int more) { // assumed SCL=0, SDA=X
     unsigned long flags;
     local_irq_save(flags);
     //local_irq_disable();
-    D(printk("i2c_inbyte:  bus=%x\r\n", n));
+    dev_dbg(g_dev_ptr, "i2c_inbyte:  bus=%x\r\n", n);
     // prepare to read ACKN
     i2c_sda_weak (n, 1);
     i2c_ldelay(bitdelays[n].master2slave * I2C_DELAY_SCALE); // master -> slave delay
@@ -476,7 +512,7 @@ unsigned char i2c_inbyte(int n, int more) { // assumed SCL=0, SDA=X
     i2c_scl_0(n);
     //TODO: (test next is OK - 2012-01-15)
     i2c_sda_weak (n, 1); // release SDA byte
-    D(printk("i2c_inbyte:  data=%x\r\n", aBitByte));
+    dev_dbg(g_dev_ptr, "i2c_inbyte:  data=%x\r\n", aBitByte);
     local_irq_restore(flags);
     return aBitByte;    // returns with SCL=0, SDA - OFF
 }
@@ -493,7 +529,7 @@ unsigned char i2c_inbyte(int n, int more) { // assumed SCL=0, SDA=X
  *#--------------------------------------------------------------------------*/
 int i2c_writeData(int n, unsigned char theSlave, unsigned char *theData, int size, int stop) {
     int i,error=0;
-    D(printk("i2c_writeData:  bus=%x theSlave=%x data=%x %x size=%x\r\n", n, theSlave, theData[0], theData[1], size));
+    dev_dbg(g_dev_ptr, "i2c_writeData:  bus=%x theSlave=%x data=%x %x size=%x\r\n", n, theSlave, theData[0], theData[1], size);
 
     // generate start condition, test bus
     if ((error=i2c_start(n))) return error;
@@ -529,7 +565,7 @@ int i2c_readData(int n, unsigned char theSlave, unsigned char *theData, int size
         if ((error=i2c_restart(n))) return error;
     }
     /* send slave address, wait for ack */
-    D(printk("i2c_readData:  bus=%x theSlave=%x size=%x start=%d\r\n", n, theSlave, size, start));
+    dev_dbg(g_dev_ptr, "i2c_readData:  bus=%x theSlave=%x size=%x start=%d\r\n", n, theSlave, size, start);
 
     if(!i2c_outbyte(n,theSlave)) {
         i2c_stop(n);
@@ -548,9 +584,9 @@ int i2c_ioctl(struct inode *inode, struct file *file,
         unsigned int cmd, unsigned long arg) {
     unsigned char data[3];
     int error=0;
-    D(printk("i2c_ioctl cmd= %x, arg= %x\n\r",cmd,(int) arg));
-    D(printk("i2c_ioctl:  ((int *)file->private_data)[0]= %x\n\r",((int *)file->private_data)[0]));
-    //   D(printk("i2c_ioctl:  ((int )file->private_data)= %x\n\r",(int)file->private_data));
+    dev_dbg(g_dev_ptr, "i2c_ioctl cmd= %x, arg= %x\n\r",cmd,(int) arg);
+    dev_dbg(g_dev_ptr, "i2c_ioctl:  ((int *)file->private_data)[0]= %x\n\r",((int *)file->private_data)[0]);
+    //   dev_dbg(g_dev_ptr, "i2c_ioctl:  ((int )file->private_data)= %x\n\r",(int)file->private_data);
     if(_IOC_TYPE(cmd) != CMOSCAM_IOCTYPE) {
         return -EINVAL;
     }
@@ -562,49 +598,49 @@ int i2c_ioctl(struct inode *inode, struct file *file,
         return i2c_delays (arg);
     case I2C_WRITEREG:
         /* write to an i2c slave */
-        D(printk("i2cw bus=%d, slave=%d, reg=%d, value=%d\n",
+        dev_dbg(g_dev_ptr, "i2cw bus=%d, slave=%d, reg=%d, value=%d\n",
                 (int) I2C_ARGBUS(arg),
                 (int) I2C_ARGSLAVE(arg),
                 (int) I2C_ARGREG(arg),
-                (int) I2C_ARGVALUE(arg)));
+                (int) I2C_ARGVALUE(arg));
         data[0]=I2C_ARGREG(arg);
         data[1]=I2C_ARGVALUE(arg);
         return -i2c_writeData(I2C_ARGBUS(arg), I2C_ARGSLAVE(arg) & 0xfe, &data[0], 2, 1); // send stop
     case I2C_READREG:
         /* read from an i2c slave */
-        D(printk("i2cr bus=%d, slave=%d, reg=%d ",
+        dev_dbg(g_dev_ptr, "i2cr bus=%d, slave=%d, reg=%d ",
                 (int) I2C_ARGBUS(arg),
                 (int) I2C_ARGSLAVE(arg),
-                (int) I2C_ARGREG(arg)));
+                (int) I2C_ARGREG(arg));
         data[0]=I2C_ARGREG(arg);
         error=i2c_writeData(I2C_ARGBUS(arg), I2C_ARGSLAVE(arg) & 0xfe, &data[0], 1, 0); // no stop
         if (error) return -error;
         error=i2c_readData(I2C_ARGBUS(arg), I2C_ARGSLAVE(arg) | 0x01, &data[1], 1, 0);  // will start with restart, not start
         if (error) return -error;
-        D(printk("returned %d\n", data[1]));
+        dev_dbg(g_dev_ptr, "returned %d\n", data[1]);
         return data[1];
 
     case I2C_16_WRITEREG:
         /* write to an i2c slave */
-        D(printk("i2c16w slave=%d, reg=%d, value=%d\n",
+        dev_dbg(g_dev_ptr, "i2c16w slave=%d, reg=%d, value=%d\n",
                 (int) I2C_16_ARGSLAVE(arg),
                 (int) I2C_16_ARGREG(arg),
-                (int) I2C_16_ARGVALUE(arg)));
+                (int) I2C_16_ARGVALUE(arg));
         data[0]=I2C_16_ARGREG(arg);
         data[1]=I2C_16_ARGVALUE_H(arg);
         data[2]=I2C_16_ARGVALUE_L(arg);
         return -i2c_writeData(0, I2C_16_ARGSLAVE(arg) & 0xfe, &data[0], 3, 1); // send stop
     case I2C_16_READREG:
         /* read from an i2c slave */
-        D(printk("i2c16r slave=%d, reg=%d ",
+        dev_dbg(g_dev_ptr, "i2c16r slave=%d, reg=%d ",
                 (int) I2C_16_ARGSLAVE(arg),
-                (int) I2C_16_ARGREG(arg)));
+                (int) I2C_16_ARGREG(arg));
         data[0]=I2C_16_ARGREG(arg);
         error=i2c_writeData(0, I2C_16_ARGSLAVE(arg) & 0xfe, &data[0], 1, 0); //no stop
         if (error) return -error;
         error=i2c_readData(0, I2C_16_ARGSLAVE(arg) | 0x01, &data[1], 2, 0);
         if (error) return -error;
-        D(printk("returned %d\n", (data[1]<<8)+data[2]));
+        dev_dbg(g_dev_ptr, "returned %d\n", (data[1]<<8)+data[2]);
         return (data[1]<<8)+data[2];
     default:
         return -EINVAL;
@@ -644,7 +680,7 @@ static int     xi2c_release(struct inode *inode, struct file *filp);
 static loff_t  xi2c_lseek  (struct file * file, loff_t offset, int orig);
 static ssize_t xi2c_write  (struct file * file, const char * buf, size_t count, loff_t *off);
 static ssize_t xi2c_read   (struct file * file, char * buf, size_t count, loff_t *off);
-static int __init xi2c_init(void);
+static int      xi2c_init  (struct platform_device *pdev);
 
 static struct file_operations xi2c_fops = {
         owner:    THIS_MODULE,
@@ -678,9 +714,9 @@ int     xi2c_open(struct inode *inode, struct file *filp) {
         break;
     }
 
-    D(printk("xi2c_open, minor=%d\n",p));
+    dev_dbg(g_dev_ptr, "xi2c_open, minor=%d\n",p);
     if ((bus>=0) && (inuse[bus] !=0)) return -EACCES;
-    D(printk("xi2c_open, minor=%d\n",p));
+    dev_dbg(g_dev_ptr, "xi2c_open, minor=%d\n",p);
     inode->i_size=sizes[p];
     if (bus>=0) inuse[bus] =1;
 
@@ -736,7 +772,7 @@ static int     xi2c_release(struct inode *inode, struct file *filp){
         bus=-1;
         break;
     }
-    D(printk("xi2c_release, minor=%d\n",p));
+    dev_dbg(g_dev_ptr, "xi2c_release, minor=%d\n",p);
     if (bus>=0) inuse[bus]=0;
     else if (p==DEV393_MINOR(DEV393_I2C_CTRL)) for (bus=0; bus < X3X3_I2C_CHANNELS; bus++) inuse[bus]=0;
     //  thisminor =0;
@@ -802,12 +838,12 @@ static loff_t  xi2c_lseek(struct file * file, loff_t offset, int orig) {
 //!++++++++++++++++++++++++++++++++++++ read() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
-    int hardware_i2c_running;
-    unsigned long flags;
+//    int hardware_i2c_running;
+//    unsigned long flags;
     unsigned long p;
     int error;
-    p = *off;
     char * bbitdelays= (char*) bitdelays;
+    p = *off;
     int bus=0;
     unsigned char * i2cbuf=&i2cbuf_all[0]; // initialize to keep compiler happy
     unsigned char * userbuf=&i2cbuf[1];
@@ -852,7 +888,7 @@ ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
         slave_adr=(p >> 8) & 0xfe;
         break;
     }
-    D(printk("xi2c_read (bus=%d) from 0x%x, count=%d\n", bus, (int) *off, (int) count));
+    dev_dbg(g_dev_ptr, "xi2c_read (bus=%d) from 0x%x, count=%d\n", bus, (int) *off, (int) count);
     //! Verify if this slave is enabled for the I2C operation requested
     switch ((int)file->private_data) {
     case DEV393_MINOR(DEV393_I2C_RAW):
@@ -882,7 +918,7 @@ ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
     }
     if ((en_bits & en_mask) ^ en_mask) {
         printk("tried disabled xi2c_read (bus=%d, slave=0x%x)\n", bus, slave_adr);
-        D(printk("en_bits=0x%x, en_mask=0x%x (minor=%d)\n", (int) en_bits, (int) en_mask, (int)file->private_data));
+        dev_dbg(g_dev_ptr, "en_bits=0x%x, en_mask=0x%x (minor=%d)\n", (int) en_bits, (int) en_mask, (int)file->private_data);
         return -ENXIO;
     }
 
@@ -965,18 +1001,17 @@ ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
     default:
         *off+=count;
     }
-    D(printk("count= 0x%x, pos= 0x%x\n", (int) count, (int)*off));
+    dev_dbg(g_dev_ptr, "count= 0x%x, pos= 0x%x\n", (int) count, (int)*off);
     return count;
 }
 
 //!++++++++++++++++++++++++++++++++++++ write() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, loff_t *off) {
-    int hardware_i2c_running;
-    unsigned long flags;
+//   int hardware_i2c_running;
+//    unsigned long flags;
     unsigned long p;
     int error;
-    p = *off;
     int bus=0;
     char * bbitdelays= (char*) bitdelays;
     unsigned char * i2cbuf=&i2cbuf_all[0]; // initialize to keep compiler happy
@@ -985,6 +1020,7 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
     int slave_adr;
     int en_mask=0;
     int en_bits=0;
+    p = *off;
 
     //  switch (((int *)file->private_data)[0]) {
     switch ((int)file->private_data) {
@@ -1013,7 +1049,7 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
         slave_adr=(p >> 8) & 0xfe;
         break;
     }
-    D(printk("xi2c_write (bus=%d) to 0x%x, count=%x\n", bus, (int) *off, (int) count));
+    dev_dbg(g_dev_ptr, "xi2c_write (bus=%d) to 0x%x, count=%x\n", bus, (int) *off, (int) count);
 
     //! Verify if this slave is enabled for the I2C operation requested
     switch ((int)file->private_data) {
@@ -1044,7 +1080,7 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
     }
     if ((en_bits & en_mask) ^ en_mask) {
         printk("tried disabed xi2c_write (bus=%d, slave=0x%x)\n", bus, slave_adr);
-        D(printk("en_bits=0x%x, en_mask=0x%x (minor=%d)\n", (int) en_bits, (int) en_mask, (int)file->private_data));
+        dev_dbg(g_dev_ptr, "en_bits=0x%x, en_mask=0x%x (minor=%d)\n", (int) en_bits, (int) en_mask, (int)file->private_data);
         return -ENXIO;
     }
 
@@ -1073,6 +1109,7 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
     case DEV393_MINOR(DEV393_I2C1_RAW):
 
         if (bus==0) {
+            error = -EINVAL;
 #ifdef NC353
             local_irq_save(flags); /// IRQ Off
             hardware_i2c_running=i2s_running();
@@ -1092,6 +1129,7 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
         i2cbuf[0]=p & 0xff;
 
         if (bus==0) {
+            error = -EINVAL;
 #ifdef NC353
             local_irq_save(flags); /// IRQ Off
             hardware_i2c_running=i2s_running();
@@ -1111,6 +1149,7 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
         i2cbuf[0]=(p>>1) & 0xff;
 
         if (bus==0) {
+            error = -EINVAL;
 #ifdef NC353
             local_irq_save(flags); /// IRQ Off
             hardware_i2c_running=i2s_running();
@@ -1140,13 +1179,192 @@ static ssize_t xi2c_write(struct file * file, const char * buf, size_t count, lo
     default:
         *off+=count;
     }
-    D(printk("count= 0x%x, pos= 0x%x\n", (int) count, (int)*off));
+    dev_dbg(g_dev_ptr, "count= 0x%x, pos= 0x%x\n", (int) count, (int)*off);
+    return count;
+}
+/** Test if GPIO pins are not initialized, and do it if not (can nolt initialize at driver init as bitstream has to be loaded) */
+static void test_init_GPIO(void)
+{
+    x393_gpio_set_pins_t gpio_set_pins = {.d32 = 0};
+    if (xi2c_initialized) return;
+    gpio_set_pins.soft = 3; // Enable software control of GPIO pins
+    x393_gpio_set_pins  (gpio_set_pins);
+    xi2c_initialized=1;
+
+}
+
+// TODO: Add sysfs interface here
+#define SYSFS_PERMISSIONS           0644 /* default permissions for sysfs files */
+#define SYSFS_READONLY              0444
+#define SYSFS_WRITEONLY             0222
+
+static ssize_t show_scl_high(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"%d\n", bitdelays[1].scl_high);
+}
+
+static ssize_t store_scl_high(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int d;
+    if (!sscanf(buf, "%u", &d)) {
+        return - EINVAL;
+    }
+    bitdelays[1].scl_high = (unsigned char) d;
+    return count;
+}
+static ssize_t show_scl_low(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"%d\n", bitdelays[1].scl_low);
+}
+
+static ssize_t store_scl_low(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int d;
+    if (!sscanf(buf, "%u", &d)) {
+        return - EINVAL;
+    }
+    bitdelays[1].scl_low = (unsigned char) d;
     return count;
 }
 
+static ssize_t show_slave2master(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"%d\n", bitdelays[1].slave2master);
+}
 
-static int __init xi2c_init(void) {
+static ssize_t store_slave2master(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int d;
+    if (!sscanf(buf, "%u", &d)) {
+        return - EINVAL;
+    }
+    bitdelays[1].slave2master = (unsigned char) d;
+    return count;
+}
+
+static ssize_t show_master2slave(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"%d\n", bitdelays[1].master2slave);
+}
+
+static ssize_t store_master2slave(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int d;
+    if (!sscanf(buf, "%u", &d)) {
+        return - EINVAL;
+    }
+    bitdelays[1].master2slave = (unsigned char) d;
+    return count;
+}
+
+static ssize_t show_filter_sda(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"%d\n", bitdelays[1].filter_sda);
+}
+
+static ssize_t store_filter_sda(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int d;
+    if (!sscanf(buf, "%u", &d)) {
+        return - EINVAL;
+    }
+    bitdelays[1].filter_sda = (unsigned char) d;
+    return count;
+}
+
+static ssize_t show_filter_scl(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"%d\n", bitdelays[1].filter_scl);
+}
+
+static ssize_t store_filter_scl(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int d;
+    if (!sscanf(buf, "%u", &d)) {
+        return - EINVAL;
+    }
+    bitdelays[1].filter_scl = (unsigned char) d;
+    return count;
+}
+
+static DEVICE_ATTR(time_scl_high,              SYSFS_PERMISSIONS,     show_scl_high,              store_scl_high);
+static DEVICE_ATTR(time_scl_low,               SYSFS_PERMISSIONS,     show_scl_low,               store_scl_low);
+static DEVICE_ATTR(time_slave2master,          SYSFS_PERMISSIONS,     show_slave2master,          store_slave2master);
+static DEVICE_ATTR(time_master2slave,          SYSFS_PERMISSIONS,     show_master2slave,          store_master2slave);
+static DEVICE_ATTR(filter_sda,                 SYSFS_PERMISSIONS,     show_filter_sda,            store_filter_sda);
+static DEVICE_ATTR(filter_scl,                 SYSFS_PERMISSIONS,     show_filter_scl,            store_filter_scl);
+
+
+
+
+
+static struct attribute *root_dev_attrs[] = {
+        &dev_attr_time_scl_high.attr,
+        &dev_attr_time_scl_low.attr,
+        &dev_attr_time_slave2master.attr,
+        &dev_attr_time_master2slave.attr,
+        &dev_attr_filter_sda.attr,
+        &dev_attr_filter_scl.attr,
+        NULL
+};
+
+static const struct attribute_group dev_attr_root_group = {
+    .attrs = root_dev_attrs,
+    .name  = NULL,
+};
+
+
+static int elphel393_ext_i2c_sysfs_register(struct platform_device *pdev)
+{
+    int retval=0;
+    struct device *dev = &pdev->dev;
+    if (&dev->kobj) {
+        if (((retval = sysfs_create_group(&dev->kobj, &dev_attr_root_group)))<0) return retval;
+    }
+    return retval;
+}
+
+// Add device tree support (known devices?)
+static const struct of_device_id elphel393_ext_i2c_of_match[] = {
+    { .compatible = "elphel,elphel393-ext-i2c-1.00" },
+    { /* end of list */ }
+};
+
+static int elphel393_xi2c_init_of(struct platform_device *pdev) ///< Platform device structure for this driver
+{
+    const struct of_device_id *match;
+    struct device_node *node;
+    struct device *dev = &pdev->dev;
+
+    match = of_match_device(elphel393_ext_i2c_of_match, dev);
+    if (!match)
+        return -EINVAL;
+
+    node = of_find_node_by_name(NULL, "elphel393-ext-i2c");
+    if (!node)
+    {
+        pr_err("elphel393-ext-i2c: No device tree node found\n");
+        return -ENODEV;
+    }
+    bitdelays[1].scl_high =      be32_to_cpup((__be32 *)of_get_property(node,  "time_scl_high",     NULL));
+    bitdelays[1].scl_low =       be32_to_cpup((__be32 *)of_get_property(node,  "time_scl_low",      NULL));
+    bitdelays[1].slave2master =  be32_to_cpup((__be32 *)of_get_property(node,  "time_slave2master", NULL));
+    bitdelays[1].master2slave =  be32_to_cpup((__be32 *)of_get_property(node,  "time_master2slave", NULL));
+    bitdelays[1].filter_sda =    be32_to_cpup((__be32 *)of_get_property(node,  "filter_sda",        NULL));
+    bitdelays[1].filter_scl =    be32_to_cpup((__be32 *)of_get_property(node,  "filter_scl",        NULL));
+
+    return 0;
+}
+
+int xi2c_init(struct platform_device *pdev)
+{
     int i,res;
+    struct device *dev = &pdev->dev;
+
+    elphel393_ext_i2c_sysfs_register(pdev);
+    dev_info(dev, DEV393_NAME(DEV393_I2C_CTRL)": registered sysfs\n");
+    g_dev_ptr = dev;
+
     res = register_chrdev(DEV393_MAJOR(DEV393_I2C_CTRL), DEV393_NAME(DEV393_I2C_CTRL), &xi2c_fops);
     if(res < 0) {
         printk(KERN_ERR "\nxi2c_init: couldn't get a major number %d.\n",DEV393_MAJOR(DEV393_I2C_CTRL));
@@ -1155,6 +1373,8 @@ static int __init xi2c_init(void) {
     printk(X3X3_I2C_DRIVER_NAME" - %d, %d channels\n",DEV393_MAJOR(DEV393_I2C_CTRL),X3X3_I2C_CHANNELS);
     //   thisminor =0;
 
+    elphel393_xi2c_init_of(pdev);
+
     bitdelays[0].scl_high=2;      //! SCL high:
     bitdelays[0].scl_low=2;       //! SCL low:
     bitdelays[0].slave2master=1;  //! slave -> master
@@ -1162,12 +1382,14 @@ static int __init xi2c_init(void) {
     bitdelays[0].filter_sda=0x07; //! filter SDA read data by testing multiple times - currently just zero/non zero
     bitdelays[0].filter_scl=0x07; //! filter SCL read data by testing multiple times - currently just zero/non zero
     //! bus 1 - increased by 1 measured for EEPROM
-    bitdelays[1].scl_high=3;      //! SCL high:
-    bitdelays[1].scl_low=4;       //! SCL low: with 2 -
-    bitdelays[1].slave2master=2;  //! slave -> master
-    bitdelays[1].master2slave=2;  //! master -> slave
-    bitdelays[1].filter_sda=0x07; //! filter SDA read data by testing multiple times - currently just zero/non zero
-    bitdelays[1].filter_scl=0x07; //! filter SCL read data by testing multiple times - currently just zero/non zero
+    bitdelays[1].scl_high=2;      //! SCL high: (was 3)
+    bitdelays[1].scl_low=2;       //! SCL low: with 2 -
+    bitdelays[1].slave2master=1;  //! slave -> master
+    bitdelays[1].master2slave=1;  //! master -> slave
+    bitdelays[1].filter_sda=0x0;  //! filter SDA read data by testing multiple times - currently just zero/non zero
+    bitdelays[1].filter_scl=0x0;  //! filter SCL read data by testing multiple times - currently just zero/non zero
+
+    elphel393_xi2c_init_of(pdev); // may return negative errors
 
     for (i=0; i<X3X3_I2C_CHANNELS;i++) {
         inuse[i]=0;
@@ -1244,13 +1466,33 @@ static int __init xi2c_init(void) {
     //#define X3X3_I2C_ENABLE_RAW  2 // bit 2 - enable i2c raw (no address byte)
     //#define X3X3_I2C_ENABLE_8    3 // bit 3 - enable i2c 8-bit registers access
     //#define X3X3_I2C_ENABLE_16   4 // bit 4 - enable i2c 16-bit registers access
-
+    xi2c_initialized=0; // configure GPIO puins access at first command;
     return 0;
 }
 
-/* this makes sure that xi2c_init is called during boot */
+//-------------------------------
 
-module_init(xi2c_init);
+int xi2c_remove(struct platform_device *pdev)
+{
+    unregister_chrdev(DEV393_MAJOR(DEV393_I2C_CTRL), DEV393_NAME(DEV393_I2C_CTRL));
+    return 0;
+}
+
+MODULE_DEVICE_TABLE(of, elphel393_ext_i2c_of_match);
+
+static struct platform_driver elphel393_ext_i2c = {
+    .probe          = xi2c_init,
+    .remove         = xi2c_remove,
+    .driver         = {
+        .name       = DEV393_NAME(DEV393_I2C_CTRL),
+        .of_match_table = elphel393_ext_i2c_of_match,
+    },
+};
+
+module_platform_driver(elphel393_ext_i2c);
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(X3X3_I2C_DRIVER_NAME);
+
+
