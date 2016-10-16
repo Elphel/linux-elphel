@@ -501,7 +501,7 @@ loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
 	int p=(int)file->private_data;
 	int thissize=minor_file_size(p);
 	int maxsize=minor_max_size(p);
-//    int fp;
+    int fp;
     dev_dbg(g_devfp_ptr,"exif_lseek, minor=%d, offset = 0x%llx, orig=%d\n",p,offset,orig);
 	//   int sensor_port;
 	switch (orig) {
@@ -548,10 +548,12 @@ loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
 			case DEV393_MINOR(DEV393_EXIF_META1):
 			case DEV393_MINOR(DEV393_EXIF_META2):
 			case DEV393_MINOR(DEV393_EXIF_META3):
-				file->f_pos=offset*sizeof(struct exif_dir_table_t);
+                fp= dir_find_tag (offset);
+                if (fp < 0) return -EOVERFLOW; // tag is not in the directory
+                file->f_pos=fp;
 				break;
             case DEV393_MINOR(DEV393_EXIF_METADIR):
-                   file->f_pos=offset*sizeof(struct exif_dir_table_t);
+                file->f_pos=offset*sizeof(struct exif_dir_table_t);
                 break;
 			case DEV393_MINOR(DEV393_EXIF_TIME):
 				switch (offset) {
@@ -602,8 +604,11 @@ ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff
 	char tmp[MAX_EXIF_SIZE]; //! Or is it possible to disable IRQ while copy_from_user()?
 	unsigned long flags;
 	int disabled_err=0;
+    dev_dbg(g_devfp_ptr,"minor=0x%x\n", p);
+
 	if ((*off+count)>maxsize) {
-	    dev_warn(g_devfp_ptr,"%s:%d: Data (0x%x) does not fit into 0x%x bytes\n",__FILE__,__LINE__, (int) (*off+count), maxsize);
+//	    dev_warn(g_devfp_ptr,"%s:%d: Data (0x%x) does not fit into 0x%x bytes\n",__FILE__,__LINE__, (int) (*off+count), maxsize);
+        dev_dbg(g_devfp_ptr,"Data (0x%x) does not fit into 0x%x bytes, minor = 0x%x\n",(int) (*off+count), maxsize, p);
 		return -EOVERFLOW;
 	}
 	switch (p) {

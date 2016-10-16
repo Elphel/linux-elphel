@@ -1652,7 +1652,7 @@ struct p_names_t {
 
 
 // make this structure common for sensors, add fields as needed
-struct sensor_t {
+struct __attribute__((__packed__)) sensor_t {
 // sensor constants
    unsigned long  imageWidth;     ///< nominal image width for final images
    unsigned long  imageHeight;    ///< nominal image height for final images
@@ -1789,7 +1789,7 @@ struct i2c_timing_t {
 
 #define GAMMA_SCALE_SHIFT     10  // when scaling - shift right by GAMMA_SCALE_SHIFT (treat scale as 6.10)
 #define GAMMA_SCLALE_1 ( 1 << GAMMA_SCALE_SHIFT )      // gamma scale 1.0 - 0x400
-struct gamma_stuct_t {
+struct __attribute__((__packed__)) gamma_stuct_t {
     union {
         unsigned long hash32; /// fully identifies current table
         struct {

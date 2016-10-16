@@ -43,7 +43,7 @@ or Rational or else. The generated Exif header copies that variable fileds on to
 
 The compressed data buffer is stored in "meta pages", one per frame 
 */
-struct exif_dir_table_t {
+struct __attribute__((__packed__)) exif_dir_table_t {
         union {
           unsigned long ltag;// tag group and tag combined
           struct {
@@ -112,13 +112,13 @@ struct exif_dir_table_t {
 //  array(0x9003,2,"2001:06:21 12:00:00","len"=> 20), //date/time original time created, always use 20 bytes (19 ."\0")
 //  array(0x9291,2,"0        ") //original time sub-second length=10  9 ."\0"
 ///move back to interframe_params_t?
-struct frame_exif_t {
+struct __attribute__((__packed__)) frame_exif_t {
           unsigned short meta_index;     //! index of the linked meta page
           unsigned short signffff;       //! should be 0xffff - it will be a signature that JPEG data was not overwritten
           unsigned long  frame_length;   //! frame length
 };
 
-struct meta_GPSInfo_t {
+struct __attribute__((__packed__)) meta_GPSInfo_t {
    unsigned char GPSLatitudeRef; //"N"/"S"
    unsigned long GPSLatitude_deg_nom;
    unsigned long GPSLatitude_deg_denom;
@@ -142,7 +142,7 @@ struct meta_GPSInfo_t {
    unsigned char GPSMeasureMode;
 };
 //hack - use
-struct meta_CompassInfo_t {
+struct __attribute__((__packed__)) meta_CompassInfo_t {
 //   unsigned char GPSImgDirectionRef; //"M"/"T" //0x10
    unsigned long CompassDirection_nom; //0x11
    unsigned long CompassDirection_denom;
