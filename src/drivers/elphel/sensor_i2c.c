@@ -44,7 +44,6 @@
 #include <linux/of.h>
 #include <linux/of_fdt.h>
 #include <linux/of_net.h>
-#include <linux/platform_device.h>
 #include <linux/sysfs.h>
 #include <linux/list.h>
 

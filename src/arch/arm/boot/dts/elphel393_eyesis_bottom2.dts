@@ -299,5 +299,15 @@
         klogger-393,buffer_size = <1048576>; 
     } ;
     
+/* i2c driver for the extension boards, such as imu, gps, etc */    
+    elphel393_ext_i2c:elphel393-ext-i2c@0{
+        compatible =    "elphel,elphel393-ext-i2c-1.00";
+        time_scl_high =     <3>; /*  SCL high duration (us) */
+        time_scl_low =      <3>; /*  SCL low duration (us) */
+        time_slave2master = <2>; /*  slave -> master delay (us) */
+        time_master2slave = <2>; /*  master -> slave delay (us) */
+        filter_sda =        <7>; /*  filter SDA read data by testing multiple times - currently just zero/non zero  */
+        filter_scl =        <7>; /* filter SCL read data by testing multiple times - currently just zero/non zero  */
+    };
     
 };

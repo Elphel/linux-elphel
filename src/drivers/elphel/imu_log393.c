@@ -57,21 +57,21 @@
 #include <uapi/elphel/x393_devices.h>
 
 
-#if 0
+#if 1
 #define D(x) x
-#define D0(x) x
-#define MD7(x) printk("%s:%d:",__FILE__,__LINE__);x
-#define MD8(x) printk("%s:%d:",__FILE__,__LINE__);x
-#define MD12(x) printk("%s:%d:",__FILE__,__LINE__);x
+//#define D0(x) x
+//#define MD7(x) printk("%s:%d:",__FILE__,__LINE__);x
+//#define MD8(x) printk("%s:%d:",__FILE__,__LINE__);x
+//#define MD12(x) printk("%s:%d:",__FILE__,__LINE__);x
 #else
 #define D(x)
-#define D0(x)
-#define MD7(x)
-#define MD8(x)
-#define MD12(x)
+//#define D0(x)
+//#define MD7(x)
+//#define MD8(x)
+//#define MD12(x)
 #endif
 
-#define D1(x) x
+//#define D1(x) x
 
 
 #define IS_103695_REV_A 1
@@ -215,6 +215,11 @@
 #define LSEEK_IMU_NEW       1 ///< start from the new data, discard buffer
 #define LSEEK_IMU_STOP      2 ///< stop DMA1 and IMU
 #define LSEEK_IMU_START     3 ///< start IMU and DMA1 (do not modify parameters)
+
+static struct device *g_dev_ptr=NULL; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
+
+const int i2cbus = 1;
+
 static unsigned char dflt_wbuf[]=
 { DFLT_PERIOD & 0xff, ( DFLT_PERIOD >> 8 ) & 0xff, ( DFLT_PERIOD >> 16) & 0xff, ( DFLT_PERIOD >> 24 ) & 0xff,
         //   {0,0,0,0,            // period - off
@@ -353,16 +358,17 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
     x393_logger_data_t    logger_data;
     x393_gpio_set_pins_t  gpio_set_pins;
 
-    D(int i2c_err=0;)
+//    D(int i2c_err=0;)
+    int i2c_err=0;
 
     D(for (i=0; i< sizeof (wbuf); i++ ) {  if ((i & 0x1f)==0) printk("\n %03x",i);  printk(" %02x",(int) wbuf[i]); });
     if (which & WHICH_RESET) {
         if (logger_is_dma_on()!=0) {
-            D(printk("Stopping DMA\n"));
+            dev_dbg(g_dev_ptr,"Stopping DMA\n");
             logger_dma_stop();
         }
 
-        D(printk("Resetting logger\n"));
+        dev_dbg(g_dev_ptr,"Resetting logger\n");
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_CONFIGURE_ADDR;
         port_csp0_addr[X313_WA_IMU_DATA] = IMU_CONF(RST_CONF,1);
@@ -374,10 +380,13 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 #endif
     }
     if (which & WHICH_INIT) {
-        D(printk("Enabling I/O pins for IMU, written 0x%x to 0x%x\n", (int) X313_WA_IOPINS_EN_IMU, (int) X313_WA_IOPINS));
+        unsigned char i2c_sa= PCA9500_PP_ADDR+((config[0]>>23) & 0xe);
+        unsigned char enable_IMU=0xfe; // maybe we need to reset it here? bit [1]
 #ifdef NC353
+        dev_dbg(g_dev_ptr,"Enabling I/O pins for IMU, written 0x%x to 0x%x\n", (int) X313_WA_IOPINS_EN_IMU, (int) X313_WA_IOPINS);
         port_csp0_addr[X313_WA_IOPINS] = X313_WA_IOPINS_EN_IMU;
 #else
+        dev_dbg(g_dev_ptr,"Enabling I/O pins for IMU\n");
         gpio_set_pins.d32 =   0;
         gpio_set_pins.chn_c = 3; // enable
         x393_gpio_set_pins(gpio_set_pins);
@@ -385,23 +394,21 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 #endif
         ///TODO: add enabling via i2c (bus=1&raw=0x2300&data=0xfe)
         //PCA9500_PP_ADDR
-        unsigned char i2c_sa= PCA9500_PP_ADDR+((config[0]>>23) & 0xe);
-        unsigned char enable_IMU=0xfe; // maybe we need to reset it here? bit [1]
 #if IS_103695_REV_A
         enable_IMU=(((config[0]>>23) & 1)?0xfd:0xff); // bit[0] - reset IMU
 #else
         enable_IMU=0xfe; // maybe we need to reset it here? bit [1]
 #endif
 
-        i2c_writeData(1,     // int n - bus (0 - to the sensor)
-                i2c_sa,      // unsigned char theSlave,
-                &enable_IMU, //unsigned char *theData,
-                1,           // int size,
-                1);          // int stop (send stop in the end)
-        D(printk("Sent i2c command in raw mode - address=0x%x, data=0x%x, result=0x%x\n",(int)i2c_sa, (int) enable_IMU, i2c_err));
+        i2c_writeData(i2cbus,  // int n - bus (0 - to the sensor)
+                i2c_sa,        // unsigned char theSlave,
+                &enable_IMU,   //unsigned char *theData,
+                1,             // int size,
+                1);            // int stop (send stop in the end)
+        dev_dbg(g_dev_ptr,"Sent i2c command in raw mode - address=0x%x, data=0x%x, result=0x%x\n",(int)i2c_sa, (int) enable_IMU, i2c_err);
     }
     if (which & WHICH_RESET_SPI) {
-        D(printk("stopped IMU logger (set period=0)\n"));
+        dev_dbg(g_dev_ptr,"stopped IMU logger (set period=0)\n");
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_PERIOD_ADDR;
         port_csp0_addr[X313_WA_IMU_DATA] = 0; // reset IMU
@@ -414,7 +421,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
     }
 
     if (which & WHICH_DIVISOR) {
-        D(printk("IMU clock divisor= %ld\n", divisor[0]));
+        dev_dbg(g_dev_ptr,"IMU clock divisor= %ld\n", divisor[0]);
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_DIVISOR_ADDR;
         port_csp0_addr[X313_WA_IMU_DATA] = divisor[0]-1;
@@ -426,7 +433,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 #endif
     }
     if (which & WHICH_RS232DIV) {
-        D(printk("RS232 clock divisor= %ld\n", rs232_div[0]));
+        dev_dbg(g_dev_ptr,"RS232 clock divisor= %ld\n", rs232_div[0]);
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_RS232DIV_ADDR;
         port_csp0_addr[X313_WA_IMU_DATA] = rs232_div[0]-1;
@@ -446,19 +453,19 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         }
         for (n=0;n<4;n++) {
             nmea_format[32*n+27]=0; // just in case
-            D(printk("Setting NMEA sentence format for $GP%s\n", &nmea_format[32*n]));
-            D(printk("(0x%x, 0x%x, 0x%x\n",(int) nmea_format[32*n],(int) nmea_format[32*n+1],(int) nmea_format[32*n+2]));
+            dev_dbg(g_dev_ptr,"Setting NMEA sentence format for $GP%s\n", &nmea_format[32*n]);
+            dev_dbg(g_dev_ptr,"(0x%x, 0x%x, 0x%x\n",(int) nmea_format[32*n],(int) nmea_format[32*n+1],(int) nmea_format[32*n+2]);
 
             f=0;
             for (i=2;i>=0;i--) {
                 b=nmea_format[32*n+i]; /// first 3 letters in each sentence
-                D(printk("n=%d, i=%d, b=0x%x\n", n,i,b));
+                dev_dbg(g_dev_ptr,"n=%d, i=%d, b=0x%x\n", n,i,b);
                 for (j=4; j>=0; j--) {
                     f<<=1;
                     if ((b & (1<<j))!=0) f++;
                 }
             }
-            D(printk("n=%d, f=0x%x\n", n,f));
+            dev_dbg(g_dev_ptr,"n=%d, f=0x%x\n", n,f);
             for (i=0;i<15;i++)  if ((f & (1<<i))!=0) nmea_sel[i] |= (1<<n);
             f=0;
             nmea_fpga_frmt[n*4]=0;
@@ -471,13 +478,13 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
             nmea_fpga_frmt[n*4+2]=(f>> 8)&0xff;
             nmea_fpga_frmt[n*4+3]=(f>>16)&0xff;
         }
-        D(printk("Selection data is %x%x%x%x%x%x%x%x%x%x%x%x%x%x%x\n", nmea_sel[0],nmea_sel[1],nmea_sel[2],
+        dev_dbg(g_dev_ptr,"Selection data is %x%x%x%x%x%x%x%x%x%x%x%x%x%x%x\n", nmea_sel[0],nmea_sel[1],nmea_sel[2],
                 nmea_sel[3],nmea_sel[4],nmea_sel[5],nmea_sel[6],nmea_sel[7],nmea_sel[8],nmea_sel[9],
-                nmea_sel[10],nmea_sel[11],nmea_sel[12],nmea_sel[13],nmea_sel[14]));
-        D(printk("Format data for sentence 1 is %02x %02x %02x %02x\n", nmea_fpga_frmt[ 0],nmea_fpga_frmt[ 1],nmea_fpga_frmt[ 2],nmea_fpga_frmt[ 3]));
-        D(printk("Format data for sentence 2 is %02x %02x %02x %02x\n", nmea_fpga_frmt[ 4],nmea_fpga_frmt[ 5],nmea_fpga_frmt[ 6],nmea_fpga_frmt[ 7]));
-        D(printk("Format data for sentence 3 is %02x %02x %02x %02x\n", nmea_fpga_frmt[ 8],nmea_fpga_frmt[ 9],nmea_fpga_frmt[10],nmea_fpga_frmt[11]));
-        D(printk("Format data for sentence 4 is %02x %02x %02x %02x\n", nmea_fpga_frmt[12],nmea_fpga_frmt[13],nmea_fpga_frmt[14],nmea_fpga_frmt[15]));
+                nmea_sel[10],nmea_sel[11],nmea_sel[12],nmea_sel[13],nmea_sel[14]);
+        dev_dbg(g_dev_ptr,"Format data for sentence 1 is %02x %02x %02x %02x\n", nmea_fpga_frmt[ 0],nmea_fpga_frmt[ 1],nmea_fpga_frmt[ 2],nmea_fpga_frmt[ 3]);
+        dev_dbg(g_dev_ptr,"Format data for sentence 2 is %02x %02x %02x %02x\n", nmea_fpga_frmt[ 4],nmea_fpga_frmt[ 5],nmea_fpga_frmt[ 6],nmea_fpga_frmt[ 7]);
+        dev_dbg(g_dev_ptr,"Format data for sentence 3 is %02x %02x %02x %02x\n", nmea_fpga_frmt[ 8],nmea_fpga_frmt[ 9],nmea_fpga_frmt[10],nmea_fpga_frmt[11]);
+        dev_dbg(g_dev_ptr,"Format data for sentence 4 is %02x %02x %02x %02x\n", nmea_fpga_frmt[12],nmea_fpga_frmt[13],nmea_fpga_frmt[14],nmea_fpga_frmt[15]);
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_NMEA_FORMAT_ADDR;
 #else
@@ -491,7 +498,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
             logger_data.d32=                   nmea_sel[i];
             x393_logger_data(logger_data);
 #endif
-            D(printk("Loading imu fpga register 0x%x with 0x%x\n", X313_IMU_NMEA_FORMAT_ADDR+i, nmea_sel[i] ));
+            dev_dbg(g_dev_ptr,"Loading imu fpga register 0x%x with 0x%x\n", X313_IMU_NMEA_FORMAT_ADDR+i, nmea_sel[i] );
         }
         for (i=0;i<16;i++) {
 #ifdef NC353
@@ -500,12 +507,12 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
             logger_data.d32=                   nmea_fpga_frmt[i];
             x393_logger_data(logger_data);
 #endif
-            D(printk("Loading imu fpga register 0x%x with 0x%x\n", X313_IMU_NMEA_FORMAT_ADDR+i+16, nmea_fpga_frmt[i] ));
+            dev_dbg(g_dev_ptr,"Loading imu fpga register 0x%x with 0x%x\n", X313_IMU_NMEA_FORMAT_ADDR+i+16, nmea_fpga_frmt[i] );
         }
     }
 
     if (which & WHICH_CONFIG) {
-        D(printk("Setting configuration= 0x%lx\n", config[0]));
+        dev_dbg(g_dev_ptr,"Setting configuration= 0x%lx\n", config[0]);
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_CONFIGURE_ADDR;
         port_csp0_addr[X313_WA_IMU_DATA] =(config[0] & 0xffffff); // MSB used for the i2c slave addr of the 10365
@@ -526,7 +533,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 #endif
         for (i=X313_IMU_REGISTERS_OFFS; i< X313_IMU_NMEA_FORMAT_OFFS ;i++) {
             d=wbuf[i];
-            D(printk("%d: logging IMU register with 0x%lx\n", (i-X313_IMU_REGISTERS_OFFS+1),d));
+            dev_dbg(g_dev_ptr,"%d: logging IMU register with 0x%lx\n", (i-X313_IMU_REGISTERS_OFFS+1),d);
 #ifdef NC353
             port_csp0_addr[X313_WA_IMU_DATA] = d;
 #else
@@ -536,7 +543,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         }
     }
     if (which & WHICH_MESSAGE) {
-        D(printk("Setting odometer message %56s\n", (char *) message));
+        dev_dbg(g_dev_ptr,"Setting odometer message %56s\n", (char *) message);
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_MESSAGE_ADDR;
 #else
@@ -544,7 +551,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         x393_logger_address(logger_address);
 #endif
         for (i=0; i<(((sizeof(wbuf)-X313_IMU_MESSAGE_OFFS))>>2);i++) {
-            D(printk("%d: message 4 bytes= 0x%x\n", i+1,(int) message[i]));
+            dev_dbg(g_dev_ptr,"%d: message 4 bytes= 0x%x\n", i+1,(int) message[i]);
 #ifdef NC353
             port_csp0_addr[X313_WA_IMU_DATA] = message[i];
 #else
@@ -556,7 +563,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 
     // setting IMU SPI period, turning it on
     if (which & WHICH_PERIOD) {
-        D(printk("IMU cycle period= %ld\n", period[0]));
+        dev_dbg(g_dev_ptr,"IMU cycle period= %ld\n", period[0]);
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_PERIOD_ADDR;
         port_csp0_addr[X313_WA_IMU_DATA] = period[0];
@@ -568,13 +575,13 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 #endif
     }
     if (which & WHICH_EN_DMA) {
-        D(printk("Enabling DMA\n"));
+        dev_dbg(g_dev_ptr,"Enabling DMA\n");
         /*!
 TODO: (re)start DMA1 here !
          */
         /// for now - init everything again?
         if (logger_is_dma_on()!=0) {
-            D(printk("Stopping DMA\n"));
+            dev_dbg(g_dev_ptr,"Stopping DMA\n");
             logger_dma_stop();
         }
         x313_dma1_init();
@@ -582,7 +589,7 @@ TODO: (re)start DMA1 here !
     }
 
     if (which & WHICH_EN_LOGGER) {
-        D(printk("Enabling logger\n"));
+        dev_dbg(g_dev_ptr,"Enabling logger\n");
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_CONFIGURE_ADDR;
         port_csp0_addr[X313_WA_IMU_DATA] = IMU_CONF(RST_CONF,0);
@@ -603,24 +610,24 @@ static int imu_open(struct inode *inode, struct file *filp) {
     int i;
     //        loff_t  numBytesWritten;
 
-    D(printk("imu_open: minor=%x\r\n",p) );
-    D(printk("filp=%lx\r\n",(unsigned long)filp) );
+    dev_dbg(g_dev_ptr,"imu_open: minor=%x\n",p);
+    dev_dbg(g_dev_ptr,"filp=%lx\n",(unsigned long)filp);
 
     switch ( p ) {
     case DEV393_MINOR(DEV393_LOGGER_CTRL):
-        D1(printk(KERN_NOTICE "IMU_ctl_open\n"));
+        dev_dbg(g_dev_ptr,"IMU_ctl_open\n");
         inode->i_size=sizeof(wbuf);
         // nothing more here, after writing parameters should start imu (and dma), otherwise will use defaults on next open of /dev/imu
         break;
     case DEV393_MINOR(DEV393_LOGGER) :
     {
-        D1(printk(KERN_NOTICE "IMU_open\n"));
+        dev_dbg(g_dev_ptr,"IMU_open\n");
         inode->i_size=sizeof(wbuf); // only in write mode
 
         /// See if initialization is needed
         if (logger_is_dma_on()==0) {
             /// copy defaults
-            D1(printk(KERN_NOTICE "Initializing IMU\n"));
+            dev_dbg(g_dev_ptr,"Initializing IMU\n");
             for (i=0;i<sizeof(wbuf);i++) wbuf[i]=dflt_wbuf[i];
             set_logger_params(WHICH_INIT |
                     WHICH_RESET |
@@ -636,7 +643,7 @@ static int imu_open(struct inode *inode, struct file *filp) {
                     WHICH_EN_LOGGER );
             numBytesRead=0;
         } else {
-            D1(printk(KERN_NOTICE "Skipping IMU initialization\n"));
+            dev_dbg(g_dev_ptr, "Skipping IMU initialization\n");
 #ifdef NC353
             updateNumBytesWritten();
 #endif
@@ -648,7 +655,7 @@ static int imu_open(struct inode *inode, struct file *filp) {
 #endif
                 {
                     // alternatively - open at lower pointer?
-                    D1(printk(KERN_ERR "DMA1 buffer overrun (numBytesWritten=0x%llx, numBytesRead=0x%llx, resetting numBytesRead\n", numBytesWritten, numBytesRead));
+                    dev_err(g_dev_ptr,"DMA1 buffer overrun (numBytesWritten=0x%llx, numBytesRead=0x%llx, resetting numBytesRead\n", numBytesWritten, numBytesRead);
                     numBytesRead=numBytesWritten;
                 }
                 //printk("imu opened in R/W mode, (numBytesWritten=0x%x, numBytesRead=0x%x\n", numBytesWritten, numBytesRead);
@@ -671,11 +678,11 @@ static int imu_release(struct inode *inode, struct file *filp) {
     switch ( p ) {
     case DEV393_MINOR(DEV393_LOGGER) :
     case DEV393_MINOR(DEV393_LOGGER_CTRL):
-        printk(KERN_NOTICE "Closing IMU device, numBytesWritten=0x%llx,  numBytesRead=0x%llx (only global pointer, does not include files opened in read mode)\n", numBytesWritten, numBytesRead);
+        dev_dbg(g_dev_ptr,"Closing IMU device, numBytesWritten=0x%llx,  numBytesRead=0x%llx (only global pointer, does not include files opened in read mode)\n", numBytesWritten, numBytesRead);
         break;
     default: return -EINVAL;
     }
-    D(printk("imu_release:  done\r\n"));
+    dev_dbg(g_dev_ptr,"imu_release:  done\n");
     return 0;
 }
 
@@ -684,8 +691,8 @@ static ssize_t imu_write(struct file * file, const char * buf, size_t count, lof
     unsigned long p=*off;
     unsigned long left;
     int which=0;
-    //    D(printk("imu_write: ((int *)file->private_data)[0]= %x\r\n",((int *)file->private_data)[0]));
-    D(printk("imu_write: (int)file->private_data)= %x\r\n",((int)file->private_data)));
+    //    dev_dbg(g_dev_ptr,"imu_write: ((int *)file->private_data)[0]= %x\n",((int *)file->private_data)[0]);
+    dev_dbg(g_dev_ptr,"imu_write: (int)file->private_data)= %x\n",((int)file->private_data));
     //    switch (((int *)file->private_data)[0]) {
     switch ((int) file->private_data) {
     case DEV393_MINOR(DEV393_LOGGER) :
@@ -720,8 +727,8 @@ static ssize_t imu_write(struct file * file, const char * buf, size_t count, lof
 }
 
 static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
-    D(printk (" file=%x, offset=%llx (%d), orig=%x\r\n", (int) file, offset,(int) offset, (int) orig));
     int p=(int)file->private_data;
+    dev_dbg(g_dev_ptr," file=%x, offset=%llx (%d), orig=%x\n", (int) file, offset,(int) offset, (int) orig);
     switch (p) {
     case DEV393_MINOR(DEV393_LOGGER):
     case DEV393_MINOR(DEV393_LOGGER_CTRL):
@@ -745,14 +752,14 @@ static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
                     //                  numBytesRead=(int) port_csp0_addr[X313_RA_IMU_COUNT]<<6; //numBytesWritten
                     return file->f_pos;
                 case LSEEK_IMU_STOP:
-                    D(printk("got LSEEK_IMU_STOP\n"));
+                    dev_dbg(g_dev_ptr,"got LSEEK_IMU_STOP\n");
                     set_logger_params(WHICH_RESET |
                             WHICH_RESET_SPI);
                     numBytesRead=0;
 
                     return file->f_pos;
                 case LSEEK_IMU_START:
-                    D(printk("got LSEEK_IMU_START\n"));
+                    dev_dbg(g_dev_ptr,"got LSEEK_IMU_START\n");
                     set_logger_params(WHICH_RESET |
                             WHICH_RESET_SPI |
                             WHICH_PERIOD |
@@ -764,12 +771,12 @@ static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
             }
             break;
         default:
-            printk(KERN_ERR "lseek: invalid orig=%d\n", orig);
+            dev_err(g_dev_ptr,"lseek: invalid orig=%d\n", orig);
             return -EINVAL;
         }
         break;
         default:
-            printk(KERN_ERR "lseek: invalid minor=%d\n", p);
+            dev_err(g_dev_ptr,"lseek: invalid minor=%d\n", p);
             return -EINVAL;
             /*
   #define LSEEK_IMU_STOP      1 // stop DMA1 and IMU
@@ -779,13 +786,13 @@ static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
     }
     /** truncate position */
     if (file->f_pos < 0) {
-        printk(KERN_ERR "negative position: minor=%d, file->f_pos=0x%llx\n", p, file->f_pos);
+        dev_err(g_dev_ptr,"negative position: minor=%d, file->f_pos=0x%llx\n", p, file->f_pos);
         file->f_pos = 0;
         return (-EOVERFLOW);
     }
     /** enable seeking beyond buffer - it now is absolute position in the data stream*/
     if ((p==DEV393_MINOR(DEV393_LOGGER_CTRL)) && (file->f_pos > sizeof(wbuf))) {
-        printk(KERN_ERR "beyond end: minor=%d, file->f_pos=0x%llx\n", p, file->f_pos);
+        dev_err(g_dev_ptr,"beyond end: minor=%d, file->f_pos=0x%llx\n", p, file->f_pos);
         file->f_pos = sizeof(wbuf);
         return (-EOVERFLOW);
     }
@@ -821,7 +828,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
         if (count==0) return 0;
         err=copy_to_user(buf, &wbuf[*off], count);
         if (err) {
-            printk(KERN_ERR "0. tried to copy 0x%x bytes to offset 0x%llx, result=0x%x\n", count, *off,err);
+            dev_err(g_dev_ptr,"0. tried to copy 0x%x bytes to offset 0x%llx, result=0x%x\n", count, *off,err);
             return -EFAULT;
         }
         *off+=count;
@@ -848,7 +855,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
 
 
         if (idbg>0) {
-            D(printk ("slept %d times (%d usec)\n", idbg, (int) (*sleep * idbg)));
+            dev_dbg(g_dev_ptr,"slept %d times (%d usec)\n", idbg, (int) (*sleep * idbg));
         }
         // now read what is available (and required), roll over the buffer (if needed), copy data and advance numReadBytes
 //TODO:Flush cache !!!!!!!!!!!!!!!!!!!!!!*********************************
@@ -872,7 +879,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
         /// copy all (or first part)
         err=copy_to_user(buf, &charDMABuf[byteIndexRead], (pe-byteIndexRead));
         if (err) {
-            printk(KERN_ERR "1. tried to copy 0x%x bytes to offset 0x%llx, result=0x%x\n", count, *off,err);
+            dev_err(g_dev_ptr,"1. tried to copy 0x%x bytes to offset 0x%llx, result=0x%x\n", count, *off,err);
 
             return -EFAULT;
         }
@@ -886,7 +893,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
             byteIndexRead=0;
         }
         if (err) {
-            printk(KERN_ERR "2. tried to copy 0x%x bytes to offset 0x%llx, result=0x%x\n", count, *off,err);
+            dev_err(g_dev_ptr,"2. tried to copy 0x%x bytes to offset 0x%llx, result=0x%x\n", count, *off,err);
             return -EFAULT;
         }
         thisNumBytesRead+=leftToRead;
@@ -895,19 +902,19 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
         //Is it just for debug
         stat =    REG_RD(dma, regi_dma7, rw_stat);
         ch1_stat= REG_RD(bif_dma, regi_bif_dma, r_ch1_stat);
-        D(printk ("count=0x%x, thisNumBytesRead=0x%llx, numBytesWritten=0x%llx, stat.buf=0x%x, stat.mode=%x, ch1.run=%x ch1.cnt=0x%x\n", (int) count, thisNumBytesRead,  numBytesWritten, (int) stat.buf,(int) stat.mode, (int) ch1_stat.run, (int) ch1_stat.cnt ));
+        dev_dbg(g_dev_ptr,"count=0x%x, thisNumBytesRead=0x%llx, numBytesWritten=0x%llx, stat.buf=0x%x, stat.mode=%x, ch1.run=%x ch1.cnt=0x%x\n", (int) count, thisNumBytesRead,  numBytesWritten, (int) stat.buf,(int) stat.mode, (int) ch1_stat.run, (int) ch1_stat.cnt );
 #endif
         //printk(" file->f_mode & FMODE_WRITE=0x%d\n",file->f_mode & FMODE_WRITE);
         if (file->f_mode & FMODE_WRITE) numBytesRead=thisNumBytesRead;
         //        else *off=thisNumBytesRead;
         *off=thisNumBytesRead; // always update
         if (count<0) {
-            printk(KERN_ERR "Count is negative ( 0x%x)\n", count);
+            dev_err(g_dev_ptr,"Count is negative ( 0x%x)\n", count);
         }
         return count;
     default:
         //printk(" Wrong minor=0x%x\n",((int *)file->private_data)[0]);
-        printk(KERN_ERR " Wrong minor=0x%x\n",(int)file->private_data);
+        dev_dbg(g_dev_ptr," Wrong minor=0x%x\n",(int)file->private_data);
         return -EINVAL;
     }
 }
@@ -937,6 +944,8 @@ static int logger_init(struct platform_device *pdev)
     unsigned int irq;
     int res;
     struct device *dev = &pdev->dev;
+    g_dev_ptr = dev;
+
     const struct of_device_id *match;
     const char *logger_irq_names[4] = {"mult_saxi_0", "mult_saxi_1", "mult_saxi_2", "mult_saxi_3"};
 
@@ -978,12 +987,12 @@ static int logger_init(struct platform_device *pdev)
 /** Initialize FPGA DMA engine for the logger. Obviously requires bitstream to be loaded. */
 int logger_init_fpga(int force) ///< if 0, only do if not already initialized
 {
-    if (logger_fpga_configured && !force) return 0; // Already initialized
     x393_status_ctrl_t logger_status_ctrl=    {.d32 = 0};
     x393_status_ctrl_t mult_saxi_status_ctrl= {.d32 = 0};
     x393_mult_saxi_al_t    mult_saxi_a=   {.d32=0};
     x393_mult_saxi_al_t    mult_saxi_l=   {.d32=0};
     x393_mult_saxi_irqlen_t mult_saxi_irqlen=   {.d32=0};
+    if (logger_fpga_configured && !force) return 0; // Already initialized
     mult_saxi_a.addr32 = logger_phys >> 2; // in DWORDs
     x393_mult_saxi_buf_address(mult_saxi_a,      MULT_SAXI_CHN);
     mult_saxi_l.addr32 = logger_size >> 2;
@@ -1079,7 +1088,7 @@ int           logger_is_dma_on(void) {
  */
 int logger_dma_stop(void) {
     dma_is_on=0;
-    MD12(printk("==========logger_dma_stop\n"));
+    dev_dbg(g_dev_ptr,"==========logger_dma_stop\n");
 #ifdef NC353
     port_csp0_addr[X313_WA_DMACR] = 0x20; // disable DMA1, dot't modify DMA0
     EXT_DMA_1_STOP ; /// for testing - no reset DMA after acquisition
@@ -1102,7 +1111,7 @@ void logger_dma_start(void) {
 #ifdef NC353
     unsigned long dai;
     int i = 0;
-    MD12(printk("----------logger_dma_start\n"));
+    dev_dbg(g_dev_ptr,"----------logger_dma_start\n");
     DMA_RESET(regi_dma7);
     /// need to restore pointers after previous stop DMA - maybe later move there?
     for(dai = 0; dai < CCAM_DMA1_SIZE; dai += DMA_CHUNK) { /// DMA_CHUNK==0x4000
@@ -1137,8 +1146,8 @@ void logger_dma_start(void) {
 ///dma0 is using external dma 3 (input) with dma channel 9 
 ///dma1 (this) is using external dma 1 (input) with dma channel 7 (shared with async. serial 0, so do not use DMA there!)
 unsigned long x313_dma1_init(void) {
-    dma_is_on=0;
     int rslt;
+    dma_is_on=0;
 #ifdef NC353
     reg_dma_rw_cfg cfg = {.en = regk_dma_yes}; //  if disabled - will be busy and hang on attemt of DMA_WR_CMD
     reg_bif_dma_rw_ch1_ctrl exdma_ctrl = {
@@ -1169,22 +1178,22 @@ unsigned long x313_dma1_init(void) {
     };
     // just in case - free DMA channel (we are only using it here)
     crisv32_free_dma(EXTDMA1_RX_DMA_NBR);
-    printk("Initializing DMA registers for EXTDMA1\n");
-    MD7(printk("x313_dma1_init(void)"));
+    dev_dbg(g_dev_ptr,"Initializing DMA registers for EXTDMA1\n");
+    dev_dbg(g_dev_ptr,"x313_dma1_init(void)");
 
-    D0(printk ("before crisv32_request_dma\n"); udelay (500000));
+    dev_dbg(g_dev_ptr,"before crisv32_request_dma\n"); udelay (500000);
     rslt = crisv32_request_dma(EXTDMA1_RX_DMA_NBR,
             "imu data in from fpga",
             DMA_VERBOSE_ON_ERROR,
             0,
             dma_ext1);
-    D0(printk ("after crisv32_request_dma - result=%d\n",rslt);  udelay(500000));
+    dev_dbg(g_dev_ptr,"after crisv32_request_dma - result=%d\n",rslt);  udelay(500000);
 
 
     if(rslt) {
-        printk("failed\n");
+        dev_dbg(g_dev_ptr,"failed\n");
         crisv32_free_dma(EXTDMA1_RX_DMA_NBR);
-        printk(KERN_CRIT "Can't allocate external dma port for compressed data in from fpga");
+        dev_dbg(g_dev_ptr,"Can't allocate external dma port for compressed data in from fpga");
     } else { /// dma channel 7 allocated for ext dma 1
         /// setup source of hsh2, hsh3
         REG_WR(bif_dma, regi_bif_dma, rw_pin2_cfg, exdma_pin2); /// just in case - turn hsh2 off
@@ -1224,7 +1233,7 @@ int x313_setDMA1Buffer(void) {
     // TODO: make new global parameter?
     //    set_globalParam (G_CIRCBUFSIZE,CCAM__DMA_SIZE<<2); /// make it adjustable? TODO: initialize with others?
     //*********************** TEMPORARY ********************************
-    MD8(printk ("filling DMA1 buffer with natural numbers - just test \n"));
+    dev_dbg(g_dev_ptr,"filling DMA1 buffer with natural numbers - just test \n");
     for(dai = 0; dai < CCAM_DMA1_SIZE; dai++) logger_buffer[dai] = dai;
     return 0;
 }
