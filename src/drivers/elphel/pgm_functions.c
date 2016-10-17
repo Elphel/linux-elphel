@@ -405,8 +405,10 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     legacy_i2c(1<<sensor_port);// Setup i2c pages for legacy i2c commands. TODO NC393: update for compatibility with 14MPix
     camsync_mode.trig =     0;
     camsync_mode.trig_set = 1;
-    camsync_mode.ext =      1; // use external timestamp (default)
-    camsync_mode.ext_set =  1;
+
+//    This causes mismatch with parameters, let it be there
+//    camsync_mode.ext =      1; // use external timestamp (default)
+//    camsync_mode.ext_set =  1;
     x393_camsync_mode (camsync_mode);
 
     //     dev_dbg(g_dev_ptr,"trying MT9P001\n");
@@ -731,8 +733,9 @@ typedef union {
 
   camsync_mode.en =       1;
   camsync_mode.en_set =   1;
-  camsync_mode.ext =      1; // 0;
-  camsync_mode.ext_set =  1;
+// Causes mismatch with parameters, let it be there
+//  camsync_mode.ext =      1; // 0;
+//  camsync_mode.ext_set =  1;
   camsync_mode.trig =     0;
   camsync_mode.trig_set = 1;
 

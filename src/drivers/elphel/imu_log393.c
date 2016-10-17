@@ -132,7 +132,7 @@
 #define  IMUCR__IMU_SLOT__BITNM 0    ///< slot, where 103695 (imu) board is connected: 0 - none, 1 - J9, 2 - J10, 3 - J11)
 #define  IMUCR__IMU_SLOT__WIDTH 2
 
-#define  IMUCR__GPS_CONF__BITNM 3    ///< slot, where 103695 (imu) bnoard is connected: 0 - none, 1 - J9, 2 - J10, 3 - J11)
+#define  IMUCR__GPS_CONF__BITNM 3    ///< slot, where 103695 (imu) board is connected: 0 - none, 1 - J9, 2 - J10, 3 - J11)
 #define  IMUCR__GPS_CONF__WIDTH 4    ///< bits 0,1 - slot #, same as for IMU_SLOT, bits 2,3:
 // 0 - ext pulse, leading edge,
 // 1 - ext pulse, trailing edge
@@ -342,7 +342,7 @@ static struct file_operations imu_fops = {
 };
 
 static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first, 4 - set divisor, 8 set regs, 16 - set period
-    // IMU should be enable through i2c before opening
+    // IMU should be enabled through i2c before opening
     int i,j,b,f,n;
     int nmea_sel[16];
     int nmea_fpga_frmt[16];
@@ -357,9 +357,11 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
     x393_logger_address_t logger_address;
     x393_logger_data_t    logger_data;
     x393_gpio_set_pins_t  gpio_set_pins;
-
 //    D(int i2c_err=0;)
     int i2c_err=0;
+
+    dev_info(g_dev_ptr,"============ which = 0x%x =============== \n",which);
+    dev_dbg(g_dev_ptr,"============ which = 0x%x =============== \n",which);
 
     D(for (i=0; i< sizeof (wbuf); i++ ) {  if ((i & 0x1f)==0) printk("\n %03x",i);  printk(" %02x",(int) wbuf[i]); });
     if (which & WHICH_RESET) {
@@ -386,6 +388,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         dev_dbg(g_dev_ptr,"Enabling I/O pins for IMU, written 0x%x to 0x%x\n", (int) X313_WA_IOPINS_EN_IMU, (int) X313_WA_IOPINS);
         port_csp0_addr[X313_WA_IOPINS] = X313_WA_IOPINS_EN_IMU;
 #else
+        dev_info(g_dev_ptr,"Enabling I/O pins for IMU\n");
         dev_dbg(g_dev_ptr,"Enabling I/O pins for IMU\n");
         gpio_set_pins.d32 =   0;
         gpio_set_pins.chn_c = 3; // enable
@@ -628,6 +631,7 @@ static int imu_open(struct inode *inode, struct file *filp) {
         if (logger_is_dma_on()==0) {
             /// copy defaults
             dev_dbg(g_dev_ptr,"Initializing IMU\n");
+            dev_info(g_dev_ptr,"imu_open(): Initializing IMU\n");
             for (i=0;i<sizeof(wbuf);i++) wbuf[i]=dflt_wbuf[i];
             set_logger_params(WHICH_INIT |
                     WHICH_RESET |
@@ -708,15 +712,20 @@ static ssize_t imu_write(struct file * file, const char * buf, size_t count, lof
         if (left==0) return 0;
         if (copy_from_user(&wbuf[p], buf, count)) return -EFAULT;
         if (p<(X313_IMU_PERIOD_OFFS+4)) which |= WHICH_PERIOD;
+        dev_dbg(g_dev_ptr,"which= 0x%x\n",which);
         if ((p<(X313_IMU_DIVISOR_OFFS+4)) && ((p+count)>X313_IMU_DIVISOR_OFFS)) which |= WHICH_DIVISOR;
-
+        dev_dbg(g_dev_ptr,"which= 0x%x\n",which);
         if ((p<(X313_IMU_RS232DIV_OFFS+4)) && ((p+count)>X313_IMU_RS232DIV_OFFS)) which |= WHICH_RS232DIV;
+        dev_dbg(g_dev_ptr,"which= 0x%x\n",which);
         //       if ((p<(X313_IMU_CONFIGURE_OFFS+4)) && ((p+count)>X313_IMU_CONFIGURE_OFFS)) which |= WHICH_CONFIG;
         if ((p<(X313_IMU_CONFIGURE_OFFS+4)) && ((p+count)>X313_IMU_CONFIGURE_OFFS)) which |= WHICH_CONFIG | WHICH_INIT;
+        dev_dbg(g_dev_ptr,"which= 0x%x\n",which);
         if ((p<(X313_IMU_NMEA_FORMAT_OFFS)) && ((p+count)>X313_IMU_REGISTERS_OFFS)) which |= WHICH_REGISTERS;
+        dev_dbg(g_dev_ptr,"which= 0x%x\n",which);
         if ((p<(X313_IMU_MESSAGE_OFFS)) && ((p+count)>X313_IMU_NMEA_FORMAT_OFFS)) which |= WHICH_NMEA;
-
+        dev_dbg(g_dev_ptr,"which= 0x%x\n",which);
         if ((p+count)>X313_IMU_MESSAGE_OFFS) which |= WHICH_MESSAGE;
+        dev_dbg(g_dev_ptr,"which= 0x%x\n",which);
         // will not add automatic restarts here
         set_logger_params(which);
         //       if (which &  WHICH_PERIOD) num_reads=0;
@@ -880,7 +889,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
         err=copy_to_user(buf, &charDMABuf[byteIndexRead], (pe-byteIndexRead));
         if (err) {
             dev_err(g_dev_ptr,"1. tried to copy 0x%x bytes to offset 0x%llx, result=0x%x\n", count, *off,err);
-
+//[  811.889488] imu_logger elphel393-logger@0: 1. tried to copy 0x1000 bytes to offset 0x0, result=0x400000
             return -EFAULT;
         }
         //      advance pointers
@@ -944,10 +953,10 @@ static int logger_init(struct platform_device *pdev)
     unsigned int irq;
     int res;
     struct device *dev = &pdev->dev;
-    g_dev_ptr = dev;
-
     const struct of_device_id *match;
     const char *logger_irq_names[4] = {"mult_saxi_0", "mult_saxi_1", "mult_saxi_2", "mult_saxi_3"};
+    g_dev_ptr = dev;
+
 
     /* sanity check */
     match = of_match_device(elphel393_logger_of_match, dev);
@@ -1138,6 +1147,8 @@ void logger_dma_start(void) {
 #else
     logger_dma_ctrl(LOGGER_DMA_RUN);
 #endif
+    dev_dbg(g_dev_ptr,"----------logger_dma_start\n");
+    dev_info(g_dev_ptr,"----------logger_dma_start\n");
     dma_is_on=1;
 }
 
@@ -1146,9 +1157,8 @@ void logger_dma_start(void) {
 ///dma0 is using external dma 3 (input) with dma channel 9 
 ///dma1 (this) is using external dma 1 (input) with dma channel 7 (shared with async. serial 0, so do not use DMA there!)
 unsigned long x313_dma1_init(void) {
-    int rslt;
-    dma_is_on=0;
 #ifdef NC353
+    int rslt;
     reg_dma_rw_cfg cfg = {.en = regk_dma_yes}; //  if disabled - will be busy and hang on attemt of DMA_WR_CMD
     reg_bif_dma_rw_ch1_ctrl exdma_ctrl = {
             .bw          = regk_bif_dma_bw32,
@@ -1207,6 +1217,7 @@ unsigned long x313_dma1_init(void) {
     x313_setDMA1Buffer();
     return ((unsigned long)virt_to_phys(logger_buffer)) | 0x80000000;
 #endif
+    dma_is_on=0;
     return 0;
 }
 
