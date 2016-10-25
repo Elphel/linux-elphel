@@ -144,14 +144,19 @@
 // bit 4 - invert polarity: 0 - timestamp leading edge, log at trailing edge, 1 - opposite
 // software may set (up to 56 bytes) log message before trailing end of the pulse
 #define  IMUCR__SYN_CONF__BITNM 14   ///< logging frame time stamps (may be synchronized by another camera and have timestamp of that camera)
-#define  IMUCR__SYN_CONF__WIDTH 1    ///< 0 - disable, 1 - enable
+#define  IMUCR__SYN_CONF__WIDTH 4    ///< 0 - disable, 1 - enable, per channel (was width==1 in NC353)
 
-#define  IMUCR__RST_CONF__BITNM 16   ///< reset module
+#define  IMUCR__RST_CONF__BITNM 19   ///< reset module // was 16 in NC353
 #define  IMUCR__RST_CONF__WIDTH 1    ///< 0 - enable, 1 -reset (needs resettimng DMA address in ETRAX also)
 
-#define  IMUCR__DBG_CONF__BITNM 18   ///< several axtra IMU configuration bits
+#define  IMUCR__DBG_CONF__BITNM 21   ///< several axtra IMU configuration bits (was 18 for NC353)
 #define  IMUCR__DBG_CONF__WIDTH 4    ///< 0 - config_long_sda_en, 1 -config_late_clk, 2 - config_single_wire, should be set for 103695 rev "A"
 
+#define  IMUCR__SLOW_SPI__BITNM 26   ///< just for the driver, not written to FPGA (was 23 for NC353)
+#define  IMUCR__SLOW_SPI__WIDTH 1    ///< 0 - normal, 1 - slow SPI (programmed over i2c)
+
+#define  IMUCR__I2C_SA3__BITNM 28    ///< Low 3 bits of the SA7 of the PCA9500 slave address
+#define  IMUCR__I2C_SA3__WIDTH 3     ///< Should match jumpers
 
 #define   X313_IMU_REGISTERS_ADDR    0x4
 #define   X313_IMU_NMEA_FORMAT_ADDR  0x20
@@ -303,7 +308,7 @@ void init_ccam_dma1_buf_ptr(void) {
 #else
 u32 * logger_buffer = NULL; ///< use instead of ccam_dma1_buf, logger_buffer. Initialize from the elphel393-mem
 static u32 logger_size = 0;  // size in bytes, should be 2^n
-static u32 logger_offs32 = 0; // write offset in the buffer
+static u32 logger_offs32 = 0; // write offset in the buffer, DWORDS
 static u32 bytePtrMask = 0;
 static dma_addr_t logger_phys; ///< physical address of the DMA memory start
 static int logger_fpga_configured = 0;
@@ -315,6 +320,7 @@ wait_queue_head_t logger_wait_queue;
 
 
 int logger_dma_ctrl(int cmd);
+int logger_init_fpga(int force);
 
 #ifdef NC353 // will update from mult_saxi pointer
 void updateNumBytesWritten(void){
@@ -360,7 +366,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 //    D(int i2c_err=0;)
     int i2c_err=0;
 
-    dev_info(g_dev_ptr,"============ which = 0x%x =============== \n",which);
+//    dev_info(g_dev_ptr,"============ which = 0x%x =============== \n",which);
     dev_dbg(g_dev_ptr,"============ which = 0x%x =============== \n",which);
 
     D(for (i=0; i< sizeof (wbuf); i++ ) {  if ((i & 0x1f)==0) printk("\n %03x",i);  printk(" %02x",(int) wbuf[i]); });
@@ -381,8 +387,11 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         x393_logger_data(logger_data);
 #endif
     }
+    dev_dbg(g_dev_ptr,"============ which = 0x%x WHICH_INIT = 0x%x=============== \n",which, (int) WHICH_INIT);
     if (which & WHICH_INIT) {
-        unsigned char i2c_sa= PCA9500_PP_ADDR+((config[0]>>23) & 0xe);
+//        unsigned char i2c_sa= PCA9500_PP_ADDR+((config[0]>>23) & 0xe);
+        unsigned char i2c_sa8= PCA9500_PP_ADDR+(((config[0] >> IMUCR__I2C_SA3__BITNM) & 0x7)<<1); // Here 8-bit is needed, not SA7
+        //
         unsigned char enable_IMU=0xfe; // maybe we need to reset it here? bit [1]
 #ifdef NC353
         dev_dbg(g_dev_ptr,"Enabling I/O pins for IMU, written 0x%x to 0x%x\n", (int) X313_WA_IOPINS_EN_IMU, (int) X313_WA_IOPINS);
@@ -398,17 +407,20 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         ///TODO: add enabling via i2c (bus=1&raw=0x2300&data=0xfe)
         //PCA9500_PP_ADDR
 #if IS_103695_REV_A
-        enable_IMU=(((config[0]>>23) & 1)?0xfd:0xff); // bit[0] - reset IMU
+//        enable_IMU = (((config[0] >>23) & 1)?0xfd:0xff); // bit[0] - reset IMU
+        enable_IMU = ((config[0] & IMU_CONF(SLOW_SPI, 1))?0xfd:0xff); // bit[0] - reset IMU
 #else
         enable_IMU=0xfe; // maybe we need to reset it here? bit [1]
 #endif
 
         i2c_writeData(i2cbus,  // int n - bus (0 - to the sensor)
-                i2c_sa,        // unsigned char theSlave,
+                i2c_sa8,        // unsigned char theSlave,
                 &enable_IMU,   //unsigned char *theData,
                 1,             // int size,
                 1);            // int stop (send stop in the end)
-        dev_dbg(g_dev_ptr,"Sent i2c command in raw mode - address=0x%x, data=0x%x, result=0x%x\n",(int)i2c_sa, (int) enable_IMU, i2c_err);
+        dev_dbg(g_dev_ptr,"Sent i2c command in raw mode - address=0x%x, data=0x%x, result=0x%x\n",(int)i2c_sa8, (int) enable_IMU, i2c_err);
+
+        logger_init_fpga(0); // do not re-init if it already is
     }
     if (which & WHICH_RESET_SPI) {
         dev_dbg(g_dev_ptr,"stopped IMU logger (set period=0)\n");
@@ -422,7 +434,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         x393_logger_data(logger_data);
 #endif
     }
-
+    dev_dbg(g_dev_ptr,"============ which = 0x%x WHICH_INIT = 0x%x=============== \n",which, (int) WHICH_INIT);
     if (which & WHICH_DIVISOR) {
         dev_dbg(g_dev_ptr,"IMU clock divisor= %ld\n", divisor[0]);
 #ifdef NC353
@@ -501,7 +513,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
             logger_data.d32=                   nmea_sel[i];
             x393_logger_data(logger_data);
 #endif
-            dev_dbg(g_dev_ptr,"Loading imu fpga register 0x%x with 0x%x\n", X313_IMU_NMEA_FORMAT_ADDR+i, nmea_sel[i] );
+            dev_dbg(g_dev_ptr,"Loaded imu fpga register 0x%x with 0x%x\n", X313_IMU_NMEA_FORMAT_ADDR+i, nmea_sel[i] );
         }
         for (i=0;i<16;i++) {
 #ifdef NC353
@@ -522,7 +534,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 #else
         logger_address.d32=                X313_IMU_CONFIGURE_ADDR;
         x393_logger_address(logger_address);
-        logger_data.d32=                   (config[0] & 0xffffff); // MSB used for the i2c slave addr of the 10365
+        logger_data.d32=                   (config[0] & 0x3ffffff); // some bits in MSB are used for the i2c slave addr of the 10365
         x393_logger_data(logger_data);
 #endif
     }
@@ -612,7 +624,6 @@ static int imu_open(struct inode *inode, struct file *filp) {
     //        int res;
     int i;
     //        loff_t  numBytesWritten;
-
     dev_dbg(g_dev_ptr,"imu_open: minor=%x\n",p);
     dev_dbg(g_dev_ptr,"filp=%lx\n",(unsigned long)filp);
 
@@ -665,7 +676,7 @@ static int imu_open(struct inode *inode, struct file *filp) {
                 //printk("imu opened in R/W mode, (numBytesWritten=0x%x, numBytesRead=0x%x\n", numBytesWritten, numBytesRead);
             } else { // read mode, use file pointer as read pointer, start from the latest data
                 filp->f_pos=numBytesWritten; // there is still a chance to lseek to an earlier position - reopening at the position of the total number of bytes written to the buffer
-                //printk("imu opened in RDONLY mode, (numBytesWritten=0x%x, numBytesRead=0x%x\n", numBytesWritten, numBytesRead);
+                dev_dbg(g_dev_ptr, "imu opened in RDONLY mode, (numBytesWritten=0x%llx, numBytesRead=0x%llx\n", numBytesWritten, numBytesRead);
             }
         }
         break;
@@ -809,8 +820,8 @@ static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
     return (file->f_pos);
 }
 
-
-
+/** /dev/imu and /dev/imu read. If file is opened in R/W mode, reading updates global reade pointer, if readonly - each file
+ * has own pointer */
 static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *off) {
     int err;
     unsigned long * sleep;
@@ -827,6 +838,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
     reg_dma_rw_stat stat;
     reg_bif_dma_r_ch1_stat ch1_stat;
 #endif
+    dev_dbg(g_dev_ptr," file=%x, count=0x%x (%d), off=%x\n", (int) file, (int) count, (int) count, (int)(*off));
     switch ((int)file->private_data) {
     case DEV393_MINOR(DEV393_LOGGER_CTRL):
         //       if (*off >= sizeof(wbuf))  return -EINVAL; // bigger than all
@@ -850,6 +862,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
         thisNumBytesRead=(file->f_mode & FMODE_WRITE)?numBytesRead:*off; // is that needed ("write mode") ?
         charDMABuf = (char *) logger_buffer;
         sleep=  (unsigned long *) &wbuf[X313_IMU_SLEEP_OFFS];
+        dev_dbg(g_dev_ptr,"numBytesWritten=0x%08x thisNumBytesRead=0x%08x, sleep=0x%x\n", (int) numBytesWritten, (int) thisNumBytesRead, (int) sleep[0]);
         /// should we wait for data?
         idbg=0;
 #ifdef NC353
@@ -861,7 +874,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
 #else
         wait_event_interruptible(logger_wait_queue, (sleep[0]==0) || ((numBytesWritten-thisNumBytesRead) > 64)); // AF2016 Why sleep[0] here?
 #endif
-
+        dev_dbg(g_dev_ptr,"After wait_event_interruptible: numBytesWritten=0x%08x thisNumBytesRead=0x%08x\n", (int) numBytesWritten, (int) thisNumBytesRead);
 
         if (idbg>0) {
             dev_dbg(g_dev_ptr,"slept %d times (%d usec)\n", idbg, (int) (*sleep * idbg));
@@ -872,6 +885,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
 
         byteIndexRead=thisNumBytesRead & bytePtrMask; // requires buffer size to be 2**N
         byteIndexValid=(numBytesWritten-64) & bytePtrMask; // one record less to mitigate data hidden in ETRAX dma buffer
+        dev_dbg(g_dev_ptr,"byteIndexRead=0x%08x byteIndexValid=0x%08x bytePtrMask=0x%08x\n", byteIndexRead, byteIndexValid, (int)bytePtrMask);
 #ifdef NC353
         if (byteIndexValid<byteIndexRead) byteIndexValid += (CCAM_DMA1_SIZE<<2);
 #else
@@ -880,21 +894,24 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
         if (count>(byteIndexValid-byteIndexRead)) count = (byteIndexValid-byteIndexRead);
         leftToRead=count;
         pe=byteIndexRead+leftToRead;
+        dev_dbg(g_dev_ptr,"byteIndexValid=0x%08x count=0x%08x pe=0x%08x\n", byteIndexValid, (int) count, pe);
 #ifdef NC353
         if (pe>(CCAM_DMA1_SIZE<<2)) pe=(CCAM_DMA1_SIZE<<2);
 #else
-        if (pe>(logger_size << PAGE_SHIFT)) pe= logger_size;
+//        if (pe>(logger_size << PAGE_SHIFT)) pe= logger_size;
+        if (pe > logger_size) pe= logger_size;
 #endif
         /// copy all (or first part)
         err=copy_to_user(buf, &charDMABuf[byteIndexRead], (pe-byteIndexRead));
         if (err) {
-            dev_err(g_dev_ptr,"1. tried to copy 0x%x bytes to offset 0x%llx, result=0x%x\n", count, *off,err);
+            dev_err(g_dev_ptr,"1. tried to copy 0x%x bytes from offset 0x%llx, result=0x%x\n", (pe-byteIndexRead), *off,err);
 //[  811.889488] imu_logger elphel393-logger@0: 1. tried to copy 0x1000 bytes to offset 0x0, result=0x400000
             return -EFAULT;
         }
         //      advance pointers
         leftToRead -=      (pe-byteIndexRead);
         thisNumBytesRead+= (pe-byteIndexRead);
+        dev_dbg(g_dev_ptr,"leftToRead=0x%08x thisNumBytesRead=0x%08x\n", leftToRead, (int) thisNumBytesRead);
         ///Do we need to copy from the beginning of the buffer?
         if (leftToRead>0) {
             //          err=copy_to_user(buf, &charDMABuf[0], leftToRead);
@@ -906,6 +923,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
             return -EFAULT;
         }
         thisNumBytesRead+=leftToRead;
+        dev_dbg(g_dev_ptr,"thisNumBytesRead=0x%08x\n", (int) thisNumBytesRead);
 
 #ifdef NC353
         //Is it just for debug
@@ -920,6 +938,7 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
         if (count<0) {
             dev_err(g_dev_ptr,"Count is negative ( 0x%x)\n", count);
         }
+        dev_dbg(g_dev_ptr,"count=0x%08x\n", (int) count);
         return count;
     default:
         //printk(" Wrong minor=0x%x\n",((int *)file->private_data)[0]);
@@ -939,7 +958,7 @@ static irqreturn_t logger_irq_handler(int irq,      ///< [in] interrupt number
         numBytesWrittenBase += logger_size;
     }
     logger_offs32 = mult_saxi_dwp.addr32;
-    numBytesWritten = numBytesWrittenBase + logger_offs32;
+    numBytesWritten = numBytesWrittenBase + (logger_offs32 <<2);
     logger_irq_cmd(X393_IRQ_RESET);
     wake_up_interruptible(&logger_wait_queue);
 //thisFPGABytes
@@ -973,7 +992,7 @@ static int logger_init(struct platform_device *pdev)
     // Setup memory buffer from CMA
     logger_buffer = (u32 *) pElphel_buf->logger_vaddr; // must be page-aligned!
     logger_size = pElphel_buf->logger_size << PAGE_SHIFT;
-    bytePtrMask = logger_size;
+    bytePtrMask = logger_size - 1;
     logger_phys =   pElphel_buf->logger_paddr;
     dma_is_on = 0;
     // Setup interrupt
