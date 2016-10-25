@@ -433,6 +433,27 @@ int store_meta(int sensor_port) { //called from IRQ service - put current metada
 	if (aexif_wp[sensor_port] > MAX_EXIF_FRAMES) aexif_wp[sensor_port] = 1;
 	return meta_index;
 }
+/**
+ * @brief Go through mapping table and invalidate all tags that will be updated
+ * @param curr_table current mapping table
+ * @param curr_num   the number of entries in current table
+ * @param new_table  new mapping table of just a part of it
+ * @param new_num    the number of entries in new table
+ */
+static void tags_invalidate(struct exif_dir_table_t *curr_table, int curr_num,
+		struct exif_dir_table_t *new_table, int new_num)
+{
+	int i, j;
+
+	for (i = 0; i < curr_num; i++) {
+		for (j = 0; j < new_num; j++) {
+			if (curr_table[i].ltag == new_table[j].ltag) {
+				memset(&curr_table[i], 0, sizeof(struct exif_dir_table_t));
+			}
+		}
+	}
+
+}
 
 //!++++++++++++++++++++++++++++++++++++ open() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -600,7 +621,8 @@ ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff
 	int sensor_port;
 	//  int thissize=minor_file_size(p);
 	int maxsize=minor_max_size(p);
-	char * cp;
+	int fields_num;
+	char * cp, *new_table;
 	char tmp[MAX_EXIF_SIZE]; //! Or is it possible to disable IRQ while copy_from_user()?
 	unsigned long flags;
 	int disabled_err=0;
@@ -620,8 +642,19 @@ ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff
 	case DEV393_MINOR(DEV393_EXIF_METADIR):
 		exif_invalidate();
 		cp= (char *) &dir_table;
-		if (copy_from_user(&cp[*off], buf, count)) return -EFAULT;
+		new_table = kmalloc(MAX_EXIF_FIELDS * sizeof(struct exif_dir_table_t), GFP_KERNEL);
+		if (!new_table) {
+			return -ENOMEM;
+		}
+		if (copy_from_user(new_table, buf, count)) {
+			kfree(new_table);
+			return -EFAULT;
+		}
+		fields_num = exif_fields;
 		exif_fields=(*off+count)/sizeof(struct exif_dir_table_t);
+		tags_invalidate(dir_table, fields_num, (struct exif_dir_table_t *)new_table, exif_fields);
+		memcpy(&cp[*off], new_table, count);
+		kfree(new_table);
 		break;
 	case DEV393_MINOR(DEV393_EXIF_TIME): //write date/time first, then - midnight seconds
 		cp= (char *) &exif_time;
@@ -733,7 +766,6 @@ ssize_t    exif_read   (struct file * file, char * buf, size_t count, loff_t *of
 /* This code is copied from exif_read, consider replacing it with this function invocation */
 size_t exif_get_data(int sensor_port, unsigned short meta_index, void *buff, size_t buff_sz)
 {
-	size_t ret = 0;
 	size_t count = exif_template_size;
 	loff_t off;
 	int start_p, page_p, i;
