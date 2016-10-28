@@ -365,6 +365,11 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 ///< @return OK - 0, <0 - error
 {
     x393_camsync_mode_t camsync_mode = {.d32=0};
+    x393_camsync_io_t camsync_src =      {.d32=0x55555}; // all disabled (use internal)
+    x393_camsync_io_t camsync_dst =      {.d32=0x55555}; // all disable - nothing to output
+
+// Setting trigger input, output and preriod to off
+
     int was_sensor_freq = 0; // 90000000; // getClockFreq(1);
     int qperiod;
     int i2cbytes;
@@ -410,6 +415,14 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 //    camsync_mode.ext =      1; // use external timestamp (default)
 //    camsync_mode.ext_set =  1;
     x393_camsync_mode (camsync_mode);
+
+
+// Set inactive state to all I/O) and period:
+    x393_camsync_trig_src(camsync_src);
+    x393_camsync_trig_dst(camsync_dst);
+    set_x393_camsync_trig_period(0);
+
+
 
     //     dev_dbg(g_dev_ptr,"trying MT9P001\n");
     //      mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
