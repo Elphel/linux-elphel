@@ -1001,7 +1001,7 @@ void sensor_interrupts (int on,   ///< 0 -interrupt disable, 1 - interrupt enabl
 void trigger_restart(void)
 {
     u32 period = get_x393_camsync_trig_period();
-    if (!period) period = 1;
+    if (!(period & ~31)) period = 1; // if 0 or bit length setup
     set_x393_camsync_trig_period(period);
     dev_dbg(g_dev_ptr, "Reset trigger period in immediate mode = %d (0x%x)\n", (int) period, (int) period);
 }

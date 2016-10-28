@@ -2615,18 +2615,9 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
             //      dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_IOPINS, (int) X313_WA_IOPINS_DIS_TRIG_OUT);
         }
     }
-    // Sequencer period changed? (0 - stopped, 1 - single trigger, >=256 - start repetitive)
-    if (FRAMEPAR_MODIFIED(P_TRIG_PERIOD)) {
-        if (unlikely((thispars->pars[P_TRIG_PERIOD] > 1) && (thispars->pars[P_TRIG_PERIOD] < 256))) { // Wrong value, restore old one
-            SETFRAMEPARS_SET(P_TRIG_PERIOD,prevpars->pars[P_TRIG_PERIOD]); //+1
-        } else {
-            set_x393_camsync_trig_period(thispars->pars[P_TRIG_PERIOD]);
-            update_master_channel=1;
-            dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%lx)\n",sensor_port, thispars->pars[P_TRIG_PERIOD]);
-            MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_period(0x%lx)\n", thispars->pars[P_TRIG_PERIOD])
-        }
-    }
     // Bit length changed or not yet initialized?
+    // Put before period to help re-trigger with the same period as was before
+    // Alternatively - make retrigger always single?
     if (FRAMEPAR_MODIFIED(P_TRIG_BITLENGTH) || (thispars->pars[P_TRIG_BITLENGTH]==0)) {
         d=thispars->pars[P_TRIG_BITLENGTH];
         if (unlikely((d<2) || (d>255))) { // Wrong value, restore old one
@@ -2637,6 +2628,17 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
         update_master_channel=1;
         dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%x) (bit length)\n",sensor_port, d);
         MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_period(0x%x) (bit length)\n",d)
+    }
+    // Sequencer period changed? (0 - stopped, 1 - single trigger, >=256 - start repetitive)
+    if (FRAMEPAR_MODIFIED(P_TRIG_PERIOD)) {
+        if (unlikely((thispars->pars[P_TRIG_PERIOD] > 1) && (thispars->pars[P_TRIG_PERIOD] < 256))) { // Wrong value, restore old one
+            SETFRAMEPARS_SET(P_TRIG_PERIOD,prevpars->pars[P_TRIG_PERIOD]); //+1
+        } else {
+            set_x393_camsync_trig_period(thispars->pars[P_TRIG_PERIOD]);
+            update_master_channel=1;
+            dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%lx)\n",sensor_port, thispars->pars[P_TRIG_PERIOD]);
+            MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_period(0x%lx)\n", thispars->pars[P_TRIG_PERIOD])
+        }
     }
     // P_EXTERN_TIMESTAMP changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_EXTERN_TIMESTAMP)) {
