@@ -1628,6 +1628,7 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 					break;
 				case LSEEK_DMA_INIT:                    // initialize ETRAX DMA (normally done in sensor_common.c at driver init
 				    dev_dbg(g_devfp_ptr, "LSEEK_DMA_INIT\n");
+				    trigger_restart  (); // LSEEK_DMA_INIT is unused
 					//x313_dma_init();
 					break;
 				case LSEEK_DMA_STOP: // stop DMA

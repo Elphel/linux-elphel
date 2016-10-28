@@ -996,6 +996,18 @@ void sensor_interrupts (int on,   ///< 0 -interrupt disable, 1 - interrupt enabl
     x393_cmdframeseq_ctrl(cmdframeseq_mode, chn);
 }
 
+/** Recover from waiting trigger - internal FPGA or external by re-writing current period to the register in immediate mode
+ * If the period was 0 (stopped), use 1 (single) */
+void trigger_restart(void)
+{
+    u32 period = get_x393_camsync_trig_period();
+    if (!period) period = 1;
+    set_x393_camsync_trig_period(period);
+    dev_dbg(g_dev_ptr, "Reset trigger period in immediate mode = %d (0x%x)\n", (int) period, (int) period);
+}
+
+
+
 int sequencer_stop_run_reset(int chn,  ///< Sensor port
                              int cmd)  ///< Command: SEQ_CMD_STOP=0 - stop, SEQ_CMD_RUN=1 - run, SEQ_CMD_RESET=2 - reset
                                        ///< @return always 0

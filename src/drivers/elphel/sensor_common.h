@@ -52,6 +52,8 @@ int init_compressor_dma(int chn_mask, int reset);
 void reset_compressor(unsigned int chn);
 void compressor_interrupts (int on, int chn);
 void sensor_interrupts     (int on, int chn);
+void trigger_restart       (void);
+
 int sequencer_stop_run_reset(int chn, int cmd);
 struct sensorproc_t * copy_sensorproc (int sensor_port, struct sensorproc_t * copy);
 
