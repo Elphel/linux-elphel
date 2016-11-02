@@ -617,7 +617,8 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
           case LSEEK_CIRC_USED:
              bp=((camSeqGetJPEG_wp(chn)<<2) - file->f_pos);
 //             return (bp>=0)?bp:(bp+l); //!will return 0 if current pointer is a write pointer (waiting for the next frame)
-             return (file->f_pos=(bp>0)?bp:(bp + circbuf_priv_ptr[chn].buf_size)); //!Has a side effect of moving a file pointer!
+             // the condition below was (bp>0), but this resulted in the same _FREE and _USED sizes reported when file and HW pointers are equal
+             return (file->f_pos=(bp>=0)?bp:(bp + circbuf_priv_ptr[chn].buf_size)); //!Has a side effect of moving a file pointer!
           case LSEEK_CIRC_TORP:
              break;
           case LSEEK_CIRC_TOWP:
