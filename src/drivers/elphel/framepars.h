@@ -6,11 +6,11 @@
 //extern struct framepars_t (*framepars)[PARS_FRAMES];
 extern struct framepars_t      *aframepars[SENSOR_PORTS];
 extern struct framepars_past_t *apastpars[SENSOR_PORTS];
+extern struct common_pars_t    *common_pars;
 extern unsigned long           *aglobalPars[SENSOR_PORTS];
 extern unsigned long           *amultiSensIndex[SENSOR_PORTS];
 extern unsigned long           *amultiSensRvrsIndex[SENSOR_PORTS];
 extern wait_queue_head_t       aframepars_wait_queue[SENSOR_PORTS];
-
 ///TODO: init framepars (zero parameters) before initscripts (not when detecting the sensors) - then initscript will be able to overwrite some
 void init_framepars_ptr(int sensor_port);
 int  initSequencers    (int sensor_port); ///Move to sensorcommon? currently it is used through frameparsall file (lseek)
@@ -35,6 +35,7 @@ void          set_imageParamsR_all(int sensor_port, int n, unsigned long d);
 //Next 2 called from ISR
 void          updateInterFrame(int sensor_port, u32 compressed_frame, struct interframe_params_t * interframe_pars);
 void          updateFramePars     (int sensor_port, int frame16);
+int           setFrameParStatic   (int sensor_port, unsigned long index, unsigned long val);
 int           setFrameParsStatic  (int sensor_port, int numPars, struct frameparspair_t * pars);
 
 unsigned long getThisFrameNumber  (int sensor_port); /// just return current thisFrameNumber

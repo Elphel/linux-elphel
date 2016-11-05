@@ -379,6 +379,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
 
     if (frame16 >= 0) return -1; // can only work in ASAP mode
+    common_pars->sensors[sensor_port] =  thispars->pars[P_SENSOR];
     if (thispars->pars[P_SENSOR]) {
         dev_dbg(g_dev_ptr,"{%d}  frame16=%d, SENSOR ALREADY DETECTED = %d\n",sensor_port,frame16, (int) thispars->pars[P_SENSOR]);
         return 0; // Sensor is already detected - do not bother (to re-detect it P_SENSOR should be set to 0)
@@ -387,7 +388,6 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 
 
 
-    #ifndef NC353
     // NC393 - nothing to do here - use a separate module for sensor setup: DT, sysfs, something else (add pin pullup/down)
     // currently assign same sensor to all subchannles (first present)
 //    thispars->pars[P_SENSOR] = get_detected_sensor_code(sensor_port, -1); // "-1" - first detected sensor
@@ -408,21 +408,21 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     i2c_drive_mode          (sensor_port, SDA_DRIVE_HIGH, SDA_RELEASE);
     i2c_stop_run_reset      (sensor_port, I2C_CMD_RUN); // also programs status update
     legacy_i2c(1<<sensor_port);// Setup i2c pages for legacy i2c commands. TODO NC393: update for compatibility with 14MPix
+#ifdef INIT_IN_TRIGGERED
+    camsync_mode.trig =     1; // start in stopped triggered mode
+#else
     camsync_mode.trig =     0;
+#endif
     camsync_mode.trig_set = 1;
 
 //    This causes mismatch with parameters, let it be there
 //    camsync_mode.ext =      1; // use external timestamp (default)
 //    camsync_mode.ext_set =  1;
     x393_camsync_mode (camsync_mode);
-
-
 // Set inactive state to all I/O) and period:
     x393_camsync_trig_src(camsync_src);
     x393_camsync_trig_dst(camsync_dst);
     set_x393_camsync_trig_period(0);
-
-
 
     //     dev_dbg(g_dev_ptr,"trying MT9P001\n");
     //      mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
@@ -473,151 +473,14 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         phase= 0x40000;
         setFramePar(sensor_port, thispars, P_SENSOR_PHASE | FRAMEPAIR_FORCE_NEWPROC,  phase); // will schedule clock/phase adjustment
     }
-    setFramePar(sensor_port, thispars, P_IRQ_SMART | FRAMEPAIR_FORCE_NEWPROC,  3);        // smart IRQ mode programming (and enable interrupts)
+    setFramePar(sensor_port, thispars, P_I2C_EOF | FRAMEPAIR_FORCE_NEWPROC,  0);         // increment i2c at SOF - change to EOF?
 
     // NOTE: sensor detected - enabling camera interrupts here (actual interrupts will start later)
     // Here interrupts are disabled - with compressor_interrupts (0) earlier in this function)
 
-    compressor_interrupts (1,sensor_port); // FIXME: Should they already be set beforfe detection? If not - remove from framepars.php
+    compressor_interrupts (1,sensor_port); // FIXME: Should they already be set before detection? If not - remove from framepars.php
     sensor_interrupts     (1,sensor_port);
     return 0;
-#else
-    // NOTE: disabling interrupts here !!!
-    compressor_interrupts (0);
-    dev_dbg(g_dev_ptr,"%s Disabled camera interrupts\n",__func__);
-    // This 3 initialization commands were not here, trying to temporarily fix problem when WP was 8/16 words higher than actual data in DMA buffer
-    if (GLOBALPARS(sensor_port, G_TEST_CTL_BITS) & (1<< G_TEST_CTL_BITS_RESET_DMA_COMPRESSOR )) {
-        dev_dbg(g_dev_ptr,"%s x313_dma_stop()\n",__func__);
-        ///    x313_dma_stop();
-        dev_dbg(g_dev_ptr,"%s x313_dma_init()\n",__func__);
-        ///    x313_dma_init();
-        dev_dbg(g_dev_ptr,"%s reset_compressor()\n",__func__);
-        reset_compressor(sensor_port);
-    }
-    // TODO: Add 10347 detection here //   if (IS_KAI11000) return init_KAI11000();
-    // Need to set slow clock
-    //  f1=imageParamsR[P_CLK_SENSOR]=20000000; setClockFreq(1, imageParamsR[P_CLK_SENSOR]); X3X3_RSTSENSDCM;
-    was_sensor_freq=getClockFreq(1); // using clock driver data, not thispars
-    setFramePar(sensor_port, thispars, P_CLK_FPGA,  getClockFreq(0)); // just in case - read the actual fpga clock frequency and store it (no actions)
-    setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
-    setClockFreq(1, thispars->pars[P_CLK_SENSOR]);
-    dev_dbg(g_dev_ptr,"\nsensor clock set to %d\n",(int) thispars->pars[P_CLK_SENSOR]);
-    udelay (100);// 0.0001 sec to stabilize clocks
-    X3X3_RSTSENSDCM; // FPGA DCM can fail after clock change, needs to be reset
-    X3X3_SENSDCM_CLK2X_RESET; // reset pclk2x DCM also
-    mdelay (50);// 0.05 sec to stabilize clocks
-    // setting reasonable state of the control signals
-    CCAM_DCLK_ON;
-    CCAM_CNVEN_OFF;
-    CCAM_NEGRST;  ///set negative MRST polarity
-    CCAM_MRST_ON;
-    CCAM_TRIG_INT;
-    CCAM_EXTERNALTS_EN; // Maybe use default as enabled - yes, it will not be active if not available
-    udelay (100); // apply clock before removing MRS
-    // first trying MT9P001 that does not need converter
-    // try multisensor here (before removing MRST)
-    if (thispars->pars[P_SENSOR]==0) multisensor_pgm_detectsensor (sensor_port, sensor,  thispars, prevpars, frame16);  // multisensor
-    if (thispars->pars[P_SENSOR]==0) {
-        dev_dbg(g_dev_ptr,"removing MRST from the sensor\n");
-        CCAM_MRST_OFF;
-    }
-    if (thispars->pars[P_SENSOR]==0) {
-        mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
-        dev_dbg(g_dev_ptr,"trying MT9P001\n");
-    }
-    // temporary - disabling old sensors
-#define ENABLE_OLD_SENSORS 1
-#ifdef ENABLE_OLD_SENSORS
-    if (thispars->pars[P_SENSOR]==0)  { // no - it is not MT9P001)
-        dev_dbg(g_dev_ptr,"trying other MT9X001\n");
-        CCAM_CNVEN_ON;
-        //     CCAM_ARST_ON; ///MT9P001 expects ARST==0 (STANDBY) - done inside mt9x001.c
-        // enable output for power converter signals
-        // This should be done first!!!
-        // printk ("Will Turn DC power for the sensor after 1 sec delay...\n");  udelay (1000000);
-        // turning on DC-DC converter may cause system to reboot because of a power spike, so start slow
-#ifdef NC353
-        port_csp0_addr[X313_WA_DCDC] = 0x44; // 48 - enough, 41 - ok - was 0x61; //
-        printk ("sensor power set low\n ");
-        mdelay (10); // Wait voltage to come up (~10 ms)
-        printk ("will set to 0x41\n");
-        mdelay (10); // to find the problem
-        port_csp0_addr[X313_WA_DCDC] = 0x41; // 
-        printk ("will set to 0x30\n");
-        mdelay (10); // to find the problem
-        port_csp0_addr[X313_WA_DCDC] = 0x30; //
-        printk ("will set to 0x28\n");
-        mdelay (10); // to find the problem
-        port_csp0_addr[X313_WA_DCDC] = 0x28; //
-        printk ("will set to 0x24\n");
-        mdelay (10); // to find the problem
-        port_csp0_addr[X313_WA_DCDC] = 0x24; //
-        printk ("will set to 0x22\n");
-        mdelay (10); // to find the problem
-        port_csp0_addr[X313_WA_DCDC] = 0x22; //
-        mdelay (10); // to find the problem
-        port_csp0_addr[X313_WA_DCDC] = 0x10; // now - full frequency (same as 0x21). Slow that down if the sensor clock is above 20MHz (i.e.0x22 for 40MHz)
-        printk (".. full\n");
-        mdelay (10); // Wait voltage to stabilize
-        CCAM_POSRST;  //set positive MRST polarity (default)
-        udelay (100); // apply clock before removing MRST
-        CCAM_MRST_OFF;
-#endif
-    }
-#ifdef CONFIG_ETRAX_ELPHEL_KAC1310
-    if (thispars->pars[P_SENSOR]==0) kac1310_pgm_detectsensor(sensor,  thispars, prevpars, frame16);  // try KAC-1310 (does not exist anymore)
-#endif
-#ifdef CONFIG_ETRAX_ELPHEL_IBIS51300
-    if (thispars->pars[P_SENSOR]==0) ibis1300_pgm_detectsensor(sensor,  thispars, prevpars, frame16); // try IBIS5-1300 (software dead)
-#endif
-    // invert MRST for other sensors
-    if (thispars->pars[P_SENSOR]==0) {
-        CCAM_NEGRST;  //set negative MRST polarity
-        printk ("Inverted MRST\n");
-        udelay (100);
-    }
-#ifdef CONFIG_ETRAX_ELPHEL_MT9X001
-    if (thispars->pars[P_SENSOR]==0)  dev_dbg(g_dev_ptr,"trying MT9X001\n");
-    if (thispars->pars[P_SENSOR]==0) mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 1.3/2.0/3.0 Mpixel
-#endif
-#ifdef CONFIG_ETRAX_ELPHEL_KAC1310
-    if (thispars->pars[P_SENSOR]==0) kac5000_pgm_detectsensor(sensorsensor_port, sensor,  thispars, prevpars, frame16);  // try KAC-5000
-#endif
-#ifdef CONFIG_ETRAX_ELPHEL_ZR32112
-    if (thispars->pars[P_SENSOR]==0) zr32112_pgm_detectsensor(sensorsensor_port, sensor,  thispars, prevpars, frame16); // try ZR32112
-#endif
-#ifdef CONFIG_ETRAX_ELPHEL_ZR32212
-    if (thispars->pars[P_SENSOR]==0) zr32212_pgm_detectsensor(sensorsensor_port, sensor,  thispars, prevpars, frame16); // try ZR32212
-#endif
-#endif // ENABLE_OLD_SENSORS *************** temporary disabling other sensors ********************
-    if (thispars->pars[P_SENSOR]==0) {
-        sensor->sensorType=SENSOR_NONE;                 // to prevent from initializing again
-        dev_dbg(g_dev_ptr,"No image sensor found\n");
-    }
-    setFramePar(sensor_port, thispars, P_SENSOR_WIDTH,   sensor->imageWidth);  // Maybe get rid of duplicates?
-    setFramePar(sensor_port, thispars, P_SENSOR_HEIGHT,  sensor->imageHeight); // Maybe get rid of duplicates?
-    if (sensor->i2c_period==0) sensor->i2c_period=2500;           // SCL period in ns, (standard i2c - 2500)
-    qperiod=thispars->pars[P_I2C_QPERIOD];
-    if (qperiod==0) qperiod=(sensor->i2c_period * (thispars->pars[P_CLK_FPGA]/1000))/4000000;
-    setFramePar(sensor_port, thispars, P_I2C_QPERIOD | FRAMEPAIR_FORCE_NEWPROC,  qperiod); // force i2c
-    i2cbytes=thispars->pars[P_I2C_BYTES];
-    if (i2cbytes==0) i2cbytes=sensor->i2c_bytes;
-    setFramePar(sensor_port, thispars, P_I2C_BYTES | FRAMEPAIR_FORCE_NEWPROC,  i2cbytes); // force i2c
-    // restore/set sensor clock
-    if ((was_sensor_freq < sensor->minClockFreq) || (was_sensor_freq > sensor->maxClockFreq)) was_sensor_freq=sensor->nomClockFreq;
-    setFramePar(sensor_port, thispars, P_CLK_SENSOR | FRAMEPAIR_FORCE_NEWPROC,  was_sensor_freq); // will schedule clock/phase adjustment
-    phase=thispars->pars[P_SENSOR_PHASE];
-    // TODO: remove phase adjustment from here
-    if (phase==0) {
-        phase= 0x40000;
-        setFramePar(sensor_port, thispars, P_SENSOR_PHASE | FRAMEPAIR_FORCE_NEWPROC,  phase); // will schedule clock/phase adjustment
-    }
-    setFramePar(sensor_port, thispars, P_IRQ_SMART | FRAMEPAIR_FORCE_NEWPROC,  3);        // smart IRQ mode programming (and enable interrupts)
-    // NOTE: sensor detected - enabling camera interrupts here (actual interrupts will start later)
-    // Here interrupts are disabled - with compressor_interrupts (0) earlier in this function)
-    compressor_interrupts (1);
-    return 0;
-#endif
 }
 /** Reset and initialize sensor (all is done in sensor-specific functions)
  *  - resets sensor,
@@ -2567,42 +2430,53 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
     struct frameparspair_t pars_to_update[10]; // ??? needed, increase if more entries will be added - just one
     int nupdate=0;
     int d;
+    int is_master = 0;
+    int update_master_channel = 0; // set if any of the common (not channel-specific) parameters is modified
 #ifndef NC353
     x393_camsync_io_t camsync_src =      {.d32=0};
     x393_camsync_io_t camsync_dst =      {.d32=0};
     x393_gpio_set_pins_t gpio_set_pins = {.d32=0};
     x393_camsync_mode_t camsync_mode =   {.d32=0};
-    int update_master_channel = 0; // set if any of the common (not channel-specific) parameters is modified
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
 //    MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, frame16, cmprs_mode.d32);
 
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-    if (frame16 >= 0) return -1; // ASAP only mode
-    // Trigger condition changed? (0 - internal sequencer)
-    if (FRAMEPAR_MODIFIED(P_TRIG_CONDITION)) {
-        camsync_src.d32 =  thispars->pars[P_TRIG_CONDITION];
-        x393_camsync_trig_src(camsync_src);
-        update_master_channel=1;
-        dev_dbg(g_dev_ptr,"{%d}   x393_camsync_trig_src(0x%x)\n",sensor_port,  camsync_src.d32);
-        MDP(DBGB_PADD, sensor_port,"x393_camsync_trig_src(0x%x)\n", camsync_src.d32)
+//+++++    if (frame16 >= 0) return -1; // ASAP only mode Was on
+    // See if master channel is set to this channel directly
+    is_master = (thispars->pars[P_TRIG_MASTER] == sensor_port)? 1 : 0;
+    if (is_master && FRAMEPAR_MODIFIED(P_TRIG_MASTER)) {
+        update_master_channel = 1;
+        camsync_mode.master_chn = sensor_port;
+        camsync_mode.master_chn_set = 1;
     }
+// Process per-channel (not common) parameters regardless of the master status  (just trigger delay)
     // Trigger delay changed?
     if (FRAMEPAR_MODIFIED(P_TRIG_DELAY)) { // individual per-channel parameters
         set_x393_camsync_trig_delay  (thispars->pars[P_TRIG_DELAY], sensor_port); // CAMSYNC trigger delay
         dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_delay(0x%x, %d)\n",sensor_port,  camsync_src.d32, sensor_port);
         MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_delay(0x%x, %d)\n", camsync_src.d32, sensor_port)
     }
+
+    if (!is_master){
+        dev_dbg(g_dev_ptr,"{%d}  frame16=%d: nothing to do, master channel is %d\n",sensor_port,frame16, (int) thispars->pars[P_TRIG_MASTER]);
+        return 0;
+    }
+    // Trigger condition changed? (0 - internal sequencer)
+    if (FRAMEPAR_MODIFIED(P_TRIG_CONDITION)) {
+        camsync_src.d32 =  thispars->pars[P_TRIG_CONDITION];
+        x393_camsync_trig_src(camsync_src);
+//        update_master_channel=1;
+        dev_dbg(g_dev_ptr,"{%d}   x393_camsync_trig_src(0x%x)\n",sensor_port,  camsync_src.d32);
+        MDP(DBGB_PADD, sensor_port,"x393_camsync_trig_src(0x%x)\n", camsync_src.d32)
+    }
     // Sequencer output word changed? (to which outputs it is sent and what polarity)
     if (FRAMEPAR_MODIFIED(P_TRIG_OUT)) {
         camsync_dst.d32 =  thispars->pars[P_TRIG_OUT];
         x393_camsync_trig_dst(camsync_dst);
-        update_master_channel=1;
+//        update_master_channel=1;
         dev_dbg(g_dev_ptr,"{%d}   x393_camsync_trig_dst(0x%x)\n",sensor_port,  camsync_dst.d32);
         MDP(DBGB_PADD, sensor_port,"x393_camsync_trig_dst(0x%x)\n", camsync_dst.d32)
-
-//        dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_CAMSYNCOUT, (int) thispars->pars[P_TRIG_OUT]);
-        // Enable connection from the trigger module to the FPGA GPIO pins
 
         if (thispars->pars[P_TRIG_OUT]!=0) {
             gpio_set_pins.chn_a = 3;  // Set dibit enable
@@ -2635,7 +2509,7 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
             SETFRAMEPARS_SET(P_TRIG_PERIOD,prevpars->pars[P_TRIG_PERIOD]); //+1
         } else {
             set_x393_camsync_trig_period(thispars->pars[P_TRIG_PERIOD]);
-            update_master_channel=1;
+//            update_master_channel=1;
             dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%lx)\n",sensor_port, thispars->pars[P_TRIG_PERIOD]);
             MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_period(0x%lx)\n", thispars->pars[P_TRIG_PERIOD])
         }
@@ -2644,7 +2518,7 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
     if (FRAMEPAR_MODIFIED(P_EXTERN_TIMESTAMP)) {
         camsync_mode.ext = thispars->pars[P_EXTERN_TIMESTAMP]?1:0;
         camsync_mode.ext_set = 1;
-        update_master_channel=1;
+//        update_master_channel=1;
     }
     // P_XMIT_TIMESTAMP changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_XMIT_TIMESTAMP)) {
@@ -2654,16 +2528,38 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
 //        camsync_mode.ts_chns =     (thispars->pars[P_EXTERN_TIMESTAMP]?1:0) << sensor_port;
 //        camsync_mode.ts_chns_set = 1 << sensor_port;
     }
-    if (update_master_channel){
-        camsync_mode.master_chn = sensor_port;
-        camsync_mode.master_chn_set = 1;
-    }
     if (camsync_mode.d32){ // anything set?
         x393_camsync_mode (camsync_mode);
         dev_dbg(g_dev_ptr,"{%d}   x393_camsync_mode(0x%x)\n",sensor_port,  camsync_mode.d32);
         MDP(DBGB_PADD, sensor_port,"x393_camsync_mode(0x%x)\n", camsync_mode.d32)
     }
+    // Does not seem to have any parameters to update?
     if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions
+
+    // now update common trigger parameters and mark dependent channels to update, if anything changed;
+    if ((thispars->pars[P_TRIG_MASTER]      != common_pars->master_chn) ||
+        (thispars->pars[P_TRIG_PERIOD]      != common_pars->trig_period) ||
+        (thispars->pars[P_TRIG_BITLENGTH]   != common_pars->trig_bitlength) ||
+        (thispars->pars[P_EXTERN_TIMESTAMP] != common_pars->extern_timestamp) ||
+        (thispars->pars[P_XMIT_TIMESTAMP]   != common_pars->xmit_timestamp) ||
+        (thispars->pars[P_TRIG_CONDITION]   != common_pars->trig_condition) ||
+            (thispars->pars[P_TRIG_OUT]        != common_pars->trig_out)){
+        int i; //, f;
+        dev_dbg(g_dev_ptr,"{%d}   Updating common trigger parameters\n",sensor_port);
+        common_pars->master_chn =       thispars->pars[P_TRIG_MASTER];
+        common_pars->trig_period =      thispars->pars[P_TRIG_PERIOD];
+        common_pars->trig_bitlength =   thispars->pars[P_TRIG_BITLENGTH];
+        common_pars->extern_timestamp = thispars->pars[P_EXTERN_TIMESTAMP];
+        common_pars->xmit_timestamp =   thispars->pars[P_XMIT_TIMESTAMP];
+        common_pars->trig_condition =   thispars->pars[P_TRIG_CONDITION];
+        common_pars->trig_out =         thispars->pars[P_TRIG_OUT];
+//        f = (frame16<0)? -1:(frame16 + 1);
+        for (i=0; i<SENSOR_PORTS; i++) if (i != sensor_port) {
+            common_pars->updated[i] = 1; //f;
+        }
+        dev_dbg(g_dev_ptr,"{%d} common_pars->updated= {%ld, %ld, %ld, %ld}\n",sensor_port,
+                common_pars->updated[0],common_pars->updated[1],common_pars->updated[2],common_pars->updated[3]);
+    }
     return 0;
 #else
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
@@ -2738,8 +2634,9 @@ int pgm_irq    (int sensor_port,               ///< sensor port number (0..3)
 											   ///< be applied to,  negative - ASAP
 											   ///< @return OK - 0, <0 - error
 {
+    x393_i2c_ctltbl_t i2c_ctl = {.d32=0};
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
-    MDP(DBGB_PSFN, sensor_port,"frame16=%d, does nothing\n",frame16)
+    MDP(DBGB_PSFN, sensor_port,"frame16=%d,\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 #ifdef NC353
     int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
@@ -2750,8 +2647,13 @@ int pgm_irq    (int sensor_port,               ///< sensor port number (0..3)
 
     X3X3_SEQ_SEND1(fpga_addr,   X313_WA_SMART_IRQ,  (2 | ((thispars->pars[P_IRQ_SMART] & 1)?1:0)) | \
             (8 | ((thispars->pars[P_IRQ_SMART] & 2)?4:0)));
+#else
+    i2c_ctl.eof_not_sof = thispars->pars[P_I2C_EOF]?3:2; // set on or off (MSB - "set")
+    X393_SEQ_SEND1 (sensor_port, frame16, x393_sensi2c_ctrl, i2c_ctl);
 #endif
     /*
+         if (thispars->pars[P_COMPRESSOR_RUN]==0) {
+     *
     MDF3(dev_dbg(g_dev_ptr,"  X3X3_SEQ_SEND1(0x%x,0x%x, 0x%x)\n", fpga_addr,  (int) X313_WA_SMART_IRQ, (int) ( (2 | ((thispars->pars[P_IRQ_SMART] & 1)?1:0)) | \
             (8 | ((thispars->pars[P_IRQ_SMART] & 2)?4:0)))));
             */
