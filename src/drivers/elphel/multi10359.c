@@ -1002,7 +1002,7 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   int i;
   int this_sensor_type;
   long * multiOutDelay;
-  x393_sens_mode_t sens_mode =  {.d32=0}; // to disable senosr channel and prevent SoF pulses while 10359 memory is being trained
+  x393_sens_mode_t sens_mode =  {.d32=0}; // to disable senor channel and prevent SoF pulses while 10359 memory is being trained
   sens_mode.chn_en =     0;
   sens_mode.chn_en_set = 1;
   X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_mode, sens_mode);

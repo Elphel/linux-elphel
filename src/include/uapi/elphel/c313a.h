@@ -1012,8 +1012,13 @@ struct common_pars_t{
     unsigned long xmit_timestamp;        ///< Transmit timestamp with sync pulse
     unsigned long trig_condition;        ///< Trigger condition (Each dibit:  0 - inactive, 1 - keep (nop), 2 - active low, 3 - active high)
     unsigned long trig_out;              ///< trigger output    (Each dibit:  0 - inactive, 1 - keep (nop), 2 - active low, 3 - active high)
+    unsigned long trig_mode;             ///< trigger_mode (0: free running, 4 -  ERS snapshot, 20 - GRR
 };
 /*
+#define TRIGMODE_FREERUN  0
+#define TRIGMODE_SNAPSHOT 4
+#define TRIGMODE_GRR      20
+
 * TRIG_PERIOD  500 0x1f4
 * TRIG_BITLENGTH    31  0x1f
 * EXTERN_TIMESTAMP  1   0x1
@@ -1982,8 +1987,19 @@ struct huffman_encoded_t {
 };
 
 /// All other integer constants exported to PHP space (C:"CONSTANT" -> PHP:"ELPHEL_CONST_CONSTANT)
+#define FRAME_ASAP  -1 // use in PHP to specify ASAP through normal sequencer (current frame plus minimal latency)
+#define FRAME_IMMED -2 // use in PHP to specify ASAP bypassing sequencer - works w/o frame sync pulses
+#define TRIGMODE_FREERUN  0
+#define TRIGMODE_SNAPSHOT 4
+#define TRIGMODE_GRR      20
+
 #define CONST_NAME_ENTRY(y) { y, #y }
 #define DEFINE_CONST_NAMES(x) struct p_names_t x[]= { \
+    CONST_NAME_ENTRY(FRAME_IMMED), \
+    CONST_NAME_ENTRY(FRAME_ASAP), \
+    CONST_NAME_ENTRY(TRIGMODE_FREERUN), \
+    CONST_NAME_ENTRY(TRIGMODE_SNAPSHOT), \
+    CONST_NAME_ENTRY(TRIGMODE_GRR), \
     CONST_NAME_ENTRY(SENSOR_RUN_STOP), \
     CONST_NAME_ENTRY(SENSOR_RUN_SINGLE), \
     CONST_NAME_ENTRY(SENSOR_RUN_CONT), \

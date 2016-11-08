@@ -17,6 +17,7 @@ int  initSequencers    (int sensor_port); ///Move to sensorcommon? currently it 
 void initGlobalPars    (int sensor_port); /// resets all global parameters but debug mask (if ELPHEL_DEBUG)
 int  initMultiPars     (int sensor_port); /// initialize structures for individual per-sensor parameters. Now only works for sensor registers using G_MULTI_REGSM. Should be called aftre/during sensor detection
 void initFramePars     (int sensor_port); ///initialize all parameters, set thisFrameNumber to frame16 (read from hardware, usually 0 after resetting i2c and cmd_seq)
+void stopFrameSequencer(int sensor_port, int dis_int);
 void resetFrameNumber  (int sensor_port, u32 aframe, int hreset); /// reset this frame number (called from initFramePars(), also can be used to avoid frame number integer overflow)
 
 unsigned long get_imageParamsFrame(int sensor_port, int n, int frame);
