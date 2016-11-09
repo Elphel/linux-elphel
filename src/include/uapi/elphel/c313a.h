@@ -687,7 +687,9 @@
 
 #define FRAMEPAR_GLOBALS   0x01000  ///< start of global (not frame-related) parameters
 
-#define GLOBALS_PRESERVE   0x20     /// number of parameters that are not erased during initGlobalPars
+//#define GLOBALS_PRESERVE   0x20     /// number of parameters that are not erased during initGlobalPars
+#define GLOBALS_PRESERVE   0x26     /// number of parameters that are not erased during initGlobalPars - include G_CIRCBUFSIZE ==+37 (or move it)
+//G_CIRCBUFSIZE
 
 #define GLOBALPARS(p, x)   (aglobalPars[p][(x)-FRAMEPAR_GLOBALS]) ///< should work in drivers and applications, First 32 parameter values are not erased with initGlobalPars
 #define GLOBALPARS_SNGL(x) (globalPars[(x)-FRAMEPAR_GLOBALS]) ///< for applications that use just one port

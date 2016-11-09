@@ -36,7 +36,7 @@ void camseq_set_jpeg_rp(unsigned int chn, int ptr);
 
 int camSeqGetJPEG_frame(unsigned int chn);
 
-// DWORD I/O, same as in NC353
+// DWORD I/O, same as in NC353, but was an error later
 int camSeqGetJPEG_wp (unsigned int chn);
 int camSeqGetJPEG_rp (unsigned int chn);
 void camSeqSetJPEG_rp(unsigned int chn, int ptr);
