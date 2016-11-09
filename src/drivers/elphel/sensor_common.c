@@ -191,12 +191,12 @@ int camseq_get_jpeg_rp(unsigned int chn)
 	return (chn < SENSOR_PORTS) ? image_acq_priv.jpeg_ptr[chn].jpeg_rp : 0;
 }
 
-void camseq_set_jpeg_rp(unsigned int chn, int ptr)
+void camseq_set_jpeg_rp(unsigned int chn, int ptr) // ptr in bytes
 {
 	if (chn < SENSOR_PORTS) {
-		image_acq_priv.jpeg_ptr[chn].jpeg_rp = ptr;
+		image_acq_priv.jpeg_ptr[chn].jpeg_rp = ptr >> 2;
 
-	    set_globalParam(chn, G_CIRCBUFRP, ptr);
+	    set_globalParam(chn, G_CIRCBUFRP, ptr);  // in bytes (same as in 353)
 	    set_globalParam(chn, G_FREECIRCBUF,
 	            (((get_globalParam(chn, G_CIRCBUFRP) <= get_globalParam(chn, G_CIRCBUFWP))?
 	                    get_globalParam(chn, G_CIRCBUFSIZE):0)+ get_globalParam(chn, G_CIRCBUFRP))
@@ -215,7 +215,7 @@ int camSeqGetJPEG_wp(unsigned int chn)
     return (chn < SENSOR_PORTS) ? image_acq_priv.jpeg_ptr[chn].jpeg_wp : 0;
 }
 
-int camSeqGetJPEG_rp(unsigned int chn)
+int camSeqGetJPEG_rp(unsigned int chn) // return in DWORDs, not in bytes
 {
     return (chn < SENSOR_PORTS) ? image_acq_priv.jpeg_ptr[chn].jpeg_rp : 0;
 }
@@ -225,9 +225,11 @@ void camSeqSetJPEG_rp(unsigned int chn, ///< channel (0..3)
 
 {
     if (chn < SENSOR_PORTS) {
-        image_acq_priv.jpeg_ptr[chn].jpeg_rp = ptr << 2;
+//        image_acq_priv.jpeg_ptr[chn].jpeg_rp = ptr << 2;
+        image_acq_priv.jpeg_ptr[chn].jpeg_rp = ptr ;
 
-        set_globalParam(chn, G_CIRCBUFRP, ptr);
+//        set_globalParam(chn, G_CIRCBUFRP, ptr); // wrong! should be in bytes
+        set_globalParam(chn, G_CIRCBUFRP, ptr << 2); // this is as in nc353
         set_globalParam(chn, G_FREECIRCBUF,
                 (((get_globalParam(chn, G_CIRCBUFRP) <= get_globalParam(chn, G_CIRCBUFWP))?
                         get_globalParam(chn, G_CIRCBUFSIZE):0)+ get_globalParam(chn, G_CIRCBUFRP))
@@ -392,7 +394,9 @@ inline void update_irq_circbuf(struct jpeg_ptr_t *jptr) {
 	/*set_globalParam (G_CIRCBUFWP, JPEG_wp<<2);set_globalParam (G_FREECIRCBUF, (((get_globalParam (G_CIRCBUFRP) <= get_globalParam (G_CIRCBUFWP))? get_globalParam (G_CIRCBUFSIZE):0)+
                                      get_globalParam (G_CIRCBUFRP)) -    get_globalParam (G_CIRCBUFWP));*/
 	/* the concept of global parameters will be changed, use one channel only for testing */
-	set_globalParam(jptr->chn_num, G_CIRCBUFWP, jptr->jpeg_wp);
+//	set_globalParam(jptr->chn_num, G_CIRCBUFWP, jptr->jpeg_wp);
+
+    set_globalParam(jptr->chn_num, G_CIRCBUFWP, jptr->jpeg_wp << 2); // jptr->jpeg_wp in 32-bit words, G_CIRCBUFWP - in bytes
 	set_globalParam (jptr->chn_num, G_FREECIRCBUF,
 	        (((get_globalParam (jptr->chn_num, G_CIRCBUFRP) <= get_globalParam (jptr->chn_num, G_CIRCBUFWP))?get_globalParam (jptr->chn_num, G_CIRCBUFSIZE):0)+
 			get_globalParam (jptr->chn_num, G_CIRCBUFRP)) -    get_globalParam (jptr->chn_num, G_CIRCBUFWP));
@@ -1002,6 +1006,8 @@ void trigger_restart(void)
 {
     u32 period = get_x393_camsync_trig_period();
     if (!(period & ~31)) period = 1; // if 0 or bit length setup
+
+    period = 1; // make it always single/not changing any P_*
     set_x393_camsync_trig_period(period);
     dev_dbg(g_dev_ptr, "Reset trigger period in immediate mode = %d (0x%x)\n", (int) period, (int) period);
 }

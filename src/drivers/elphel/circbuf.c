@@ -658,7 +658,7 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
           case LSEEK_CIRC_FIRST:
           case LSEEK_CIRC_SCND:
 //! Starting from the write pointer do be able to count all the frames in the buffer
-             rp=camSeqGetJPEG_wp(chn);
+             rp=camSeqGetJPEG_wp(chn); // 32-bit words, not byte address
              prev_p=rp;
              preprev_p=prev_p; // for second
              nf=0;
