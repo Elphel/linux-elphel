@@ -150,17 +150,21 @@ const unsigned long ahead_tab[]=
 /// For Micron sensors limitfps should have the same latency as changing window height, otherwise when WOI_HEIGHT 0x3c0->0x790 and next frame VBLANK 0x13e->0x284
 /// sensor waits till the counter overflows (>10 seconds) without any frame sync pulses
   onchange_limitfps,      0,    2,    1,    1,    1,   0, /// check compressor will keep up, limit sensor FPS if needed
-  onchange_compmode,      0,    0,    1,    1,    1,   0, /// program compressor modes
+///  onchange_compmode,      0,    0,    1,    1,    1,   0, /// program compressor modes
+  onchange_compmode,      0,    0,    0,    0,    0,   0, /// program compressor modes
   onchange_focusmode,     1,    0,    0,    0,    0,   0, /// program focus modes (through writing the tables, so no sequencer)
 //  onchange_trigseq,       0,    0,    0,    0,    0,   0, /// program sequencer (int/ext)
 //  onchange_trigseq,       1,    0,    0,    0,    0,   0, /// program sequencer (int/ext) NOTE:needs >24 bit data, too much for sequencer
-  onchange_trigseq,       1,    2,    1,    1,    1,   0, /// program sequencer (int/ext) NOTE:needs >24 bit data, too much for sequencer. Should be not later than onchange_triggermode and limitfps
+//  onchange_trigseq,       1,    2,    1,    1,    1,   0, /// program sequencer (int/ext) NOTE:needs >24 bit data, too much for sequencer. Should be not later than onchange_triggermode and limitfps
+  onchange_trigseq,       0,    2,    1,    1,    1,   0, /// NC393: OK to program through the sequencer (full 32 bits)
 
   onchange_irq,           0,    0,    0,    0,    0,   0, /// program smart IRQ mode
   onchange_comprestart,   0,    0,    0,    0,    0,   0, /// restart after changing geometry  (recognizes ASAP and programs memory channel 2 then)
 /// onchange_compstop should have the same latency as onchange_window
+// NC393 - triggered mode wants   onchange_compstop==2, while onchange_window == 1?
 //  onchange_compstop,      0,    2,    1,    2,    1,   0, /// stop compressor when changing geometry
-  onchange_compstop,      0,    2,    1,    1,    1,   0, /// stop compressor when changing geometry
+///  onchange_compstop,      0,    2,    1,    1,    1,   0, /// stop compressor when changing geometry
+  onchange_compstop,      0,    2,    2,    2,    2,   0, /// stop compressor when changing geometry
   onchange_compctl,       0,    0,    1,    1,    1,   0, /// only start/stop/single (after explicitly changed, not when geometry was changed)
 //  onchange_gammaload,     1,    0,    0,    0,    0,   0, /// write gamma tables (should be prepared). Maybe - just last byte, to activate?
   onchange_gammaload,     1,    1,    1,    1,    1,   0, /// write gamma tables (should be prepared). Maybe - just last byte, to activate?

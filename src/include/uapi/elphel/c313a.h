@@ -36,6 +36,7 @@
 #define USELONGLONG 1
 #define ETRAXFS_MMAP_CACHE_BUG y
 
+//#define INIT_IN_TRIGGERED // Init sensors in triggered mode, stopped
 
 #if ELPHEL_DEBUG
  #define EDBG(x) x
@@ -279,6 +280,7 @@
 #define SENSORWIDTH_IBIS51300  1280 ///< FillFactory IBIS51300 width
 #define SENSORHEIGHT_IBIS51300 1024 ///< FillFactory IBIS51300 height
 
+#define P_TRIG_MASTER    3          ///< Master channel for setting trigger para,eters
 #define P_SENSOR_RUN     4          ///< Sensor acquisition mode 0 - stop, 1 - single, 2 - run
   #define SENSOR_RUN_STOP   0       ///< Sensor acquisition mode: STOP
   #define SENSOR_RUN_SINGLE 1       ///< Sensor acquisition mode: SINGLE FRAME
@@ -449,8 +451,9 @@
 #define P_SKIP_FRAMES    107 ///< number of frames to skip after restarting sensor+compressor - now zero/nonzero?
 #define P_I2C_QPERIOD    108 ///< number of system clock periods in 1/4 of i2c SCL period to the sensor/sensor board // 393: Moved to DT
 #define P_I2C_BYTES      109 ///< number of bytes in hardware i2c write (after slave addr) -0/1/2
-#define P_IRQ_SMART      110 ///< TODO: Obsolete for 393, update"smart" IRQ modes: +1 - wait for VACT in early compressor_done,
+//#define P_IRQ_SMART      110 ///< TODO: Obsolete for 393, update"smart" IRQ modes: +1 - wait for VACT in early compressor_done,
                              ///< +2 - wait for dma fifo ready // 393: Combine IRQ? 353: bit 0 will be always 1 (needs fix in FPGA)
+#define P_I2C_EOF        110 ///< 0:increment i2c sequencer at the SOF (same as ystem frame), 1 - increment early (at previous EOF)
 #define P_EXTERN_TIMESTAMP 111 ///< Use external timestamp (received with sync) when availabele, 0 - always use local timestamp
 #define P_OVERSIZE       112 ///< ignore sensor dimensions, use absolute WOI_LEFT, WOI_TOP
 #define P_XMIT_TIMESTAMP 113 ///< 0 - transmit just sync pulse, 1 - pulse+timestamp over the sync line
@@ -988,7 +991,8 @@ struct framepars_past_t {
 };
 
 /// All parameter data for a sensor port, including future ones and past. Size should be PAGE_SIZE aligned
-struct framepars_all_t {
+struct framepars_all_t
+{
     struct framepars_t      framePars[PARS_FRAMES];                ///< Future frame parameters
     struct framepars_t      func2call;                             ///< func2call.pars[] - each parameter has a 32-bit mask of what pgm_function to call - other fields not used
      unsigned long          globalPars[NUM_GPAR];                  ///< parameters that are not frame-related, their changes do not initiate any actions so they can be mmaped for both R/W
@@ -997,6 +1001,32 @@ struct framepars_all_t {
      unsigned long          multiSensRvrsIndex[P_MAX_PAR_ROUNDUP]; ///< reverse index (to parent) for the multiSensIndex in lower 16 bits, high 16 bits - sensor number
 };
 
+/// Parameters, common for all channels (trigger mode)
+struct common_pars_t{
+    unsigned long master_chn;            ///< Master channel (controlparameters through this channel) ([0] - value, [1] - frame)
+    unsigned long sensors[SENSOR_PORTS]; ///< detected sensors
+             long updated[SENSOR_PORTS]; ///< 0 no update, -1 - ASAP, SENSOR_PORTS - frame 0, 2*SENSOR_PORTS-1 - SENSOR_PORTS-1
+    unsigned long trig_period;           ///< Trigger period (in 100 MHz clocks
+    unsigned long trig_bitlength;        ///< duration of one bit minus 1 in 25MHz clocks, maximal value 255 (256*40ns)
+    unsigned long extern_timestamp;      ///< Use external (received) timestamp if available
+    unsigned long xmit_timestamp;        ///< Transmit timestamp with sync pulse
+    unsigned long trig_condition;        ///< Trigger condition (Each dibit:  0 - inactive, 1 - keep (nop), 2 - active low, 3 - active high)
+    unsigned long trig_out;              ///< trigger output    (Each dibit:  0 - inactive, 1 - keep (nop), 2 - active low, 3 - active high)
+    unsigned long trig_mode;             ///< trigger_mode (0: free running, 4 -  ERS snapshot, 20 - GRR
+};
+/*
+#define TRIGMODE_FREERUN  0
+#define TRIGMODE_SNAPSHOT 4
+#define TRIGMODE_GRR      20
+
+* TRIG_PERIOD  500 0x1f4
+* TRIG_BITLENGTH    31  0x1f
+* EXTERN_TIMESTAMP  1   0x1
+* XMIT_TIMESTAMP    0   0x0
+* TRIG_CONDITION    0   0x0
+* TRIG_OUT  0   0x0
+
+ */
 /// Key/value pair of parameters
 struct frameparspair_t {
         unsigned long num;           ///< parameter index ( as defined by P_* constants) ORed with "force new" (0x10000) - parameter value will be considered a new one
@@ -1073,6 +1103,7 @@ struct p_names_t {
 #define DEFINE_P_NAMES(x) struct p_names_t x[]= { \
           P_NAME_ENTRY(NUMBER), \
           P_NAME_ENTRY(SENSOR), \
+          P_NAME_ENTRY(TRIG_MASTER), \
           P_NAME_ENTRY(SENSOR_RUN), \
           P_NAME_ENTRY(SENSOR_SINGLE), \
           P_NAME_ENTRY(ACTUAL_WIDTH), \
@@ -1189,7 +1220,7 @@ struct p_names_t {
           P_NAME_ENTRY(SKIP_FRAMES), \
           P_NAME_ENTRY(I2C_QPERIOD), \
           P_NAME_ENTRY(I2C_BYTES), \
-          P_NAME_ENTRY(IRQ_SMART), \
+          P_NAME_ENTRY(I2C_EOF), \
           P_NAME_ENTRY(EXTERN_TIMESTAMP), \
           P_NAME_ENTRY(OVERSIZE), \
           P_NAME_ENTRY(XMIT_TIMESTAMP), \
@@ -1485,7 +1516,7 @@ struct p_names_t {
 #define      LSEEK_AUTOEXP_GET    0x1a ///< copy window and exposure parameters to autoexp_state
 #define      LSEEK_TRIGGER_PGM    0x1b ///< program trigger parameters
 #define      LSEEK_I2C_PGM        0x1c ///< program hardware i2c speed/bytes
-#define      LSEEK_IRQ_SMART_PGM  0x1d ///< program "smart" irq modes (+1 - wait VACT, +2 - wait dma fifo)
+#define      LSEEK_I2C_EOF_PGM    0x1d ///< program "smart" irq modes (+1 - wait VACT, +2 - wait dma fifo)
 #define      LSEEK_EXTERN_TIMESTAMP_PGM 0x1e ///< 1 - use external timestamps if available
 #define      LSEEK_DMA_INIT       0x1f ///< (re-) initialize ETRAX DMA for compressor
 #define      LSEEK_DMA_STOP       0x20 ///< STOP ETRAX DMA
@@ -1572,7 +1603,7 @@ struct p_names_t {
           LSEEK_NAME_ENTRY(AUTOEXP_GET), \
           LSEEK_NAME_ENTRY(TRIGGER_PGM), \
           LSEEK_NAME_ENTRY(I2C_PGM), \
-          LSEEK_NAME_ENTRY(IRQ_SMART_PGM), \
+          LSEEK_NAME_ENTRY(I2C_EOF_PGM), \
           LSEEK_NAME_ENTRY(EXTERN_TIMESTAMP_PGM), \
           LSEEK_NAME_ENTRY(DMA_INIT), \
           LSEEK_NAME_ENTRY(DMA_STOP), \
@@ -1956,8 +1987,19 @@ struct huffman_encoded_t {
 };
 
 /// All other integer constants exported to PHP space (C:"CONSTANT" -> PHP:"ELPHEL_CONST_CONSTANT)
+#define FRAME_ASAP  -1 // use in PHP to specify ASAP through normal sequencer (current frame plus minimal latency)
+#define FRAME_IMMED -2 // use in PHP to specify ASAP bypassing sequencer - works w/o frame sync pulses
+#define TRIGMODE_FREERUN  0
+#define TRIGMODE_SNAPSHOT 4
+#define TRIGMODE_GRR      20
+
 #define CONST_NAME_ENTRY(y) { y, #y }
 #define DEFINE_CONST_NAMES(x) struct p_names_t x[]= { \
+    CONST_NAME_ENTRY(FRAME_IMMED), \
+    CONST_NAME_ENTRY(FRAME_ASAP), \
+    CONST_NAME_ENTRY(TRIGMODE_FREERUN), \
+    CONST_NAME_ENTRY(TRIGMODE_SNAPSHOT), \
+    CONST_NAME_ENTRY(TRIGMODE_GRR), \
     CONST_NAME_ENTRY(SENSOR_RUN_STOP), \
     CONST_NAME_ENTRY(SENSOR_RUN_SINGLE), \
     CONST_NAME_ENTRY(SENSOR_RUN_CONT), \

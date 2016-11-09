@@ -1002,7 +1002,7 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   int i;
   int this_sensor_type;
   long * multiOutDelay;
-  x393_sens_mode_t sens_mode =  {.d32=0}; // to disable senosr channel and prevent SoF pulses while 10359 memory is being trained
+  x393_sens_mode_t sens_mode =  {.d32=0}; // to disable senor channel and prevent SoF pulses while 10359 memory is being trained
   sens_mode.chn_en =     0;
   sens_mode.chn_en_set = 1;
   X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_mode, sens_mode);
@@ -1030,6 +1030,7 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   if ((((bitstream_version ^ I2C359_MINVERSION) & 0xffff0000)!=0) || ((bitstream_version & 0xffff) < (I2C359_MINVERSION & 0xffff))) {
       dev_err(g_dev_ptr,"invalid 10359 bitstream version, found 0x%08lx, required >= 0x%08x\n",bitstream_version, I2C359_MINVERSION );
     setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType);
+    common_pars->sensors[sensor_port] =  sensor->sensorType;
     return -1;
   }
   dev_dbg(g_dev_ptr,"10359 bitstream version =0x%08lx\n",bitstream_version);
@@ -1129,6 +1130,7 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   if (GLOBALPARS(sensor_port,G_SENS_AVAIL)==0) {
       dev_warn(g_dev_ptr,"No supported sensors connected to 10359A board\n");
     setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType);
+    common_pars->sensors[sensor_port] =  sensor->sensorType;
     if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
     return 0;
   }

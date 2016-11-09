@@ -190,7 +190,25 @@ static DEFINE_SPINLOCK(framepars_lock_3); ///<
 /** Define array of pointers to locks - hardware allows concurrent writes to different ports tables */
 spinlock_t * framepars_locks[4] = {&framepars_lock_0, &framepars_lock_1, &framepars_lock_2, &framepars_lock_3};
 
+static struct common_pars_t scommon_pars = {
+        .master_chn =       0,
+        .sensors=           {0,0,0,0}, // maybe not needed (it is whom to notify of
+        .updated =          {0,0,0,0}, // set by master, cleared by other channels
+        .trig_period =      0,
+        .trig_bitlength =   0,
+        .extern_timestamp = 0,
+        .xmit_timestamp =   0,
+        .trig_condition =   0,
+        .trig_out =         0,
+        .trig_mode =        TRIGMODE_FREERUN
+};
+/*
+#define TRIGMODE_FREERUN  0
+#define TRIGMODE_SNAPSHOT 4
+#define TRIGMODE_GRR      20
 
+ */
+struct common_pars_t *common_pars = NULL;
 /* Remove after compilation OK */
 //struct sensorproc_t * sensorproc = NULL;
 //void compressor_interrupts (int on) {}
@@ -244,7 +262,7 @@ void init_framepars_ptr(int sensor_port)
 	aglobalPars[sensor_port] =         sFrameParsAll[sensor_port].globalPars;           // parameters that are not frame-related, their changes do not initiate any actions so they can be mmaped for both
 	amultiSensIndex[sensor_port] =     sFrameParsAll[sensor_port].multiSensIndex;      // indexes of individual sensor register shadows (first of 3) - now for all parameters, not just sensor ones
 	amultiSensRvrsIndex[sensor_port] = sFrameParsAll[sensor_port].multiSensRvrsIndex;  // reverse index (to parent) for the multiSensIndex
-
+	common_pars =                      &scommon_pars;
 }
 
 int        framepars_open(struct inode *inode, struct file *filp);
@@ -252,9 +270,11 @@ int        framepars_release(struct inode *inode, struct file *filp);
 loff_t     framepars_lseek(struct file * file, loff_t offset, int orig);
 ssize_t    framepars_write(struct file * file, const char * buf, size_t count, loff_t *off);
 int        framepars_mmap(struct file *file, struct vm_area_struct *vma);
+void       trigSlaveUpdate(int sensor_port);
 
 /**
  * @brief Reset hardware sequencers (i2c, command) and initialize framepars structure
+ * Does not seem to do anything with the sequencers
  */
 int initSequencers(int sensor_port)
 {
@@ -268,7 +288,7 @@ int initSequencers(int sensor_port)
     if (!hardware_initialized) {
         dev_dbg(g_devfp_ptr,"Configuring compressor DMA channels\n");
         dev_info(g_devfp_ptr,"Configuring compressor DMA channels\n");
-        init_compressor_dma(0xf, // all channels (TODO: NC393 - select channels in DT or use existing for sesnors?
+        init_compressor_dma(0xf, // all channels (TODO: NC393 - select channels in DT or use existing for sensors?
                               0); // not to interfere with python setting the same
         // Start RTC by writing 0 to seconds if it was not already set, otherwise preserve current time
         get_fpga_rtc(&sec_usec);
@@ -286,6 +306,31 @@ int initSequencers(int sensor_port)
 #endif
     initFramePars(sensor_port);
     return 0;
+}
+/** Enable/disable sesnor channel (will not generate SoF/EoF pulses and interrupts if disabled). Used to turn off missing channels */
+void enDisSensorChn(int sensor_port, ///< sensor_port sensor port number (0..3)
+                    int en)          ///< enable channel
+{
+    x393_sens_mode_t sens_mode =  {.d32=0};
+    sens_mode.chn_en =     en;
+    sens_mode.chn_en_set = 1;
+    x393_sens_mode(sens_mode,sensor_port);
+    dev_dbg(g_devfp_ptr,"enDisSensorChn(%d,%d)\n", sensor_port, en);
+}
+
+
+
+
+/** Stop frame sequencer, optionally disable interrupts also */
+void stopFrameSequencer(int sensor_port, ///< sensor_port sensor port number (0..3)
+                        int dis_int)     ///< disable interrupts
+{
+    x393_cmdframeseq_mode_t cmdframeseq_mode = {.d32=0};
+    // TODO: Add locking for sequence reset?
+    cmdframeseq_mode.run_cmd = 2; // Stop
+    if (dis_int) cmdframeseq_mode.interrupt_cmd = 2; // disable
+    x393_cmdframeseq_ctrl(cmdframeseq_mode, sensor_port);
+    dev_dbg(g_devfp_ptr,"Stop command sequencer for port= %d,  dis_int = %d\n", sensor_port, dis_int);
 }
 
 /** Reset absolute frame number \b thisFrameNumber to \b frame16, optionally reset/restart sequencer */
@@ -807,7 +852,7 @@ inline void _processParsASAP(int sensor_port,                   ///< sensor port
                 MDP(DBGB_FASAP,sensor_port,"Calling SENSOR-SPECIFIC  pgm_func[%d] ASAP, now frame = 0x%x\n",i,thisFrameNumber(sensor_port))
 				rslt = sensorproc->pgm_func[i + 32] (sensor_port, &(sensorproc->sensor), procpars, prevpars, -1);
 			}
-			if (rslt < 0) dev_warn(g_devfp_ptr,"%s:%d:%s - error=%d", __FILE__, __LINE__, __FUNCTION__, rslt);// Nothing to do with errors here - just report?
+			if (rslt < 0) dev_warn(g_devfp_ptr,"port %d: %s:%d:%s - error=%d",sensor_port,  __FILE__, __LINE__, __FUNCTION__, rslt);// Nothing to do with errors here - just report?
 			procpars->functions &= ~mask;
 			dev_dbg(g_devfp_ptr,"%s : port= %d, .functions=0x%08lx)\n",__func__, sensor_port, procpars->functions);
 			i++;
@@ -937,10 +982,14 @@ void _processPars(int sensor_port, struct sensorproc_t * sensorproc, int frame16
         dev_err(g_devfp_ptr,"port=%d frame16=%d sensorproc==NULL !!!! \n", sensor_port,  frame16);
         return;
     }
+    // Check if master channel updated trigger parameters, schedule them to be updated
+    trigSlaveUpdate(sensor_port); // that will possible schedule more parameters
     //    int spin_trylock(spinlock_t *lock);
     // first - do all ASAP tasks (they should not be done ahead of the corresponding interrupt!)
     //   dev_dbg(g_devfp_ptr,"%s before first _processParsASAP\n",__func__);
+
     _processParsASAP(sensor_port, sensorproc, frame16); // NC393: never gets here ? Only after _processParsSeq?
+
     if (debug_flags) {
         MDP(DBGB_FPPI,sensor_port,"(after first _processParsASAP),  frame16=%d, maxahead=%d\n",
                 frame16, maxahead)
@@ -1075,30 +1124,54 @@ unsigned long getThisFrameNumber(int sensor_port)
 
 
 /**
- * @brief Set parameters that will never change (usually after sensor discovery)
+ * @brief Set a single parameter to all frames (during sensor detection)
  * @param sensor_port sensor port number (0..3)
  * @param numPars number of parameters to set
  * @param pars array of parameters (number/value pairs)
  * @return always 0
  */
-int setFrameParsStatic(int sensor_port, int numPars, struct frameparspair_t * pars)
+int setFrameParStatic(int sensor_port,                     ///< sensor port number (0..3)
+                      unsigned long index,                 ///< parameter number
+                      unsigned long val)                   ///< parameter value to set
+                                                           ///< @return 0 - OK, -ERR_FRAMEPARS_BADINDEX
+
 {
-	int npar, nframe, index;
-	struct framepars_t *framepars = aframepars[sensor_port];
-	for (npar = 0; npar < numPars; npar++) {
-		index = pars[npar].num;
-		if (index > P_MAX_PAR) return -ERR_FRAMEPARS_BADINDEX;
-		for (nframe = 0; nframe < PARS_FRAMES; nframe++) {
-			framepars[nframe].pars[index] = pars[npar].val;
-		}
+    struct framepars_t *framepars = aframepars[sensor_port];
+    int nframe;
+    index &= 0xffff;  // get rid of any modifier (not applicable here)
+	if (index > P_MAX_PAR) return -ERR_FRAMEPARS_BADINDEX;
+    for (nframe = 0; nframe < PARS_FRAMES; nframe++) {
+        framepars[nframe].pars[index] = val;
 	}
 	return 0;
 }
+
+/**
+ * @brief Set parameters that will never change (usually after sensor discovery), other fields are supposed to be cleared
+ */
+int setFrameParsStatic(int sensor_port,               ///< sensor_port sensor port number (0..3)
+                       int numPars,                   ///< numPars number of parameters to set
+                       struct frameparspair_t * pars) ///< pars array of parameters (number/value pairs)
+                                                      ///< @return always 0
+{
+    int npar, nframe, index;
+    struct framepars_t *framepars = aframepars[sensor_port];
+    for (npar = 0; npar < numPars; npar++) {
+        index = pars[npar].num & 0xffff; // get rid of any modifier (not applicable here)
+        if (index > P_MAX_PAR) return -ERR_FRAMEPARS_BADINDEX;
+        for (nframe = 0; nframe < PARS_FRAMES; nframe++) {
+            framepars[nframe].pars[index] = pars[npar].val;
+        }
+    }
+    return 0;
+}
+
 
 /** Set parameters for the specified frame  (atomic, with interrupts off). Used from applications through driver write */
 //TODO: Check that writes never to the future or past frame (only 6 of 8 are allowed -> 14 of 16). Have seen just_this to flood all
 int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0..3)
                        unsigned long frameno,         ///< absolute (full) frame number parameters should be applied to
+                                                      ///< frameno = 0xffffffff => use maxlatency -1, frame = 0
                        int maxLatency,                ///< maximal command latency (parameters should be set not less than maxLatency ahead of the current frame)
                                                       ///< maxLatency < 0 - don't check latency (i.e. only commands that are not releted to particular frames),
                                                       ///< with negative and frameno< current frame will make it current, to use with ASAP
@@ -1113,6 +1186,12 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 	struct framepars_t *framepars = aframepars[sensor_port];
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 	int findex_this, findex_prev, findex_future, frame16;
+	if (frameno == 0xffffffff){
+	    maxLatency = -1;
+	    frameno = 0;
+	    dev_dbg(g_devfp_ptr,"port= %d, frameno was 0xffffffff, modifying maxLatency=0x%x, frameno = 0x%08lx\n",sensor_port, maxLatency, frameno);
+	}
+
     findex_this =  thisFrameNumber(sensor_port) & PARS_FRAMES_MASK;
     findex_prev = (findex_this - 1)  & PARS_FRAMES_MASK;
     findex_future = (findex_this - 2)  & PARS_FRAMES_MASK; // actually - fartherst in the future??
@@ -1228,6 +1307,9 @@ int setFrameParsAtomic(int sensor_port,               ///< sensor port number (0
 	}
 // Try to process parameters immediately after written. If 0, only non-ASAP will be processed to prevent
 // effects of uncertainty of when was it called relative to frame sync
+
+// ASAP - needed to set with sequencer is stopped!
+
 // Changed to all (don't care about uncertainty - they will trigger only if it is too late or during sensor detection/initialization)
 	debug_flags = 20; // enable debug print several times
 	if (!(get_globalParam(sensor_port, G_TASKLET_CTL) & (1 << TASKLET_CTL_NOSAME))) {
@@ -1371,6 +1453,33 @@ int setFrameParLocked(int sensor_port,                     ///< sensor port numb
     return rslt;
 }
 
+void trigSlaveUpdate(int sensor_port)  ///< sensor port number (0..3)
+{
+    struct framepars_t *framepars =  aframepars[sensor_port];
+    struct frameparspair_t pars_to_update[8];
+    int nupdate = 0;
+    int updated_period = 0;
+    while (common_pars->updated[sensor_port]) {
+        dev_dbg(g_devfp_ptr,"port= %d,  thisFrameNumber[%d] = %d\n", sensor_port, sensor_port, (int) thisFrameNumber(sensor_port));
+        common_pars->updated[sensor_port] = 0;
+        if (pars_to_update[nupdate  ].num != P_TRIG_PERIOD){ //???
+            updated_period = FRAMEPAIR_FORCE_PROC;
+        }
+        pars_to_update[nupdate  ].num= P_TRIG_MASTER ;                  pars_to_update[nupdate++].val = common_pars->master_chn;
+        pars_to_update[nupdate  ].num= P_TRIG_PERIOD | updated_period ; pars_to_update[nupdate++].val = common_pars->trig_period;
+        pars_to_update[nupdate  ].num= P_TRIG_BITLENGTH ;               pars_to_update[nupdate++].val = common_pars->trig_bitlength;
+        pars_to_update[nupdate  ].num= P_EXTERN_TIMESTAMP ;             pars_to_update[nupdate++].val = common_pars->extern_timestamp;
+        pars_to_update[nupdate  ].num= P_XMIT_TIMESTAMP ;               pars_to_update[nupdate++].val = common_pars->xmit_timestamp;
+        pars_to_update[nupdate  ].num= P_TRIG_CONDITION ;               pars_to_update[nupdate++].val = common_pars->trig_condition;
+        pars_to_update[nupdate  ].num= P_TRIG_OUT ;                     pars_to_update[nupdate++].val = common_pars->trig_out;
+        pars_to_update[nupdate  ].num= P_TRIG ;                         pars_to_update[nupdate++].val = common_pars->trig_mode;
+//        if (nupdate)  setFramePars(sensor_port, &framepars[frame16], nupdate, pars_to_update);  // save changes, schedule functions
+        if (nupdate)  setFramePars(sensor_port, &framepars[thisFrameNumber(sensor_port)], nupdate, pars_to_update);  // save changes, schedule functions
+
+    }
+}
+
+
 /** Set multiple output (calculated) parameters for the frame referenced by this_framepars structure.
  * Schedules action only if the FRAMEPAIR_FORCE_PROC modifier bit is set in the particular parameter index
  * Called from tasklets (while executing (*_)pgm_* functions
@@ -1383,7 +1492,7 @@ int setFramePars(int sensor_port,                     ///< sensor port number (0
                                                       ///< @return  0 - OK, -ERR_FRAMEPARS_BADINDEX
 {
 	int frame16;
-//	unsigned long flags; should only be called when interruypts disabled and lock obtained
+//	unsigned long flags; should only be called when interrupts disabled and lock obtained
 	int npar, nframe;
 	unsigned long val, bmask, bmask32;
 	int index, bindex;
@@ -1400,7 +1509,7 @@ int setFramePars(int sensor_port,                     ///< sensor port number (0
 		frame16 = (this_framepars->pars[P_FRAME]) & PARS_FRAMES_MASK;
 		val = pars[npar].val;
 		index = pars[npar].num & 0xffff;
-		dev_dbg(g_devfp_ptr, ":    ---   frame16=%d index=%d (0x%x) val=0x%x\n", frame16, index, (int)pars[npar].num, (int)val);
+		dev_dbg(g_devfp_ptr, ":    ---   frame16=%d index=%d (0x%x) val=0x%x, findex_future = 0x%x\n", frame16, index, (int)pars[npar].num, (int)val, findex_future);
 	    MDP(DBGB_FSFV,sensor_port,"  ---   frame16=%d index=%d (0x%x) val=0x%x\n", frame16, index, (int)pars[npar].num, (int)val)
 		// remark: code below looks similar to setFramePar function, call it instead
 		if (index > ((index >= FRAMEPAR_GLOBALS) ? (P_MAX_GPAR + FRAMEPAR_GLOBALS) : P_MAX_PAR)) {
@@ -1419,6 +1528,7 @@ int setFramePars(int sensor_port,                     ///< sensor port number (0
 				val = FRAMEPAIR_FRAME_MASK_NEW(pars[npar].num, framepars[frame16].pars[index], val);
 			}
 //TODO: optimize to use mask several parameters together
+	        dev_dbg(g_devfp_ptr, "{%d}:  framepars[%d].pars[0x%x] = 0x%x, val=0x%x\n", sensor_port, frame16, index, (int) framepars[frame16].pars[index], (int)val);
 			if ((framepars[frame16].pars[index] != val) || (pars[npar].num & (FRAMEPAIR_FORCE_NEW | FRAMEPAIR_FORCE_PROC))) {
 				bmask =   1 << (index & 31);
 				bindex = index >> 5;
@@ -1430,6 +1540,7 @@ int setFramePars(int sensor_port,                     ///< sensor port number (0
 				if (pars[npar].num & FRAMEPAIR_FORCE_PROC) {
 					framepars[frame16].functions        |= funcs2call[index]; //Mark which functions will be needed to process the parameters
 				}
+	            dev_dbg(g_devfp_ptr, "{%d}:  framepars[%d].functions=0x%x\n", sensor_port, frame16, (int) framepars[frame16].functions);
 // Write parameter to the next frames up to the one that have the same parameter already modified (only if not FRAMEPAIR_JUST_THIS)
 				if ((pars[npar].num & FRAMEPAIR_JUST_THIS) == 0) {
 //					MDF8(printk(":        ---   setting next frames"));
@@ -1683,7 +1794,9 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 	int latency = -1;
 	int first = 0;
 	int last;
-	int result;
+	int result = 0;
+	int port_mask=0; // to apply to several channels simultaneously
+	unsigned long frames[SENSOR_PORTS];
 	sec_usec_t sec_usec;
 //	dev_dbg(g_devfp_ptr,"%s : file->f_pos=0x%x, *off=0x%x, count=0x%x\n",__func__, (int)file->f_pos, (int)*off, (int)count);
     dev_dbg(g_devfp_ptr, "file->f_pos=0x%x, *off=0x%x, count=0x%x, minor=0x%x\n",
@@ -1709,12 +1822,53 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 			}
 			while (first < count) {
 				while ((first < count) && ((pars[first].num & 0xff00) == 0xff00)) { // process special instructions
-					switch (pars[first].num & 0xffff) {
+				    dev_dbg(g_devfp_ptr, "pars[%d].num = 0x%lx pars[%d].val = 0x%lx\n",first,pars[first].num, first,pars[first].val);
+					switch (pars[first].num & 0xff0f) {
+#if 0
 					case FRAMEPARS_SETFRAME:
 						frame = pars[first].val;
+						port_mask = (pars[first].num >> 4) & ((1 << SENSOR_PORTS) - 1);
+						if (port_mask){
+						    // Retry if got different results - mostly for in-sync running sensors and just swicthed
+						    // TODO: What to do: triggered sensors have frame sync delayed by exposure time from the common trigger
+						    int frames_diff=1;
+                            int ii;
+						    for (ii =0; ii < SENSOR_PORTS; ii++) frames[ii] = 0xffffffff;
+						    while (frames_diff) {
+						        frames_diff = 0;
+						        frame = pars[first].val;
+						        //TODO: Disable interrupts here to freeze frame difference
+						        for (ii =0; ii < SENSOR_PORTS; ii++){
+                                    frame = pars[first].val + getThisFrameNumber(ii) - getThisFrameNumber(sensor_port);
+                                    if (frame != frames[ii]) frames_diff = 1;
+						            frames[ii] = frame;
+						        }
+						    }
+						}
 						break;
+#endif
+                    case FRAMEPARS_SETFRAME:
+                        frame = pars[first].val;
+                        port_mask = (pars[first].num >> 4) & ((1 << SENSOR_PORTS) - 1);
+                        // No correction - frames should be exctly synchronized to work this way, otherwise use relative
+                        if (port_mask){
+                            int ii;
+                            for (ii =0; ii < SENSOR_PORTS; ii++) if (port_mask & (1 << ii)){
+                                frames[ii] = frame;
+                            }
+                        }
+                        dev_dbg(g_devfp_ptr, "port_mask=0x%x frames[0]=0x%lx frames[1]=0x%lx frames[2]=0x%lx frames[3]=0x%lx\n",
+                                port_mask, frames[0], frames[1], frames[2], frames[3]);
+                        break;
 					case FRAMEPARS_SETFRAMEREL:
 						frame = pars[first].val + getThisFrameNumber(sensor_port);
+                        port_mask = (pars[first].num >> 4) & ((1 << SENSOR_PORTS) - 1);
+                        if (port_mask){
+                            int ii;
+                            for (ii =0; ii < SENSOR_PORTS; ii++) if (port_mask & (1 << ii)){
+                                frames[ii] = pars[first].val + getThisFrameNumber(ii);
+                            }
+                        }
 						break;
 					case FRAMEPARS_SETLATENCY:
 						latency = (pars[first].val & 0x80000000) ? -1 : pars[first].val;
@@ -1742,11 +1896,23 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 				}
 				last = first + 1;
 				while ((last < count) && ((pars[last].num & 0xff00) != 0xff00)) last++;  // skip to the end or next special instructions
-                dev_dbg(g_devfp_ptr, "0x%x: setFrameParsAtomic(%ld, %d, %d)\n",
-                        (int) privData->minor, frame, latency, last - first);
-                MDP(DBGB_FFOP, sensor_port, "0x%x: setFrameParsAtomic(%ld, %d, %d)\n",
-                        (int) privData->minor, frame, latency, last - first)
-				result = setFrameParsAtomic(sensor_port,frame, latency, last - first, &pars[first]);
+                if (port_mask) {
+                    int ii;
+                    dev_dbg(g_devfp_ptr, "0x%x: port_mask=0x%x\n", (int) privData->minor, port_mask);
+                    for (ii =0; ii < SENSOR_PORTS; ii++) if (port_mask & (1 << ii)){
+                        dev_dbg(g_devfp_ptr, "0x%x: setFrameParsAtomic(%d, %ld, %d, %d)\n",
+                                (int) privData->minor, ii, frame, latency, last - first);
+                        MDP(DBGB_FFOP, sensor_port, "0x%x: setFrameParsAtomic(%d, %ld, %d, %d)\n",
+                                (int) privData->minor, ii, frame, latency, last - first)
+                        result |= setFrameParsAtomic(ii, frames[ii], latency, last - first, &pars[first]);
+                    }
+                } else {
+                    dev_dbg(g_devfp_ptr, "0x%x: setFrameParsAtomic(%ld, %d, %d)\n",
+                            (int) privData->minor, frame, latency, last - first);
+                    MDP(DBGB_FFOP, sensor_port, "0x%x: setFrameParsAtomic(%ld, %d, %d)\n",
+                            (int) privData->minor, frame, latency, last - first)
+                    result = setFrameParsAtomic(sensor_port,frame, latency, last - first, &pars[first]);
+                }
 				if (result < 0) {
 					if (count > sizeof(pars_static)) kfree(pars);
 					return -EFAULT;
@@ -1819,10 +1985,24 @@ static ssize_t store_this_frame(struct device *dev, struct device_attribute *att
                          aframe,
                          (aframe < PARS_FRAMES)?1:0); // reset hardware if aframe is small
     } else {
+        stopFrameSequencer(get_channel_from_name(attr), 1); // 0); // do not disable interrupts here?
+//        return - EINVAL;
+    }
+    return count;
+}
+static ssize_t store_endis_chn(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    u32 en;
+    if (sscanf(buf, "%u", &en)>0) {
+        enDisSensorChn(get_channel_from_name(attr),en);
+    } else {
         return - EINVAL;
     }
     return count;
 }
+
+
+
 //    sscanf(buf, "%i", &buffer_settings.frame_start[get_channel_from_name(attr)], &len);
 
 static ssize_t show_fpga_time(struct device *dev, struct device_attribute *attr, char *buf)
@@ -1894,6 +2074,15 @@ static DEVICE_ATTR(this_frame0,               SYSFS_PERMISSIONS,     show_this_f
 static DEVICE_ATTR(this_frame1,               SYSFS_PERMISSIONS,     show_this_frame,                store_this_frame);
 static DEVICE_ATTR(this_frame2,               SYSFS_PERMISSIONS,     show_this_frame,                store_this_frame);
 static DEVICE_ATTR(this_frame3,               SYSFS_PERMISSIONS,     show_this_frame,                store_this_frame);
+static DEVICE_ATTR(chn_en0,                   SYSFS_PERMISSIONS,     NULL,                           store_endis_chn);
+static DEVICE_ATTR(chn_en1,                   SYSFS_PERMISSIONS,     NULL,                           store_endis_chn);
+static DEVICE_ATTR(chn_en2,                   SYSFS_PERMISSIONS,     NULL,                           store_endis_chn);
+static DEVICE_ATTR(chn_en3,                   SYSFS_PERMISSIONS,     NULL,                           store_endis_chn);
+//static DEVICE_ATTR(chn_en0,                 SYSFS_WRITEONLY,       NULL,                           store_endis_chn);
+//static DEVICE_ATTR(chn_en1,                 SYSFS_WRITEONLY,       NULL,                           store_endis_chn);
+//static DEVICE_ATTR(chn_en2,                 SYSFS_WRITEONLY,       NULL,                           store_endis_chn);
+//static DEVICE_ATTR(chn_en3,                 SYSFS_WRITEONLY,       NULL,                           store_endis_chn);
+
 static DEVICE_ATTR(all_frames,                SYSFS_READONLY,        show_all_frames,                NULL);
 static DEVICE_ATTR(fpga_time,                 SYSFS_PERMISSIONS,     show_fpga_time,                 store_fpga_time);
 
@@ -1904,6 +2093,10 @@ static struct attribute *root_dev_attrs[] = {
         &dev_attr_this_frame3.attr,
         &dev_attr_all_frames.attr,
         &dev_attr_fpga_time.attr,
+        &dev_attr_chn_en0.attr,
+        &dev_attr_chn_en1.attr,
+        &dev_attr_chn_en2.attr,
+        &dev_attr_chn_en3.attr,
         NULL
 };
 
