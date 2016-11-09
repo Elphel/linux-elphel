@@ -151,7 +151,16 @@ static void sdhci_set_card_detection(struct sdhci_host *host, bool enable)
 
 	if (enable) {
 		present = sdhci_readl(host, SDHCI_PRESENT_STATE) &
-				      SDHCI_DAT3_PRESENT;
+				SDHCI_ANY_PRESENT;
+
+		/* oleg's debug
+		if (!present){
+			pr_err("Forcing Card Present\n");
+			present = SDHCI_ANY_PRESENT;
+		}else{
+			pr_err("Card Is Present\n");
+		}
+		*/
 
 		host->ier |= present ? SDHCI_INT_CARD_REMOVE :
 				       SDHCI_INT_CARD_INSERT;
@@ -207,9 +216,13 @@ static void sdhci_do_reset(struct sdhci_host *host, u8 mask)
 {
 	if (host->quirks & SDHCI_QUIRK_NO_CARD_NO_RESET) {
 		if (!(sdhci_readl(host, SDHCI_PRESENT_STATE) &
-			SDHCI_DAT3_PRESENT))
+				SDHCI_ANY_PRESENT)){
+			// oleg's debug
+			//pr_err("!!!!!sdhci_doNOT_reset!!!!");
 			return;
+		}
 	}
+	//pr_err("!!!!!sdhci_do_reset!!!!");
 
 	host->ops->reset(host, mask);
 
@@ -1395,10 +1408,19 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 			present = 1;
 		else
 			present = sdhci_readl(host, SDHCI_PRESENT_STATE) &
-					SDHCI_DAT3_PRESENT;
+			SDHCI_ANY_PRESENT;
 	}
 
+	/*oleg's debug
+	if (!present){
+		pr_err("sdhci card request: card not present?\n");
+		present = 1;
+	}else{
+		pr_err("sdhci card request: CARD IS PRESENT: 0x%08x\n",present);
+	}
+	*/
 	if (!present || host->flags & SDHCI_DEVICE_DEAD) {
+
 		host->mrq->cmd->error = -ENOMEDIUM;
 		tasklet_schedule(&host->finish_tasklet);
 	} else {
@@ -1651,6 +1673,7 @@ static void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 static int sdhci_do_get_cd(struct sdhci_host *host)
 {
 	int gpio_cd = mmc_gpio_get_cd(host->mmc);
+	int present;
 
 	if (host->flags & SDHCI_DEVICE_DEAD)
 		return 0;
@@ -1664,8 +1687,18 @@ static int sdhci_do_get_cd(struct sdhci_host *host)
 	if (!IS_ERR_VALUE(gpio_cd))
 		return !!gpio_cd;
 
+	present = !!(sdhci_readl(host, SDHCI_PRESENT_STATE) & SDHCI_ANY_PRESENT);
+
+	/* oleg's debug
+	if (!present){
+		pr_err("sdhci_do_get_cd: card not present\n");
+		present = 1;
+	}else{
+		pr_err("sdhci_do_get_cd: CARD IS PRESENT\n");
+	}
+	*/
 	/* Host native card detect */
-	return !!(sdhci_readl(host, SDHCI_PRESENT_STATE) & SDHCI_DAT3_PRESENT);
+	return present;
 }
 
 static int sdhci_get_cd(struct mmc_host *mmc)
@@ -2606,7 +2639,16 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
 
 		if (intmask & (SDHCI_INT_CARD_INSERT | SDHCI_INT_CARD_REMOVE)) {
 			u32 present = sdhci_readl(host, SDHCI_PRESENT_STATE) &
-				      SDHCI_DAT3_PRESENT;
+					SDHCI_ANY_PRESENT;
+
+			/*
+			if (!present){
+				pr_err("sdhci_irq: card not present\n");
+				present = 1;
+			}else{
+				pr_err("sdhci_irq: card is present\n");
+			}
+			*/
 
 			/*
 			 * There is a observation on i.mx esdhc.  INSERT
