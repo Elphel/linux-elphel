@@ -1264,7 +1264,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
         dev_dbg(g_dev_ptr,"{%d}  P_CLK_SENSOR == 0, abort command\n",sensor_port);
         return -1;
     }
-    if (thispars->pars[P_TRIG_PERIOD] !=1) { // <256 - single trig, here only ==1 is for single
+    if (thispars->pars[P_TRIG_PERIOD] >1 ) { // <256 - single trig, here only ==1 is for single
         min_period_camsync = sensor_to_camsync(min_period, thispars->pars[P_CLK_SENSOR]);
         if (thispars->pars[P_TRIG_PERIOD] < min_period_camsync) SETFRAMEPARS_SET(P_TRIG_PERIOD, min_period_camsync);  // set it (and propagate to the later frames)
         //        if (async &&  (thispars->pars[P_FPSFLAGS] & 2) && (thispars->pars[P_TRIG_PERIOD] > period)) {
@@ -1273,6 +1273,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
             if (thispars->pars[P_TRIG_PERIOD] > period_camsync) {
                 SETFRAMEPARS_SET(P_TRIG_PERIOD, period_camsync);  // set it (and propagate to the later frames)
                 MDP(DBGB_PADD, sensor_port,"SETFRAMEPARS_SET(P_TRIG_PERIOD, 0x%x)\n", period_camsync)
+                dev_dbg(g_dev_ptr,"{%d} SETFRAMEPARS_SET(P_TRIG_PERIOD, 0x%x) - was too low\n", sensor_port, period_camsync);
             }
         }
     }
