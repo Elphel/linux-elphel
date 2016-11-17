@@ -322,7 +322,7 @@ int control_compressor_memory (int num_sensor,       ///< sensor port number (0.
        break;
    case COMPRESSOR_RUN_CONT:
        break;
-   case SENSOR_RUN_RESET:
+   case COMPRESSOR_RUN_RESET:
        mcntrl_mode.chn_nreset = 0;
        mcntrl_mode.enable = 0;
        break;
