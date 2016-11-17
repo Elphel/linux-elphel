@@ -1164,7 +1164,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-    cycles=thispars->pars[P_TILES]; // number of tiles
+    cycles=thispars->pars[P_TILES]; // number of tiles nc393: [P_TILES] == 0!
     //  dev_dbg(g_dev_ptr,"{%d}  tiles=%d(0x%x)\n",sensor_port,cycles,cycles);
     switch (thispars->pars[P_COLOR] & 0x0f){
     case COLORMODE_MONO6:
@@ -1239,7 +1239,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
         dev_dbg(g_dev_ptr,"{%d} period =%d(0x%x)\n",sensor_port,period,period);
 #endif
     }
-    dev_dbg(g_dev_ptr,"{%d}  period=%d\n",sensor_port,period);
+    dev_dbg(g_dev_ptr,"{%d}  period=%d\n", sensor_port, period);
     MDP(DBGB_PADD, sensor_port,"period =%d(0x%x)\n", period, period)
     if ((thispars->pars[P_FPSFLAGS] & 1) && (period>min_period)) min_period=period;
     // *********************************************************** P_PF_HEIGHT
@@ -2025,7 +2025,7 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     int tile_height; // 16/18 (20 not yet implemented)
     x393_cmprs_frame_format_t cmprs_frame_format ={.d32=0};
 
-    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, pars[P_COLOR]=0x%x\n",sensor_port,frame16, (int)thispars->pars[P_COLOR]);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     width_marg = thispars->pars[P_ACTUAL_WIDTH];
@@ -2067,17 +2067,20 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
 //                             height_marg,       // 16-bit window height (in scan lines)
                              0,                 // 13-bit window left margin in 8-bursts (16 bytes)
                              cmprs_top,         // 16-bit window top margin (in scan lines
-                             tile_width,        // tile width in bjursts (16-pixels each)
+                             tile_width,        // tile width in bursts (16-pixels each)
                              tile_height,       // tile height: 18 for color JPEG, 16 for JP4 flavors // = 18
                              16,                // tile vertical step in pixel rows (JPEG18/jp4 = 16) // = 16
                              (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
                              frame16);          // Frame number the command should be applied to (if not immediate mode)
 
     X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_format, cmprs_frame_format);
+    dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_cmprs_format,  0x%x)\n",
+            sensor_port, sensor_port, frame16, cmprs_frame_format.d32);
+//  update P_TILES
+    setFramePar(sensor_port, thispars, P_TILES,
+            (cmprs_frame_format.num_macro_cols_m1+1)*(cmprs_frame_format.num_macro_rows_m1+1));
     return 0;
 // TODO: Do we need to maintain P_IMGSZMEM ?
-// #define P_PAGE_ACQ      18 ///< Number of image page buffer to acquire to (0.1?)
-// #define P_PAGE_READ     19 ///< Number of image page buffer to read from to (0.1?)
 
 #else
 

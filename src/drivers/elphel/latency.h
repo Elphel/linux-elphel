@@ -164,6 +164,8 @@ const unsigned long ahead_tab[]=
 // NC393 - triggered mode wants   onchange_compstop==2, while onchange_window == 1?
 //  onchange_compstop,      0,    2,    1,    2,    1,   0, /// stop compressor when changing geometry
 ///  onchange_compstop,      0,    2,    1,    1,    1,   0, /// stop compressor when changing geometry
+
+// TODO: NC393 now comstop is used when changing color modes does not need two cycles - just 1
   onchange_compstop,      0,    2,    2,    2,    2,   0, /// stop compressor when changing geometry
   onchange_compctl,       0,    0,    1,    1,    1,   0, /// only start/stop/single (after explicitly changed, not when geometry was changed)
 //  onchange_gammaload,     1,    0,    0,    0,    0,   0, /// write gamma tables (should be prepared). Maybe - just last byte, to activate?

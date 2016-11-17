@@ -291,7 +291,7 @@
   #define COMPRESSOR_RUN_STOP   0   ///< Compressor mode: STOP
   #define COMPRESSOR_RUN_SINGLE 1   ///< Compressor mode: SINGLE
   #define COMPRESSOR_RUN_CONT   2   ///< Compressor mode: RUN
-  #define COMPRESSOR_RUN_RESET  2   ///< Compressor mode: RESET
+  #define COMPRESSOR_RUN_RESET  3   ///< Compressor mode: RESET
 
 #define P_BAYER          6 ///< filter number at (0,0) 0-R, 1-G(R), 2-G(B), 3 - B. Write enabled at first, move to WindowSize later
 #define P_TRIGGERED	     7 ///< when trigger occured - 4 LSBs - pixel in DMA word, higher bits - number of DMA word OBSOLETE
