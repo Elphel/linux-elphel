@@ -1000,6 +1000,7 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
                                                                ///< @return 0 - OK, negative - error
 {
     int i,dv,dh,bv,bh,ww,wh,wl,wt,flip,flipX,flipY,d, v;
+    int compressor_margin; // 0 for JP4, 2 for JPEG
     struct frameparspair_t  pars_to_update[29];
     int nupdate=0;
     int styp = sensor->sensorType & 7;
@@ -1011,6 +1012,7 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
     bv=  thispars->pars[P_BIN_VERT];
     ww=  thispars->pars[P_SENSOR_PIXH] * dh;
     wh=  thispars->pars[P_SENSOR_PIXV] * dv;
+    compressor_margin = (thispars->pars[P_SENSOR_PIXH] - thispars->pars[P_WOI_WIDTH]) >> 1; // assuming same for H and V
     flip=((thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1) << 1 )) ^ sensor->init_flips; // 10338 is _not_ flipped (as the ther boards, but for legacy compatibility....)
     flipX =  flip & 1;
     flipY = (flip & 2)? 1:0;
@@ -1037,8 +1039,10 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_HEIGHT, (int) wh-1);
     }
     // Margins
-    wl = thispars->pars[P_WOI_LEFT];
-    wt = thispars->pars[P_WOI_TOP];
+    wl = thispars->pars[P_WOI_LEFT] - compressor_margin;
+    wt = thispars->pars[P_WOI_TOP]  - compressor_margin;
+    dev_dbg(g_dev_ptr,"{%d}   wl =0x%x, wt=0x%x, ww=0x%x, wh=0x%x, compressor_margin=0x%x\n",sensor_port, wl, wt, ww, wh, compressor_margin);
+
     // flip margins for mirrored images (except oversized, not to rely on sensor->clearWidth/sensor->clearHeight
     if (!thispars->pars[P_OVERSIZE]) {
         if(flipX) {
@@ -1052,6 +1056,7 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
         // apply clearTop/clearLeft
         wt = (wt + sensor->clearTop) & 0xfffe;
         wl = (wl + sensor->clearLeft) & 0xfffe;
+        dev_dbg(g_dev_ptr,"{%d}   wl =0x%x, wt=0x%x\n",sensor_port, wl, wt);
         // apply binning restrictions
         switch(styp) {
         case MT9P_TYP:
