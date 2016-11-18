@@ -942,7 +942,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
 													   ///< be applied to,  negative - ASAP
 													   ///< @return always 0
 {
-    int dv,dh,bv,bh,width,height,timestamp_len,oversize,pfh,pf_stripes,ah, left,top,is_color;
+    int dv,dh,bv,bh,width,height,timestamp_len,oversize,pfh,pf_stripes,ah, left,top,is_color,margins;
     int sensor_width;
     int sensor_height;
     struct frameparspair_t pars_to_update[18]; // 15 needed, increase if more entries will be added
@@ -956,11 +956,15 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     sensor_height=thispars->pars[P_SENSOR_HEIGHT];
     oversize=thispars->pars[P_OVERSIZE];
     is_color=1;
-
+    margins = 0;
     switch (thispars->pars[P_COLOR] & 0x0f){
     case COLORMODE_MONO6:
     case COLORMODE_MONO4:
         is_color=0;
+        break;
+    case COLORMODE_COLOR:
+    case COLORMODE_COLOR20:
+        margins = COLOR_MARGINS;
     }
     // flips changed?
     if (FRAMEPAR_MODIFIED(P_FLIPH)) {
@@ -1021,8 +1025,8 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     if (unlikely(thispars->pars[P_ACTUAL_WIDTH] != (width+timestamp_len))) {
         SETFRAMEPARS_SET(P_ACTUAL_WIDTH, width+timestamp_len); ///full width for the compressor, including timestamp, but excluding margins
     }
-    if (unlikely(thispars->pars[P_SENSOR_PIXH] != width+(2 * COLOR_MARGINS)))
-        SETFRAMEPARS_SET(P_SENSOR_PIXH,  width+(2 * COLOR_MARGINS)); ///full width for the sensor (after decimation), including margins
+    if (unlikely(thispars->pars[P_SENSOR_PIXH] != width+(2 * margins)))
+        SETFRAMEPARS_SET(P_SENSOR_PIXH,  width+(2 * margins)); ///full width for the sensor (after decimation), including margins
     width*=dh;
     if (unlikely(thispars->pars[P_WOI_WIDTH] != width))
         SETFRAMEPARS_SET(P_WOI_WIDTH, width);  // WOI width, as specified (corrected for the sensor if needed)
@@ -1046,8 +1050,8 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
         height= ((height/dv)/X393_TILEVERT) * X393_TILEVERT; // divided by dv (before multisensor options)
         // suppose minimal height refers to decimated output
         while (height < sensor->minHeight) height+=X393_TILEVERT;
-        if (unlikely(thispars->pars[P_SENSOR_PIXV] != height+(2 * COLOR_MARGINS)))
-            SETFRAMEPARS_SET(P_SENSOR_PIXV,  height+(2 * COLOR_MARGINS)); ///full height for the sensor (after decimation), including margins
+        if (unlikely(thispars->pars[P_SENSOR_PIXV] != height+(2 * margins)))
+            SETFRAMEPARS_SET(P_SENSOR_PIXV,  height+(2 * margins)); ///full height for the sensor (after decimation), including margins
         height*=dv;
         pf_stripes = 0;
         pfh = 0;
@@ -1075,8 +1079,8 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     left = thispars->pars[P_WOI_LEFT];
     if (!oversize) { // in oversize mode let user to specify any margin, including odd ones (bayer shifted)
         if (is_color)                    left &= 0xfffe;
-        if ((left + width + (2 * COLOR_MARGINS)) > sensor->clearWidth) {
-            left = sensor->clearWidth - width - (2 * COLOR_MARGINS);
+        if ((left + width + (2 * margins)) > sensor->clearWidth) {
+            left = sensor->clearWidth - width - (2 * margins);
             if (is_color)               left &= 0xfffe;
         }
         if (left & 0x8000) left = 0;
@@ -1093,8 +1097,8 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     clearHeight=(sensor->clearHeight-sensor->imageHeight) + thispars->pars[P_SENSOR_HEIGHT];
     if (!oversize) { // in oversize mode let user to specify any margin, including odd ones (bayer shifted)
         if (is_color)                    top &= 0xfffe;
-        if ((top + ((pfh>0)?0:height) + (2 * COLOR_MARGINS)) > clearHeight) {
-            top = clearHeight - ((pfh>0)?0:height) - (2 * COLOR_MARGINS);
+        if ((top + ((pfh>0)?0:height) + (2 * margins)) > clearHeight) {
+            top = clearHeight - ((pfh>0)?0:height) - (2 * margins);
             if (is_color)               top &= 0xfffe;
         }
         if (top & 0x8000) top = 0;
@@ -1360,11 +1364,19 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     int n_scan_lines; //, n_ph_lines;
     int flips;
     int bayer_modified;
+    int margins;
     x393_mcntrl_frame_start_dly_t start_dly ={.d32=0};
 
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+    margins = 0;
+    switch (thispars->pars[P_COLOR] & 0x0f){
+    case COLORMODE_COLOR:
+    case COLORMODE_COLOR20:
+        margins = COLOR_MARGINS;
+    }
+
     if (FRAMEPAR_MODIFIED(P_BITS)){
         sens_mode.bit16 = thispars->pars[P_BITS];
         sens_mode.bit16_set = 1;
@@ -1383,7 +1395,7 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     }
     // Writing WOI width for internally generated HACT
     if (thispars->pars[P_FRAMESYNC_DLY] & 0x10000) { /// set enforced HACT length, if 0 - use HACT from sensor
-        sensio_width.sensor_width = thispars->pars[P_ACTUAL_WIDTH]+(2 * COLOR_MARGINS);
+        sensio_width.sensor_width = thispars->pars[P_ACTUAL_WIDTH]+(2 * margins);
     }
     X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_width, sensio_width);
     dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_width,  0x%x)\n",
@@ -1398,7 +1410,7 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
         n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]; // no margins here
     } else {
         // temporary hack trying to disable PH mode earlier
-        n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]+(2 * COLOR_MARGINS)+thispars->pars[P_OVERLAP];
+        n_scan_lines= thispars->pars[P_ACTUAL_HEIGHT]+(2 * margins)+thispars->pars[P_OVERLAP];
     }
     X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_sync_mult, sync_mult);
     dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_sync_mult,  0x%x)\n",

@@ -2005,6 +2005,29 @@ static ssize_t store_endis_chn(struct device *dev, struct device_attribute *attr
 
 //    sscanf(buf, "%i", &buffer_settings.frame_start[get_channel_from_name(attr)], &len);
 
+static ssize_t show_fpga_version(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    if (!hardware_initialized)
+        return -EBUSY;
+    return sprintf(buf,"0x%08lx\n", x393_fpga_version());
+}
+
+static ssize_t show_fpga_sensor_interface(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    if (!hardware_initialized)
+        return -EBUSY;
+    switch (x393_sensor_interface()){
+    case 0:
+        return sprintf(buf,"PAR12\n");
+    case 1:
+        return sprintf(buf,"HISPI\n");
+    default:
+        return sprintf(buf,"0x%08%lx\n", x393_sensor_interface());
+    }
+}
+
+
+
 static ssize_t show_fpga_time(struct device *dev, struct device_attribute *attr, char *buf)
 {
     sec_usec_t sec_usec;
@@ -2085,6 +2108,8 @@ static DEVICE_ATTR(chn_en3,                   SYSFS_PERMISSIONS,     NULL,      
 
 static DEVICE_ATTR(all_frames,                SYSFS_READONLY,        show_all_frames,                NULL);
 static DEVICE_ATTR(fpga_time,                 SYSFS_PERMISSIONS,     show_fpga_time,                 store_fpga_time);
+static DEVICE_ATTR(fpga_version,              SYSFS_READONLY,        show_fpga_version,              NULL);
+static DEVICE_ATTR(fpga_sensor_interface,     SYSFS_READONLY,        show_fpga_sensor_interface,     NULL);
 
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_this_frame0.attr,
@@ -2097,6 +2122,8 @@ static struct attribute *root_dev_attrs[] = {
         &dev_attr_chn_en1.attr,
         &dev_attr_chn_en2.attr,
         &dev_attr_chn_en3.attr,
+        &dev_attr_fpga_version.attr,
+        &dev_attr_fpga_sensor_interface.attr,
         NULL
 };
 
