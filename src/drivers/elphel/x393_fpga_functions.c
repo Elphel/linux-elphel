@@ -180,6 +180,7 @@ sec_usec_t * get_fpga_rtc(sec_usec_t * ts) ///< Pointer to a sec/usec structure 
     spin_unlock_bh(&fpga_time_lock);
     return ts;
 }
+EXPORT_SYMBOL_GPL(get_fpga_rtc);
 
 /** Set FPGA RTC to specified time */
 int set_fpga_rtc (sec_usec_t ts) ///< timestamp providing seconds and microseconds
