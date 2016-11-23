@@ -111,6 +111,36 @@ static int elphel_check_load(struct device *dev)
 	return ret;
 }
 
+/** Calculate the difference between two time stamps and return it in microseconds */
+static unsigned long time_diff_usec(sec_usec_t *start_time, sec_usec_t *end_time)
+{
+	unsigned long time_us;
+	const unsigned long scale = 1000000;
+
+	if (start_time->sec <= end_time->sec) {
+		time_us = (end_time->sec - start_time->sec) * scale;
+	} else {
+		// time counter has rolled over
+		time_us = (ULONG_MAX - start_time->sec + end_time->sec) * scale;
+	}
+	if (start_time->usec <= end_time->usec)
+		time_us += end_time->usec - start_time->usec;
+	else
+		time_us += scale - start_time->usec + end_time->usec;
+
+	return time_us;
+}
+
+/** Add new recording speed sample to the list of samples */
+static void add_sample(unsigned int sample, struct rec_stat *stat)
+{
+	stat->samples[stat->samples_ptr] = sample;
+	stat->samples_ptr++;
+	if (stat->samples_ptr >= SPEED_SAMPLES_NUM) {
+		stat->samples_ptr = 0;
+	}
+}
+
 static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 {
 	unsigned long irq_flags;
@@ -154,8 +184,21 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 /** Command queue processing tasklet */
 void process_queue(unsigned long data)
 {
+	int i;
+	size_t total_sz = 0;
 	unsigned long irq_flags;
+	unsigned long time_usec;
+	sec_usec_t end_time = {0};
 	struct elphel_ahci_priv *dpriv = (struct elphel_ahci_priv *)data;
+
+	// calculate the speed this frame has been written with
+	get_fpga_rtc(&end_time);
+	time_usec = time_diff_usec(&dpriv->stat.start_time, &end_time);
+	if (time_usec != 0) {
+		for (i = 0; i < dpriv->sg_elems; i++)
+			total_sz += dpriv->sgl[i].iov_len;
+		add_sample(total_sz / time_usec, &dpriv->stat);
+	}
 
 	if (process_cmd(dpriv) == 0) {
 		finish_cmd(dpriv);
@@ -919,6 +962,8 @@ static int process_cmd(struct elphel_ahci_priv *dpriv)
 	size_t max_sz = (MAX_LBA_COUNT + 1) * PHY_BLOCK_SIZE;
 	size_t rem_sz = get_size_from(dpriv->data_chunks[dpriv->head_ptr], dpriv->curr_data_chunk, dpriv->curr_data_offset, EXCLUDE_REM);
 
+	get_fpga_rtc(&dpriv->stat.start_time);
+
 	if (dpriv->flags & PROC_CMD)
 		dpriv->lba_ptr.lba_write += dpriv->lba_ptr.wr_count;
 	dpriv->flags |= PROC_CMD;
@@ -1389,17 +1434,45 @@ static ssize_t lba_current_write(struct device *dev, struct device_attribute *at
 	return buff_sz;
 }
 
+/** Return the current disk write speed in MB/s */
+static ssize_t wr_speed_read(struct device *dev, struct device_attribute *attr, char *buff)
+{
+	int i;
+	unsigned int val, median;
+	unsigned int *l, *r;
+	unsigned int samples[SPEED_SAMPLES_NUM];
+	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
+
+	// sort recording speed samples and get median
+	memcpy(samples, dpriv->stat.samples, SPEED_SAMPLES_NUM * sizeof(dpriv->stat.samples[0]));
+	l = samples;
+	for (i = 1; i < SPEED_SAMPLES_NUM; i++) {
+		val = samples[i];
+		r = &samples[i- 1];
+		while (r >= l && *r > val) {
+			*(r + 1) = *r;
+			r--;
+		}
+		*(r + 1) = val;
+	}
+	median = samples[SPEED_SAMPLES_NUM / 2];
+
+	return snprintf(buff, 32, "Write speed: %u MB/s\n", median);
+}
+
 static DEVICE_ATTR(load_module, S_IWUSR | S_IWGRP, NULL, set_load_flag);
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_WRITE, S_IWUSR | S_IWGRP, NULL, rawdev_write);
-static DEVICE_ATTR(SYSFS_AHCI_FNAME_START, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, lba_start_read, lba_start_write);
-static DEVICE_ATTR(SYSFS_AHCI_FNAME_END, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP, lba_end_read, lba_end_write);
-static DEVICE_ATTR(SYSFS_AHCI_FNAME_CURR, S_IRUSR | S_IRGRP | S_IWUSR | S_IRGRP, lba_current_read, lba_current_write);
+static DEVICE_ATTR(SYSFS_AHCI_FNAME_START, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, lba_start_read, lba_start_write);
+static DEVICE_ATTR(SYSFS_AHCI_FNAME_END, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, lba_end_read, lba_end_write);
+static DEVICE_ATTR(SYSFS_AHCI_FNAME_CURR, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, lba_current_read, lba_current_write);
+static DEVICE_ATTR(SYSFS_AHCI_FNAME_WRSPEED, S_IRUSR | S_IRGRP | S_IROTH, wr_speed_read, NULL);
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_load_module.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_WRITE.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_START.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_END.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_CURR.attr,
+		&dev_attr_SYSFS_AHCI_FNAME_WRSPEED.attr,
 		NULL
 };
 static const struct attribute_group dev_attr_root_group = {
