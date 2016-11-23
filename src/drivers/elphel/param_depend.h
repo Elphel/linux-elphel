@@ -169,6 +169,8 @@ const unsigned long param_depend_tab[]=
      P_SENSOR_PHASE,          ONCHANGE_SENSORPHASE | ONCHANGE_EXPOSURE | ONCHANGE_LIMITFPS | \
                               ONCHANGE_MEMSENSOR | ONCHANGE_MEMCOMPRESSOR | ONCHANGE_COMPMODE | ONCHANGE_COMPSTOP | ONCHANGE_COMPRESTART ,
      P_FPGA_XTRA,             ONCHANGE_LIMITFPS ,
+
+//TODO NC393:  Check - maybe no-need to stop/restart the compressor when changing trigger modes?
      P_TRIG,                  ONCHANGE_RECALCSEQ | ONCHANGE_TRIGGERMODE | ONCHANGE_TRIGSEQ | ONCHANGE_LIMITFPS | /// Next to call with afterinit
                                    ONCHANGE_MULTISENS |
                                    ONCHANGE_WINDOW | ONCHANGE_EXPOSURE | ONCHANGE_HIST | ONCHANGE_AEXP | ONCHANGE_FOCUSMODE | ONCHANGE_LIMITFPS | ONCHANGE_HIST | \
