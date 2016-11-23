@@ -365,8 +365,8 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 ///< @return OK - 0, <0 - error
 {
     x393_camsync_mode_t camsync_mode = {.d32=0};
-    x393_camsync_io_t camsync_src =      {.d32=0x55555}; // all disabled (use internal)
-    x393_camsync_io_t camsync_dst =      {.d32=0x55555}; // all disable - nothing to output
+    x393_camsync_io_t camsync_src =      {.d32=0x00000}; // all disabled (use internal)
+    x393_camsync_io_t camsync_dst =      {.d32=0x00000}; // all disable - nothing to output
 
 // Setting trigger input, output and preriod to off
 
@@ -418,15 +418,14 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 //    This causes mismatch with parameters, let it be there
 //    camsync_mode.ext =      1; // use external timestamp (default)
 //    camsync_mode.ext_set =  1;
-    x393_camsync_mode (camsync_mode);
+    x393_camsync_mode (camsync_mode);   // here in immediate mode, no sequencer
 // Set inactive state to all I/O) and period:
-    x393_camsync_trig_src(camsync_src);
-    x393_camsync_trig_dst(camsync_dst);
-    set_x393_camsync_trig_period(0);
-
+    x393_camsync_trig_src(camsync_src); // here in immediate mode, no sequencer
+    x393_camsync_trig_dst(camsync_dst); // here in immediate mode, no sequencer
+    set_x393_camsync_trig_period(0);    // here in immediate mode, no sequencer
+    dev_dbg(g_dev_ptr,"{%d} set_x393_camsync_trig_period(0)\n",sensor_port);
     //     dev_dbg(g_dev_ptr,"trying MT9P001\n");
     //      mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
-
     if (mux != SENSOR_NONE) {
         dev_dbg(g_dev_ptr,"Mux mode for port %d is %d, tryng 10359\n",sensor_port, mux);
         MDP(DBGB_PADD, sensor_port,"Mux mode for port %d is %d, tryng 10359\n",sensor_port, mux)
@@ -615,15 +614,17 @@ typedef union {
   camsync_mode.trig =     0;
   camsync_mode.trig_set = 1;
 
-  x393_camsync_mode                   (camsync_mode);  // immediate mode, bypass sequencer CAMSYNC mode
-                                                       // (TODO NC393: Make it possible to synchronize writes (through sequencer)
-  set_x393_camsync_trig_period        (0);  // reset circuitry (immediate mode)
+//  x393_camsync_mode                   (camsync_mode);  // immediate mode, bypass sequencer CAMSYNC mode TODO NC393: Make it possible to synchronize writes (through sequencer)
+  X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_mode, camsync_mode); // trying through the sequencer
+
+//  dev_dbg(g_dev_ptr,"{%d} set_x393_camsync_trig_period(0)\n",sensor_port);
+//  set_x393_camsync_trig_period        (0);  // reset circuitry (immediate mode)
+  X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_trig_period, 0); // trying through the sequencer
   if (frame16 >= 0) return -1; // should be ASAP
 //TODO: seems nothing to do here - all in the sensor-specific function:
 //Adding setup compressor report status mode - maybe move elsethere? Needed for comprfessor frame reporting, has to be done just once
   return 0;
 }
-
 
 /** Restore image size, decimation,... after sensor reset or set them according to sensor capabilities if none were specified
  TODO: NC393 add default P_SENSOR_IFACE_TIM0..3 for parallel/serial? */
@@ -1312,24 +1313,36 @@ int pgm_triggermode(int sensor_port,               ///< sensor port number (0..3
 												   ///< @return OK - 0, <0 - error
 {
     x393_camsync_mode_t camsync_mode = {.d32=0};
-    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+    int is_master = (thispars->pars[P_TRIG_MASTER] == sensor_port)? 1 : 0;
+
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, is_master=%d\n",sensor_port,frame16, is_master);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     camsync_mode.trig =     (thispars->pars[P_TRIG] & 4)?1:0;
     if (camsync_mode.trig) {  // if trigger mode, enable camsync module, if off - do nothing
         camsync_mode.en = 1;
-        camsync_mode.en_set = 1;
+        camsync_mode.en_set = 1; // OK to do for non-master ports too
 //When does it need to be disabled?
 //        camsync_mode.ts_chns =     (thispars->pars[P_EXTERN_TIMESTAMP]?1:0) << sensor_port;
         camsync_mode.ts_chns =     1 << sensor_port;
         camsync_mode.ts_chns_set = 1 << sensor_port;
     }
-    camsync_mode.trig_set = 1;
+    if (is_master) {
+        camsync_mode.trig_set = 1;
+    } else {
+        dev_dbg(g_dev_ptr,"{%d}  frame16=%d, Only master port can change camsync trigger mode, master port is %d\n",sensor_port,frame16, (int) thispars->pars[P_TRIG_MASTER]);
+    }
     // set directly, bypassing sequencer as it may fail with wrong trigger
-    x393_camsync_mode (camsync_mode);
-    MDP(DBGB_PADD, sensor_port,"x393_camsync_mode(0x%x)\n",camsync_mode.d32)
+//    x393_camsync_mode (camsync_mode);
+//    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, x393_camsync_mode(0x%x)\n",sensor_port,frame16, (int)camsync_mode.d32);
+//    MDP(DBGB_PADD, sensor_port,"x393_camsync_mode(0x%x)\n",camsync_mode.d32)
+    // Trying with the sequencer
+    X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_mode, camsync_mode);
+    dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_camsync_mode,  0x%x)\n",
+            sensor_port, sensor_port, frame16, (int) camsync_mode.d32);
+
     // now update common trigger parameters and mark dependent channels to update, if anything changed;
-    if (thispars->pars[P_TRIG]      != common_pars->trig_mode){
+    if (is_master && (thispars->pars[P_TRIG]      != common_pars->trig_mode)){
         int i;
         dev_dbg(g_dev_ptr,"{%d}   Updating common trigger mode, old=0x%lx, new=0x%lx\n",sensor_port,common_pars->trig_mode,thispars->pars[P_TRIG]);
         common_pars->trig_mode = thispars->pars[P_TRIG];
@@ -2431,17 +2444,17 @@ int pgm_focusmode  (int sensor_port,               ///< sensor port number (0..3
  * TODO: 393 reimplement
  * Was for 353: can not use sequencer as data is more than 24 bit wide
  * In NC393  P_TRIG_DELAY and P_XMIT_TIMESTAMP are per-channel, other parameters are common (Last modified takes control).
- * Master channel is set to the current channels when any of the common parameters is set
+ *
  * P_TRIG_OUT (outputs):
- * off:      0x55555
- * external: 0x56555
- * internal: 0x65555
- * both:     0x66555
+ * off:      0x00000
+ * external: 0x02000
+ * internal: 0x00000
+ * both:     0x22000
  * P_TRIG_IN (inputs):
- * off:      0x55555
- * external: 0x95555
- * internal: 0x59555
- * both:     0x99555
+ * off:      0x00000
+ * external: 0x80000
+ * internal: 0x08000
+ * both:     0x88000
  */
 int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3)
                     struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
@@ -2461,10 +2474,7 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
     x393_camsync_mode_t camsync_mode =   {.d32=0};
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
-//    MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, frame16, cmprs_mode.d32);
-
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-//+++++    if (frame16 >= 0) return -1; // ASAP only mode Was on
     // See if master channel is set to this channel directly
     is_master = (thispars->pars[P_TRIG_MASTER] == sensor_port)? 1 : 0;
     if (is_master && FRAMEPAR_MODIFIED(P_TRIG_MASTER)) {
@@ -2475,9 +2485,12 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
 // Process per-channel (not common) parameters regardless of the master status  (just trigger delay)
     // Trigger delay changed?
     if (FRAMEPAR_MODIFIED(P_TRIG_DELAY)) { // individual per-channel parameters
-        set_x393_camsync_trig_delay  (thispars->pars[P_TRIG_DELAY], sensor_port); // CAMSYNC trigger delay
-        dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_delay(0x%x, %d)\n",sensor_port,  camsync_src.d32, sensor_port);
-        MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_delay(0x%x, %d)\n", camsync_src.d32, sensor_port)
+///        set_x393_camsync_trig_delay  (thispars->pars[P_TRIG_DELAY], sensor_port); // CAMSYNC trigger delay
+///        dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_delay(0x%x, %d)\n",sensor_port,  camsync_src.d32, sensor_port);
+///        MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_delay(0x%x, %d)\n", camsync_src.d32, sensor_port)
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_trig_delay, thispars->pars[P_TRIG_DELAY]);
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_camsync_trig_delay,  0x%x)\n",
+                sensor_port, sensor_port, frame16, (int) thispars->pars[P_TRIG_DELAY]);
     }
 
     if (!is_master){
@@ -2487,28 +2500,33 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
     // Trigger condition changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_TRIG_CONDITION)) {
         camsync_src.d32 =  thispars->pars[P_TRIG_CONDITION];
-        x393_camsync_trig_src(camsync_src);
-//        update_master_channel=1;
-        dev_dbg(g_dev_ptr,"{%d}   x393_camsync_trig_src(0x%x)\n",sensor_port,  camsync_src.d32);
-        MDP(DBGB_PADD, sensor_port,"x393_camsync_trig_src(0x%x)\n", camsync_src.d32)
+///        x393_camsync_trig_src(camsync_src);
+///       dev_dbg(g_dev_ptr,"{%d}   x393_camsync_trig_src(0x%x)\n",sensor_port,  camsync_src.d32);
+///        MDP(DBGB_PADD, sensor_port,"x393_camsync_trig_src(0x%x)\n", camsync_src.d32)
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_trig_src, camsync_src);
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_camsync_trig_src,  0x%x)\n",
+                sensor_port, sensor_port, frame16, camsync_src.d32);
     }
     // Sequencer output word changed? (to which outputs it is sent and what polarity)
     if (FRAMEPAR_MODIFIED(P_TRIG_OUT)) {
         camsync_dst.d32 =  thispars->pars[P_TRIG_OUT];
-        x393_camsync_trig_dst(camsync_dst);
-//        update_master_channel=1;
-        dev_dbg(g_dev_ptr,"{%d}   x393_camsync_trig_dst(0x%x)\n",sensor_port,  camsync_dst.d32);
-        MDP(DBGB_PADD, sensor_port,"x393_camsync_trig_dst(0x%x)\n", camsync_dst.d32)
+///        x393_camsync_trig_dst(camsync_dst);
+///        dev_dbg(g_dev_ptr,"{%d}   x393_camsync_trig_dst(0x%x)\n",sensor_port,  camsync_dst.d32);
+///        MDP(DBGB_PADD, sensor_port,"x393_camsync_trig_dst(0x%x)\n", camsync_dst.d32)
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_trig_dst, camsync_dst);
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_camsync_trig_dst,  0x%x)\n",
+                sensor_port, sensor_port, frame16, camsync_dst.d32);
 
         if (thispars->pars[P_TRIG_OUT]!=0) {
             gpio_set_pins.chn_a = 3;  // Set dibit enable
-            x393_gpio_set_pins(gpio_set_pins);
-            dev_dbg(g_dev_ptr,"{%d}   x393_gpio_set_pins(0x%x)\n",sensor_port,  gpio_set_pins.d32);
-            MDP(DBGB_PADD, sensor_port,"x393_gpio_set_pins(0x%x)\n",gpio_set_pins.d32)
+///            x393_gpio_set_pins(gpio_set_pins);
+///            dev_dbg(g_dev_ptr,"{%d}   x393_gpio_set_pins(0x%x)\n",sensor_port,  gpio_set_pins.d32);
+///            MDP(DBGB_PADD, sensor_port,"x393_gpio_set_pins(0x%x)\n",gpio_set_pins.d32)
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_gpio_set_pins, gpio_set_pins);
+            dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_gpio_set_pins,  0x%x)\n",
+                    sensor_port, sensor_port, frame16, gpio_set_pins.d32);
         } else {
             //  Not needed, I think
-            //      port_csp0_addr[X313_WA_IOPINS] = X313_WA_IOPINS_DIS_TRIG_OUT;
-            //      dev_dbg(g_dev_ptr,"{%d}   port_csp0_addr[0x%x]=0x%x\n",sensor_port,  (int) X313_WA_IOPINS, (int) X313_WA_IOPINS_DIS_TRIG_OUT);
         }
     }
     // Bit length changed or not yet initialized?
@@ -2520,40 +2538,45 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
             d=P_TRIG_BITLENGTH_DEFAULT;
             SETFRAMEPARS_SET(P_TRIG_BITLENGTH,d);
         }
-        set_x393_camsync_trig_period(d);
-        update_master_channel=1;
-        dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%x) (bit length)\n",sensor_port, d);
-        MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_period(0x%x) (bit length)\n",d)
+///        set_x393_camsync_trig_period(d);
+//        update_master_channel=1;
+///        dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%x) (bit length)\n",sensor_port, d);
+///        MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_period(0x%x) (bit length)\n",d)
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_trig_period, d);
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, set_x393_camsync_trig_period,  0x%x)\n",
+                sensor_port, sensor_port, frame16, d);
     }
     // Sequencer period changed? (0 - stopped, 1 - single trigger, >=256 - start repetitive)
     if (FRAMEPAR_MODIFIED(P_TRIG_PERIOD)) {
         if (unlikely((thispars->pars[P_TRIG_PERIOD] > 1) && (thispars->pars[P_TRIG_PERIOD] < 256))) { // Wrong value, restore old one
             SETFRAMEPARS_SET(P_TRIG_PERIOD,prevpars->pars[P_TRIG_PERIOD]); //+1
         } else {
-            set_x393_camsync_trig_period(thispars->pars[P_TRIG_PERIOD]);
-//            update_master_channel=1;
-            dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%lx)\n",sensor_port, thispars->pars[P_TRIG_PERIOD]);
-            MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_period(0x%lx)\n", thispars->pars[P_TRIG_PERIOD])
+///            set_x393_camsync_trig_period(thispars->pars[P_TRIG_PERIOD]);
+///            dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%lx)\n",sensor_port, thispars->pars[P_TRIG_PERIOD]);
+///            MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_period(0x%lx)\n", thispars->pars[P_TRIG_PERIOD])
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_trig_period, thispars->pars[P_TRIG_PERIOD]);
+            dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_camsync_trig_period,  0x%x)\n",
+                    sensor_port, sensor_port, frame16, (int) thispars->pars[P_TRIG_PERIOD]);
         }
     }
     // P_EXTERN_TIMESTAMP changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_EXTERN_TIMESTAMP)) {
         camsync_mode.ext = thispars->pars[P_EXTERN_TIMESTAMP]?1:0;
         camsync_mode.ext_set = 1;
-//        update_master_channel=1;
     }
     // P_XMIT_TIMESTAMP changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_XMIT_TIMESTAMP)) {
         camsync_mode.en_snd =     (thispars->pars[P_XMIT_TIMESTAMP]?1:0);
         camsync_mode.en_snd_set = 1;
-
-//        camsync_mode.ts_chns =     (thispars->pars[P_EXTERN_TIMESTAMP]?1:0) << sensor_port;
-//        camsync_mode.ts_chns_set = 1 << sensor_port;
     }
     if (camsync_mode.d32){ // anything set?
-        x393_camsync_mode (camsync_mode);
-        dev_dbg(g_dev_ptr,"{%d}   x393_camsync_mode(0x%x)\n",sensor_port,  camsync_mode.d32);
-        MDP(DBGB_PADD, sensor_port,"x393_camsync_mode(0x%x)\n", camsync_mode.d32)
+///        x393_camsync_mode (camsync_mode);
+///        dev_dbg(g_dev_ptr,"{%d}   x393_camsync_mode(0x%x)\n",sensor_port,  camsync_mode.d32);
+///        MDP(DBGB_PADD, sensor_port,"x393_camsync_mode(0x%x)\n", camsync_mode.d32)
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_mode, camsync_mode);
+        dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_camsync_mode,  0x%x)\n",
+                sensor_port, sensor_port, frame16, camsync_mode.d32);
+
     }
     // Does not seem to have any parameters to update?
     if (nupdate)  setFramePars(sensor_port, thispars, nupdate, pars_to_update);  // save changes, schedule functions

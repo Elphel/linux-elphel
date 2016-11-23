@@ -1462,7 +1462,7 @@ void trigSlaveUpdate(int sensor_port)  ///< sensor port number (0..3)
     while (common_pars->updated[sensor_port]) {
         dev_dbg(g_devfp_ptr,"port= %d,  thisFrameNumber[%d] = %d\n", sensor_port, sensor_port, (int) thisFrameNumber(sensor_port));
         common_pars->updated[sensor_port] = 0;
-        if (pars_to_update[nupdate  ].num != P_TRIG_PERIOD){ //???
+        if (pars_to_update[nupdate  ].num != P_TRIG_PERIOD){ // updated any other parameter - treat as period is updated (make sure it will not trigger)
             updated_period = FRAMEPAIR_FORCE_PROC;
         }
         pars_to_update[nupdate  ].num= P_TRIG_MASTER ;                  pars_to_update[nupdate++].val = common_pars->master_chn;

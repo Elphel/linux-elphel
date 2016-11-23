@@ -1095,7 +1095,18 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
   x393_sensio_ctrl(sensio_ctl,sensor_port);
   camsync_mode.trig =     0;
   camsync_mode.trig_set = 1;
+
+// Maybe it should be set to triggered mode first
   x393_camsync_mode (camsync_mode);
+
+  // Trying with the sequencer
+//  X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_mode, camsync_mode);
+//  dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_camsync_mode,  0x%x)\n",
+//          sensor_port, sensor_port, frame16, (int) camsync_mode.d32);
+
+
+
+
   udelay (100);
 
   GLOBALPARS(sensor_port,G_SENS_AVAIL) |= 1<< (GLOBALPARS(sensor_port,G_SENS_AVAIL)); // temporary to indicate sensor detection functions that they need to initialize multisensor registers
