@@ -41,7 +41,7 @@ unsigned long sensor_to_camsync(unsigned long pixel_time, unsigned long sensor_c
 #define X393_SEQ_SEND1S(port,frame,func,data,subchn) {if ((frame) < 0) seqr_##func (0,       (data), (port), (subchn)); \
                                                       else             seqa_##func ((frame), (data), (port), (subchn)); }
 
-/** Tells if parameter is modifies
+/** Tells if parameter is modified
  * @param x parameter index to test
  * @return nonzero if modified */
 #define FRAMEPAR_MODIFIED(x) (thispars->mod[(x) >> 5] & (1<<((x) & 0x1f)))

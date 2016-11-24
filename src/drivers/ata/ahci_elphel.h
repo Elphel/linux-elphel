@@ -20,7 +20,9 @@
  */
 
 #include <uapi/elphel/ahci_cmd.h>
+#include <uapi/elphel/c313a.h>
 #include "../elphel/circbuf.h"
+#include "../elphel/x393_fpga_functions.h"
 
 #ifndef _AHCI_ELPHEL_EXT
 #define _AHCI_ELPHEL_EXT
@@ -55,6 +57,15 @@
 #define JPEG_SIZE_LEN             2              ///< The size in bytes of JPEG marker length field
 #define INCLUDE_REM               1              ///< Include REM buffer to total size calculation
 #define EXCLUDE_REM               0              ///< Exclude REM buffer from total size calculation
+#define SPEED_SAMPLES_NUM         5              ///< Maximum number of samples for disk recording speed measurement
+
+/** This structure is for collecting some recording statistics */
+struct rec_stat {
+	unsigned int samples_ptr;                    ///< pointer to next sample in rec_stat::samples
+	unsigned int samples[SPEED_SAMPLES_NUM];     ///< calculated recording speed samples, the value of recording speed
+	                                             ///< presented via sysfs is a median of this array
+	sec_usec_t start_time;                       ///< time when current command has been issued
+};
 
 /** This structure holds raw device buffer pointers */
 struct drv_pointers {
@@ -111,6 +122,7 @@ struct elphel_ahci_priv {
 	                                             ///< because this flag is accessed from interrupt context
 	struct tasklet_struct bh;                    ///< command processing tasklet
 	struct device *dev;                          ///< pointer to parent device structure
+	struct rec_stat stat;                        ///< recording statistics
 };
 
 #endif /* _AHCI_ELPHEL_EXT */
