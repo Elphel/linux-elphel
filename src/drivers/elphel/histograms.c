@@ -307,7 +307,7 @@ void init_histograms(int chn_mask) ///< combined subchannels and ports Save mask
 //    dev_warn(g_dev_ptr, "dma_alloc_coherent(NULL, 0x%x, 0x%x,GFP_NOWAIT)",pages * PAGE_SIZE, (int) histograms_phys);
 
 //    histograms = dma_alloc_coherent(NULL,(pages * PAGE_SIZE),&histograms_phys,GFP_ATOMIC); // OK
-    dev_warn(g_dev_ptr, "dma_alloc_coherent should be done before (@probe), needed are 0x%lx bytes)",pages * PAGE_SIZE);
+    dev_dbg(g_dev_ptr, "dma_alloc_coherent should be done before (@probe), needed are 0x%lx bytes)",pages * PAGE_SIZE);
     BUG_ON(!histograms);
     histograms_p= (struct histogram_stuct_t *) histograms;
 //    MDF21(printk("\n"));
