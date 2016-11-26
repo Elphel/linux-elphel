@@ -749,8 +749,8 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
     }
 
     if (get_port_interface(sensor_port) == PARALLEL12){
-        if (FRAMEPAR_MODIFIED(P_SENSOR_PHASE)) { // for parallel sensor it means quadrants:  90-degree shifts for data [1:0], hact [3:2] and vact [5:4]
-            sensio_ctl.quadrants = thispars->pars[P_SENSOR_PHASE] & 0x3f;
+        if (FRAMEPAR_MODIFIED(P_SENSOR_PHASE)) { // for parallel sensor it means quadrants:  90-degree shifts for data [1:0], hact [6,3:2] and vact [5:4]
+            sensio_ctl.quadrants = thispars->pars[P_SENSOR_PHASE] & 0x7f;
             sensio_ctl.quadrants_set = 1;
         }
         if (sensio_ctl.d32) {
@@ -2448,7 +2448,7 @@ int pgm_focusmode  (int sensor_port,               ///< sensor port number (0..3
  * P_TRIG_OUT (outputs):
  * off:      0x00000
  * external: 0x02000
- * internal: 0x00000
+ * internal: 0x20000
  * both:     0x22000
  * P_TRIG_IN (inputs):
  * off:      0x00000

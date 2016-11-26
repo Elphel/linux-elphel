@@ -1692,7 +1692,9 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 			else target_frame = getThisFrameNumber(sensor_port) + offset - LSEEK_FRAME_WAIT_REL;
 			// Skip 0..255 frames
 //			wait_event_interruptible (framepars_wait_queue, getThisFrameNumber()>=target_frame);
+		    dev_dbg(g_devfp_ptr, "getThisFrameNumber(%d) == 0x%x, target_frame = 0x%x\n", sensor_port, (int) getThisFrameNumber(sensor_port), (int)target_frame);
 			wait_event_interruptible(aframepars_wait_queue[sensor_port], getThisFrameNumber(sensor_port) >= target_frame);
+            dev_dbg(g_devfp_ptr, "getThisFrameNumber(%d) == 0x%x\n", sensor_port, (int) getThisFrameNumber(sensor_port));
 
 //       if (getThisFrameNumber()<target_frame) wait_event_interruptible (framepars_wait_queue,getThisFrameNumber()>=target_frame);
 			return getThisFrameNumber(sensor_port);    // Does not modify current frame pointer? lseek (,0,SEEK_CUR) anyway returns getThisFrameNumber()
