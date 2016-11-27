@@ -632,27 +632,6 @@ void updateFramePars(int sensor_port, ///< sensor port number (0..3)
 	int comp_frame16 = getHardFrameNumber(sensor_port, 1);    // Use compressor frame number
 	u32 comp_aframe = thisCompressorFrameNumber(sensor_port);
 	x393_cmprs_mode_t cmprs_mode = get_x393_cmprs_control_reg(sensor_port);
-
-#if 0
-//	Add to x393.h
-x393_cmprs_mode_t            get_x393_cmprs_control_reg          (int cmprs_chn);
-
-//  Add to x393.c
-	x393_cmprs_mode_t            get_x393_cmprs_control_reg          (int cmprs_chn)
-	    { x393_cmprs_mode_t d; d.d32 = readl(mmio_ptr + (0x1800 + 0x40 * cmprs_chn)); return d; }
-#endif
-#endif
-#ifdef NC353
-	// Old comments from NC353
-	// If interrupt was from compression done (circbuf advanced, interframe_pars!=null), the frame16 (hardware) maybe not yet advanced
-	// We can fix it here, but it will not work if some frames were not processed in time
-	if ((interframe_pars != NULL) && (((frame16 ^ thisFrameNumber(sensor_port)) & PARS_FRAMES_MASK) == 0)) {
-		findex_this =  frame16  & PARS_FRAMES_MASK;
-
-/* 393 TODO: Check what to do with P_IRQ_SMART */
-
-		if (framepars[findex_this].pars[P_IRQ_SMART] & 4) frame16 = (frame16 + 1) &  PARS_FRAMES_MASK;  // verify that this mode is enabled (together with bit0)
-	}
 #endif
     dev_dbg(g_devfp_ptr,"%s : port= %d, frame16=%d\n",__func__, sensor_port, frame16);
 	while ((frame16 ^ thisFrameNumber(sensor_port)) & PARS_FRAMES_MASK) { // While hardware pointer is still ahead of the software maintained one
@@ -685,26 +664,6 @@ x393_cmprs_mode_t            get_x393_cmprs_control_reg          (int cmprs_chn)
 		// Now update interframe_pars (interframe area) used to create JPEG headers. Interframe area survives exactly as long as the frames themselves (not like pastpars)
 
 //      debug code - save compressor states in the past parameters
-
-
-
-#if 0
-		struct framepars_past_t {
-		    unsigned long past_pars[PARS_SAVE_NUM]; ///< Array of frame parameters preserved for the future
-		};
-
-#endif
-
-#ifdef NC353
-		if (interframe_pars) {                                                                  // frame was compressed, not just vsync
-//TODO: get rid of *_prev, use it for the future.
-			memcpy(interframe_pars,      &framepars[findex_this].pars[P_GTAB_R], 24);           // will leave some gaps, but copy [P_ACTUAL_WIDTH]
-			interframe_pars->height =     framepars[findex_this].pars[P_ACTUAL_HEIGHT];        // NOTE: P_ACTUAL_WIDTH,P_QUALITY copied with memcpy
-			interframe_pars->color =      framepars[findex_this].pars[P_COLOR];
-			interframe_pars->byrshift =   framepars[findex_this].pars[P_COMPMOD_BYRSH];
-			interframe_pars->quality2 |= (framepars[findex_this].pars[P_PORTRAIT] & 1) << 7;
-		}
-#endif
 // copy parameters from findex_future (old "farthest in the future") to findex_prev (new "fartherst in the future") if it was changed since
 		if ((bmask32 = framepars[findex_prev].modsince32)) {
 			dev_dbg(g_devfp_ptr,"%s framepars[%d].modsince32=0x%lx\n",__func__, findex_prev, bmask32);
@@ -745,6 +704,10 @@ x393_cmprs_mode_t            get_x393_cmprs_control_reg          (int cmprs_chn)
 			}
 		}
 		thisFrameNumber(sensor_port)++;
+//        if (thisFrameNumber(sensor_port)<20) {
+//            dev_dbg(g_devfp_ptr,"thisFrameNumber(%d)=0x%x\n",sensor_port, (int) thisFrameNumber(sensor_port));
+//        }
+
 	}
 }
 

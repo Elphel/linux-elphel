@@ -779,7 +779,7 @@ loff_t histograms_lseek (struct file * file,
                                     dev_dbg(g_dev_ptr, "wait_event_interruptible (ahist_y_wait_queue[%d],0x%x & 0x%x)\n",privData->port, (int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f)));
                                     wait_event_interruptible (ahist_y_wait_queue[privData->port], get_imageParamsThis(privData->port, P_DAEMON_EN) & (1<<(offset & 0x1f)));
                                     break;
-                                case  LSEEK_DAEMON_HIST_C: // wait for daemon enabled and histograms Y ready
+                                case  LSEEK_DAEMON_HIST_C: // wait for daemon enabled and histograms C ready
                                     dev_dbg(g_dev_ptr, "wait_event_interruptible (ahist_c_wait_queue[%d],0x%x & 0x%x)\n",privData->port, (int) get_imageParamsThis(privData->port, P_DAEMON_EN), (int) (1<<(offset & 0x1f)));
                                     wait_event_interruptible (ahist_c_wait_queue[privData->port], get_imageParamsThis(privData->port, P_DAEMON_EN) & (1<<(offset & 0x1f)));
                                     break;

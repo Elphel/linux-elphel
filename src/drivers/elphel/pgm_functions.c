@@ -466,12 +466,14 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     // restore/set sensor clock
     if ((was_sensor_freq < sensor->minClockFreq) || (was_sensor_freq > sensor->maxClockFreq)) was_sensor_freq=sensor->nomClockFreq;
     setFramePar(sensor_port, thispars, P_CLK_SENSOR | FRAMEPAIR_FORCE_NEWPROC,  was_sensor_freq); // will schedule clock/phase adjustment
+    /*
     phase=thispars->pars[P_SENSOR_PHASE];
     // TODO: remove phase adjustment from here
     if (phase==0) {
         phase= 0x40000;
         setFramePar(sensor_port, thispars, P_SENSOR_PHASE | FRAMEPAIR_FORCE_NEWPROC,  phase); // will schedule clock/phase adjustment
     }
+    */
     setFramePar(sensor_port, thispars, P_I2C_EOF | FRAMEPAIR_FORCE_NEWPROC,  0);         // increment i2c at SOF - change to EOF?
 
     // NOTE: sensor detected - enabling camera interrupts here (actual interrupts will start later)
