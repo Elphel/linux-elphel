@@ -967,7 +967,7 @@ int multisensor_write_i2c(int          sensor_port,///< sensor port number
 
  */
 
-static int multi_unitialized=0; ///< temporary hack to resolve race between individual and multi_ flips at startup
+static int multi_unitialized[]={0,0,0,0}; ///< temporary hack to resolve race between individual and multi_ flips at startup
 
 /**
  * @brief detect and initialize sensor and related data structures
@@ -1010,7 +1010,7 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
           sensor_port, getThisFrameNumber(sensor_port), sensor_port, frame16, sens_mode.d32, getHardFrameNumber(sensor_port,0));
 //   .hact_delay  = -2500,    // -2.5ns delay in ps
 //   .sensorDelay = 2460,     // Delay from sensor clock at FPGA output to pixel data transition (FPGA input), short cable (ps)
-  multi_unitialized=0; // reset this static variable - it will prevent copying individual flips to multiple until composite mode is used
+  multi_unitialized[sensor_port]=0; // reset this static variable - it will prevent copying individual flips to multiple until composite mode is used
   dev_dbg(g_dev_ptr,"frame16=%d\n",frame16);
   GLOBALPARS(sensor_port,G_SENS_AVAIL)=0; // no 10359A board present
   if (frame16 >= 0) return -1; // can only work in ASAP mode
@@ -1352,7 +1352,7 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
 //  int multi_flipv=thispars->pars[P_MULTI_FLIPV];
 //  int old_sensor=prev_selected-1; // may be <0
 //  int new_sensor=selected-1;     // >=0
-  if (multi_unitialized && (!prev_composite) && (old_sensor>=0)) { // was single-sensor mode, copy P_WOI_* to individual sensor WOI and FLIPS
+  if (multi_unitialized[sensor_port] && (!prev_composite) && (old_sensor>=0)) { // was single-sensor mode, copy P_WOI_* to individual sensor WOI and FLIPS
     dev_dbg(g_dev_ptr,"multi_unitialized=%d  old_sensor=%x, multi_fliph=%x multi_flipv=%x\n", multi_unitialized,  old_sensor, multi_fliph,multi_flipv);
     wois[(P_MULTI_WIDTH1- P_MULTI_WOI)+old_sensor]= prevpars->pars[P_WOI_WIDTH];
     wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+old_sensor]= prevpars->pars[P_WOI_HEIGHT];
@@ -1362,7 +1362,7 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
     multi_flipv=    (multi_flipv & (~(1<<old_sensor)))  | ((prevpars->pars[P_FLIPV] & 1) << old_sensor);
     dev_dbg(g_dev_ptr,"multi_unitialized=%d old_sensor=%x, multi_fliph=%x multi_flipv=%x\n", multi_unitialized,  old_sensor, multi_fliph,multi_flipv);
   }
-  if (multi_unitialized && (!composite) && (prev_composite || ((new_sensor>=0) && (old_sensor!=new_sensor)))) { // now single-sensor mode, set P_WOI* from saved parameters
+  if (multi_unitialized[sensor_port] && (!composite) && (prev_composite || ((new_sensor>=0) && (old_sensor!=new_sensor)))) { // now single-sensor mode, set P_WOI* from saved parameters
     if ((wois[(P_MULTI_WIDTH1-  P_MULTI_WOI)+new_sensor]==0) || (wois[(P_MULTI_HEIGHT1-  P_MULTI_WOI)+new_sensor]==0)) {
 // This particular sensor was never initialized
       if (prev_composite || // should never get here - if that was composite mode before, P_MULTI_* should be already set. Using sensor defaults
@@ -1476,7 +1476,7 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
   SETFRAMEPARS_COND(P_SENSOR_HEIGHT, total_height);
   if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes, schedule functions
 
-  if ( composite) multi_unitialized=1; // now mark as used - will enable copying from individual to composite flips
+  if ( composite) multi_unitialized[sensor_port]=1; // now mark as used - will enable copying from individual to composite flips
 
   return 0;
 }
