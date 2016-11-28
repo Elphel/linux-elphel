@@ -74,9 +74,13 @@ static int is_cmdq_empty(const struct elphel_ahci_priv *dpriv);
 void process_queue(unsigned long data);
 static void set_flag(struct elphel_ahci_priv *drpiv, uint32_t flag);
 static void reset_flag(struct elphel_ahci_priv *dpriv, uint32_t flag);
+static inline void reset_chunks(struct fvec *vects, int all);
 /* debug functions */
 static int check_chunks(struct fvec *vects);
 static void dump_sg_list(const struct device *dev, const struct fvec *sgl, size_t elems);
+static void dump_sg_list_uncond(const struct fvec *sgl, size_t elems);
+static void dump_iomem(void __iomem *mmio);
+static void dump_dpriv_fields(struct elphel_ahci_priv *dpriv);
 
 static ssize_t set_load_flag(struct device *dev, struct device_attribute *attr,
 		const char *buff, size_t buff_sz)
@@ -118,6 +122,60 @@ static void elphel_defer_load(struct device *dev)
 	}
 	load_driver = false;
 	iounmap(ctrl_ptr);
+}
+
+/** Set command execution timer. This function is called before every internal command and
+ * the command is considered stalled if the timer has expired. */
+static void set_timer(struct elphel_ahci_priv *dpriv)
+{
+	unsigned long timeout = jiffies + msecs_to_jiffies(dpriv->cmd_timeout);
+	mod_timer(&dpriv->cmd_timer, timeout);
+}
+
+/** Remove command execution timer if it is still running */
+static void remove_timer(struct elphel_ahci_priv *dpriv)
+{
+	int ret;
+
+	if (timer_pending(&dpriv->cmd_timer)) {
+		ret = del_timer_sync(&dpriv->cmd_timer);
+		if (ret < 0)
+			dev_err(dpriv->dev, "can not remove timer\n");
+	}
+}
+
+/** This command resets all commands and flags indicating current state of the driver */
+static void reset_all_commands(struct elphel_ahci_priv *dpriv)
+{
+	int i;
+	unsigned long irq_flags;
+
+	if (is_cmdq_empty(dpriv))
+		return;
+
+	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+	for (i = 0; i < MAX_CMD_SLOTS; i++) {
+		reset_chunks(dpriv->data_chunks[i], 1);
+	}
+	dpriv->flags = 0;
+	dpriv->head_ptr = 0;
+	dpriv->tail_ptr = 0;
+
+	dpriv->lba_ptr.wr_count = 0;
+	dpriv->curr_cmd = 0;
+	dpriv->max_data_sz = 0;
+	dpriv->curr_data_chunk = 0;
+	dpriv->curr_data_offset = 0;
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+}
+
+/** Command execution timer has expired, set flag indicating that recording should be restarted */
+static void process_timeout(unsigned long data)
+{
+	struct elphel_ahci_priv *dpriv = (struct elphel_ahci_priv *)data;
+
+	printk(KERN_ERR "AHCI error: command execution timeout\n");
+	set_flag(dpriv, START_EH);
 }
 
 /** Calculate the difference between two time stamps and return it in microseconds */
@@ -333,6 +391,8 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	dpriv->dev = dev;
 	spin_lock_init(&dpriv->flags_lock);
 	tasklet_init(&dpriv->bh, process_queue, (unsigned long)dpriv);
+	setup_timer(&dpriv->cmd_timer, process_timeout, (unsigned long)dpriv);
+	dpriv->cmd_timeout = DEFAULT_CMD_TIMEOUT;
 
 	for (i = 0; i < MAX_CMD_SLOTS; i++) {
 		ret = init_buffers(dev, &dpriv->fbuffs[i]);
@@ -383,6 +443,7 @@ static int elphel_drv_remove(struct platform_device *pdev)
 
 	dev_info(&pdev->dev, "removing Elphel AHCI driver");
 	tasklet_kill(&dpriv->bh);
+	remove_timer(dpriv);
 	for (i = 0; i < MAX_CMD_SLOTS; i++)
 		deinit_buffers(&pdev->dev, &dpriv->fbuffs[i]);
 	sysfs_remove_group(&pdev->dev.kobj, &dev_attr_root_group);
@@ -967,8 +1028,6 @@ static int process_cmd(struct elphel_ahci_priv *dpriv)
 	size_t max_sz = (MAX_LBA_COUNT + 1) * PHY_BLOCK_SIZE;
 	size_t rem_sz = get_size_from(dpriv->data_chunks[dpriv->head_ptr], dpriv->curr_data_chunk, dpriv->curr_data_offset, EXCLUDE_REM);
 
-	get_fpga_rtc(&dpriv->stat.start_time);
-
 	if (dpriv->flags & PROC_CMD)
 		dpriv->lba_ptr.lba_write += dpriv->lba_ptr.wr_count;
 	dpriv->flags |= PROC_CMD;
@@ -985,6 +1044,8 @@ static int process_cmd(struct elphel_ahci_priv *dpriv)
 	dpriv->sg_elems = map_vectors(dpriv);
 	if (dpriv->sg_elems != 0) {
 		dump_sg_list(dpriv->dev, dpriv->sgl, dpriv->sg_elems);
+		get_fpga_rtc(&dpriv->stat.start_time);
+		set_timer(dpriv);
 
 		dpriv->lba_ptr.wr_count = get_blocks_num(dpriv->sgl, dpriv->sg_elems);
 		if (dpriv->lba_ptr.lba_write + dpriv->lba_ptr.wr_count > dpriv->lba_ptr.lba_end) {
@@ -1003,6 +1064,7 @@ static void finish_cmd(struct elphel_ahci_priv *dpriv)
 {
 	int all;
 
+	remove_timer(dpriv);
 	dpriv->lba_ptr.wr_count = 0;
 	if ((dpriv->flags & LAST_BLOCK) == 0) {
 		all = 0;
@@ -1118,6 +1180,37 @@ static size_t get_prev_slot(const struct elphel_ahci_priv *dpriv)
 	return slot;
 }
 
+void error_handler(struct elphel_ahci_priv *dpriv)
+{
+	struct ata_host *host = dev_get_drvdata(dpriv->dev);
+	struct ahci_host_priv *hpriv = host->private_data;
+	struct ata_port *ap = host->ports[DEFAULT_PORT_NUM];
+	struct ata_link *link = &ap->link;
+
+	int pmp = link->pmp;
+	int rc;
+	unsigned int class;
+	unsigned long deadline = jiffies + msecs_to_jiffies(DEFAULT_CMD_TIMEOUT);
+
+	dump_iomem(hpriv->mmio);
+	dump_dpriv_fields(dpriv);
+	dump_sg_list_uncond(dpriv->sgl, dpriv->sg_elems);
+	printk(KERN_DEBUG "reset command queue and all flags\n");
+	reset_all_commands(dpriv);
+
+
+	/* the following commented code was used to try recovery after IO error */
+//	printk(KERN_DEBUG "Trying hard reset the link\n");
+//	rc = ap->ops->hardreset(link, &class, deadline);
+//	if (rc != 0)
+//		printk(KERN_DEBUG "error: ahci_hardreset returned %i\n", rc);
+//	else
+//		printk(KERN_DEBUG "hard reset OK, waiting for error handler to complete\n");
+//
+//	ata_port_wait_eh(ap);
+//	printk(KERN_DEBUG "OK, going back to commands execution\n");
+}
+
 /** Get and enqueue new command */
 static ssize_t rawdev_write(struct device *dev,  ///< device structure associated with the driver
 		struct device_attribute *attr,           ///< interface for device attributes
@@ -1126,6 +1219,7 @@ static ssize_t rawdev_write(struct device *dev,  ///< device structure associate
 {
 	ssize_t rcvd = 0;
 	bool proceed = false;
+	bool start_eh = false;
 	unsigned long irq_flags;
 	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
 	struct frame_data fdata;
@@ -1138,6 +1232,23 @@ static ssize_t rawdev_write(struct device *dev,  ///< device structure associate
 		return -EINVAL;
 	}
 	memcpy(&fdata, buff, sizeof(struct frame_data));
+
+	/* error recovery, do not continue recording and wait for full camera reset */
+	if (dpriv->io_error_flag) {
+		printk_once(KERN_CRIT "IO error detected, recording stopped and waiting for reboot\n");
+		return -EIO;
+	}
+	/* check if we should reset controller */
+	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+	if (dpriv->flags & START_EH) {
+		start_eh = true;
+	}
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+	if (start_eh) {
+		dpriv->io_error_flag = 1;
+		error_handler(dpriv);
+		return -EIO;
+	}
 
 	/* lock disk resource as soon as possible */
 	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
@@ -1465,19 +1576,42 @@ static ssize_t wr_speed_read(struct device *dev, struct device_attribute *attr, 
 	return snprintf(buff, 32, "Write speed: %u MB/s\n", median);
 }
 
+static ssize_t timeout_write(struct device *dev, struct device_attribute *attr, const char *buff, size_t buff_sz)
+{
+	return buff_sz;
+}
+
+static ssize_t timeout_read(struct device *dev, struct device_attribute *attr, char *buff)
+{
+	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
+
+	return snprintf(buff, 64, "Command execution timeout: %u ms\n", dpriv->cmd_timeout);
+}
+
+static ssize_t io_error_read(struct device *dev, struct device_attributes *attr, char *buff)
+{
+	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
+
+	return sprintf(buff, "%u\n", dpriv->io_error_flag);
+}
+
 static DEVICE_ATTR(load_module, S_IWUSR | S_IWGRP, NULL, set_load_flag);
+static DEVICE_ATTR(io_error, S_IRUSR | S_IRGRP | S_IROTH, io_error_read, NULL);
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_WRITE, S_IWUSR | S_IWGRP, NULL, rawdev_write);
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_START, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, lba_start_read, lba_start_write);
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_END, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, lba_end_read, lba_end_write);
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_CURR, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, lba_current_read, lba_current_write);
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_WRSPEED, S_IRUSR | S_IRGRP | S_IROTH, wr_speed_read, NULL);
+static DEVICE_ATTR(SYSFS_AHCI_FNAME_TIMEOUT, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, timeout_read, timeout_write);
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_load_module.attr,
+		&dev_attr_io_error.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_WRITE.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_START.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_END.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_CURR.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_WRSPEED.attr,
+		&dev_attr_SYSFS_AHCI_FNAME_TIMEOUT.attr,
 		NULL
 };
 static const struct attribute_group dev_attr_root_group = {
@@ -1560,6 +1694,48 @@ static void dump_sg_list(const struct device *dev, const struct fvec *sgl, size_
 		dev_dbg(dev, "dma address: 0x%x, len: %u\n", sgl[i].iov_dma, sgl[i].iov_len);
 	}
 	dev_dbg(dev, "===== end of S/G list =====\n");
+}
+
+/** Debug function, unconditionally prints the S/G list of current command */
+static void dump_sg_list_uncond(const struct fvec *sgl, size_t elems)
+{
+	int i;
+
+	printk(KERN_DEBUG "===== dump S/G list, %u elements:\n", elems);
+	for (i = 0; i < elems; i++) {
+		printk(KERN_DEBUG "dma address: 0x%x, len: %u\n", sgl[i].iov_dma, sgl[i].iov_len);
+	}
+	printk(KERN_DEBUG "===== end of S/G list =====\n");
+}
+
+/** Debug function, make dump of controller's memory*/
+static void dump_iomem(void __iomem *mmio)
+{
+	int i, col = 0, pos = 0;
+	u32 val;
+	char str[512] = {0};
+
+	printk(KERN_DEBUG "dump AHCI iomem:\n");
+	for (i = 0; i < 100; i++) {
+		val = ioread32(mmio + 4 * i);
+		pos += snprintf(&str[pos], 16, "0x%08x ", val);
+		col++;
+		if (col == 16) {
+			col = 0;
+			pos = 0;
+			printk(KERN_DEBUG "%s\n", str);
+		}
+	}
+	printk(KERN_DEBUG "\n");
+}
+
+static void dump_dpriv_fields(struct elphel_ahci_priv *dpriv)
+{
+	printk(KERN_DEBUG "head ptr: %u, tail ptr: %u\n", dpriv->head_ptr, dpriv->tail_ptr);
+	printk(KERN_DEBUG "flags: 0x%x\n", dpriv->flags);
+
+	printk(KERN_DEBUG "lba_ptr.wr_count = %u, curr_cmd = 0x%x, max_data_sz = %u, curr_data_chunk = %d, curr_data_offset = %u\n",
+			dpriv->lba_ptr.wr_count, dpriv->curr_cmd, dpriv->max_data_sz, dpriv->curr_data_chunk, dpriv->curr_data_offset);
 }
 
 MODULE_LICENSE("GPL");
