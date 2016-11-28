@@ -1578,6 +1578,11 @@ static ssize_t wr_speed_read(struct device *dev, struct device_attribute *attr, 
 
 static ssize_t timeout_write(struct device *dev, struct device_attribute *attr, const char *buff, size_t buff_sz)
 {
+	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
+
+	if (kstrtouint(buff, 10, &dpriv->cmd_timeout) != 0)
+		return -EINVAL;
+
 	return buff_sz;
 }
 
@@ -1734,6 +1739,8 @@ static void dump_dpriv_fields(struct elphel_ahci_priv *dpriv)
 	printk(KERN_DEBUG "head ptr: %u, tail ptr: %u\n", dpriv->head_ptr, dpriv->tail_ptr);
 	printk(KERN_DEBUG "flags: 0x%x\n", dpriv->flags);
 
+	printk(KERN_DEBUG "lba_start = %llu, lba_current = %llu, lba_end = %llu\n",
+			dpriv->lba_ptr.lba_start, dpriv->lba_ptr.lba_write, dpriv->lba_ptr.lba_end);
 	printk(KERN_DEBUG "lba_ptr.wr_count = %u, curr_cmd = 0x%x, max_data_sz = %u, curr_data_chunk = %d, curr_data_offset = %u\n",
 			dpriv->lba_ptr.wr_count, dpriv->curr_cmd, dpriv->max_data_sz, dpriv->curr_data_chunk, dpriv->curr_data_offset);
 }
