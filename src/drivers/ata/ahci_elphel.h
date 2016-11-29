@@ -19,6 +19,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/timer.h>
 #include <uapi/elphel/ahci_cmd.h>
 #include <uapi/elphel/c313a.h>
 #include "../elphel/circbuf.h"
@@ -36,6 +37,7 @@
 #define LAST_BLOCK                (1 << 3)       ///< Flag indicating that the remaining chunk of data will be recorded
 #define DELAYED_FINISH            (1 << 4)       ///< Flag indicating that recording should be stopped right after the last chunk of data is written
 #define LOCK_TAIL                 (1 << 5)       ///< Lock current command slot until all data buffers are assigned and the frame is aligned
+#define START_EH                  (1 << 6)       ///< start error handling procedure
 #define CMD_FIS_LEN               5              ///< The length of a command FIS in double words
 #define ADDR_MASK_28_BIT          ((u64)0xfffffff)///< This is used to get 28-bit address from 64-bit value
 #define MAX_PRDT_LEN              0x3fffff       ///< A maximum of length of 4MB may exist for PRDT entry
@@ -58,6 +60,7 @@
 #define INCLUDE_REM               1              ///< Include REM buffer to total size calculation
 #define EXCLUDE_REM               0              ///< Exclude REM buffer from total size calculation
 #define SPEED_SAMPLES_NUM         5              ///< Maximum number of samples for disk recording speed measurement
+#define DEFAULT_CMD_TIMEOUT       500            ///< Default timeout for commands, in ms
 
 /** This structure is for collecting some recording statistics */
 struct rec_stat {
@@ -123,6 +126,10 @@ struct elphel_ahci_priv {
 	struct tasklet_struct bh;                    ///< command processing tasklet
 	struct device *dev;                          ///< pointer to parent device structure
 	struct rec_stat stat;                        ///< recording statistics
+
+	struct timer_list cmd_timer;                 ///< command execution guard timer
+	unsigned int cmd_timeout;                    ///< command timeout, in ms
+	unsigned int io_error_flag;                  ///< flag indicating IO error was detected, this is flag is exported via sysfs
 };
 
 #endif /* _AHCI_ELPHEL_EXT */
