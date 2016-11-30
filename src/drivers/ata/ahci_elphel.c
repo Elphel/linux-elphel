@@ -47,6 +47,9 @@
 #define PROP_NAME_CLB_OFFS "clb_offs"
 #define PROP_NAME_FB_OFFS "fb_offs"
 
+#define DATASCOPE_OFFSET    0x1000
+#define DATASCOPE_SIZE      0x200
+
 static struct ata_port_operations ahci_elphel_ops;
 static const struct ata_port_info ahci_elphel_port_info;
 static struct scsi_host_template ahci_platform_sht;
@@ -79,8 +82,9 @@ static inline void reset_chunks(struct fvec *vects, int all);
 static int check_chunks(struct fvec *vects);
 static void dump_sg_list(const struct device *dev, const struct fvec *sgl, size_t elems);
 static void dump_sg_list_uncond(const struct fvec *sgl, size_t elems);
-static void dump_iomem(void __iomem *mmio);
+static void dump_iomem(void __iomem *mmio, size_t sz, dma_addr_t dma_addr);
 static void dump_dpriv_fields(struct elphel_ahci_priv *dpriv);
+static void dump_current_state(struct elphel_ahci_priv *dpriv);
 
 static ssize_t set_load_flag(struct device *dev, struct device_attribute *attr,
 		const char *buff, size_t buff_sz)
@@ -218,7 +222,6 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 	void __iomem *port_mmio = ahci_port_base(port);
 	struct elphel_ahci_priv *dpriv = hpriv->plat_data;
 	uint32_t irq_stat, host_irq_stat;
-
 
 	if (dpriv->flags & IRQ_SIMPLE) {
 		/* handle interrupt from internal command */
@@ -1186,15 +1189,14 @@ void error_handler(struct elphel_ahci_priv *dpriv)
 	struct ahci_host_priv *hpriv = host->private_data;
 	struct ata_port *ap = host->ports[DEFAULT_PORT_NUM];
 	struct ata_link *link = &ap->link;
+	struct ahci_port_priv *pp = ap->private_data;
 
 	int pmp = link->pmp;
 	int rc;
 	unsigned int class;
 	unsigned long deadline = jiffies + msecs_to_jiffies(DEFAULT_CMD_TIMEOUT);
 
-	dump_iomem(hpriv->mmio);
-	dump_dpriv_fields(dpriv);
-	dump_sg_list_uncond(dpriv->sgl, dpriv->sg_elems);
+	dump_current_state(dpriv);
 	printk(KERN_DEBUG "reset command queue and all flags\n");
 	reset_all_commands(dpriv);
 
@@ -1713,15 +1715,16 @@ static void dump_sg_list_uncond(const struct fvec *sgl, size_t elems)
 	printk(KERN_DEBUG "===== end of S/G list =====\n");
 }
 
-/** Debug function, make dump of controller's memory*/
-static void dump_iomem(void __iomem *mmio)
+/** Debug function, make dump of controller's memory, sz is in DW */
+static void dump_iomem(void __iomem *mmio, size_t sz, dma_addr_t dma_addr)
 {
 	int i, col = 0, pos = 0;
 	u32 val;
 	char str[512] = {0};
 
-	printk(KERN_DEBUG "dump AHCI iomem:\n");
-	for (i = 0; i < 100; i++) {
+	if (dma_addr)
+		printk(KERN_DEBUG "DMA address: 0x%08x\n", dma_addr);
+	for (i = 0; i < sz; i++) {
 		val = ioread32(mmio + 4 * i);
 		pos += snprintf(&str[pos], 16, "0x%08x ", val);
 		col++;
@@ -1731,7 +1734,8 @@ static void dump_iomem(void __iomem *mmio)
 			printk(KERN_DEBUG "%s\n", str);
 		}
 	}
-	printk(KERN_DEBUG "\n");
+	if (pos != 0)
+		printk(KERN_DEBUG "%s\n", str);
 }
 
 static void dump_dpriv_fields(struct elphel_ahci_priv *dpriv)
@@ -1743,6 +1747,37 @@ static void dump_dpriv_fields(struct elphel_ahci_priv *dpriv)
 			dpriv->lba_ptr.lba_start, dpriv->lba_ptr.lba_write, dpriv->lba_ptr.lba_end);
 	printk(KERN_DEBUG "lba_ptr.wr_count = %u, curr_cmd = 0x%x, max_data_sz = %u, curr_data_chunk = %d, curr_data_offset = %u\n",
 			dpriv->lba_ptr.wr_count, dpriv->curr_cmd, dpriv->max_data_sz, dpriv->curr_data_chunk, dpriv->curr_data_offset);
+}
+
+static void dump_current_state(struct elphel_ahci_priv *dpriv)
+{
+	struct ata_host *host = dev_get_drvdata(dpriv->dev);
+	struct ahci_host_priv *hpriv = host->private_data;
+	struct ata_port *ap = host->ports[DEFAULT_PORT_NUM];
+	struct ata_link *link = &ap->link;
+	struct ahci_port_priv *pp = ap->private_data;
+	uint32_t *datascope_ptr;
+
+	printk(KERN_DEBUG "===== HBA memory dump ======\n");
+	dump_iomem(hpriv->mmio, 100, dpriv->base_addr);
+	printk(KERN_DEBUG "===== command list structure dump =====\n");
+	dump_iomem(pp->cmd_slot, 8, pp->cmd_slot_dma);
+	printk(KERN_DEBUG "===== command FIS dump =====\n");
+	dump_iomem(pp->cmd_tbl, 16, pp->cmd_tbl_dma);
+	printk(KERN_DEBUG "===== received FIS memory (last FIS received) dump =====\n");
+	dump_iomem(pp->rx_fis, 64, pp->rx_fis_dma);
+
+//	datascope_ptr = ioremap_nocache(dpriv->base_addr + DATASCOPE_OFFSET, DATASCOPE_SIZE);
+//	if (datascope_ptr) {
+//		printk(KERN_DEBUG "===== datascope (debug) data dump =====\n");
+//		dump_iomem(datascope_ptr, 512, dpriv->base_addr + DATASCOPE_OFFSET);
+//		iounmap(datascope_ptr);
+//	} else {
+//		printk(KERN_DEBUG "unable to ioremap datascope region\n");
+//	}
+
+	dump_dpriv_fields(dpriv);
+	dump_sg_list_uncond(dpriv->sgl, dpriv->sg_elems);
 }
 
 MODULE_LICENSE("GPL");
