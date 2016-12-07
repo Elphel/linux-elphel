@@ -81,8 +81,7 @@ static inline void reset_chunks(struct fvec *vects, int all);
 /* debug functions */
 static int check_chunks(struct fvec *vects);
 static void dump_sg_list(const struct device *dev, const struct fvec *sgl, size_t elems);
-static void dump_sg_list_uncond(const struct fvec *sgl, size_t elems);
-static void dump_iomem(void __iomem *mmio, size_t sz, dma_addr_t dma_addr);
+static void dump_iomem(const struct device *dev, void __iomem *mmio, size_t sz, dma_addr_t dma_addr);
 static void dump_dpriv_fields(struct elphel_ahci_priv *dpriv);
 static void dump_current_state(struct elphel_ahci_priv *dpriv);
 
@@ -237,6 +236,12 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		writel(host_irq_stat, hpriv->mmio + HOST_IRQ_STAT);
 		handled = IRQ_HANDLED;
 		tasklet_schedule(&dpriv->bh);
+
+		// check if there are any other interrupts except Device to Host Register FIS irq
+		if (irq_stat & 0xfffffffe) {
+			printk(KERN_DEBUG "Stopping from interrupt\n");
+			set_flag(dpriv, START_EH);
+		}
 	} else {
 		/* pass handling to AHCI level and then decide if the resource should be freed */
 		handled = ahci_single_irq_intr(irq, dev_instance);
@@ -1703,27 +1708,15 @@ static void dump_sg_list(const struct device *dev, const struct fvec *sgl, size_
 	dev_dbg(dev, "===== end of S/G list =====\n");
 }
 
-/** Debug function, unconditionally prints the S/G list of current command */
-static void dump_sg_list_uncond(const struct fvec *sgl, size_t elems)
-{
-	int i;
-
-	printk(KERN_DEBUG "===== dump S/G list, %u elements:\n", elems);
-	for (i = 0; i < elems; i++) {
-		printk(KERN_DEBUG "dma address: 0x%x, len: %u\n", sgl[i].iov_dma, sgl[i].iov_len);
-	}
-	printk(KERN_DEBUG "===== end of S/G list =====\n");
-}
-
 /** Debug function, make dump of controller's memory, sz is in DW */
-static void dump_iomem(void __iomem *mmio, size_t sz, dma_addr_t dma_addr)
+static void dump_iomem(const struct device *dev, void __iomem *mmio, size_t sz, dma_addr_t dma_addr)
 {
 	int i, col = 0, pos = 0;
 	u32 val;
 	char str[512] = {0};
 
 	if (dma_addr)
-		printk(KERN_DEBUG "DMA address: 0x%08x\n", dma_addr);
+		dev_dbg(dev, "DMA address: 0x%08x\n", dma_addr);
 	for (i = 0; i < sz; i++) {
 		val = ioread32(mmio + 4 * i);
 		pos += snprintf(&str[pos], 16, "0x%08x ", val);
@@ -1731,21 +1724,21 @@ static void dump_iomem(void __iomem *mmio, size_t sz, dma_addr_t dma_addr)
 		if (col == 16) {
 			col = 0;
 			pos = 0;
-			printk(KERN_DEBUG "%s\n", str);
+			dev_dbg(dev, "%s\n", str);
 		}
 	}
 	if (pos != 0)
-		printk(KERN_DEBUG "%s\n", str);
+		dev_dbg(dev, "%s\n", str);
 }
 
 static void dump_dpriv_fields(struct elphel_ahci_priv *dpriv)
 {
-	printk(KERN_DEBUG "head ptr: %u, tail ptr: %u\n", dpriv->head_ptr, dpriv->tail_ptr);
-	printk(KERN_DEBUG "flags: 0x%x\n", dpriv->flags);
+	dev_dbg(dpriv->dev, "head ptr: %u, tail ptr: %u\n", dpriv->head_ptr, dpriv->tail_ptr);
+	dev_dbg(dpriv->dev, "flags: 0x%x\n", dpriv->flags);
 
-	printk(KERN_DEBUG "lba_start = %llu, lba_current = %llu, lba_end = %llu\n",
+	dev_dbg(dpriv->dev, "lba_start = %llu, lba_current = %llu, lba_end = %llu\n",
 			dpriv->lba_ptr.lba_start, dpriv->lba_ptr.lba_write, dpriv->lba_ptr.lba_end);
-	printk(KERN_DEBUG "lba_ptr.wr_count = %u, curr_cmd = 0x%x, max_data_sz = %u, curr_data_chunk = %d, curr_data_offset = %u\n",
+	dev_dbg(dpriv->dev, "lba_ptr.wr_count = %u, curr_cmd = 0x%x, max_data_sz = %u, curr_data_chunk = %d, curr_data_offset = %u\n",
 			dpriv->lba_ptr.wr_count, dpriv->curr_cmd, dpriv->max_data_sz, dpriv->curr_data_chunk, dpriv->curr_data_offset);
 }
 
@@ -1758,26 +1751,26 @@ static void dump_current_state(struct elphel_ahci_priv *dpriv)
 	struct ahci_port_priv *pp = ap->private_data;
 	uint32_t *datascope_ptr;
 
-	printk(KERN_DEBUG "===== HBA memory dump ======\n");
-	dump_iomem(hpriv->mmio, 100, dpriv->base_addr);
-	printk(KERN_DEBUG "===== command list structure dump =====\n");
-	dump_iomem(pp->cmd_slot, 8, pp->cmd_slot_dma);
-	printk(KERN_DEBUG "===== command FIS dump =====\n");
-	dump_iomem(pp->cmd_tbl, 16, pp->cmd_tbl_dma);
-	printk(KERN_DEBUG "===== received FIS memory (last FIS received) dump =====\n");
-	dump_iomem(pp->rx_fis, 64, pp->rx_fis_dma);
+	dev_dbg(dpriv->dev, "===== HBA memory dump ======\n");
+	dump_iomem(dpriv->dev, hpriv->mmio, 100, dpriv->base_addr);
+	dev_dbg(dpriv->dev, "===== command list structure dump =====\n");
+	dump_iomem(dpriv->dev, pp->cmd_slot, 8, pp->cmd_slot_dma);
+	dev_dbg(dpriv->dev, "===== command FIS dump =====\n");
+	dump_iomem(dpriv->dev, pp->cmd_tbl, 16, pp->cmd_tbl_dma);
+	dev_dbg(dpriv->dev, "===== received FIS memory (last FIS received) dump =====\n");
+	dump_iomem(dpriv->dev, pp->rx_fis, 64, pp->rx_fis_dma);
 
-//	datascope_ptr = ioremap_nocache(dpriv->base_addr + DATASCOPE_OFFSET, DATASCOPE_SIZE);
-//	if (datascope_ptr) {
-//		printk(KERN_DEBUG "===== datascope (debug) data dump =====\n");
-//		dump_iomem(datascope_ptr, 512, dpriv->base_addr + DATASCOPE_OFFSET);
-//		iounmap(datascope_ptr);
-//	} else {
-//		printk(KERN_DEBUG "unable to ioremap datascope region\n");
-//	}
+	datascope_ptr = ioremap_nocache(dpriv->base_addr + DATASCOPE_OFFSET, DATASCOPE_SIZE);
+	if (datascope_ptr) {
+		dev_dbg(dpriv->dev, "===== datascope (debug) data dump =====\n");
+		dump_iomem(dpriv->dev, datascope_ptr, 512, dpriv->base_addr + DATASCOPE_OFFSET);
+		iounmap(datascope_ptr);
+	} else {
+		dev_dbg(dpriv->dev, "unable to ioremap datascope region\n");
+	}
 
 	dump_dpriv_fields(dpriv);
-	dump_sg_list_uncond(dpriv->sgl, dpriv->sg_elems);
+	dump_sg_list(dpriv->dev, dpriv->sgl, dpriv->sg_elems);
 }
 
 MODULE_LICENSE("GPL");
