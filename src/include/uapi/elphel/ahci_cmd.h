@@ -25,6 +25,7 @@
 #define DRV_CMD_WRITE             (1 << 0)
 #define DRV_CMD_FINISH            (1 << 1)
 #define DRV_CMD_EXIF              (1 << 2)
+#define DRV_CMD_WRITE_TEST        (1 << 3)
 
 #define _NAME_TO_STR(...)         #__VA_ARGS__
 #define NAME_TO_STR(NAME)         _NAME_TO_STR(NAME)

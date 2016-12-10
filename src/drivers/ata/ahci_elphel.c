@@ -267,7 +267,7 @@ void process_queue(unsigned long data)
 	struct elphel_ahci_priv *dpriv = (struct elphel_ahci_priv *)data;
 
 	// calculate the speed this frame has been written with
-	get_fpga_rtc(&end_time);
+//	get_fpga_rtc(&end_time);
 	time_usec = time_diff_usec(&dpriv->stat.start_time, &end_time);
 	if (time_usec != 0) {
 		for (i = 0; i < dpriv->sg_elems; i++)
@@ -516,6 +516,10 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 		opts |= AHCI_CMD_ATAPI | AHCI_CMD_PREFETCH;
 
 	ahci_fill_cmd_slot(pp, qc->tag, opts);
+
+	dev_dbg(ap->dev, "dump command table content, first %d bytes, phys addr = 0x%x:\n", 16, pp->cmd_tbl_dma);
+	print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, pp->cmd_tbl, 16);
+
 	dma_sync_single_for_device(&qc->dev->tdev, pp->cmd_tbl_dma,
 			AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
 }
@@ -1050,9 +1054,10 @@ static int process_cmd(struct elphel_ahci_priv *dpriv)
 	}
 
 	dpriv->sg_elems = map_vectors(dpriv);
+
 	if (dpriv->sg_elems != 0) {
 		dump_sg_list(dpriv->dev, dpriv->sgl, dpriv->sg_elems);
-		get_fpga_rtc(&dpriv->stat.start_time);
+//		get_fpga_rtc(&dpriv->stat.start_time);
 		set_timer(dpriv);
 
 		dpriv->lba_ptr.wr_count = get_blocks_num(dpriv->sgl, dpriv->sg_elems);
@@ -1096,8 +1101,11 @@ static void finish_rec(struct elphel_ahci_priv *dpriv)
 	struct fvec *cvect = &dpriv->data_chunks[dpriv->head_ptr][CHUNK_COMMON];
 	struct fvec *rvect = &dpriv->data_chunks[dpriv->head_ptr][CHUNK_REM];
 
-	if (rvect->iov_len == 0)
+	if (rvect->iov_len == 0) {
+		finish_cmd(dpriv);
+		reset_flag(dpriv, DISK_BUSY);
 		return;
+	}
 
 	dev_dbg(dpriv->dev, "write last chunk of data from slot %u, size: %u\n", dpriv->head_ptr, rvect->iov_len);
 	stuff_len = PHY_BLOCK_SIZE - rvect->iov_len;
@@ -1109,7 +1117,10 @@ static void finish_rec(struct elphel_ahci_priv *dpriv)
 	vectshrink(rvect, rvect->iov_len);
 
 	dpriv->flags |= LAST_BLOCK;
-	process_cmd(dpriv);
+	if (process_cmd(dpriv) == 0) {
+		finish_cmd(dpriv);
+		reset_flag(dpriv, DISK_BUSY);
+	}
 }
 
 /** Move a pointer to free command slot one step forward. This function holds spin lock #elphel_ahci_priv::flags_lock */
@@ -1218,6 +1229,12 @@ void error_handler(struct elphel_ahci_priv *dpriv)
 //	printk(KERN_DEBUG "OK, going back to commands execution\n");
 }
 
+static void invalidate_cache(struct fvec *vect)
+{
+	__cpuc_flush_dcache_area(vect->iov_base, vect->iov_len);
+	outer_inv_range(vect->iov_dma, vect->iov_dma + (vect->iov_len - 1));
+}
+
 /** Get and enqueue new command */
 static ssize_t rawdev_write(struct device *dev,  ///< device structure associated with the driver
 		struct device_attribute *attr,           ///< interface for device attributes
@@ -1288,23 +1305,25 @@ static ssize_t rawdev_write(struct device *dev,  ///< device structure associate
 		chunks[CHUNK_EXIF].iov_len = rcvd;
 	}
 
-	rcvd = jpeghead_get_data(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
-	if (rcvd < 0) {
-		/* free resource lock and current command slot */
-		if (proceed) {
-			spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
-			dpriv->flags &= ~DISK_BUSY;
-			spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+	if (!(fdata.cmd & DRV_CMD_WRITE_TEST)) {
+		rcvd = jpeghead_get_data(fdata.sensor_port, buffs->jpheader_buff.iov_base, buffs->jpheader_buff.iov_len, 0);
+		if (rcvd < 0) {
+			/* free resource lock and current command slot */
+			if (proceed) {
+				spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+				dpriv->flags &= ~DISK_BUSY;
+				spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+			}
+			reset_chunks(chunks, 0);
+			dpriv->tail_ptr = get_prev_slot(dpriv);
+			dpriv->flags &= ~LOCK_TAIL;
+			dev_err(dev, "could not get JPEG header, error %d\n", rcvd);
+			return -EINVAL;
 		}
-		reset_chunks(chunks, 0);
-		dpriv->tail_ptr = get_prev_slot(dpriv);
-		dpriv->flags &= ~LOCK_TAIL;
-		dev_err(dev, "could not get JPEG header, error %d\n", rcvd);
-		return -EINVAL;
+		chunks[CHUNK_LEADER].iov_len = JPEG_MARKER_LEN;
+		chunks[CHUNK_TRAILER].iov_len = JPEG_MARKER_LEN;
+		chunks[CHUNK_HEADER].iov_len = rcvd - chunks[CHUNK_LEADER].iov_len;
 	}
-	chunks[CHUNK_LEADER].iov_len = JPEG_MARKER_LEN;
-	chunks[CHUNK_TRAILER].iov_len = JPEG_MARKER_LEN;
-	chunks[CHUNK_HEADER].iov_len = rcvd - chunks[CHUNK_LEADER].iov_len;
 
 	rcvd = circbuf_get_ptr(fdata.sensor_port, fdata.cirbuf_ptr, fdata.jpeg_len, &chunks[CHUNK_DATA_0], &chunks[CHUNK_DATA_1]);
 	if (rcvd < 0) {
@@ -1320,6 +1339,9 @@ static ssize_t rawdev_write(struct device *dev,  ///< device structure associate
 		dev_err(dev, "could not get JPEG data, error %d\n", rcvd);
 		return -EINVAL;
 	}
+	if (fdata.cmd & DRV_CMD_WRITE_TEST)
+		invalidate_cache(&chunks[CHUNK_DATA_0]);
+
 	align_frame(dpriv);
 	/* new command slot is ready now and can be unlocked */
 	reset_flag(dpriv, LOCK_TAIL);
