@@ -1213,8 +1213,8 @@ void error_handler(struct elphel_ahci_priv *dpriv)
 	unsigned long deadline = jiffies + msecs_to_jiffies(DEFAULT_CMD_TIMEOUT);
 
 	dump_current_state(dpriv);
-	printk(KERN_DEBUG "reset command queue and all flags\n");
-	reset_all_commands(dpriv);
+//	printk(KERN_DEBUG "reset command queue and all flags\n");
+//	reset_all_commands(dpriv);
 
 
 	/* the following commented code was used to try recovery after IO error */
