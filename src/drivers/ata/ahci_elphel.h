@@ -37,7 +37,9 @@
 #define LAST_BLOCK                (1 << 3)       ///< Flag indicating that the remaining chunk of data will be recorded
 #define DELAYED_FINISH            (1 << 4)       ///< Flag indicating that recording should be stopped right after the last chunk of data is written
 #define LOCK_TAIL                 (1 << 5)       ///< Lock current command slot until all data buffers are assigned and the frame is aligned
-#define START_EH                  (1 << 6)       ///< start error handling procedure
+#define START_EH                  (1 << 6)       ///< Start error handling procedure
+#define WAIT_EH                   (1 << 7)       ///< Wait for error handler completion
+#define DELAYED_IRQ_RCVD          (1 << 8)       ///< Delayed interrupt received and should be processed
 #define CMD_FIS_LEN               5              ///< The length of a command FIS in double words
 #define ADDR_MASK_28_BIT          ((u64)0xfffffff)///< This is used to get 28-bit address from 64-bit value
 #define MAX_PRDT_LEN              0x3fffff       ///< A maximum of length of 4MB may exist for PRDT entry
@@ -60,7 +62,29 @@
 #define INCLUDE_REM               1              ///< Include REM buffer to total size calculation
 #define EXCLUDE_REM               0              ///< Exclude REM buffer from total size calculation
 #define SPEED_SAMPLES_NUM         5              ///< Maximum number of samples for disk recording speed measurement
-#define DEFAULT_CMD_TIMEOUT       500            ///< Default timeout for commands, in ms
+#define DEFAULT_CMD_TIMEOUT       100            ///< Default timeout for commands, in ms
+#define WAIT_IRQ_TIMEOUT          1000           ///< Wait delayed interrupt for this amount of time, in ms
+
+#define TSTMP_CMD_SYS             1              ///< command issued by system
+#define TSTMP_CMD_DRV             2              ///< command issued by driver
+#define TSTMP_IRQ_SYS             3              ///< irq processed by system
+#define TSTMP_IRQ_DRV             4              ///< irq processed by driver
+enum {
+        PORT_VS                       = 0x70,        ///< vendor specific port address
+        PORT_TIMESTAMP_ADDR           = 0x78         ///< datascope timestamp register
+};
+struct datascope {
+        void __iomem *timestamp_reg;                 ///< register in vendor specific address range (PxVS) where timestamp can be written
+        unsigned int cmd_cntr;                       ///< command counter, its value can be found in timestamp (2 bits only)
+        unsigned int enable;                         ///< enable/disable timestamps
+};
+
+/** Data for error handler */
+struct error_handler {
+	uint32_t s_error;
+	uint32_t irq_stat;
+	wait_queue_head_t wait;                      ///< wait queue for delayed interrupts
+};
 
 /** This structure is for collecting some recording statistics */
 struct rec_stat {
@@ -68,6 +92,8 @@ struct rec_stat {
 	unsigned int samples[SPEED_SAMPLES_NUM];     ///< calculated recording speed samples, the value of recording speed
 	                                             ///< presented via sysfs is a median of this array
 	sec_usec_t start_time;                       ///< time when current command has been issued
+	unsigned long last_irq_delay;                ///< late interrupt delay, in ms
+	unsigned int stat_ready;                    ///< flag indicating that new statisics sample is ready
 };
 
 /** This structure holds raw device buffer pointers */
@@ -130,6 +156,9 @@ struct elphel_ahci_priv {
 	struct timer_list cmd_timer;                 ///< command execution guard timer
 	unsigned int cmd_timeout;                    ///< command timeout, in ms
 	unsigned int io_error_flag;                  ///< flag indicating IO error was detected, this is flag is exported via sysfs
+
+	struct datascope datascope;
+	struct error_handler eh;                     ///< error handler data
 };
 
 #endif /* _AHCI_ELPHEL_EXT */
