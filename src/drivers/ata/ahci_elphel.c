@@ -178,7 +178,7 @@ static void process_timeout(unsigned long data)
 {
 	struct elphel_ahci_priv *dpriv = (struct elphel_ahci_priv *)data;
 
-	dev_err(dpriv->dev, "AHCI error: command execution timeout, LBA start = 0x%x\n", dpriv->lba_ptr.lba_write);
+	dev_err(dpriv->dev, "AHCI error: command execution timeout, LBA start = 0x%llx\n", dpriv->lba_ptr.lba_write);
 	set_flag(dpriv, START_EH);
 }
 
@@ -253,6 +253,7 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		if (dpriv->flags & (START_EH | WAIT_EH)) {
 			// tell to EH that the command will be processed in normal way
 			set_flag(dpriv, DELAYED_IRQ_RCVD);
+			wake_up_interruptible(&dpriv->eh.wait);
 		} else {
 			tasklet_schedule(&dpriv->bh);
 		}
@@ -307,9 +308,10 @@ void process_queue(unsigned long data)
 				finish_rec(dpriv);
 			} else {
 				/* all commands have been processed */
-				spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
-				dpriv->flags &= ~DISK_BUSY;
-				spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+//				spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+//				dpriv->flags &= ~DISK_BUSY;
+//				spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+				reset_flag(dpriv, DISK_BUSY);
 			}
 		}
 	}
@@ -1060,15 +1062,19 @@ static inline struct elphel_ahci_priv *dev_get_dpriv(struct device *dev)
 /** Process command and return the number of S/G entries mapped */
 static int process_cmd(struct elphel_ahci_priv *dpriv)
 {
+	unsigned long irq_flags;
 	struct fvec *cbuff;
 	struct ata_host *host = dev_get_drvdata(dpriv->dev);
 	struct ata_port *port = host->ports[DEFAULT_PORT_NUM];
 	size_t max_sz = (MAX_LBA_COUNT + 1) * PHY_BLOCK_SIZE;
 	size_t rem_sz = get_size_from(dpriv->data_chunks[dpriv->head_ptr], dpriv->curr_data_chunk, dpriv->curr_data_offset, EXCLUDE_REM);
 
+	dev_dbg(dpriv->dev, "flags = 0x%x\n", dpriv->flags);
+	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
 	if (dpriv->flags & PROC_CMD)
 		dpriv->lba_ptr.lba_write += dpriv->lba_ptr.wr_count;
 	dpriv->flags |= PROC_CMD;
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 
 	/* define ATA command to use for current transaction */
 	if ((dpriv->lba_ptr.lba_write & ~ADDR_MASK_28_BIT) || rem_sz > max_sz) {
@@ -1102,8 +1108,10 @@ static int process_cmd(struct elphel_ahci_priv *dpriv)
 static void finish_cmd(struct elphel_ahci_priv *dpriv)
 {
 	int all;
+	unsigned long irq_flags;
 
 	remove_timer(dpriv);
+	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
 	dpriv->lba_ptr.wr_count = 0;
 	if ((dpriv->flags & LAST_BLOCK) == 0) {
 		all = 0;
@@ -1117,6 +1125,7 @@ static void finish_cmd(struct elphel_ahci_priv *dpriv)
 	dpriv->curr_data_chunk = 0;
 	dpriv->curr_data_offset = 0;
 	dpriv->flags &= ~PROC_CMD;
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 }
 
 /** Fill free space in REM buffer with 0 and save the remaining data chunk */
@@ -1244,14 +1253,15 @@ void error_handler(struct elphel_ahci_priv *dpriv)
 	}
 
 	rc = wait_event_interruptible_timeout(dpriv->eh.wait, dpriv->flags & DELAYED_IRQ_RCVD, deadline);
+	dev_warn(dpriv->dev, "wait_event_interruptible_timeout returned %ld\n", rc);
 	if (!rc) {
 		/* interrupt has not been received after more than (DEFAULT_CMD_TIMEOUT + WAIT_IRQ_TIMEOUT) ms,
-		 * try to recover the link usign WAIT_IRQ_TIMEOUT value for next deadline
+		 * try to recover the link using WAIT_IRQ_TIMEOUT value for next deadline
 		 */
 		deadline = jiffies + msecs_to_jiffies(WAIT_IRQ_TIMEOUT);
 		rc = ap->ops->hardreset(link, &class, deadline);
 		if (!rc)
-			dev_err(dpriv->dev, "error: ahci_hardreset returned %d\n", rc);
+			dev_err(dpriv->dev, "error: ahci_hardreset returned %ld\n", rc);
 		ata_port_wait_eh(ap);
 
 		// here we assume that circbuf has not been overrun yet, prepare to repeat current command
@@ -1272,7 +1282,7 @@ void error_handler(struct elphel_ahci_priv *dpriv)
 		}
 		dpriv->stat.last_irq_delay = jiffies_to_msecs(delay) + DEFAULT_CMD_TIMEOUT;
 		dpriv->stat.stat_ready = 1;
-		dev_warn(dpriv->dev, "late interrupt received, delay is %u ms\n", dpriv->stat.last_irq_delay);
+		dev_warn(dpriv->dev, "late interrupt received, delay is %lu ms\n", dpriv->stat.last_irq_delay);
 		reset_flag(dpriv, DELAYED_IRQ_RCVD | START_EH);
 	}
 	reset_flag(dpriv, WAIT_EH);
@@ -1300,7 +1310,7 @@ static ssize_t rawdev_write(struct device *dev,  ///< device structure associate
 	ssize_t rcvd = 0;
 	bool proceed = false;
 	bool start_eh = false;
-	unsigned long irq_flags, n;
+	unsigned long irq_flags;
 	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
 	struct frame_data fdata;
 	struct frame_buffers *buffs;
@@ -1684,7 +1694,7 @@ static ssize_t timeout_read(struct device *dev, struct device_attribute *attr, c
 	return snprintf(buff, 64, "Command execution timeout: %u ms\n", dpriv->cmd_timeout);
 }
 
-static ssize_t io_error_read(struct device *dev, struct device_attributes *attr, char *buff)
+static ssize_t io_error_read(struct device *dev, struct device_attribute *attr, char *buff)
 {
 	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
 
@@ -1706,7 +1716,7 @@ static ssize_t stat_delay_write(struct device *dev, struct device_attribute *att
 	return buff_sz;
 }
 
-static ssize_t stat_delay_read(struct device *dev, struct device_attributes *attr, char *buff)
+static ssize_t stat_delay_read(struct device *dev, struct device_attribute *attr, char *buff)
 {
 	unsigned int data;
 	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
@@ -1716,7 +1726,7 @@ static ssize_t stat_delay_read(struct device *dev, struct device_attributes *att
 	else
 		data = 0;
 
-	return scnprintf(buff, "%u\n", data);
+	return scnprintf(buff, 20, "%u\n", data);
 }
 
 static DEVICE_ATTR(load_module, S_IWUSR | S_IWGRP, NULL, set_load_flag);
