@@ -264,6 +264,7 @@ static ssize_t enable_por_store(struct device *dev, struct device_attribute *att
 static ssize_t gpio_10389_get(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr, char *buf, size_t count);
 static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, char *buf, size_t count);
+static ssize_t detected_10389_get(struct device *dev, struct device_attribute *attr, char *buf);
 
 static int gpio_shutdown(struct device *dev);
 static int por_ctrl(struct device *dev, int disable_por);
@@ -331,6 +332,7 @@ static DEVICE_ATTR(power_off,    SYSFS_PERMISSIONS                 ,    NULL,   
  *  P7-P4 - NC, 0xX0X0 - not supported even on this driver level.
  */
 static DEVICE_ATTR(gpio_10389,   SYSFS_PERMISSIONS,                     gpio_10389_get,      gpio_10389_set);
+static DEVICE_ATTR(detected_10389,  SYSFS_PERMISSIONS & SYSFS_READONLY, detected_10389_get, NULL);
 
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_simulate.attr,
@@ -343,6 +345,7 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_enable_por.attr,
 		&dev_attr_power_off.attr,
 		&dev_attr_gpio_10389.attr,
+		&dev_attr_detected_10389.attr,
 	    NULL
 };
 static const struct attribute_group dev_attr_root_group = {
@@ -631,6 +634,12 @@ static ssize_t gpio_10389_get(struct device *dev, struct device_attribute *attr,
 		}
 	}
 	return sprintf(buf,"%02x\n",res);
+}
+
+static ssize_t detected_10389_get(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int res=1;
+	return sprintf(buf,"%i",res);
 }
 
 static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
@@ -1275,6 +1284,7 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 
     if (base[2]==NULL){
     	device_remove_file(&pdev->dev, &dev_attr_gpio_10389);
+    	device_remove_file(&pdev->dev, &dev_attr_detected_10389);
     }
 
     for (i=0;i<ARRAY_SIZE(pwr_gpio);i++){
