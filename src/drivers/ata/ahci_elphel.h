@@ -63,20 +63,32 @@
 #define EXCLUDE_REM               0              ///< Exclude REM buffer from total size calculation
 #define SPEED_SAMPLES_NUM         5              ///< Maximum number of samples for disk recording speed measurement
 #define DEFAULT_CMD_TIMEOUT       100            ///< Default timeout for commands, in ms
-#define WAIT_IRQ_TIMEOUT          1000           ///< Wait delayed interrupt for this amount of time, in ms
+#define WAIT_IRQ_TIMEOUT          5000           ///< Wait delayed interrupt for this amount of time, in ms
 
 #define TSTMP_CMD_SYS             1              ///< command issued by system
 #define TSTMP_CMD_DRV             2              ///< command issued by driver
 #define TSTMP_IRQ_SYS             3              ///< irq processed by system
 #define TSTMP_IRQ_DRV             4              ///< irq processed by driver
+#define TSTMP_IRQ_MARK_1          5
 enum {
         PORT_VS                       = 0x70,        ///< vendor specific port address
         PORT_TIMESTAMP_ADDR           = 0x78         ///< datascope timestamp register
 };
+enum {
+	REG_NUM = 128,                               ///< total number of DWs in status buffer
+	REG_HOST_IS = 0,                             ///< value of host IS register in data buffer
+	REG_PxIS,                                    ///< value of PxIS in data buffer
+	REG_PxIE,                                    ///< value of PxIE in data buffer
+	REG_PxSERR,                                  ///< value of PxSERR in data buffer
+	IRQ_COUNTER,                                 ///< interrupts counter for internal commands
+	IRQ_COUNTER_SYS,                             ///< interrupts counter for system commands
+	CMD_SENT                                     ///< number of commands sent
+};
 struct datascope {
-        void __iomem *timestamp_reg;                 ///< register in vendor specific address range (PxVS) where timestamp can be written
-        unsigned int cmd_cntr;                       ///< command counter, its value can be found in timestamp (2 bits only)
-        unsigned int enable;                         ///< enable/disable timestamps
+    void __iomem *timestamp_reg;                 ///< register in vendor specific address range (PxVS) where timestamp can be written
+    unsigned int cmd_cntr;                       ///< command counter, its value can be found in timestamp (2 bits only)
+    unsigned int enable;                         ///< enable/disable timestamps
+    uint32_t reg_stat[REG_NUM];                  ///< buffer for registers' status, filled in in IRQ
 };
 
 /** Data for error handler */
