@@ -40,6 +40,7 @@
 #define START_EH                  (1 << 6)       ///< Start error handling procedure
 #define WAIT_EH                   (1 << 7)       ///< Wait for error handler completion
 #define DELAYED_IRQ_RCVD          (1 << 8)       ///< Delayed interrupt received and should be processed
+#define IRQ_PROCESSED             (1 << 9)       ///< Tell command guard timer that IRQ is received and EH should not be started
 #define CMD_FIS_LEN               5              ///< The length of a command FIS in double words
 #define ADDR_MASK_28_BIT          ((u64)0xfffffff)///< This is used to get 28-bit address from 64-bit value
 #define MAX_PRDT_LEN              0x3fffff       ///< A maximum of length of 4MB may exist for PRDT entry
@@ -62,27 +63,39 @@
 #define INCLUDE_REM               1              ///< Include REM buffer to total size calculation
 #define EXCLUDE_REM               0              ///< Exclude REM buffer from total size calculation
 #define SPEED_SAMPLES_NUM         5              ///< Maximum number of samples for disk recording speed measurement
-#define DEFAULT_CMD_TIMEOUT       100            ///< Default timeout for commands, in ms
-#define WAIT_IRQ_TIMEOUT          1000           ///< Wait delayed interrupt for this amount of time, in ms
+#define DEFAULT_CMD_TIMEOUT       200            ///< Default timeout for commands, in ms
+#define WAIT_IRQ_TIMEOUT          5000           ///< Wait delayed interrupt for this amount of time, in ms
 
 #define TSTMP_CMD_SYS             1              ///< command issued by system
 #define TSTMP_CMD_DRV             2              ///< command issued by driver
 #define TSTMP_IRQ_SYS             3              ///< irq processed by system
 #define TSTMP_IRQ_DRV             4              ///< irq processed by driver
+#define TSTMP_IRQ_MARK_1          5              ///< additional time stamp mark
 enum {
-        PORT_VS                       = 0x70,        ///< vendor specific port address
-        PORT_TIMESTAMP_ADDR           = 0x78         ///< datascope timestamp register
+    PORT_VS                       = 0x70,        ///< vendor specific port address
+    PORT_TIMESTAMP_ADDR           = 0x78         ///< datascope timestamp register
+};
+enum {
+	REG_NUM = 128,                               ///< total number of DWs in status buffer
+	REG_HOST_IS = 0,                             ///< value of host IS register in data buffer
+	REG_PxIS,                                    ///< value of PxIS in data buffer
+	REG_PxIE,                                    ///< value of PxIE in data buffer
+	REG_PxSERR,                                  ///< value of PxSERR in data buffer
+	IRQ_COUNTER,                                 ///< interrupts counter for internal commands
+	IRQ_COUNTER_SYS,                             ///< interrupts counter for system commands
+	CMD_SENT                                     ///< number of commands sent
 };
 struct datascope {
-        void __iomem *timestamp_reg;                 ///< register in vendor specific address range (PxVS) where timestamp can be written
-        unsigned int cmd_cntr;                       ///< command counter, its value can be found in timestamp (2 bits only)
-        unsigned int enable;                         ///< enable/disable timestamps
+    void __iomem *timestamp_reg;                 ///< register in vendor specific address range (PxVS) where timestamp can be written
+    unsigned int cmd_cntr;                       ///< command counter, its value can be found in timestamp (2 bits only)
+    unsigned int enable;                         ///< enable/disable timestamps
+    uint32_t reg_stat[REG_NUM];                  ///< buffer for registers' status, filled in in IRQ
 };
 
 /** Data for error handler */
 struct error_handler {
-	uint32_t s_error;
-	uint32_t irq_stat;
+	uint32_t s_error;                            ///< the content of PxSERR register
+	uint32_t irq_stat;                           ///< the content of PxIS register
 	wait_queue_head_t wait;                      ///< wait queue for delayed interrupts
 };
 
@@ -93,7 +106,7 @@ struct rec_stat {
 	                                             ///< presented via sysfs is a median of this array
 	sec_usec_t start_time;                       ///< time when current command has been issued
 	unsigned long last_irq_delay;                ///< late interrupt delay, in ms
-	unsigned int stat_ready;                    ///< flag indicating that new statisics sample is ready
+	unsigned int stat_ready;                     ///< flag indicating that new statisics sample is ready
 };
 
 /** This structure holds raw device buffer pointers */
