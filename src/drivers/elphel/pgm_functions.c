@@ -1797,16 +1797,16 @@ int pgm_hist       (int sensor_port,               ///< sensor port number (0..3
         poffs = HIST_SUBCHN_OFFSET * sub_chn;
         //  int fpga_addr=(frame16 <0) ? X313_SEQ_ASAP : (X313_SEQ_FRAME0+frame16);
         // calculate absolute window from the relative, apply limits
-        hist_setup_data.width=  ((thispars->pars[P_HISTWND_RWIDTH + poffs] * thispars->pars[P_ACTUAL_WIDTH])>>16) & 0xffe;
+        hist_setup_data.width=  ((thispars->pars[P_HISTWND_RWIDTH + poffs] * thispars->pars[P_ACTUAL_WIDTH])>>16) & 0xfffe;
         if (hist_setup_data.width<2) hist_setup_data.width=2;
         else if (hist_setup_data.width > thispars->pars[P_ACTUAL_WIDTH]) hist_setup_data.width = thispars->pars[P_ACTUAL_WIDTH];
-        hist_setup_data.left=  ((thispars->pars[P_HISTWND_RLEFT + poffs] * (thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width)) >>16) & 0xffe;
+        hist_setup_data.left=  ((thispars->pars[P_HISTWND_RLEFT + poffs] * (thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width)) >>16) & 0xfffe;
         if (hist_setup_data.left> (thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width)) hist_setup_data.left = thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width;
 
-        hist_setup_data.height=  ((thispars->pars[P_HISTWND_RHEIGHT + poffs] * thispars->pars[P_ACTUAL_HEIGHT])>>16) & 0xffe;
+        hist_setup_data.height=  ((thispars->pars[P_HISTWND_RHEIGHT + poffs] * thispars->pars[P_ACTUAL_HEIGHT])>>16) & 0xfffe;
         if (hist_setup_data.height<2) hist_setup_data.height=2;
         else if (hist_setup_data.height > thispars->pars[P_ACTUAL_HEIGHT]) hist_setup_data.height = thispars->pars[P_ACTUAL_HEIGHT];
-        hist_setup_data.top=  ((thispars->pars[P_HISTWND_RTOP + poffs] * (thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height)) >>16) & 0xffe;
+        hist_setup_data.top=  ((thispars->pars[P_HISTWND_RTOP + poffs] * (thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height)) >>16) & 0xfffe;
         if (hist_setup_data.top > (thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height)) hist_setup_data.top = thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height;
 
         if ((hist_setup_data.left   != thispars->pars[P_HISTWND_LEFT + poffs]) ||
