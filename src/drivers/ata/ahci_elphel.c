@@ -144,7 +144,8 @@ static void remove_timer(struct elphel_ahci_priv *dpriv)
 	if (timer_pending(&dpriv->cmd_timer)) {
 		ret = del_timer_sync(&dpriv->cmd_timer);
 		if (ret < 0)
-			dev_err(dpriv->dev, "can not remove timer\n");
+			dev_err(dpriv->dev, "can not remove command guard timer\n");
+		reset_flag(dpriv, IRQ_PROCESSED);
 	}
 }
 
@@ -176,10 +177,22 @@ static void reset_all_commands(struct elphel_ahci_priv *dpriv)
 /** Command execution timer has expired, set flag indicating that recording should be restarted */
 static void process_timeout(unsigned long data)
 {
+	int report = 0;
+	unsigned long irq_flags;
 	struct elphel_ahci_priv *dpriv = (struct elphel_ahci_priv *)data;
 
-	dev_err(dpriv->dev, "AHCI error: command execution timeout, LBA start = 0x%llx\n", dpriv->lba_ptr.lba_write);
-	set_flag(dpriv, START_EH);
+	/* we are racing with interrupt here, IRQ handler sets IRQ_PROCESSED flag to prevent timer from
+	 * triggering error handler before this timer is removed
+	 */
+	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
+	if (!(dpriv->flags & IRQ_PROCESSED)) {
+		dpriv->flags |= START_EH;
+		report = 1;
+	}
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+	if (report) {
+		set_dscope_tstamp(dpriv, TSTMP_CMD_SYS);
+	}
 }
 
 /** Calculate the difference between two time stamps and return it in microseconds */
@@ -229,13 +242,21 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 
 		/* handle interrupt from internal command */
 		host_irq_stat = readl(hpriv->mmio + HOST_IRQ_STAT);
-		if (!host_irq_stat)
+		if (!host_irq_stat) {
+			dev_err(dpriv->dev, "Spurious IRQ received, host_irq_stat = 0x%x\n", host_irq_stat);
 			return IRQ_NONE;
-		dpriv->flags &= ~IRQ_SIMPLE;
+		}
+
+		reset_flag(dpriv, IRQ_SIMPLE);
 		irq_stat = readl(port_mmio + PORT_IRQ_STAT);
 		serror =  readl(port_mmio + PORT_SCR_ERR);
 
-		dev_dbg(host->dev, "irq_stat = 0x%x, host irq_stat = 0x%x, SErr = 0x%x\n", irq_stat, host_irq_stat, serror);
+		/* debug feature, save current state for analysis */
+		dpriv->datascope.reg_stat[REG_HOST_IS] = host_irq_stat;
+		dpriv->datascope.reg_stat[REG_PxIS] = irq_stat;
+		dpriv->datascope.reg_stat[REG_PxSERR] = serror;
+		dpriv->datascope.reg_stat[REG_PxIE] = readl(port_mmio + PORT_IRQ_MASK);
+		dpriv->datascope.reg_stat[IRQ_COUNTER] = dpriv->datascope.reg_stat[IRQ_COUNTER] + 1;
 
 		if (unlikely(irq_stat & PORT_IRQ_ERROR)) {
 			dpriv->eh.irq_stat = irq_stat;
@@ -246,21 +267,27 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		writel(irq_stat, port_mmio + PORT_IRQ_STAT);
 		writel(host_irq_stat, hpriv->mmio + HOST_IRQ_STAT);
 		handled = IRQ_HANDLED;
+		set_dscope_tstamp(dpriv, TSTMP_IRQ_MARK_1);
 
-		/* check if this command timed out and charged error handler, do not schedule tasklet in this case as
+		/*
+		 * check if this command timed out and charged error handler, do not schedule tasklet in this case as
 		 * the processing will restart from error handler
 		 */
+		spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
 		if (dpriv->flags & (START_EH | WAIT_EH)) {
 			// tell to EH that the command will be processed in normal way
-			set_flag(dpriv, DELAYED_IRQ_RCVD);
+			set_dscope_tstamp(dpriv, TSTMP_IRQ_MARK_1);
+			dpriv->flags |= DELAYED_IRQ_RCVD;
 			wake_up_interruptible(&dpriv->eh.wait);
 		} else {
+			dpriv->flags |= IRQ_PROCESSED;
 			tasklet_schedule(&dpriv->bh);
 		}
-
+		spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 	} else {
 
 		set_dscope_tstamp(dpriv, TSTMP_IRQ_SYS);
+		dpriv->datascope.reg_stat[IRQ_COUNTER_SYS] = dpriv->datascope.reg_stat[IRQ_COUNTER_SYS] + 1;
 
 		/* pass handling to AHCI level and then decide if the resource should be freed */
 		handled = ahci_single_irq_intr(irq, dev_instance);
@@ -275,12 +302,12 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 
 	return handled;
 }
+
 /** Command queue processing tasklet */
 void process_queue(unsigned long data)
 {
 	int i;
 	size_t total_sz = 0;
-	unsigned long irq_flags;
 	unsigned long time_usec;
 	sec_usec_t end_time = {0};
 	struct elphel_ahci_priv *dpriv = (struct elphel_ahci_priv *)data;
@@ -294,7 +321,7 @@ void process_queue(unsigned long data)
 		add_sample(total_sz / time_usec, &dpriv->stat);
 	}
 
-	// check if we can proceed - this was debug feature to fully stop cmd processing
+//	// check if we can proceed - this was debug feature to fully stop cmd processing
 //	if (dpriv->flags & (START_EH | WAIT_EH))
 //		return;
 
@@ -308,9 +335,6 @@ void process_queue(unsigned long data)
 				finish_rec(dpriv);
 			} else {
 				/* all commands have been processed */
-//				spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
-//				dpriv->flags &= ~DISK_BUSY;
-//				spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 				reset_flag(dpriv, DISK_BUSY);
 			}
 		}
@@ -1234,7 +1258,7 @@ static size_t get_prev_slot(const struct elphel_ahci_priv *dpriv)
 	return slot;
 }
 
-/** Handle delayed interrupt or ather errors */
+/** Handle delayed interrupt or other errors */
 void error_handler(struct elphel_ahci_priv *dpriv)
 {
 	long rc;
@@ -1253,8 +1277,9 @@ void error_handler(struct elphel_ahci_priv *dpriv)
 	}
 
 	rc = wait_event_interruptible_timeout(dpriv->eh.wait, dpriv->flags & DELAYED_IRQ_RCVD, deadline);
-	dev_warn(dpriv->dev, "wait_event_interruptible_timeout returned %ld\n", rc);
+	dev_dbg(dpriv->dev, "wait_event_interruptible_timeout returned %ld\n", rc);
 	if (!rc) {
+		reset_flag(dpriv, IRQ_SIMPLE | DISK_BUSY | PROC_CMD | START_EH);
 		/* interrupt has not been received after more than (DEFAULT_CMD_TIMEOUT + WAIT_IRQ_TIMEOUT) ms,
 		 * try to recover the link using WAIT_IRQ_TIMEOUT value for next deadline
 		 */
@@ -1270,9 +1295,7 @@ void error_handler(struct elphel_ahci_priv *dpriv)
 		dpriv->max_data_sz = 0;
 		dpriv->curr_data_chunk = 0;
 		dpriv->curr_data_offset = 0;
-		reset_flag(dpriv, IRQ_SIMPLE | DISK_BUSY | PROC_CMD | START_EH);
 		dev_dbg(dpriv->dev, "repeat command from slot (head_ptr): %u\n", dpriv->head_ptr);
-//		process_cmd(dpriv);
 	} else {
 		// late interrupt received or the queue was woken up, proceed to normal operation
 		if (rc < 0) {
@@ -1282,7 +1305,7 @@ void error_handler(struct elphel_ahci_priv *dpriv)
 		}
 		dpriv->stat.last_irq_delay = jiffies_to_msecs(delay) + DEFAULT_CMD_TIMEOUT;
 		dpriv->stat.stat_ready = 1;
-		dev_warn(dpriv->dev, "late interrupt received, delay is %lu ms\n", dpriv->stat.last_irq_delay);
+		dev_dbg(dpriv->dev, "late interrupt received, delay is %lu ms\n", dpriv->stat.last_irq_delay);
 		reset_flag(dpriv, DELAYED_IRQ_RCVD | START_EH);
 	}
 	reset_flag(dpriv, WAIT_EH);
@@ -1295,6 +1318,7 @@ void error_handler(struct elphel_ahci_priv *dpriv)
 	}
 }
 
+/** This function is called during write test only */
 static void invalidate_cache(struct fvec *vect)
 {
 	__cpuc_flush_dcache_area(vect->iov_base, vect->iov_len);
@@ -1546,6 +1570,7 @@ static void elphel_cmd_issue(struct ata_port *ap,///< device port for which the 
 	dma_sync_single_for_device(ap->dev, pp->cmd_tbl_dma, AHCI_CMD_TBL_AR_SZ, DMA_TO_DEVICE);
 
 	set_dscope_tstamp(dpriv, TSTMP_CMD_DRV);
+	dpriv->datascope.reg_stat[CMD_SENT] = dpriv->datascope.reg_stat[CMD_SENT] + 1;
 
 	/* issue command */
 	writel(0x11, port_mmio + PORT_CMD);
@@ -1701,7 +1726,7 @@ static ssize_t io_error_read(struct device *dev, struct device_attribute *attr, 
 	return sprintf(buff, "%u\n", dpriv->io_error_flag);
 }
 
-/** Reset statistics availability flag. This will indicatate that the current samples is processed */
+/** Reset statistics availability flag. This will indicate that the current sample is processed */
 static ssize_t stat_delay_write(struct device *dev, struct device_attribute *attr, const char *buff, size_t buff_sz)
 {
 	unsigned long data;
@@ -1729,9 +1754,27 @@ static ssize_t stat_delay_read(struct device *dev, struct device_attribute *attr
 	return scnprintf(buff, 20, "%u\n", data);
 }
 
+static ssize_t reg_status_read(struct device *dev, struct device_attribute *attr, char *buff)
+{
+	int i;
+	ssize_t cntr;
+	unsigned int data;
+	struct elphel_ahci_priv *dpriv = dev_get_dpriv(dev);
+
+	for (i = 0, cntr = 0; i < REG_NUM; i++) {
+		if ((i % 8) == 0 && i != 0)
+			cntr += scnprintf(&buff[cntr], PAGE_SIZE - cntr - 1, "\n");
+		cntr += scnprintf(&buff[cntr], PAGE_SIZE - cntr - 1, "0x%08x ", dpriv->datascope.reg_stat[i]);
+	}
+	cntr += scnprintf(&buff[cntr], PAGE_SIZE - cntr - 1, "\n");
+
+	return cntr;
+}
+
 static DEVICE_ATTR(load_module, S_IWUSR | S_IWGRP, NULL, set_load_flag);
 static DEVICE_ATTR(io_error, S_IRUSR | S_IRGRP | S_IROTH, io_error_read, NULL);
 static DEVICE_ATTR(stat_irq_delay, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, stat_delay_read, stat_delay_write);
+static DEVICE_ATTR(reg_status, S_IRUSR | S_IRGRP | S_IROTH, reg_status_read, NULL);
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_WRITE, S_IWUSR | S_IWGRP, NULL, rawdev_write);
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_START, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, lba_start_read, lba_start_write);
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_END, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, lba_end_read, lba_end_write);
@@ -1742,6 +1785,7 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_load_module.attr,
 		&dev_attr_io_error.attr,
 		&dev_attr_stat_irq_delay.attr,
+		&dev_attr_reg_status.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_WRITE.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_START.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_END.attr,
@@ -1905,24 +1949,13 @@ static void set_dscope_tstamp(struct elphel_ahci_priv *dpriv, unsigned int cmd)
         void __iomem *port_mmio;
         uint32_t data = 0;
 
-//        if (!dpriv->datascope.enable)
-//                return;
-
         host = dev_get_drvdata(dpriv->dev);
         hpriv = host->private_data;
         ap = host->ports[DEFAULT_PORT_NUM];
         port_mmio = ahci_port_base(ap);
 
-        // one bit command flag (TSTMP_*)
+        // three bits command flag (TSTMP_*)
         data |= (cmd & 0x7);
-        // command counter
-//        data |= ((dpriv->datascope.cmd_cntr & 0x3) << 1);
-//        if (cmd == TSTMP_IRQ_RCVD) {
-//			dpriv->datascope.cmd_cntr++;
-//			if (dpriv->datascope.cmd_cntr > 3)
-//					dpriv->datascope.cmd_cntr = 0;
-//        }
-
 		iowrite32(data, port_mmio + PORT_TIMESTAMP_ADDR);
 }
 
