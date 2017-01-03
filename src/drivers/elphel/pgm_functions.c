@@ -251,6 +251,8 @@
   #define MD1(x)
 #endif
 
+#define BUGFIX_HISTWND_HEIGHT
+
 static struct device *g_dev_ptr=NULL; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
 void pgm_functions_set_device(struct device *dev)
 {
@@ -1782,6 +1784,10 @@ int pgm_hist       (int sensor_port,               ///< sensor port number (0..3
         long height;
     } hist_setup_data;
     struct frameparspair_t pars_to_update[4* MAX_SENSORS];
+
+#ifdef BUGFIX_HISTWND_HEIGHT
+    int actual_height;
+#endif
     /*
     struct frameparspair_t pars_to_update[4]={
             {P_HISTWND_LEFT, 0},
@@ -1803,11 +1809,20 @@ int pgm_hist       (int sensor_port,               ///< sensor port number (0..3
         hist_setup_data.left=  ((thispars->pars[P_HISTWND_RLEFT + poffs] * (thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width)) >>16) & 0xfffe;
         if (hist_setup_data.left> (thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width)) hist_setup_data.left = thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width;
 
+#ifdef BUGFIX_HISTWND_HEIGHT
+        actual_height = thispars->pars[P_ACTUAL_HEIGHT] - 2;
+        hist_setup_data.height=  ((thispars->pars[P_HISTWND_RHEIGHT + poffs] * actual_height)>>16) & 0xfffe;
+        if (hist_setup_data.height<2) hist_setup_data.height=2;
+        else if (hist_setup_data.height > actual_height) hist_setup_data.height = actual_height;
+        hist_setup_data.top=  ((thispars->pars[P_HISTWND_RTOP + poffs] * (actual_height-hist_setup_data.height)) >>16) & 0xfffe;
+        if (hist_setup_data.top > (actual_height-hist_setup_data.height)) hist_setup_data.top = actual_height-hist_setup_data.height;
+#else
         hist_setup_data.height=  ((thispars->pars[P_HISTWND_RHEIGHT + poffs] * thispars->pars[P_ACTUAL_HEIGHT])>>16) & 0xfffe;
         if (hist_setup_data.height<2) hist_setup_data.height=2;
         else if (hist_setup_data.height > thispars->pars[P_ACTUAL_HEIGHT]) hist_setup_data.height = thispars->pars[P_ACTUAL_HEIGHT];
         hist_setup_data.top=  ((thispars->pars[P_HISTWND_RTOP + poffs] * (thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height)) >>16) & 0xfffe;
         if (hist_setup_data.top > (thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height)) hist_setup_data.top = thispars->pars[P_ACTUAL_HEIGHT]-hist_setup_data.height;
+#endif
 
         if ((hist_setup_data.left   != thispars->pars[P_HISTWND_LEFT + poffs]) ||
                 (hist_setup_data.width  != thispars->pars[P_HISTWND_WIDTH + poffs]) ||
