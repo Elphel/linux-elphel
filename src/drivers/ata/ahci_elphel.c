@@ -1185,22 +1185,31 @@ static void finish_rec(struct elphel_ahci_priv *dpriv)
 /** Move a pointer to free command slot one step forward. This function holds spin lock #elphel_ahci_priv::flags_lock */
 static int move_tail(struct elphel_ahci_priv *dpriv)
 {
+	int ret;
+	unsigned long irq_flags;
 	size_t slot = (dpriv->tail_ptr + 1) % MAX_CMD_SLOTS;
 
+	spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
 	if (slot != dpriv->head_ptr) {
-		set_flag(dpriv, LOCK_TAIL);
+		dpriv->flags |= LOCK_TAIL;
 		dpriv->tail_ptr = slot;
-		dev_dbg(dpriv->dev, "move tail pointer to slot: %u\n", slot);
-		return 0;
+		ret = 0;
 	} else {
 		/* no more free command slots */
-		return -1;
+		ret = -1;
 	}
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
+
+	if (ret == 0)
+		dev_dbg(dpriv->dev, "move tail pointer to slot: %u\n", slot);
+
+	return ret;
 }
 
 /** Move a pointer to next ready command. This function holds spin lock #elphel_ahci_priv::flags_lock*/
 static int move_head(struct elphel_ahci_priv *dpriv)
 {
+	int ret;
 	size_t use_tail;
 	unsigned long irq_flags;
 	size_t slot = (dpriv->head_ptr + 1) % MAX_CMD_SLOTS;
@@ -1212,17 +1221,19 @@ static int move_head(struct elphel_ahci_priv *dpriv)
 	} else {
 		use_tail = dpriv->tail_ptr;
 	}
-	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
-
 	if (dpriv->head_ptr != use_tail) {
 		dpriv->head_ptr = slot;
-		dev_dbg(dpriv->dev, "move head pointer to slot: %u\n", slot);
-		return 0;
+		ret = 0;
 	} else {
 		/* no more commands in queue */
-		return -1;
+		ret = -1;
 	}
+	spin_unlock_irqrestore(&dpriv->flags_lock, irq_flags);
 
+	if (ret == 0)
+		dev_dbg(dpriv->dev, "move head pointer to slot: %u\n", slot);
+
+	return ret;
 }
 
 /** Check if command queue is empty */
@@ -1382,6 +1393,7 @@ static ssize_t rawdev_write(struct device *dev,  ///< device structure associate
 		} else {
 			dpriv->flags |= DELAYED_FINISH;
 		}
+		dpriv->datascope.reg_stat[CMD_RCVD] = dpriv->datascope.reg_stat[CMD_RCVD] + 1;
 		return buff_sz;
 	}
 
@@ -1439,6 +1451,8 @@ static ssize_t rawdev_write(struct device *dev,  ///< device structure associate
 	align_frame(dpriv);
 	/* new command slot is ready now and can be unlocked */
 	reset_flag(dpriv, LOCK_TAIL);
+
+	dpriv->datascope.reg_stat[CMD_RCVD] = dpriv->datascope.reg_stat[CMD_RCVD] + 1;
 
 	if (!proceed) {
 		/* disk may be free by the moment, try to grab it */

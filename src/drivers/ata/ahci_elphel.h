@@ -83,7 +83,8 @@ enum {
 	REG_PxSERR,                                  ///< value of PxSERR in data buffer
 	IRQ_COUNTER,                                 ///< interrupts counter for internal commands
 	IRQ_COUNTER_SYS,                             ///< interrupts counter for system commands
-	CMD_SENT                                     ///< number of commands sent
+	CMD_SENT,                                    ///< number of commands sent
+	CMD_RCVD                                     ///< number of commands received
 };
 struct datascope {
     void __iomem *timestamp_reg;                 ///< register in vendor specific address range (PxVS) where timestamp can be written
