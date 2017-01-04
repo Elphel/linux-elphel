@@ -1810,10 +1810,15 @@ int pgm_hist       (int sensor_port,               ///< sensor port number (0..3
         if (hist_setup_data.left> (thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width)) hist_setup_data.left = thispars->pars[P_ACTUAL_WIDTH]-hist_setup_data.width;
 
 #ifdef BUGFIX_HISTWND_HEIGHT
+        // bug 1: if not "-2" from hist_setup_data.height - there will be a blue/green bar near 0 (pix value)
+        // bug 2: NOT FIXED ... hist_setup_data.top=0 and rheight=100% - port 3 blue gets to port 2 blue channel
+        // lowering actual_height does not fix
         actual_height = thispars->pars[P_ACTUAL_HEIGHT] - 2;
+
         hist_setup_data.height=  ((thispars->pars[P_HISTWND_RHEIGHT + poffs] * actual_height)>>16) & 0xfffe;
         if (hist_setup_data.height<2) hist_setup_data.height=2;
         else if (hist_setup_data.height > actual_height) hist_setup_data.height = actual_height;
+
         hist_setup_data.top=  ((thispars->pars[P_HISTWND_RTOP + poffs] * (actual_height-hist_setup_data.height)) >>16) & 0xfffe;
         if (hist_setup_data.top > (actual_height-hist_setup_data.height)) hist_setup_data.top = actual_height-hist_setup_data.height;
 #else
