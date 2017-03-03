@@ -40,7 +40,7 @@ struct circbuf_priv_t {
 };
 struct  circbuf_priv_t *get_circbuf(int chn); // alternative to use of extern struct circbuf_priv_ptr;
 extern struct circbuf_priv_t *circbuf_priv_ptr;
-extern wait_queue_head_t circbuf_wait_queue;
+extern wait_queue_head_t circbuf_wait_queue[SENSOR_PORTS];
 
 int          circbuf_all_open  (struct inode *inode,  struct file *filp); // set file size
 int          circbuf_all_release(struct inode *inode, struct file *filp);

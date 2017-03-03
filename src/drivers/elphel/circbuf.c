@@ -50,8 +50,11 @@
 /** @brief Driver name displayed in system logs */
 //#define CIRCBUF_DRIVER_NAME "circbuf driver"
 
-/** @brief Wait queue for the processes waiting for a new frame to appear in the circular buffer */
-wait_queue_head_t circbuf_wait_queue;
+/** @brief Wait queue for the processes waiting for a new frame to appear in the circular buffer. Each channel has
+ * its own instance of wait queue to prevent race conditions when one channel wakes up the queue while the other
+ * channel is processing interrupt and moved its write pointer, but has not finished all other functions yet.
+ */
+wait_queue_head_t circbuf_wait_queue[SENSOR_PORTS];
 struct circbuf_priv_t circbuf_priv[SENSOR_PORTS];
 struct circbuf_priv_t *circbuf_priv_ptr = circbuf_priv;
 /** @brief Global pointer to basic device structure. This pointer is used in debugfs output functions */
@@ -690,13 +693,13 @@ loff_t circbuf_lseek(struct file * file, loff_t offset, int orig) {
              break;
           case LSEEK_CIRC_WAIT:
               while (((fvld=circbufValidPointer(file->f_pos, &fp, chn)))==0) { //! only while not ready, ready or BAD - return
-                wait_event_interruptible (circbuf_wait_queue,(camSeqGetJPEG_wp(chn)<<2)!=file->f_pos);
+                wait_event_interruptible (circbuf_wait_queue[chn],(camSeqGetJPEG_wp(chn)<<2)!=file->f_pos);
               }
               if (fvld < 0) return -ESPIPE;      //!invalid seek - have better code?
               return file->f_pos ; //! data already available, return file pointer
           default:
             if ((offset & ~0x1f)==LSEEK_DAEMON_CIRCBUF) {
-              wait_event_interruptible (circbuf_wait_queue, get_imageParamsFrame(chn, P_DAEMON_EN, camSeqGetJPEG_frame(chn)) & (1<<(offset & 0x1f)));
+              wait_event_interruptible (circbuf_wait_queue[chn], get_imageParamsFrame(chn, P_DAEMON_EN, camSeqGetJPEG_frame(chn)) & (1<<(offset & 0x1f)));
             }
         }
         dev_dbg(g_dev_ptr, "return SEEK_END file->f_pos =0x%08llx\n",file->f_pos);
@@ -835,7 +838,7 @@ unsigned int circbuf_poll (struct file *file, poll_table *wait)
 		return POLLIN | POLLRDNORM;     // there was frame already available
 	} else {
 		// pointer valid, no frame yet
-		poll_wait(file, &circbuf_wait_queue, wait);
+		poll_wait(file, &circbuf_wait_queue[chn], wait);
 		// Frame might become available during call to poll_wait so nobody will wake us up,
 		// let's see if there is still no frame.
 		w_ptr = camseq_get_jpeg_wp(chn) << 2;
@@ -863,7 +866,7 @@ static struct file_operations circbuf_fops = {
  */
 static int circbuf_all_init(struct platform_device *pdev)
 {
-   int res;
+   int res, i;
    struct device *dev = &pdev->dev;
    const struct of_device_id *match;
 
@@ -897,7 +900,8 @@ static int circbuf_all_init(struct platform_device *pdev)
    }
 
    dev_dbg(dev, "initialize circbuf wait queue\n");
-   init_waitqueue_head(&circbuf_wait_queue);
+   for (i = 0; i < SENSOR_PORTS; i++)
+	   init_waitqueue_head(&circbuf_wait_queue[i]);
    dev_dbg(dev, "initialize Huffman tables with default data\n");
 
    g_dev_ptr = dev;

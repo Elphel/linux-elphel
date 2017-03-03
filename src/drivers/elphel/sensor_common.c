@@ -694,7 +694,7 @@ static irqreturn_t compressor_irq_handler(int irq, void *dev_id)
  * @brief Tasklet - software interrupt
  * lower priority tasks
  * try to implement some balancing - if job is not finished - reduce FPS for it (alternate jobs)?
- * @param arg not used
+ * @param arg sensor port number
  */
 
 void tasklet_compressor_function(unsigned long arg)
@@ -724,7 +724,7 @@ void tasklet_compressor_function(unsigned long arg)
         outer_inv_range(phys_addr_start, phys_addr_end);
         __cpuc_flush_dcache_area(virt_addr_start, sz - ccam_dma_size);
     }
-    wake_up_interruptible(&circbuf_wait_queue); // should be done in here (after cache invalidation), not in ISR
+    wake_up_interruptible(&circbuf_wait_queue[arg]); // should be done in here (after cache invalidation), not in ISR
 }
 
 /*!TODO:
