@@ -481,14 +481,15 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	}
 
 	/* reassign automatically assigned interrupt handler */
-	irq_num = platform_get_irq(pdev, 0);
-	host = platform_get_drvdata(pdev);
-	devm_free_irq(dev, irq_num, host);
-	ret = devm_request_irq(dev, irq_num, elphel_irq_handler, IRQF_SHARED, dev_name(dev), host);
-	if (ret) {
-		dev_err(dev, "failed to reassign default IRQ handler to Elphel handler\n");
-		return ret;
-	}
+	/* this is disabled because recording in both modes goes through system */
+//	irq_num = platform_get_irq(pdev, 0);
+//	host = platform_get_drvdata(pdev);
+//	devm_free_irq(dev, irq_num, host);
+//	ret = devm_request_irq(dev, irq_num, elphel_irq_handler, IRQF_SHARED, dev_name(dev), host);
+//	if (ret) {
+//		dev_err(dev, "failed to reassign default IRQ handler to Elphel handler\n");
+//		return ret;
+//	}
 
 	return 0;
 }
@@ -520,6 +521,9 @@ static void elphel_qc_prep(struct ata_queued_cmd *qc)
 	unsigned int n_elem;
 	struct scatterlist *sg;
 	struct ahci_sg *ahci_sg;
+
+	dev_dbg(ap->dev, "cmd = 0x%x, qc->tag = %u, ap->qc_active = %u, link->sactive = %u, link->active_tag = %u\n",
+			qc->tf.command, qc->tag, ap->qc_active, ap->link.sactive, ap->link.active_tag);
 
 	/* There is only one slot in controller thus we need to change tag*/
 	qc->tag = 0;
@@ -1351,6 +1355,9 @@ static ssize_t rawdev_write(struct device *dev,  ///< device structure associate
 	struct frame_buffers *buffs;
 	struct fvec *chunks;
 
+	/* disable recording using direct driver commands */
+	return -EINVAL;
+
 	/* simple check if we've got the right command */
 	if (buff_sz != sizeof(struct frame_data)) {
 		dev_err(dev, "the size of the data buffer is incorrect, should be equal to sizeof(struct frame_data)\n");
@@ -1817,7 +1824,7 @@ static struct ata_port_operations ahci_elphel_ops = {
 		.inherits		= &ahci_ops,
 		.port_start		= elphel_port_start,
 		.qc_prep		= elphel_qc_prep,
-		.qc_defer       = elphel_qc_defer,
+		/* .qc_defer       = elphel_qc_defer, */
 };
 
 static const struct ata_port_info ahci_elphel_port_info = {
