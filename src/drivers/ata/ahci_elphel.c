@@ -1792,6 +1792,25 @@ static ssize_t reg_status_read(struct device *dev, struct device_attribute *attr
 	return cntr;
 }
 
+extern int enable_panic;
+static ssize_t enable_panic_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%i", enable_panic);
+}
+
+static ssize_t enable_panic_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int data;
+
+	sscanf(buf, "%i", &data);
+	if (data != 0)
+		enable_panic = 1;
+	else
+		enable_panic = 0;
+
+	return count;
+}
+
 static DEVICE_ATTR(load_module, S_IWUSR | S_IWGRP, NULL, set_load_flag);
 static DEVICE_ATTR(io_error, S_IRUSR | S_IRGRP | S_IROTH, io_error_read, NULL);
 static DEVICE_ATTR(stat_irq_delay, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, stat_delay_read, stat_delay_write);
@@ -1802,6 +1821,7 @@ static DEVICE_ATTR(SYSFS_AHCI_FNAME_END, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR |
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_CURR, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, lba_current_read, lba_current_write);
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_WRSPEED, S_IRUSR | S_IRGRP | S_IROTH, wr_speed_read, NULL);
 static DEVICE_ATTR(SYSFS_AHCI_FNAME_TIMEOUT, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, timeout_read, timeout_write);
+static DEVICE_ATTR(enable_panic_flag, S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP, enable_panic_show, enable_panic_store);
 static struct attribute *root_dev_attrs[] = {
 		&dev_attr_load_module.attr,
 		&dev_attr_io_error.attr,
@@ -1813,6 +1833,7 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_SYSFS_AHCI_FNAME_CURR.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_WRSPEED.attr,
 		&dev_attr_SYSFS_AHCI_FNAME_TIMEOUT.attr,
+		&dev_attr_enable_panic_flag.attr,
 		NULL
 };
 static const struct attribute_group dev_attr_root_group = {
