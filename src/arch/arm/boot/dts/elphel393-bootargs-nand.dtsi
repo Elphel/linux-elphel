@@ -1,7 +1,7 @@
 /**/
 / {
 	chosen {
-		bootargs = "cma=336M console=ttyPS0,115200 root=ubi0:elphel393-rootfs rw ip=192.168.0.8 earlyprintk rootwait rootfstype=ubifs ubi.mtd=4,2048";
+		bootargs = "cma=336M console=ttyPS0,115200 root=ubi0:elphel393-rootfs earlyprintk rootwait rootfstype=ubifs ubi.mtd=4,2048";
 		linux,stdout-path = "/amba@0/serial@e0000000";
 	};
 };
