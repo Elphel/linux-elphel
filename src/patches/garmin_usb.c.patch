@@ -1,0 +1,13 @@
+diff --git a/drivers/usb/serial/garmin_gps.c b/drivers/usb/serial/garmin_gps.c
+index db591d1..fa8ede7 100644
+--- a/drivers/usb/serial/garmin_gps.c
++++ b/drivers/usb/serial/garmin_gps.c
+@@ -1166,6 +1166,8 @@ static void garmin_read_process(struct garmin_data *garmin_data_p,
+ 				send_to_tty(garmin_data_p->port, data,
+ 						data_length);
+ 			}
++		} else {
++			send_to_tty(garmin_data_p->port, data, data_length);
+ 		}
+ 		/* ignore system layer packets ... */
+ 	}
