@@ -18,7 +18,7 @@
 					<folderInfo id="cdt.managedbuild.toolchain.gnu.base.1636449201.613262403" name="/" resourcePath="">
 						<toolChain id="cdt.managedbuild.toolchain.gnu.base.1743050700" name="Linux GCC" superClass="cdt.managedbuild.toolchain.gnu.base">
 							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="cdt.managedbuild.target.gnu.platform.base.2090793096" name="Debug Platform" osList="linux,hpux,aix,qnx" superClass="cdt.managedbuild.target.gnu.platform.base"/>
-							<builder arguments="linux-xlnx" autoBuildTarget="all" cleanBuildTarget=" -c compile -f" command="${workspace_loc:/linux-elphel/run_bitbake.sh}" enableAutoBuild="false" enableCleanBuild="false" enabledIncrementalBuild="true" id="cdt.managedbuild.target.gnu.builder.base.189097184" incrementalBuildTarget="-c compile -f -v" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="Gnu Make Builder" parallelBuildOn="false" stopOnErr="true" superClass="cdt.managedbuild.target.gnu.builder.base">
+							<builder arguments="linux-xlnx" autoBuildTarget="all" cleanBuildTarget=" -c compile -f" command="${workspace_loc:/linux-elphel/scripts/run_bitbake.sh}" enableAutoBuild="false" enableCleanBuild="false" enabledIncrementalBuild="true" id="cdt.managedbuild.target.gnu.builder.base.189097184" incrementalBuildTarget="-c compile -f -v" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="Gnu Make Builder" parallelBuildOn="false" stopOnErr="true" superClass="cdt.managedbuild.target.gnu.builder.base">
 								<outputEntries>
 									<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="outputPath" name=""/>
 								</outputEntries>
