@@ -25,6 +25,10 @@ scp
 bitbake-logs
 device-tree-logs
 
+all_sources.lst
+excluding.lst
+including.lst
+
 doxygen.tag
 /image
 /scripts
