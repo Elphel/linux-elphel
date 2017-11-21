@@ -18,6 +18,7 @@ src/drivers/elphel/x393_map.h
 src/drivers/elphel/x393_types.h
 all_sources.lst
 excluding.lst
+including.lst
 attic
 board_elphel393
 scp
