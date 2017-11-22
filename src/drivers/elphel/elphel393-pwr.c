@@ -83,7 +83,7 @@ struct voltage_reg_t {
 	const char * name;
 	int r1;         /* resistor in ohms, if <=0 - r2 is voltage in mv */
 	int r2;         /* resistor in ohms, if r1<=0 - voltage in mv */
-	int awe_ref;    /* 0 - no control, -1 - margining VP10, -2 - margining VP18 */ 
+	int awe_ref;    /* 0 - no control, -1 - margining VP10, -2 - margining VP18 */
 	int awe_en;     /* 0 - no control, negative - -1-gpio_index */
 	int awe_pgood;  /* 0 - no status , negative - -1-gpio_index */
 	int mask_pgood; /* 1 - temporarily disable pgood when turning on/changing voltage */
@@ -124,7 +124,7 @@ static struct voltage_reg_t voltage_reg[]={
 		{
 				.name="vp5",
 				.r1=VP5_R1,
-				.r2=VP5_R2, 
+				.r2=VP5_R2,
 				.awe_ref=0,
 				.awe_en=LTC3589_AWE_OVEN_EN_BB,
 				.awe_pgood=LTC3589_AWE_PGSTAT_BB,
@@ -201,7 +201,7 @@ static struct voltage_reg_t voltage_reg[]={
 				.mask_pgood=1,
 				.awe_slew=0
 		},
-}; 
+};
 
 static struct pwr_gpio_t pwr_gpio[24]={
 /* 0x20: */
@@ -209,7 +209,7 @@ static struct pwr_gpio_t pwr_gpio[24]={
 		{"PWR_MG1",     1, 0, 0}, /* 1.8V margining enable 0 - negative margining, 1 - positive margining, float - no margining */
 		{"PWR_MGB0",    2, 0, 0}, /* 1.0V margining magnitude (0 - 5%, 1 - 10%, float - 15%) */
 		{"PWR_MG0",     3, 0, 0},  /* 1.0V margining enable 0 - negative margining, 1 - positive margining, float - no margining */
-		{"PWR_FQ0",     4, 0, 0}, /*   float - nominal frequency (should float for SS), 0 - 0.67 nominal frequency, 1 - 1.5 nominal frequency */ 
+		{"PWR_FQ0",     4, 0, 0}, /*   float - nominal frequency (should float for SS), 0 - 0.67 nominal frequency, 1 - 1.5 nominal frequency */
 		{"PWR_SS",      5, 0, 0}, /*  Spread spectrum, 0 or float - spread spectrum disabled  */
 		{"SENSPWREN0",  6, 0, 0}, /*  1 - enable 3.3 power to sensor connectors J6 and J7 (0 or float - disable) */
 		{"SENSPWREN1",  7, 0, 0}, /*  1 - enable 3.3 power to sensor connectors J8 and J9 (0 or float - disable) */
@@ -292,7 +292,7 @@ int gpio_10389_ctrl(struct device *dev, int value);
  Voltages:
   VP10 (on at power up, nominal 1.0V)
   VP18 (on at power up, nomianl 1.8V)
-  VP15 (SW1, on by pinstrap, nominal 1.5V - may be reduced to 1.35 later) 
+  VP15 (SW1, on by pinstrap, nominal 1.5V - may be reduced to 1.35 later)
   VCC_SENS01 (SW2, nominal 1.8V, max 2.8V)
   VCC_SENS23 (SW3, nominal 1.8V, max 2.8V)
   VP5  (nominal 5.0V, not software programmed)
@@ -302,7 +302,7 @@ int gpio_10389_ctrl(struct device *dev, int value);
   MGTAVCC10 - 1.0 V, linear from VP18 (pgood controls MGTAVTT12)
   MGTAVTT12 - 1.2 V, linear from VP18 (pgood available, means both)
   LTC3589 used channels : LDO1, SW1, SW2, SW3, BB
-  
+
   TODO: Change VCC_SENS01_R1, VCC_SENS23_R1 to 787K (now 487)
  */
 
@@ -540,7 +540,7 @@ static ssize_t output_ref_show(struct device *dev, struct device_attribute *attr
 	int chn;
 	chn=get_voltage_channel(attr->attr.name);
 	if (chn<0) return chn;
-	return sprintf(buf,"%d\n",get_volt_mv(dev, chn)); 
+	return sprintf(buf,"%d\n",get_volt_mv(dev, chn));
 }
 
 static ssize_t output_ref_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -551,7 +551,7 @@ static ssize_t output_ref_store(struct device *dev, struct device_attribute *att
 	if (chn<0) return chn;
 	/* if output was enabled, and pgood negation may cause POR, disable POR (later restore) */
 	if (get_enable(dev,chn)) pre_disabled=get_and_disable_por(dev, 1<<chn, &old_dis_por);
-	else                     pre_disabled=0;  
+	else                     pre_disabled=0;
 	if (pre_disabled<0) return pre_disabled;
     sscanf(buf, "%du", &v_mv);
 	rc=set_volt_mv(dev, chn, v_mv);
@@ -689,7 +689,7 @@ int por_ctrl(struct device *dev, int disable_por)
 }
 /*
  *  disable POR (if needed) before changing value or enabling one of the voltages
- * chn_bits - 1 bit per channel 
+ * chn_bits - 1 bit per channel
  */
 
 static int get_and_disable_por(struct device *dev, int chn_bits, int * old_dis_por)
@@ -704,10 +704,10 @@ static int get_and_disable_por(struct device *dev, int chn_bits, int * old_dis_p
 	if (chn>=ARRAY_SIZE(voltage_reg)) return 0; /* POR was not required to be disabled */
 	rc = gpio_conf_by_index(dev, gpio_disable_por_index, 1, 1); /* out turn on "disable_por" */
 	if (rc<0) return rc;
-	return 1; /* pgood-based POR was disabled (could already be disabled)*/ 
+	return 1; /* pgood-based POR was disabled (could already be disabled)*/
 }
 
-/* call if POR was diasabled before changing voltage (value or enabling), after waiting for pgood*/ 
+/* call if POR was diasabled before changing voltage (value or enabling), after waiting for pgood*/
 static int reenable_por(struct device *dev)
 {
 	int gpio_disable_por_index, rc;
@@ -721,7 +721,7 @@ static int wait_all_pgood(struct device *dev)
 {
 	int ntry,chn,all_good=0;
 	struct elphel393_pwr_data_t *clientdata=platform_get_drvdata(to_platform_device(dev));
-	
+
 	for (ntry=0;ntry<clientdata->pgoot_timeout;ntry++){
 		all_good=1;
 		for (chn=0;chn<ARRAY_SIZE(voltage_reg);chn++) if (voltage_reg[chn].awe_pgood){
@@ -895,15 +895,15 @@ static int get_volt_mv(struct device *dev, int chn)
 				else if (clientdata->pwr_gpio[pwr_mg_indices[1]].out_val) ref*=10;
 				else                                                      ref*= 5;
 			}
-			v_mv=(voltage_reg[chn].r2*(100+ref)*2+10)/2000; 
+			v_mv=(voltage_reg[chn].r2*(100+ref)*2+10)/2000;
 		} else { /* vp33sens01, vp33sens23, mmtavcc10, mmtavtt12 */
 			v_mv=(voltage_reg[chn].r2+5)/10;
-		} 
+		}
 
 	} else if (voltage_reg[chn].awe_ref==0){ /* VP5, vldo18 */
-#if 0		
+#if 0
 		v_mv=(REF_FIXED_TENTH_MV*(voltage_reg[chn].r1+voltage_reg[chn].r2)+ 5*voltage_reg[chn].r2)/(10*voltage_reg[chn].r2);
-#endif		
+#endif
 		num=((u64) REF_FIXED_TENTH_MV)* (voltage_reg[chn].r1+voltage_reg[chn].r2)+ 5*voltage_reg[chn].r2;
 		v_mv=(int) div64_u64(num, 10*voltage_reg[chn].r2);
 		dev_dbg(dev,"chn=%d REF_FIXED_TENTH_MV=%d .r1=%d .r2=%d v_mv=%d\n",chn, REF_FIXED_TENTH_MV,voltage_reg[chn].r1,voltage_reg[chn].r2,v_mv);
@@ -967,7 +967,7 @@ static int set_volt_mv(struct device *dev, int chn, int v_mv)
 			}
 		} else { /* vp33sens01, vp33sens23, mmtavcc10, mmtavtt12 */
 			return -EINVAL; /* voltage not regulated */
-		} 
+		}
 	} else if (voltage_reg[chn].awe_ref==0){ /* VP5, vldo18 */
 		return -EINVAL; /* voltage not regulated */
 	} else { /* vp15, vcc_sens01,vcc_sens23 */
@@ -1008,7 +1008,7 @@ static int get_enable(struct device *dev, int chn)
 	struct i2c_client *ltc3589_client= to_i2c_client(clientdata->ltc3489_dev);
 	if ((chn<0) || (chn>=ARRAY_SIZE(voltage_reg))) return -EINVAL;
 	if (voltage_reg[chn].awe_en==0) {
-		return 2; /* always on */ 
+		return 2; /* always on */
 	} else if (voltage_reg[chn].awe_en>0){
 		if (clientdata->pinstrapped_oven & voltage_reg[chn].awe_en) return 1; /* pin-strapped on bit */
 		return ltc3589_read_field(ltc3589_client, voltage_reg[chn].awe_en);
@@ -1024,7 +1024,7 @@ static int set_enable(struct device *dev, int chn, int enable)
 	struct i2c_client *ltc3589_client= to_i2c_client(clientdata->ltc3489_dev);
 	if ((chn<0) || (chn>=ARRAY_SIZE(voltage_reg))) return -EINVAL;
 	if (voltage_reg[chn].awe_en==0) {
-		return -EINVAL; /* always on, not controlled */ 
+		return -EINVAL; /* always on, not controlled */
 	} else if (voltage_reg[chn].awe_en>0){
 		return ltc3589_write_field(ltc3589_client, enable, voltage_reg[chn].awe_en);
 	} else {
@@ -1041,7 +1041,7 @@ static int get_pgood(struct device *dev, int chn)
 	if ((chn<0) || (chn>=ARRAY_SIZE(voltage_reg))) return -EINVAL;
 	if (voltage_reg[chn].awe_pgood==0) {
 		if (((rc=get_enable(dev,chn)))<0) return rc; /* 0 - disabled */
-		return 2; /* no status available */ 
+		return 2; /* no status available */
 	} else if (voltage_reg[chn].awe_pgood>0){
 		return ltc3589_read_field(ltc3589_client, voltage_reg[chn].awe_pgood);
 	} else {
@@ -1101,13 +1101,13 @@ static void elphel393_pwr_init_of(struct platform_device *pdev)
 			if (config_data && (len>0)){
 				dev_dbg(&pdev->dev,"Found %s=<%d>\n",str,be32_to_cpup(&config_data[0]));
 				voltage_reg[chn].r1=be32_to_cpup(&config_data[0]);
-			}			
+			}
 			sprintf(str,"elphel393_pwr,%s.r2",voltage_reg[chn].name);
 			config_data = of_get_property(node, str, &len);
 			if (config_data && (len>0)){
 				dev_dbg(&pdev->dev,"Found %s=<%d>\n",str,be32_to_cpup(&config_data[0]));
 				voltage_reg[chn].r2=be32_to_cpup(&config_data[0]);
-			}			
+			}
 		}
 		/* which channels are enabled by pin-strapping */
 		config_data = of_get_property(node, "elphel393_pwr,pinstrapped_oven", &len);
@@ -1115,7 +1115,7 @@ static void elphel393_pwr_init_of(struct platform_device *pdev)
 			dev_dbg(&pdev->dev,"Found elphel393_pwr,pinstrapped_oven=<%d>\n",be32_to_cpup(&config_data[0]));
 			clientdata->pinstrapped_oven=be32_to_cpup(&config_data[0]);
 		}
-		
+
 		/* debug mode - simulate only, no actual power supply control */
 		config_data = of_get_property(node, "elphel393_pwr,simulate", &len);
 		if (config_data && (len>0)){
@@ -1139,7 +1139,7 @@ static void elphel393_pwr_init_of(struct platform_device *pdev)
 			if (config_data && (len>0)){
 				dev_dbg(&pdev->dev,"Found %s=<%d>\n",str,be32_to_cpup(&config_data[0]));
 				if (get_enable(&pdev->dev,chn)) pre_disabled=get_and_disable_por(&pdev->dev, 1<<chn, &old_dis_por);
-				else                            pre_disabled=0;  
+				else                            pre_disabled=0;
 				if (pre_disabled<0) return;
 				dev_dbg(&pdev->dev,"pre_disabled=%d\n",pre_disabled);
 				rc=set_volt_mv(&pdev->dev, chn,be32_to_cpup(&config_data[0]));
@@ -1153,7 +1153,7 @@ static void elphel393_pwr_init_of(struct platform_device *pdev)
 						return;
 					}
 				}
-			}			
+			}
 		}
 		/* enable output voltages */
 		config_string = of_get_property(node, "elphel393_pwr,channels_enable", &len);
@@ -1177,7 +1177,7 @@ static void elphel393_pwr_init_of(struct platform_device *pdev)
 				}
 			}
 		}
-	}	
+	}
 	dev_info(&pdev->dev,"elphel393_pwr configuration done\n");
 }
 
@@ -1212,10 +1212,10 @@ static struct device * find_device_by_i2c_addr(int address)
 
 static int i2c_addr_gpiochip_match(struct gpio_chip *chip, void *data)
 {
-	struct i2c_client *client = to_i2c_client(chip->dev);
+	struct i2c_client *client = to_i2c_client(chip->parent);
 	int *addr = (int *)data;
-	dev_dbg(chip->dev,"addr_given=0x%02x, addr found=0x%02x\n",addr[0],(int) client->addr);
-	return i2c_verify_client(chip->dev) && (client->addr==addr[0]);
+	dev_dbg(chip->parent,"addr_given=0x%02x, addr found=0x%02x\n",addr[0],(int) client->addr);
+	return i2c_verify_client(chip->parent) && (client->addr==addr[0]);
 }
 
 static void shutdown(void){
@@ -1253,7 +1253,7 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 //	elphel393_pwr_init_of(pdev);
 	elphel393_pwr_init_of_i2caddr(pdev);
 	mutex_init(&clientdata->lock);
-	
+
 	/* locate GPIO chips by i2c address */
     for (i=0;i<3;i++){
     	chip = gpiochip_find(&clientdata->chip_i2c_addr[i], i2c_addr_gpiochip_match);
@@ -1321,11 +1321,11 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 		return -EIO;
     }
     ltc3589_client = to_i2c_client(clientdata->ltc3489_dev);
-   
+
 	dev_dbg(&pdev->dev,"Located %s with i2c address 0x%02x\n",ltc3589_client->name,LTC3589_ADDR);
 	dev_dbg(&pdev->dev,"LTC3589 status= 0x%02x\n",ltc3589_read_field(ltc3589_client, LTC3589_AWE_PGSTAT));
 	elphel393_pwr_init_of(pdev);
-	
+
 	/*
 	 * 1. pm_power_off - arch/arm/kernel/process.c - called in the end of halt if power off requested
 	 * 2. To perform a proper system shutdown with power off ("shutdown -hP now") this function is set here.
@@ -1337,7 +1337,7 @@ static int elphel393_pwr_probe(struct platform_device *pdev)
 	}
 
 	return 0;
-}	
+}
 
 static int elphel393_pwr_remove(struct platform_device *pdev)
 {
