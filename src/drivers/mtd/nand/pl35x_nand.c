@@ -101,6 +101,7 @@ struct pl35x_nand_info {
 /*
  * The NAND flash operations command format
  */
+// Elphel: added UNLOCK1, UNLOCK2 and LOCK
 static const struct pl35x_nand_command_format pl35x_nand_commands[] = {
 	{NAND_CMD_READ0, NAND_CMD_READSTART, 5, PL35X_NAND_CMD_PHASE},
 	{NAND_CMD_RNDOUT, NAND_CMD_RNDOUTSTART, 2, PL35X_NAND_CMD_PHASE},
