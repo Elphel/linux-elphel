@@ -72,7 +72,9 @@ static struct device *g_dev_ptr = NULL;
 /** All Huffman tables data to be read/written from the user space */
 struct huff_tables_t {
 	struct huffman_encoded_t header_huffman_tables[4];
-	unsigned long            fpga_huffman_table[512];
+	// Elphel, Rocko:
+	//unsigned long            fpga_huffman_table[512];
+	u32            fpga_huffman_table[512];
 	union {
 		unsigned char        dht_all[20];
 		struct {
