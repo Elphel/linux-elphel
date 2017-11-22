@@ -1,7 +1,16 @@
 diff --git a/drivers/ata/libahci.c b/drivers/ata/libahci.c
-index 0d028ea..587e2b12 100644
+index 0d028ea..08f0e9b 100644
 --- a/drivers/ata/libahci.c
 +++ b/drivers/ata/libahci.c
+@@ -113,7 +113,7 @@ static ssize_t ahci_store_em_buffer(struct device *dev,
+ 				    const char *buf, size_t size);
+ static ssize_t ahci_show_em_supported(struct device *dev,
+ 				      struct device_attribute *attr, char *buf);
+-static irqreturn_t ahci_single_level_irq_intr(int irq, void *dev_instance);
++irqreturn_t ahci_single_level_irq_intr(int irq, void *dev_instance);
+ 
+ static DEVICE_ATTR(ahci_host_caps, S_IRUGO, ahci_show_host_caps, NULL);
+ static DEVICE_ATTR(ahci_host_cap2, S_IRUGO, ahci_show_host_cap2, NULL);
 @@ -1921,7 +1921,7 @@ u32 ahci_handle_port_intr(struct ata_host *host, u32 irq_masked)
  }
  EXPORT_SYMBOL_GPL(ahci_handle_port_intr);
