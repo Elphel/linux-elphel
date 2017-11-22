@@ -59,7 +59,8 @@
 static struct mtd_info *mtd;
 
 //surprise size
-static char *bootargs;
+// added const for Rocko
+static const char *bootargs;
 //known size, all should be zero filled
 static char boardinfo[2048];
 static char serial[13];
