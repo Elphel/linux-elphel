@@ -616,7 +616,7 @@ static ssize_t enable_por_store(struct device *dev, struct device_attribute *att
 	return count;
 }
 
-static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
+static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int result;
 	int value;
@@ -647,7 +647,7 @@ static ssize_t detected_10389_get(struct device *dev, struct device_attribute *a
 	return sprintf(buf,"%i",res);
 }
 
-static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
+static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int rc=gpio_shutdown(dev);
 	if (rc<0) return rc;
