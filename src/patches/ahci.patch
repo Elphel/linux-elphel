@@ -1,10 +1,12 @@
---- a/drivers/ata/ahci.h	2016-09-13 17:18:35.579259846 -0600
-+++ b/drivers/ata/ahci.h	2016-08-01 11:57:06.306630339 -0600
-@@ -396,6 +396,7 @@ void ahci_print_info(struct ata_host *ho
- int ahci_host_activate(struct ata_host *host, int irq,
- 		       struct scsi_host_template *sht);
+diff --git a/drivers/ata/ahci.h b/drivers/ata/ahci.h
+index 0cc08f8..ef752b20 100644
+--- a/drivers/ata/ahci.h
++++ b/drivers/ata/ahci.h
+@@ -412,6 +412,7 @@ void ahci_print_info(struct ata_host *host, const char *scc_s);
+ int ahci_host_activate(struct ata_host *host, struct scsi_host_template *sht);
  void ahci_error_handler(struct ata_port *ap);
-+irqreturn_t ahci_single_irq_intr(int irq, void *dev_instance);
+ u32 ahci_handle_port_intr(struct ata_host *host, u32 irq_masked);
++irqreturn_t ahci_single_level_irq_intr(int irq, void *dev_instance);
  
  static inline void __iomem *__ahci_port_base(struct ata_host *host,
  					     unsigned int port_no)

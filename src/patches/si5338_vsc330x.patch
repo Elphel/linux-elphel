@@ -1,9 +1,10 @@
-diff -Naur a/drivers/clk/Kconfig b/drivers/clk/Kconfig
---- a/drivers/clk/Kconfig	2016-01-25 18:31:43.413779725 -0700
-+++ b/drivers/clk/Kconfig	2016-01-25 19:09:12.833821955 -0700
-@@ -59,6 +59,16 @@
- 	  clocked at 32KHz each. Clkout1 is always on, Clkout2 can off
- 	  by control register.
+diff --git a/drivers/clk/Kconfig b/drivers/clk/Kconfig
+index dccb111..1e5276b 100644
+--- a/drivers/clk/Kconfig
++++ b/drivers/clk/Kconfig
+@@ -57,6 +57,16 @@ config COMMON_CLK_SCPI
+ 	  This driver uses SCPI Message Protocol to interact with the
+ 	  firmware providing all the clock controls.
  
 +config COMMON_CLK_SI5338
 +	tristate "Support Silicon Laboratories SI5338 Quad Clock Generator"
@@ -18,23 +19,25 @@ diff -Naur a/drivers/clk/Kconfig b/drivers/clk/Kconfig
  config COMMON_CLK_SI5351
  	tristate "Clock driver for SiLabs 5351A/B/C"
  	depends on I2C
-diff -Naur a/drivers/clk/Makefile b/drivers/clk/Makefile
---- a/drivers/clk/Makefile	2016-01-25 18:31:43.413779725 -0700
-+++ b/drivers/clk/Makefile	2016-01-25 19:09:46.217822582 -0700
-@@ -35,6 +35,7 @@
- obj-$(CONFIG_CLK_QORIQ)			+= clk-qoriq.o
+diff --git a/drivers/clk/Makefile b/drivers/clk/Makefile
+index 0760449..1231275 100644
+--- a/drivers/clk/Makefile
++++ b/drivers/clk/Makefile
+@@ -38,6 +38,7 @@ obj-$(CONFIG_CLK_QORIQ)			+= clk-qoriq.o
  obj-$(CONFIG_COMMON_CLK_RK808)		+= clk-rk808.o
  obj-$(CONFIG_COMMON_CLK_S2MPS11)	+= clk-s2mps11.o
+ obj-$(CONFIG_COMMON_CLK_SCPI)           += clk-scpi.o
 +obj-$(CONFIG_COMMON_CLK_SI5338)		+= clk-si5338.o
  obj-$(CONFIG_COMMON_CLK_SI5351)		+= clk-si5351.o
+ obj-$(CONFIG_COMMON_CLK_SI514)		+= clk-si514.o
  obj-$(CONFIG_COMMON_CLK_SI570)		+= clk-si570.o
- obj-$(CONFIG_CLK_TWL6040)		+= clk-twl6040.o
-diff -Naur a/drivers/misc/Kconfig b/drivers/misc/Kconfig
---- a/drivers/misc/Kconfig	2016-01-28 19:14:34.610694113 -0700
-+++ b/drivers/misc/Kconfig	2016-01-28 19:42:44.730725843 -0700
-@@ -515,6 +515,23 @@
- 	  bus. System Configuration interface is one of the possible means
- 	  of generating transactions on this bus.
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index 247b09b..fb7e25e 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -796,6 +796,23 @@ config XILINX_VCU
+        help
+           Driver for the Xilinx VCU Init based on the logicoreIP.
  
 +config VSC330X
 +	tristate "Support VSC330X crosspoint switch"
@@ -48,20 +51,24 @@ diff -Naur a/drivers/misc/Kconfig b/drivers/misc/Kconfig
 +	help
 +	  Say Y here if you have a LTC3589 voltage regulator IC on the I2C bus.
 +	  To compile this driver as a module, choose M here: the
-+	  module will be called ltc3589. 
-+	  Developed by Elphel, Inc.. 
-+	  The default driver is found at drivers/regulator/ltc3589.c and 
++	  module will be called ltc3589.
++	  Developed by Elphel, Inc..
++	  The default driver is found at drivers/regulator/ltc3589.c and
 +	  enabled with CONFIG_REGULATOR_LTC3589=y
-+	  
- config XILINX_TRAFGEN
- 	tristate "Xilinx Traffic Generator"
- 	depends on MICROBLAZE || ARCH_ZYNQ
-diff -Naur a/drivers/misc/Makefile b/drivers/misc/Makefile
---- a/drivers/misc/Makefile	2016-01-28 19:14:34.610694113 -0700
-+++ b/drivers/misc/Makefile	2016-01-28 19:19:56.638700159 -0700
-@@ -58,3 +58,5 @@
- obj-$(CONFIG_ECHO)		+= echo/
++
+ source "drivers/misc/jesd204b/Kconfig"
+ source "drivers/misc/c2port/Kconfig"
+ source "drivers/misc/eeprom/Kconfig"
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index e0bb6e0..e72c313 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -57,6 +57,8 @@ obj-$(CONFIG_ECHO)		+= echo/
  obj-$(CONFIG_VEXPRESS_SYSCFG)	+= vexpress-syscfg.o
  obj-$(CONFIG_CXL_BASE)		+= cxl/
+ obj-$(CONFIG_PANEL)             += panel.o
 +obj-$(CONFIG_VSC330X)	        += vsc330x.o
 +obj-$(CONFIG_LTC3589)	        += ltc3589.o
+ 
+ lkdtm-$(CONFIG_LKDTM)		+= lkdtm_core.o
+ lkdtm-$(CONFIG_LKDTM)		+= lkdtm_bugs.o
