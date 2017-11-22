@@ -1,20 +1,34 @@
-diff -Naur a/drivers/Kconfig b/drivers/Kconfig
---- a/drivers/Kconfig	2016-01-25 18:31:43.309779723 -0700
-+++ b/drivers/Kconfig	2016-01-25 18:48:17.521798388 -0700
-@@ -182,4 +182,6 @@
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index e1e2066..0970aa0 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -202,4 +202,6 @@ source "drivers/hwtracing/intel_th/Kconfig"
  
- source "drivers/android/Kconfig"
+ source "drivers/fpga/Kconfig"
  
 +source "drivers/elphel/Kconfig"
 +
  endmenu
-diff -Naur a/drivers/Makefile b/drivers/Makefile
---- a/drivers/Makefile	2016-01-25 18:31:43.309779723 -0700
-+++ b/drivers/Makefile	2016-01-25 18:50:39.545801055 -0700
-@@ -165,3 +165,6 @@
- obj-$(CONFIG_THUNDERBOLT)	+= thunderbolt/
- obj-$(CONFIG_CORESIGHT)		+= coresight/
+diff --git a/drivers/Makefile b/drivers/Makefile
+index 194d20b..caad273 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -81,7 +81,7 @@ obj-$(CONFIG_MTD)		+= mtd/
+ obj-$(CONFIG_SPI)		+= spi/
+ obj-$(CONFIG_SPMI)		+= spmi/
+ obj-$(CONFIG_HSI)		+= hsi/
+-obj-y				+= net/
++
+ obj-$(CONFIG_ATM)		+= atm/
+ obj-$(CONFIG_FUSION)		+= message/
+ obj-y				+= firewire/
+@@ -173,3 +173,9 @@ obj-$(CONFIG_STM)		+= hwtracing/stm/
  obj-$(CONFIG_ANDROID)		+= android/
+ obj-$(CONFIG_NVMEM)		+= nvmem/
+ obj-$(CONFIG_FPGA)		+= fpga/
 +
 +obj-$(CONFIG_ELPHEL393)		+= elphel/
 +obj-$(CONFIG_ELPHELDRVONMICROZED)	+= elphel/
++obj-$(CONFIG_ELPHEL393_EXTERNAL)       += elphel/
++
++obj-y				+= net/
