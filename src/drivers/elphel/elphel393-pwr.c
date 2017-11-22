@@ -262,8 +262,13 @@ static ssize_t pbad_show(struct device *dev, struct device_attribute *attr, char
 static ssize_t enable_por_show(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t enable_por_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 static ssize_t gpio_10389_get(struct device *dev, struct device_attribute *attr, char *buf);
-static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr, char *buf, size_t count);
-static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, char *buf, size_t count);
+// Elphel, Rocko: needed const char
+//static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr, char *buf, size_t count);
+static ssize_t gpio_10389_set(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+// Elphel, Rocko: needed const char
+//static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, char *buf, size_t count);
+static ssize_t gpio_poweroff(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+
 static ssize_t detected_10389_get(struct device *dev, struct device_attribute *attr, char *buf);
 
 static int gpio_shutdown(struct device *dev);
