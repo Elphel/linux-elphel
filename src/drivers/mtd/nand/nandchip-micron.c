@@ -14,10 +14,14 @@
 #define MICRON_NUM_OTP_FIRSTPAGE	2
 #define MICRON_NUM_OTP_PAGES		30
 
-static int mt29f_get_user_prot_info(struct mtd_info *mtd, struct otp_info *buf,
-		size_t len)
+// Elphel, Rocko
+//static int mt29f_get_user_prot_info(struct mtd_info *mtd, struct otp_info *buf, size_t len)
+static int mt29f_get_user_prot_info(struct mtd_info *mtd, size_t len, size_t *retlen, struct otp_info *buf)
 {
 	int i;
+
+	// Elphel, Rocko
+	*retlen = 0;
 
 	if (len < MICRON_NUM_OTP_PAGES * sizeof(*buf))
 		return -ENOSPC;
@@ -44,7 +48,7 @@ static int mt29f_read_user_prot_reg(struct mtd_info *mtd, loff_t from,
 	struct nand_chip *chip = mtd->priv;
 	struct mtd_oob_ops ops;
 	int ret;
-	u8 get_feature,i;
+	u8 get_feature;
 
 	/* Valid pages in otp are 02h-1Fh. */
 	if (from > MICRON_NUM_OTP_PAGES << chip->page_shift)
