@@ -5,7 +5,7 @@ index a4289f9..c28e6da 100644
 @@ -480,6 +480,10 @@ MDC_DIV_64, MDC_DIV_96, MDC_DIV_128, MDC_DIV_224 };
  #define XEMACPS_PTP_CC_MULT		(1 << 31)
  #endif
- 
+
 +/* Elphel */
 +#define AT803X_PHY_ID          0x004dd072 /*Particular one, AR8035 but we'll use a broad mask */
 +#define AT803X_PHY_ID_MASK     0xffffffe0
@@ -16,14 +16,14 @@ index a4289f9..c28e6da 100644
 @@ -872,6 +876,51 @@ static int xemacps_mii_probe(struct net_device *ndev)
  	return 0;
  }
- 
+
 +/* http://www.spinics.net/lists/devicetree/msg06322.html */
 +static int ar8035_phy_fixup(struct phy_device *dev)
 +{
 +	u16 val;
 +	// Elphel: phy_device has changed
 +	//struct net_local *lp = dev->bus->priv;
-+	struct net_local *lp = dev->mdio->bus->priv;
++	struct net_local *lp = dev->&mdio->bus->priv;
 +	dev_dbg(&lp->pdev->dev,"fixup start");
 +
 +	/* Ar803x phy SmartEEE feature cause link status generates glitch,
@@ -68,9 +68,9 @@ index a4289f9..c28e6da 100644
 @@ -884,6 +933,8 @@ static int xemacps_mii_init(struct net_local *lp)
  	struct device_node *np = of_get_parent(lp->phy_node);
  	struct device_node *npp;
- 
+
 +	phy_register_fixup_for_uid(AT803X_PHY_ID,  AT803X_PHY_ID_MASK,  ar8035_phy_fixup);
-+	
++
  	lp->mii_bus = of_mdio_find_bus(np);
  	if (!lp->has_mdio && lp->mii_bus)
  		return 0;
