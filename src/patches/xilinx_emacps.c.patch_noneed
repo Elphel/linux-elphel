@@ -23,7 +23,7 @@ index a4289f9..c28e6da 100644
 +	u16 val;
 +	// Elphel: phy_device has changed
 +	//struct net_local *lp = dev->bus->priv;
-+	struct net_local *lp = dev->&mdio->bus->priv;
++	struct net_local *lp = dev->(&mdio)->bus->priv;
 +	dev_dbg(&lp->pdev->dev,"fixup start");
 +
 +	/* Ar803x phy SmartEEE feature cause link status generates glitch,
