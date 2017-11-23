@@ -290,7 +290,9 @@ static irqreturn_t elphel_irq_handler(int irq, void * dev_instance)
 		dpriv->datascope.reg_stat[IRQ_COUNTER_SYS] = dpriv->datascope.reg_stat[IRQ_COUNTER_SYS] + 1;
 
 		/* pass handling to AHCI level and then decide if the resource should be freed */
-		handled = ahci_single_irq_intr(irq, dev_instance);
+		// Elphel, Rocko migration
+		//handled = ahci_single_irq_intr(irq, dev_instance);
+		handled = ahci_single_level_irq_intr(irq, dev_instance);
 		spin_lock_irqsave(&dpriv->flags_lock, irq_flags);
 		if (is_cmdq_empty(dpriv)) {
 			dpriv->flags &= ~DISK_BUSY;
