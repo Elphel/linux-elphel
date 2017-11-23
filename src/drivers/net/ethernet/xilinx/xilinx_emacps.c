@@ -882,8 +882,8 @@ static int ar8035_phy_fixup(struct phy_device *dev)
 	u16 val;
 	// Elphel: phy_device has changed
 	//struct net_local *lp = dev->bus->priv;
-	struct mdio_device *mdiodev = dev->mdio;
-	struct net_local *lp = &mdiodev->bus->priv;
+	struct mdio_device *mdiodev = &(dev->mdio);
+	struct net_local *lp = mdiodev->bus->priv;
 	dev_dbg(&lp->pdev->dev,"fixup start");
 
 	/* Ar803x phy SmartEEE feature cause link status generates glitch,
