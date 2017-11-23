@@ -1,7 +1,8 @@
-diff -Naur a/drivers/net/ethernet/xilinx/xilinx_emacps.c b/drivers/net/ethernet/xilinx/xilinx_emacps.c
---- a/drivers/net/ethernet/xilinx/xilinx_emacps.c	2016-01-25 18:34:24.065782741 -0700
-+++ b/drivers/net/ethernet/xilinx/xilinx_emacps.c	2016-01-25 19:03:50.781815909 -0700
-@@ -479,6 +479,10 @@
+diff --git a/drivers/net/ethernet/xilinx/xilinx_emacps.c b/drivers/net/ethernet/xilinx/xilinx_emacps.c
+index a4289f9..c28e6da 100644
+--- a/drivers/net/ethernet/xilinx/xilinx_emacps.c
++++ b/drivers/net/ethernet/xilinx/xilinx_emacps.c
+@@ -480,6 +480,10 @@ MDC_DIV_64, MDC_DIV_96, MDC_DIV_128, MDC_DIV_224 };
  #define XEMACPS_PTP_CC_MULT		(1 << 31)
  #endif
  
@@ -12,7 +13,7 @@ diff -Naur a/drivers/net/ethernet/xilinx/xilinx_emacps.c b/drivers/net/ethernet/
  #define xemacps_read(base, reg)						\
  	readl_relaxed(((void __iomem *)(base)) + (reg))
  #define xemacps_write(base, reg, val)					\
-@@ -871,6 +875,49 @@
+@@ -872,6 +876,51 @@ static int xemacps_mii_probe(struct net_device *ndev)
  	return 0;
  }
  
@@ -20,7 +21,9 @@ diff -Naur a/drivers/net/ethernet/xilinx/xilinx_emacps.c b/drivers/net/ethernet/
 +static int ar8035_phy_fixup(struct phy_device *dev)
 +{
 +	u16 val;
-+	struct net_local *lp = dev->bus->priv;
++	// Elphel: phy_device has changed
++	//struct net_local *lp = dev->bus->priv;
++	struct net_local *lp = dev->mdio->bus->priv;
 +	dev_dbg(&lp->pdev->dev,"fixup start");
 +
 +	/* Ar803x phy SmartEEE feature cause link status generates glitch,
@@ -62,7 +65,7 @@ diff -Naur a/drivers/net/ethernet/xilinx/xilinx_emacps.c b/drivers/net/ethernet/
  /**
   * xemacps_mii_init - Initialize and register mii bus to network device
   * @lp: local device instance pointer
-@@ -883,6 +930,8 @@
+@@ -884,6 +933,8 @@ static int xemacps_mii_init(struct net_local *lp)
  	struct device_node *np = of_get_parent(lp->phy_node);
  	struct device_node *npp;
  
