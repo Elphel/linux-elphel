@@ -11,8 +11,8 @@
 	} ;
 	chosen {
 /*		bootargs = "console=ttyPS0,115200 debug root=/dev/ram rw ip=192.168.0.9 earlyprintk ramdisk_size=262144";*/
-		bootargs = "cma=128M console=ttyPS0,115200 root=/dev/mmcblk0p2 rw earlyprintk rootwait rootfstype=ext4";
-		linux,stdout-path = "/amba@0/serial@e0000000";
+		bootargs = "earlycon cma=128M root=/dev/mmcblk0p2 rw rootwait rootfstype=ext4";
+		stdout-path = "serial0:115200n8";
 	} ;
 	cpus {
 		#address-cells = <1>;
@@ -146,7 +146,7 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 		} ;
-		
+
 		ps7_gpio_0: ps7-gpio@e000a000 {
 			#gpio-cells = <2>;
 			#interrupt-cells = <2>;
@@ -321,7 +321,7 @@
 				#size-cells = <0x1>;
 			} ;
 		} ;
-		
+
 		ps7_uart_0: serial@e0000000 {
 			clock-names = "uart_clk", "pclk", "ref_clk", "aper_clk";
 			clocks = <&clkc 23>, <&clkc 40>, <&clkc 23>, <&clkc 40>;
@@ -352,7 +352,7 @@
 			interrupts = <0 7 4>;
 		} ;
 	} ;
-	
+
 	usb_phy0: phy0{
 		compatible = "ulpi-phy";
 		#phy-cells = <0>;
