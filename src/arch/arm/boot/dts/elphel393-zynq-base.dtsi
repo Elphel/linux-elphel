@@ -124,17 +124,13 @@
 		ps7_ethernet_0: ps7-ethernet@e000b000 {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			clock-names = "ref_clk", "aper_clk";
-			clocks = <&clkc 13>, <&clkc 30>;
-			compatible = "xlnx,ps7-ethernet-1.00.a";
+			clocks = <&clkc 30>, <&clkc 30>, <&clkc 13>;
+			clock-names = "pclk", "hclk", "tx_clk";
+			compatible = "cdns,zynq-gem", "cdns,gem";
 			interrupt-parent = <&ps7_scugic_0>;
 			interrupts = <0 22 4>;
 			phy-mode = "rgmii-id";
 			reg = <0xe000b000 0x1000>;
-			xlnx,enet-reset = <0xffffffff>;
-			xlnx,eth-mode = <0x1>;
-			xlnx,has-mdio = <0x1>;
-			xlnx,ptp-enet-clock = <111111115>;
 		} ;
 
 		ps7_i2c_0: ps7-i2c@e0004000 {
