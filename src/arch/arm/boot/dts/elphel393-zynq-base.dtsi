@@ -88,6 +88,12 @@
 			compatible = "xlnx,ps7-afi-1.00.a";
 			reg = <0xf800b000 0x1000>;
 		} ;
+		ocmc: ocmc@f800c000 {
+			compatible = "xlnx,zynq-ocmc-1.0";
+			interrupt-parent = <&ps7_scugic_0>;
+			interrupts = <0 3 4>;
+			reg = <0xf800c000 0x1000>;
+		};
 		ps7_ddrc_0: ps7-ddrc@f8006000 {
 			compatible = "xlnx,zynq-ddrc-a05";
 			reg = <0xf8006000 0x1000>;
@@ -96,7 +102,7 @@
 		ps7_dev_cfg_0: ps7-dev-cfg@f8007000 {
 			clock-names = "ref_clk", "fclk0", "fclk1", "fclk2", "fclk3";
 			clocks = <&clkc 12>, <&clkc 15>, <&clkc 16>, <&clkc 17>, <&clkc 18>;
-			compatible = "xlnx,zynq-devcfg-1.0", "xlnx,ps7-dev-cfg-1.00.a";
+			compatible = "xlnx,zynq-devcfg-1.0";
 			interrupt-parent = <&ps7_scugic_0>;
 			interrupts = <0 8 4>;
 			reg = <0xf8007000 0x100>;
@@ -185,22 +191,26 @@
 			#address-cells = <2>;
 			#interrupt-cells = <3>;
 			#size-cells = <1>;
-			compatible = "xlnx,ps7-scugic-1.00.a", "arm,cortex-a9-gic", "arm,gic";
+			compatible = "arm,cortex-a9-gic";
 			interrupt-controller ;
 			num_cpus = <2>;
 			num_interrupts = <96>;
 			reg = <0xf8f01000 0x1000>, <0xf8f00100 0x100>;
 		} ;
+		efuse: efuse@f800d000 {
+			compatible = "xlnx,zynq-efuse";
+			reg = <0xf800d000 0x20>;
+		};
 		ps7_globaltimer_0: ps7-globaltimer@f8f00200 {
 			clocks = <&clkc 4>;
-			compatible = "arm,cortex-a9-global-timer", "xlnx,ps7-globaltimer-1.00.a";
+			compatible = "arm,cortex-a9-global-timer";
 			interrupt-parent = <&ps7_scugic_0>;
 			interrupts = <1 11 0x301>;
 			reg = <0xf8f00200 0x100>;
 		} ;
-		ps7_scutimer_0: ps7-scutimer@f8f00600 {
+		scutimer: timer@f8f00600 {
 			clocks = <&clkc 4>;
-			compatible = "arm,cortex-a9-twd-timer", "xlnx,ps7-scutimer-1.00.a";
+			compatible = "arm,cortex-a9-twd-timer";
 			interrupt-parent = <&ps7_scugic_0>;
 			interrupts = <1 13 0x301>;
 			reg = <0xf8f00600 0x20>;
@@ -213,11 +223,11 @@
 			interrupts = <1 14 0x301>;
 			reg = <0xf8f00620 0xe0>;
 		} ;
-		ps7_wdt_0: ps7-wdt@f8005000 {
+                watchdog0: watchdog@f8005000 {
 			clocks = <&clkc 45>;
-			compatible = "cdns,wdt-r1p2", "xlnx,zynq-wdt-r1p2";
+			compatible = "cdns,wdt-r1p2";
 			interrupt-parent = <&ps7_scugic_0>;
-			interrupts = <0 9 4>;
+			interrupts = <0 9 1>;
 			reg = <0xf8005000 0x1000>;
 			reset = <0>;
 			timeout-sec = <10>;
