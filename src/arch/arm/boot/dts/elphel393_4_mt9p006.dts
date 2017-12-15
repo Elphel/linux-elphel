@@ -8,8 +8,8 @@
 	ps7_axi_interconnect_0: amba@0 {
 
 		ps7_i2c_0: ps7-i2c@e0004000 {
-			bus-id = <0>;
-			i2c-clk = <400000>;
+			/* bus-id = <0>;*/
+			/* i2c-clk = <400000>;*/
 			rtc@68 {
 				compatible = "stm,m41t62";
 				reg = <0x68>;
