@@ -4,9 +4,9 @@
 
 / {
 	model = "Elphel 10393";
-	
+
 	ps7_axi_interconnect_0: amba@0 {
-		
+
 		ps7_i2c_0: ps7-i2c@e0004000 {
 			bus-id = <0>;
 			i2c-clk = <400000>;
@@ -14,7 +14,7 @@
 				compatible = "stm,m41t62";
 				reg = <0x68>;
 			};
-			
+
 			vsc330x@1 {
 				compatible = "vsc,vsc3304";
 				reg = <0x01>;
@@ -71,7 +71,7 @@
 				si5338,out0_freq_int= <15000000>;  /* 15Mhz to output 0 */
 				si5338,spread_spectrum_0= <1 500 31500>; /* Set spread spectrum for channel0 : enabled, 5%, 31.5KHz - high value, for testing */
 			};
-			
+
 			ltc3589@34 {
 				compatible = "ltc,ltc3589";
 				reg = <0x34>;
@@ -99,7 +99,7 @@
 				reg = <0x1a>;
 			};
 		};
-		
+
 		ps7_ethernet_0: ps7-ethernet@e000b000 {
 			local-mac-address = [00 0e 64 10 00 00];
 			phy-handle = <&phy3>;
@@ -108,13 +108,15 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 				phy3: phy@3 {
-					compatible = "atheros,8035";
+                                        /* Atheros 8035 */
+                                        compatible = "ethernet-phy-id004d.d072";
+					/* compatible = "ethernet-phy-ieee802.3-c22";*/
 					device_type = "ethernet-phy";
 					reg = <0x3>;
 				};
 			};
 		};
-		
+
 		ps7_smcc_0: ps7-smcc@e000e000 {
 			ps7_nand_0: ps7-nand@e1000000 {
 				compatible = "arm,pl353-nand-r2p1";
@@ -152,7 +154,7 @@
 				};
 			} ;
 		} ;
-		
+
 		elphel_ahci: elphel-ahci@80000000 {
 			compatible = "elphel,elphel-ahci";
 			interrupt-parent = <&ps7_scugic_0>;
@@ -162,7 +164,7 @@
 			fb_offs = <0xc00>;
 		};
 	};
-	
+
 	elphel393_pwr: elphel393-pwr@0 {
 		compatible = "elphel,elphel393-pwr-1.00";
 		elphel393_pwr,simulate=          <0>;
@@ -185,17 +187,17 @@
 		elphel393_pwr,10389-init-value=  <0x100>;
 /*		elphel393_pwr,channels_enable=  "vcc_sens01 vp33sens01"; */
 	} ;
-	
+
 	elphel393_mem: elphel393-mem@0 {
 		compatible = "elphel,elphel393-mem-1.00";
 		/*memsize = <25600>;*/
 		memsize = <76800>;
 	} ;
-	
+
 	elphel393_init: elphel393-init {
 		compatible = "elphel,elphel393-init-1.00";
 	} ;
-	
+
 	elphel393_circbuf: elphel393-circbuf@0 {
 		compatible = "elphel,elphel393-circbuf-1.00";
 		/* set this to "disable" to disable drivers */
@@ -219,7 +221,7 @@
 /*        reg = <0x80000000 0x1000>; */
         interrupt-names = "mult_saxi_0", "mult_saxi_1", "mult_saxi_2", "mult_saxi_3";
     };
-	
+
     elphel393_videomem: elphel393-videomem@0 {
         compatible = "elphel,elphel393-videomem-1.00";
         /* set this to "disable" to disable drivers */
@@ -233,7 +235,7 @@
         frame_full_width = <8192>; /* in bytes, will be transformed to bursts (16 bytes). 1 memory page is 2048 bytes (128 bursts) */
         frame_height     = <8192>; /* in pixel lines */
         frames_in_buffer = <2>;    /* Each channel has this number of frames in buffer */
-        
+
         frame_start_chn0 =     <0x00000000>;      /* Channel 0 frame start (in bytes) */
         frame_start_chn1 =     <0x08000000>;      /* Channel 1 frame start (in bytes) */
         frame_start_chn2 =     <0x10000000>;      /* Channel 2 frame start (in bytes) */
@@ -260,7 +262,7 @@
                                             "none",
                                             "none";
     };
-    
+
     elphel393_sensor_i2c: elphel393-sensor-i2c@0 {
                 compatible = "elphel,elphel393-sensor-i2c-1.00";
                 /* Add known devices: name, slave address (7-bit), number of address bytes, number of data bytes, SCL frequency (kHz) */
@@ -277,7 +279,7 @@
     framepars_operations: elphel393-framepars@0 {
         compatible = "elphel,elphel393-framepars-1.00";
     };
-    
+
     histograms_operations: elphel393-histograms@0 {
         compatible = "elphel,elphel393-histograms-1.00";
     };
@@ -291,15 +293,15 @@
     };
 
     elphel393_clock10359:elphel393-clock10359@0{
-        compatible = "elphel,elphel393_clock10359-1.00";    
+        compatible = "elphel,elphel393_clock10359-1.00";
     };
 
     klogger_393: klogger-393@0 {
         compatible = "elphel,klogger-393-1.00";
-        klogger-393,buffer_size = <1048576>; 
+        klogger-393,buffer_size = <1048576>;
     } ;
-    
-/* i2c driver for the extension boards, such as imu, gps, etc */    
+
+/* i2c driver for the extension boards, such as imu, gps, etc */
     elphel393_ext_i2c:elphel393-ext-i2c@0{
         compatible =    "elphel,elphel393-ext-i2c-1.00";
         time_scl_high =     <3>; /*  SCL high duration (us) */
@@ -309,5 +311,5 @@
         filter_sda =        <7>; /*  filter SDA read data by testing multiple times - currently just zero/non zero  */
         filter_scl =        <7>; /* filter SCL read data by testing multiple times - currently just zero/non zero  */
     };
-    
+
 };
