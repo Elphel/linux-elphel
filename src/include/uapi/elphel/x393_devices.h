@@ -112,7 +112,7 @@
 #define DEV393_MT9X001        ("",            "elphel393-mt9x001",   -1,  -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
 #define DEV393_KLOGGER        ("klogger_393",      "klogger_393",    144,  1, "0666", "c")  ///< kernel event logger to memory (no i/o)
 
-
+#define _DEV393_DEVNAME(n, ...) n
 #define _DEV393_PATH(n, ...) "/dev/"n
 #define _DEV393_NAME(a,n, ...) n
 #define _DEV393_MAJOR(a,b,n, ...) n
@@ -120,6 +120,7 @@
 #define _DEV393_PERMISSIONS(a,b,c,d,n, ...) n
 #define _DEV393_TYPE(a,b,c,d,e,n,...) n
 
+#define DEV393_DEVNAME(LIST)      _DEV393_DEVNAME LIST       ///< @return the device node name as string ("somediviceN")
 #define DEV393_PATH(LIST)         _DEV393_PATH LIST          ///< @return full path of the device node as string ("/dev/somedivice")
 #define DEV393_NAME(LIST)         _DEV393_NAME LIST          ///< @return driver name
 #define DEV393_MAJOR(LIST)        _DEV393_MAJOR LIST         ///< @return device major number
