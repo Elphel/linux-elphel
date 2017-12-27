@@ -94,10 +94,10 @@
 
 #include "debug393.h"
 
+#define  DRIVER_NAME        DEV393_NAME(DEV393_FRAMEPARS0)
+#define  DRIVER_DESCRIPTION "Elphel (R) Model 393 Frame Parameters device driver"
 
 #define ELPHEL_DEBUG 0
-
-
 
 // Below are old NC353 debug macros, remove them
 
@@ -150,9 +150,41 @@
 #endif
 
 /**
- * driver name to display
+ * devices names, "/dev/"+dev_name[i] - /dev/frameparsall0..3
  */
-#define  FRAMEPARS_DRIVER_DESCRIPTION "Elphel (R) Model 393 Frame Parameters device driver"
+static const char * const framepars_name[] = {
+	DEV393_DEVNAME(DEV393_FRAMEPARS0),
+	DEV393_DEVNAME(DEV393_FRAMEPARS1),
+	DEV393_DEVNAME(DEV393_FRAMEPARS2),
+	DEV393_DEVNAME(DEV393_FRAMEPARS3)
+};
+
+/**
+ * devices major - is one number
+ * TODO: switch to dynamic major and get rid of this
+ */
+static const int framepars_major[] = {
+ 	DEV393_MAJOR(DEV393_FRAMEPARS0),
+ 	DEV393_MAJOR(DEV393_FRAMEPARS1),
+ 	DEV393_MAJOR(DEV393_FRAMEPARS2),
+ 	DEV393_MAJOR(DEV393_FRAMEPARS3)
+};
+
+/**
+ * devices minors - basically base+i - can be a single number
+ * TODO: switch to dynamic assignment and get rid of this
+ */
+static const int framepars_minor[] = {
+ 	DEV393_MINOR(DEV393_FRAMEPARS0),
+ 	DEV393_MINOR(DEV393_FRAMEPARS1),
+ 	DEV393_MINOR(DEV393_FRAMEPARS2),
+	DEV393_MINOR(DEV393_FRAMEPARS3)
+};
+
+/**
+ * device class
+ */
+static struct class *framepars_dev_class;
 
 static int hardware_initialized = 0;
 
@@ -248,6 +280,11 @@ struct framepars_pd {
 };
 
 static u32 debug_flags = 0;
+
+/**
+ * @brief not used
+ */
+static struct class *framepars_device_class; /* global device class */
 
 /**
  * @brief assign non-static pointers to static data to be used as extern
@@ -2108,7 +2145,6 @@ static int elphel393_framepars_sysfs_register(struct platform_device *pdev)
     return retval;
 }
 
-
 /**
  * @brief framepars driver probing function
  * @param[in]   pdev   pointer to \b platform_device structure
@@ -2116,10 +2152,14 @@ static int elphel393_framepars_sysfs_register(struct platform_device *pdev)
  */
 int framepars_init(struct platform_device *pdev)
 {
+	//struct elphel_drvdata drvdata;
 	int res;
 	struct device *dev = &pdev->dev;
 //	const struct of_device_id *match;
 	int sensor_port;
+
+	// char device for sensor port
+	struct device *chrdev;
 
 	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
 		init_framepars_ptr(sensor_port);
@@ -2127,17 +2167,43 @@ int framepars_init(struct platform_device *pdev)
 		initMultiPars(sensor_port);        // just clear - needs to be called again when sensor is recognized
 	    frameParsInitialized[sensor_port] = 0;
 	}
+
+	// register character device
 	res = register_chrdev(DEV393_MAJOR(DEV393_FRAMEPARS0), DEV393_NAME(DEV393_FRAMEPARS0), &framepars_fops);
 	if (res < 0) {
 	    dev_err(dev, "framepars_init: couldn't get a major number %d (DEV393_MAJOR(DEV393_FRAMEPARS0)).\n",
 		        DEV393_MAJOR(DEV393_FRAMEPARS0));
 		return res;
 	}
+	dev_info(dev, DEV393_NAME(DEV393_FRAMEPARS0)": registered MAJOR: %d\n", DEV393_MAJOR(DEV393_FRAMEPARS0));
+
+	// register to sysfs
+	elphel393_framepars_sysfs_register(pdev);
+	/* Create device class needed by udev */
+	framepars_dev_class = class_create(THIS_MODULE, DRIVER_NAME);
+	if (IS_ERR(framepars_dev_class)) {
+		pr_err("Cannot create \"%s\" class", DRIVER_NAME);
+		return PTR_ERR(framepars_dev_class);
+	}
+
+	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
+		pr_debug("Trying to create device with major-minor: %d-%d, name: %s\n",framepars_major[sensor_port],framepars_minor[sensor_port],framepars_name[sensor_port]);
+		chrdev = device_create(
+				  framepars_dev_class,
+				  &pdev->dev,
+			      MKDEV(framepars_major[sensor_port], framepars_minor[sensor_port]),
+			      NULL,
+			      "%s", framepars_name[sensor_port]);
+		if(IS_ERR(chrdev)){
+			pr_err("Failed to create a device. Error code: %d\n",PTR_ERR(chrdev));
+		}
+
+	}
+
 	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
 		init_waitqueue_head(&aframepars_wait_queue[sensor_port]);
 	}
-	dev_info(dev, DEV393_NAME(DEV393_FRAMEPARS0)": registered MAJOR: %d\n", DEV393_MAJOR(DEV393_FRAMEPARS0));
-	elphel393_framepars_sysfs_register(pdev);
+
     dev_info(dev, DEV393_NAME(DEV393_FRAMEPARS0)": registered sysfs\n");
     g_devfp_ptr = dev;
     hardware_initialized = 0;
@@ -2147,6 +2213,14 @@ int framepars_init(struct platform_device *pdev)
 
 int framepars_remove(struct platform_device *pdev)
 {
+	int sensor_port;
+
+	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
+		device_destroy(
+			framepars_dev_class,
+			MKDEV(framepars_major[sensor_port],framepars_minor[sensor_port]));
+	}
+
 	unregister_chrdev(DEV393_MAJOR(DEV393_FRAMEPARS0), DEV393_NAME(DEV393_FRAMEPARS0));
 	return 0;
 }
@@ -2158,10 +2232,11 @@ static const struct of_device_id elphel393_framepars_of_match[] = {
 MODULE_DEVICE_TABLE(of, elphel393_framepars_of_match);
 
 static struct platform_driver elphel393_framepars = {
-	.probe			= framepars_init,
-	.remove			= framepars_remove,
-	.driver			= {
-		.name		= DEV393_NAME(DEV393_FRAMEPARS0),
+	.probe = framepars_init,
+	.remove	= framepars_remove,
+	.driver	= {
+		.owner = THIS_MODULE,
+		.name = DRIVER_NAME,
 		.of_match_table = elphel393_framepars_of_match,
 	},
 };
@@ -2170,5 +2245,5 @@ module_platform_driver(elphel393_framepars);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
-MODULE_DESCRIPTION(FRAMEPARS_DRIVER_DESCRIPTION);
+MODULE_DESCRIPTION(DRIVER_DESCRIPTION);
 
