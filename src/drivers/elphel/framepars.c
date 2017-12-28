@@ -163,12 +163,7 @@ static const char * const framepars_name[] = {
  * devices major - is one number
  * TODO: switch to dynamic major and get rid of this
  */
-static const int framepars_major[] = {
- 	DEV393_MAJOR(DEV393_FRAMEPARS0),
- 	DEV393_MAJOR(DEV393_FRAMEPARS1),
- 	DEV393_MAJOR(DEV393_FRAMEPARS2),
- 	DEV393_MAJOR(DEV393_FRAMEPARS3)
-};
+static const int framepars_major = DEV393_MAJOR(DEV393_FRAMEPARS0);
 
 /**
  * devices minors - basically base+i - can be a single number
@@ -2156,16 +2151,16 @@ int framepars_init(struct platform_device *pdev)
 	int res;
 	struct device *dev = &pdev->dev;
 //	const struct of_device_id *match;
-	int sensor_port;
+	int i;
 
 	// char device for sensor port
 	struct device *chrdev;
 
-	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
-		init_framepars_ptr(sensor_port);
-		initGlobalPars(sensor_port);       // sets default debug if enabled - not anymore. Add here?
-		initMultiPars(sensor_port);        // just clear - needs to be called again when sensor is recognized
-	    frameParsInitialized[sensor_port] = 0;
+	for (i = 0; i < SENSOR_PORTS; i++) {
+		init_framepars_ptr(i);
+		initGlobalPars(i);       // sets default debug if enabled - not anymore. Add here?
+		initMultiPars(i);        // just clear - needs to be called again when sensor is recognized
+	    frameParsInitialized[i] = 0;
 	}
 
 	// register character device
@@ -2186,22 +2181,22 @@ int framepars_init(struct platform_device *pdev)
 		return PTR_ERR(framepars_dev_class);
 	}
 
-	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
-		pr_debug("Trying to create device with major-minor: %d-%d, name: %s\n",framepars_major[sensor_port],framepars_minor[sensor_port],framepars_name[sensor_port]);
+	for (i = 0; i < (sizeof(framepars_minor)/sizeof(int)); i++) {
+		pr_debug("Creating device with major-minor: %d-%d, name: %s\n",framepars_major,framepars_minor[i],framepars_name[i]);
 		chrdev = device_create(
 				  framepars_dev_class,
 				  &pdev->dev,
-			      MKDEV(framepars_major[sensor_port], framepars_minor[sensor_port]),
+			      MKDEV(framepars_major, framepars_minor[i]),
 			      NULL,
-			      "%s", framepars_name[sensor_port]);
+			      "%s", framepars_name[i]);
 		if(IS_ERR(chrdev)){
-			pr_err("Failed to create a device. Error code: %d\n",PTR_ERR(chrdev));
+			pr_err("Failed to create a device. Error code: %ld\n",PTR_ERR(chrdev));
 		}
 
 	}
 
-	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
-		init_waitqueue_head(&aframepars_wait_queue[sensor_port]);
+	for (i = 0; i < SENSOR_PORTS; i++) {
+		init_waitqueue_head(&aframepars_wait_queue[i]);
 	}
 
     dev_info(dev, DEV393_NAME(DEV393_FRAMEPARS0)": registered sysfs\n");
@@ -2213,12 +2208,12 @@ int framepars_init(struct platform_device *pdev)
 
 int framepars_remove(struct platform_device *pdev)
 {
-	int sensor_port;
+	int i;
 
-	for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
+	for (i = 0; i < (sizeof(framepars_minor)/sizeof(int)); i++) {
 		device_destroy(
 			framepars_dev_class,
-			MKDEV(framepars_major[sensor_port],framepars_minor[sensor_port]));
+			MKDEV(framepars_major,framepars_minor[i]));
 	}
 
 	unregister_chrdev(DEV393_MAJOR(DEV393_FRAMEPARS0), DEV393_NAME(DEV393_FRAMEPARS0));

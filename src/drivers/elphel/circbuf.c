@@ -47,8 +47,43 @@
 #include "x393_macro.h"
 //#include "x393_helpers.h"
 
+static const char * const circbuf_devs[] = {
+	DEV393_DEVNAME(DEV393_CIRCBUF0),
+	DEV393_DEVNAME(DEV393_CIRCBUF1),
+	DEV393_DEVNAME(DEV393_CIRCBUF2),
+	DEV393_DEVNAME(DEV393_CIRCBUF3),
+	DEV393_DEVNAME(DEV393_JPEGHEAD0),
+	DEV393_DEVNAME(DEV393_JPEGHEAD1),
+	DEV393_DEVNAME(DEV393_JPEGHEAD2),
+	DEV393_DEVNAME(DEV393_JPEGHEAD3),
+	DEV393_DEVNAME(DEV393_HUFFMAN0),
+	DEV393_DEVNAME(DEV393_HUFFMAN1),
+	DEV393_DEVNAME(DEV393_HUFFMAN2),
+	DEV393_DEVNAME(DEV393_HUFFMAN3)
+};
+
+static const int circbuf_major = DEV393_MAJOR(DEV393_CIRCBUF0);
+
+static const int circbuf_minor[] = {
+	DEV393_MINOR(DEV393_CIRCBUF0),
+	DEV393_MINOR(DEV393_CIRCBUF1),
+	DEV393_MINOR(DEV393_CIRCBUF2),
+	DEV393_MINOR(DEV393_CIRCBUF3),
+	DEV393_MINOR(DEV393_JPEGHEAD0),
+	DEV393_MINOR(DEV393_JPEGHEAD1),
+	DEV393_MINOR(DEV393_JPEGHEAD2),
+	DEV393_MINOR(DEV393_JPEGHEAD3),
+	DEV393_MINOR(DEV393_HUFFMAN0),
+	DEV393_MINOR(DEV393_HUFFMAN1),
+	DEV393_MINOR(DEV393_HUFFMAN2),
+	DEV393_MINOR(DEV393_HUFFMAN3)
+};
+
 /** @brief Driver name displayed in system logs */
 //#define CIRCBUF_DRIVER_NAME "circbuf driver"
+
+/** device class */
+static struct class *circbuf_dev_class;
 
 /** @brief Wait queue for the processes waiting for a new frame to appear in the circular buffer. Each channel has
  * its own instance of wait queue to prevent race conditions when one channel wakes up the queue while the other
@@ -866,47 +901,69 @@ static struct file_operations circbuf_fops = {
  */
 static int circbuf_all_init(struct platform_device *pdev)
 {
-   int res, i;
-   struct device *dev = &pdev->dev;
-   const struct of_device_id *match;
+	int res, i;
+	struct device *dev = &pdev->dev;
+	const struct of_device_id *match;
+	// char device for sensor port
+	struct device *chrdev;
 
-   /* sanity check */
-   match = of_match_device(elphel393_circbuf_of_match, dev);
-   if (!match)
-	   return -EINVAL;
+	/* sanity check */
+	match = of_match_device(elphel393_circbuf_of_match, dev);
+	if (!match)
+		return -EINVAL;
 
-   dev_dbg(dev, "registering character device with name 'circbuf_operations'");
-   res = register_chrdev(DEV393_MAJOR(DEV393_CIRCBUF0), "circbuf_operations", &circbuf_fops);
-   if(res < 0) {
-	   dev_err(dev, "couldn't get a major number %d.\n", DEV393_MAJOR(DEV393_CIRCBUF0));
-	   return res;
-   }
-   dev_info(dev, "registered MAJOR: %d\n", DEV393_MAJOR(DEV393_CIRCBUF0));
+	dev_dbg(dev, "registering character device with name 'circbuf_operations'");
+	res = register_chrdev(DEV393_MAJOR(DEV393_CIRCBUF0), "circbuf_operations", &circbuf_fops);
+	if(res < 0) {
+		dev_err(dev, "couldn't get a major number %d.\n", DEV393_MAJOR(DEV393_CIRCBUF0));
+		return res;
+	}
+	dev_info(dev, "registered MAJOR: %d\n", DEV393_MAJOR(DEV393_CIRCBUF0));
 
-   res = jpeghead_init(pdev);
-   if (res < 0) {
-	   dev_err(dev, "unable to initialize jpeghead module\n");
-	   return res;
-   }
-   res = image_acq_init(pdev);
-   if (res < 0) {
-	   dev_err(dev, "unable to initialize sensor_common module\n");
-	   return res;
-   }
-   res = init_ccam_dma_buf_ptr(pdev);
-   if (res < 0) {
-	   dev_err(dev, "ERROR allocating coherent DMA buffer\n");
-	   return -ENOMEM;
-   }
+	// create device class
+	circbuf_dev_class = class_create(THIS_MODULE, DEV393_NAME(DEV393_CIRCBUF0));
+	if (IS_ERR(circbuf_dev_class)) {
+		pr_err("Cannot create \"%s\" class", DEV393_NAME(DEV393_CIRCBUF0));
+		return PTR_ERR(circbuf_dev_class);
+	}
 
-   dev_dbg(dev, "initialize circbuf wait queue\n");
-   for (i = 0; i < SENSOR_PORTS; i++)
-	   init_waitqueue_head(&circbuf_wait_queue[i]);
-   dev_dbg(dev, "initialize Huffman tables with default data\n");
+	// create devices
+	for (i=0;i<(sizeof(circbuf_minor)/sizeof(int));i++){
+		chrdev = device_create(
+				  circbuf_dev_class,
+				  &pdev->dev,
+				  MKDEV(circbuf_major, circbuf_minor[i]),
+				  NULL,
+				  "%s",circbuf_devs[i]);
+		if(IS_ERR(chrdev)){
+			pr_err("Failed to create a device (circbuf, %d). Error code: %ld\n",i,PTR_ERR(chrdev));
+		}
+	}
 
-   g_dev_ptr = dev;
+	res = jpeghead_init(pdev);
+	if (res < 0) {
+		dev_err(dev, "unable to initialize jpeghead module\n");
+		return res;
+	}
+	res = image_acq_init(pdev);
+	if (res < 0) {
+		dev_err(dev, "unable to initialize sensor_common module\n");
+		return res;
+	}
+	res = init_ccam_dma_buf_ptr(pdev);
+	if (res < 0) {
+		dev_err(dev, "ERROR allocating coherent DMA buffer\n");
+		return -ENOMEM;
+	}
 
-   return 0;
+	dev_dbg(dev, "initialize circbuf wait queue\n");
+	for (i = 0; i < SENSOR_PORTS; i++)
+		init_waitqueue_head(&circbuf_wait_queue[i]);
+	dev_dbg(dev, "initialize Huffman tables with default data\n");
+
+	g_dev_ptr = dev;
+
+	return 0;
 }
 
 /**
@@ -916,8 +973,13 @@ static int circbuf_all_init(struct platform_device *pdev)
  */
 static int circbuf_remove(struct platform_device *pdev)
 {
+	int i;
+	for (i=0;i<(sizeof(circbuf_minor)/sizeof(int));i++){
+		device_destroy(
+			circbuf_dev_class,
+			MKDEV(circbuf_major, circbuf_minor[i]));
+	}
 	unregister_chrdev(DEV393_MAJOR(DEV393_CIRCBUF0), "circbuf_operations");
-
 	return 0;
 }
 

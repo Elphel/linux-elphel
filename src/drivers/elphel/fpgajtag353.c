@@ -118,6 +118,37 @@ port C 353:
 #define JTAG_MODE_EXTEST   5 // JTAG channel boundary scan - EXTEST (the first operation after open is read)
 #define JTAG_MODE_RAW      6 // JTAG raw command mode
 
+static const char * const fpgajtag_devs[]={
+	DEV393_DEVNAME(DEV393_JTAG_RESET),
+	//DEV393_DEVNAME(DEV393_JTAG_RAW), // create link in udev rule
+	DEV393_DEVNAME(DEV393_JTAGS_CONF0),
+	DEV393_DEVNAME(DEV393_JTAGS_CONF1),
+	DEV393_DEVNAME(DEV393_JTAGS_CONF2),
+	DEV393_DEVNAME(DEV393_JTAGS_CONF3),
+	DEV393_DEVNAME(DEV393_JTAGS_BSCAN0),
+	DEV393_DEVNAME(DEV393_JTAGS_BSCAN1),
+	DEV393_DEVNAME(DEV393_JTAGS_BSCAN2),
+	DEV393_DEVNAME(DEV393_JTAGS_BSCAN3)
+};
+
+static const int fpgajtag_major = DEV393_MAJOR(DEV393_JTAG_RESET);
+
+static const int fpgajtag_minor[]={
+	DEV393_MINOR(DEV393_JTAG_RESET),
+	//DEV393_MINOR(DEV393_JTAG_RAW),
+	DEV393_MINOR(DEV393_JTAGS_CONF0),
+	DEV393_MINOR(DEV393_JTAGS_CONF1),
+	DEV393_MINOR(DEV393_JTAGS_CONF2),
+	DEV393_MINOR(DEV393_JTAGS_CONF3),
+	DEV393_MINOR(DEV393_JTAGS_BSCAN0),
+	DEV393_MINOR(DEV393_JTAGS_BSCAN1),
+	DEV393_MINOR(DEV393_JTAGS_BSCAN2),
+	DEV393_MINOR(DEV393_JTAGS_BSCAN3)
+};
+
+/** @brief Global device class for sysfs */
+static struct class *fpgajtag_dev_class;
+
 // configuration and raw minors use whole buffer, ID and boundary can be opened at the same time
 struct JTAG_channel_t {
     int mode; // 0..5 -JTAG_MODE_CLOSED...JTAG_MODE_EXTEST
@@ -1392,12 +1423,35 @@ int JTAG_EXTEST (int chn, unsigned char * buf, int len) {
 
 static int __init fpga_jtag_init(void) {
     int i,res;
+    struct device *chrdev;
+
     res = register_chrdev(DEV393_MAJOR(DEV393_JTAGS_CONF0), fpga_jtag_name, &fpga_jtag_fops);
     if(res < 0) {
         dev_err(NULL,"\nfpga_jtag_init: couldn't get a major number %d.\n",DEV393_MAJOR(DEV393_JTAGS_CONF0));
         return res;
     }
     dev_dbg(NULL,DEV393_NAME(DEV393_JTAGS_CONF0)" - %d\n",DEV393_MAJOR(DEV393_JTAGS_CONF0));
+
+	// create device class
+	fpgajtag_dev_class = class_create(THIS_MODULE, DEV393_NAME(DEV393_JTAGS_CONF0));
+	if (IS_ERR(fpgajtag_dev_class)) {
+		pr_err("Cannot create \"%s\" class", DEV393_NAME(DEV393_EXIF0));
+		return PTR_ERR(fpgajtag_dev_class);
+	}
+
+	//create devices
+	for (i=0;i<(sizeof(fpgajtag_minor)/sizeof(int));i++){
+		chrdev = device_create(
+				  fpgajtag_dev_class,
+				  NULL,
+				  MKDEV(fpgajtag_major, fpgajtag_minor[i]),
+				  NULL,
+				  "%s",fpgajtag_devs[i]);
+		if(IS_ERR(chrdev)){
+			pr_err("Failed to create a device (fpgajtag, %d). Error code: %ld\n",i,PTR_ERR(chrdev));
+		}
+	}
+
     for (i=0;i<=FPGA_JTAG_MAXMINOR;i++) minors[i]=0;
     initPortC();
 
@@ -1411,6 +1465,12 @@ static int __init fpga_jtag_init(void) {
 
 static void __exit fpga_jtag_exit(void)
 {
+	int i;
+	for (i=0;i<(sizeof(fpgajtag_minor)/sizeof(int));i++){
+		device_destroy(
+				fpgajtag_dev_class,
+			MKDEV(fpgajtag_major, fpgajtag_minor[i]));
+	}
     unregister_chrdev(DEV393_MAJOR(DEV393_JTAGS_CONF0), DEV393_NAME(DEV393_JTAGS_CONF0));
     dev_dbg(NULL, "unregistering driver");
 }

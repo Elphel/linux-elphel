@@ -147,6 +147,9 @@ dma_addr_t   fpga_hist_phys; // physical address of the start of the received hi
 
 #define  X3X3_HISTOGRAMS_DRIVER_DESCRIPTION "Elphel (R) Model 353 Histograms device driver"
 
+/** device class */
+static struct class *histograms_dev_class;
+
 /** for each port and possible sensor subchannel provides index in combine histogram data */
 int histograms_map[SENSOR_PORTS][MAX_SENSORS];
 
@@ -839,6 +842,9 @@ int histograms_init(struct platform_device *pdev) {
     int res,i;
     int sz, pages;
     struct device *dev = &pdev->dev;
+    // char device for histograms
+    struct device *chrdev;
+
 //    const struct of_device_id *match; // not yet used
 //    init_histograms(); // Not now??? Need to have list of channels
     // Do it later, from the user space
@@ -847,6 +853,25 @@ int histograms_init(struct platform_device *pdev) {
         dev_err(dev, "histograms_init: couldn't get a major number %d.\n", DEV393_MAJOR(DEV393_HISTOGRAM));
         return res;
     }
+
+    // new in 4.9:
+    histograms_dev_class = class_create(THIS_MODULE, DEV393_NAME(DEV393_HISTOGRAM));
+    if (IS_ERR(histograms_dev_class)) {
+    	pr_err("Cannot create \"%s\" class", DEV393_NAME(DEV393_HISTOGRAM));
+    	return PTR_ERR(histograms_dev_class);
+    }
+
+    chrdev = device_create(
+    	histograms_dev_class,
+    	&pdev->dev,
+    	MKDEV(DEV393_MAJOR(DEV393_HISTOGRAM), DEV393_MINOR(DEV393_HISTOGRAM)),
+    	NULL,
+    	"%s", DEV393_DEVNAME(DEV393_HISTOGRAM));
+
+    if(IS_ERR(chrdev)){
+    	pr_err("Failed to create a device. Error code: %ld\n",PTR_ERR(chrdev));
+    }
+
     //   init_waitqueue_head(&histograms_wait_queue);
     for (i = 0; i < SENSOR_PORTS; i++) {
         init_waitqueue_head(&ahist_y_wait_queue[i]);    // wait queue for the G1 histogram (used as Y)
@@ -869,8 +894,8 @@ int histograms_init(struct platform_device *pdev) {
 }
 int histograms_remove(struct platform_device *pdev)
 {
+	device_destroy(histograms_dev_class,MKDEV(DEV393_MAJOR(DEV393_HISTOGRAM), DEV393_MINOR(DEV393_HISTOGRAM)));
     unregister_chrdev(DEV393_MAJOR(DEV393_HISTOGRAM), DEV393_NAME(DEV393_HISTOGRAM));
-
     return 0;
 }
 static const struct of_device_id elphel393_histograms_of_match[] = {

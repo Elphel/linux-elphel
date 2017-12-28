@@ -70,6 +70,13 @@ static char * klog393_buf = NULL;
 const char klogger393_of_prop_bufsize_name[] = "klogger-393,buffer_size";
 const static u32 max_string_len = PAGE_SIZE; ///< maximal string length
 
+static const char * const klogger_dev = DEV393_DEVNAME(DEV393_KLOGGER);
+static const int klogger_major = DEV393_MAJOR(DEV393_KLOGGER);
+static const int klogger_minor = DEV393_MINOR(DEV393_KLOGGER);
+
+/** @brief Global device class for sysfs */
+static struct class *klogger_dev_class;
+
 int        klogger393_open(struct inode *inode, struct file *filp);
 int        klogger393_release(struct inode *inode, struct file *filp);
 loff_t     klogger393_llseek(struct file * file, loff_t offset, int orig);
@@ -370,6 +377,8 @@ int klogger_393_probe(struct platform_device *pdev)
     const   char * config_string;
     struct device_node *node = pdev->dev.of_node;
     const __be32 *bufsize_be;
+    // char device for sensor port
+    struct device *chrdev;
 
     g_dev_ptr = dev;
     buffer_wp = 0;
@@ -427,13 +436,28 @@ int klogger_393_probe(struct platform_device *pdev)
             return res;
         }
 
+    	// create device class
+    	klogger_dev_class = class_create(THIS_MODULE, DEV393_NAME(DEV393_KLOGGER));
+    	if (IS_ERR(klogger_dev_class)) {
+    		pr_err("Cannot create \"%s\" class", DEV393_NAME(DEV393_KLOGGER));
+    		return PTR_ERR(klogger_dev_class);
+    	}
+
+    	// create device
+		chrdev = device_create(
+				  klogger_dev_class,
+				  &pdev->dev,
+				  MKDEV(klogger_major, klogger_minor),
+				  NULL,
+				  "%s",klogger_dev);
+		if(IS_ERR(chrdev)){
+			pr_err("Failed to create a device (klogger). Error code: %ld\n",PTR_ERR(chrdev));
+		}
 
     } else {
         dev_warn(dev,"%s: No entry for "DEV393_NAME(DEV393_KLOGGER)", in Device Tree, logger is disabled\n", __func__);
 
     }
-
-
 
     res = klogger_393_sysfs_register(pdev);
     dev_info(dev, DEV393_NAME(DEV393_KLOGGER)": registered sysfs, result = %d\n", res);
@@ -445,6 +469,8 @@ int klogger_393_remove(struct platform_device *pdev)
     if (klog393_buf) {
 //        devm_kfree(&pdev->dev, klog393_buf); // actually not needed
     }
+
+    device_destroy(klogger_dev_class, MKDEV(klogger_major, klogger_minor));
 
     unregister_chrdev(DEV393_MAJOR(DEV393_KLOGGER), DEV393_NAME(DEV393_KLOGGER));
     return 0;

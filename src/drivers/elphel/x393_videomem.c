@@ -42,6 +42,21 @@ static struct device *g_dev_ptr; ///< Global pointer to basic device structure. 
 wait_queue_head_t videomem_wait_queue;
 static DEFINE_SPINLOCK(lock); // for read-modify-write channel enable
 
+static const char * const videomem_devs[]={
+	DEV393_DEVNAME(DEV393_VIDEOMEM_RAW),
+	DEV393_DEVNAME(DEV393_IMAGE_RAW)
+};
+
+static const int videomem_major = DEV393_MAJOR(DEV393_VIDEOMEM_RAW);
+
+static const int videomem_minor[]={
+	DEV393_MINOR(DEV393_VIDEOMEM_RAW),
+	DEV393_MINOR(DEV393_IMAGE_RAW)
+};
+
+/** @brief Global device class for sysfs */
+static struct class *videomem_dev_class;
+
 static struct elphel_video_buf_t buffer_settings = { ///< some default settings, same as in DT
         .frame_start =      {0x00000000, 0x08000000, 0x10000000, 0x08000000}, /* Frame starts (in bytes) */
         .frame_full_width = {      8192,       8192,       8192,       8192}, /* Frame full widths (in bytes). 1 memory page is 2048 bytes (128 bursts) */
@@ -551,11 +566,13 @@ static int elphel393_videomem_sysfs_register(struct platform_device *pdev)
 static int videomem_probe(struct platform_device *pdev)
 {
     unsigned int irq;
-    int res;
+    int res, i;
     struct device *dev = &pdev->dev;
     const struct of_device_id *match;
 //    const __be32 *bufsize_be;
     struct device_node *node;
+    // char device for sensor port
+    struct device *chrdev;
 
     elphel393_videomem_sysfs_register(pdev);
 
@@ -599,6 +616,27 @@ static int videomem_probe(struct platform_device *pdev)
         dev_err(dev, "\videomem_probe: couldn't get a major number  %d.\n ",DEV393_MAJOR(DEV393_VIDEOMEM_RAW));
         return res;
     }
+
+	// create device class
+	videomem_dev_class = class_create(THIS_MODULE, DEV393_NAME(DEV393_VIDEOMEM_RAW));
+	if (IS_ERR(videomem_dev_class)) {
+		pr_err("Cannot create \"%s\" class", DEV393_NAME(DEV393_VIDEOMEM_RAW));
+		return PTR_ERR(videomem_dev_class);
+	}
+
+	// create devices
+	for (i=0;i<(sizeof(videomem_minor)/sizeof(int));i++){
+		chrdev = device_create(
+				  videomem_dev_class,
+				  &pdev->dev,
+				  MKDEV(videomem_major, videomem_minor[i]),
+				  NULL,
+				  "%s",videomem_devs[i]);
+		if(IS_ERR(chrdev)){
+			pr_err("Failed to create a device (videomem %d). Error code: %ld\n",i,PTR_ERR(chrdev));
+		}
+	}
+
     // Setup interrupt
 
     irq = platform_get_irq_byname(pdev, "membridge_irq");
@@ -620,6 +658,12 @@ static int videomem_probe(struct platform_device *pdev)
 static int videomem_remove(struct platform_device *pdev) ///< [in] pointer to @e platform_device structure
                                                          ///< @return always 0
 {
+	int i;
+	for (i=0;i<(sizeof(videomem_minor)/sizeof(int));i++){
+		device_destroy(
+			videomem_dev_class,
+			MKDEV(videomem_major, videomem_minor[i]));
+	}
     unregister_chrdev(DEV393_MAJOR(DEV393_VIDEOMEM_RAW), DEV393_NAME(DEV393_VIDEOMEM_RAW));
 
     return 0;

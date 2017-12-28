@@ -317,7 +317,20 @@ static struct device *g_dev_ptr; ///< Global pointer to basic device structure. 
 wait_queue_head_t logger_wait_queue;
 #endif
 
+static const char * const imu_devs[]={
+	DEV393_DEVNAME(DEV393_LOGGER),
+	DEV393_DEVNAME(DEV393_LOGGER_CTRL)
+};
 
+static const int imu_major = DEV393_MAJOR(DEV393_LOGGER);
+
+static const int imu_minor[]={
+	DEV393_MINOR(DEV393_LOGGER),
+	DEV393_MINOR(DEV393_LOGGER_CTRL)
+};
+
+/** @brief Global device class for sysfs */
+static struct class *imu_dev_class;
 
 int logger_dma_ctrl(int cmd);
 int logger_init_fpga(int force);
@@ -970,12 +983,14 @@ static irqreturn_t logger_irq_handler(int irq,      ///< [in] interrupt number
 static int logger_init(struct platform_device *pdev)
 {
     unsigned int irq;
-    int res;
+    int res, i;
     struct device *dev = &pdev->dev;
     const struct of_device_id *match;
     const char *logger_irq_names[4] = {"mult_saxi_0", "mult_saxi_1", "mult_saxi_2", "mult_saxi_3"};
-    g_dev_ptr = dev;
+    // char device for sensor port
+    struct device *chrdev;
 
+    g_dev_ptr = dev;
 
     /* sanity check */
     match = of_match_device(elphel393_logger_of_match, dev);
@@ -989,6 +1004,27 @@ static int logger_init(struct platform_device *pdev)
         return res;
     }
     dev_info(dev,DEV393_NAME(DEV393_LOGGER)"- %d\n",DEV393_MAJOR(DEV393_LOGGER));
+
+	// create device class
+	imu_dev_class = class_create(THIS_MODULE, DEV393_NAME(DEV393_LOGGER));
+	if (IS_ERR(imu_dev_class)) {
+		pr_err("Cannot create \"%s\" class", DEV393_NAME(DEV393_LOGGER));
+		return PTR_ERR(imu_dev_class);
+	}
+
+	// create devices
+	for (i=0;i<(sizeof(imu_minor)/sizeof(int));i++){
+		chrdev = device_create(
+				imu_dev_class,
+				  &pdev->dev,
+				  MKDEV(imu_major, imu_minor[i]),
+				  NULL,
+				  "%s",imu_devs[i]);
+		if(IS_ERR(chrdev)){
+			pr_err("Failed to create a device (imu_log). Error code: %ld\n",PTR_ERR(chrdev));
+		}
+	}
+
     // Setup memory buffer from CMA
     logger_buffer = (u32 *) pElphel_buf->logger_vaddr; // must be page-aligned!
     logger_size = pElphel_buf->logger_size << PAGE_SHIFT;
@@ -1271,13 +1307,17 @@ int x313_setDMA1Buffer(void) {
 
 
 
-
 /** IMU/GPS logger driver remove function */
 static int logger_remove(struct platform_device *pdev) ///< [in] pointer to @e platform_device structure
                                                        ///< @return always 0
 {
+	int i;
+	for (i=0;i<(sizeof(imu_minor)/sizeof(int));i++){
+		device_destroy(
+			imu_dev_class,
+			MKDEV(imu_major, imu_minor[i]));
+	}
     unregister_chrdev(DEV393_MAJOR(DEV393_LOGGER), DEV393_NAME(DEV393_LOGGER));
-
     return 0;
 }
 

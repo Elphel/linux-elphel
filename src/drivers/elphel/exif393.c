@@ -15,9 +15,8 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
+//#define DEBUG
 //copied from cxi2c.c - TODO:remove unneeded
-
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -72,6 +71,40 @@
 
 
 #define  X3X3_EXIF_DRIVER_DESCRIPTION "Elphel (R) model 393 Exif device driver"
+
+static const char * const exif393_devs[]={
+	DEV393_DEVNAME(DEV393_EXIF_TEMPLATE),
+	DEV393_DEVNAME(DEV393_EXIF_METADIR),
+	DEV393_DEVNAME(DEV393_EXIF_TIME),
+	DEV393_DEVNAME(DEV393_EXIF0),
+	DEV393_DEVNAME(DEV393_EXIF1),
+	DEV393_DEVNAME(DEV393_EXIF2),
+	DEV393_DEVNAME(DEV393_EXIF3),
+	DEV393_DEVNAME(DEV393_EXIF_META0),
+	DEV393_DEVNAME(DEV393_EXIF_META1),
+	DEV393_DEVNAME(DEV393_EXIF_META2),
+	DEV393_DEVNAME(DEV393_EXIF_META3)
+};
+
+static const int exif393_major = DEV393_MAJOR(DEV393_EXIF_TEMPLATE);
+
+static const int exif393_minor[]={
+	DEV393_MINOR(DEV393_EXIF_TEMPLATE),
+	DEV393_MINOR(DEV393_EXIF_METADIR),
+	DEV393_MINOR(DEV393_EXIF_TIME),
+	DEV393_MINOR(DEV393_EXIF0),
+	DEV393_MINOR(DEV393_EXIF1),
+	DEV393_MINOR(DEV393_EXIF2),
+	DEV393_MINOR(DEV393_EXIF3),
+	DEV393_MINOR(DEV393_EXIF_META0),
+	DEV393_MINOR(DEV393_EXIF_META1),
+	DEV393_MINOR(DEV393_EXIF_META2),
+	DEV393_MINOR(DEV393_EXIF_META3)
+};
+
+/** @brief Global device class for sysfs */
+static struct class *exif393_dev_class;
+
 /** @brief Global pointer to basic device structure. This pointer is used in debugfs output functions */
 static struct device *g_devfp_ptr = NULL;
 
@@ -795,17 +828,56 @@ EXPORT_SYMBOL_GPL(exif_get_data);
 //!++++++++++++++++++++++++++++++++++++ _init() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 static int __init exif_init(void) {
-	int res;
-	res = register_chrdev(DEV393_MAJOR(DEV393_EXIF0), "Exif", &exif_fops);
+	int res, i;
+	struct device *chrdev;
+
+	//res = register_chrdev(DEV393_MAJOR(DEV393_EXIF0), "Exif", &exif_fops);
+	res = register_chrdev(DEV393_MAJOR(DEV393_EXIF0), DEV393_NAME(DEV393_EXIF0), &exif_fops);
 	if(res < 0) {
 	    dev_err(g_devfp_ptr,"\nexif_init: couldn't get a major number  %d.\n",DEV393_MAJOR(DEV393_EXIF0));
 		return res;
 	}
-	 dev_dbg(g_devfp_ptr,DEV393_NAME(DEV393_EXIF0)" - %d\n",DEV393_MAJOR(DEV393_EXIF0));
+	dev_dbg(g_devfp_ptr,DEV393_NAME(DEV393_EXIF0)" - %d\n",DEV393_MAJOR(DEV393_EXIF0));
+
+	// create device class
+	exif393_dev_class = class_create(THIS_MODULE, DEV393_NAME(DEV393_EXIF0));
+	if (IS_ERR(exif393_dev_class)) {
+		dev_err(g_devfp_ptr,"Cannot create \"%s\" class\n",DEV393_NAME(DEV393_EXIF0));
+		return PTR_ERR(exif393_dev_class);
+	}
+
+	//create devices
+	for (i=0;i<(sizeof(exif393_minor)/sizeof(int));i++){
+		chrdev = device_create(
+				  exif393_dev_class,
+				  NULL,
+				  MKDEV(exif393_major, exif393_minor[i]),
+				  NULL,
+				  "%s",exif393_devs[i]);
+		if(IS_ERR(chrdev)){
+			dev_err(g_devfp_ptr,"Failed to create a device (exif393, %d). Error code: %ld\n",i,PTR_ERR(chrdev));
+		}
+	}
+
 	return 0;
 }
 
+
+static void __exit exif_exit(void)
+{
+	int i;
+	for (i=0;i<(sizeof(exif393_minor)/sizeof(int));i++){
+		device_destroy(
+			exif393_dev_class,
+			MKDEV(exif393_major, exif393_minor[i]));
+	}
+    unregister_chrdev(DEV393_MAJOR(DEV393_JTAGS_CONF0), DEV393_NAME(DEV393_JTAGS_CONF0));
+    dev_dbg(NULL, "unregistering driver");
+}
+
+module_exit(exif_exit);
 module_init(exif_init);
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
 MODULE_DESCRIPTION(X3X3_EXIF_DRIVER_DESCRIPTION);

@@ -184,7 +184,12 @@ static DEFINE_SPINLOCK(gamma_lock);   ///< Non port-specific lock
 
 #endif
 
+static const char * const gamma_dev = DEV393_DEVNAME(DEV393_GAMMA);
+static const int gamma_major = DEV393_MAJOR(DEV393_GAMMA);
+static const int gamma_minor = DEV393_MINOR(DEV393_GAMMA);
 
+/** @brief Global device class for sysfs */
+static struct class *gamma_dev_class;
 
 static struct gamma_stuct_t gammas[GAMMA_CACHE_NUMBER] __attribute__ ((aligned (PAGE_SIZE)));
 struct gamma_stuct_t * gammas_p; // to use with mmap
@@ -1000,6 +1005,8 @@ static int gammas_init(struct platform_device *pdev) {
     int res;
     struct device *dev = &pdev->dev;
     const struct of_device_id *match; // not yet used
+    struct device *chrdev;
+
     dev_info(dev,"Starting "DEV393_NAME(DEV393_GAMMA)" - %d \n",DEV393_MAJOR(DEV393_GAMMA));
     init_gammas();
     //   MDF10(printk("set_gamma_table (0, GAMMA_SCLALE_1, NULL,  0, 0)\n"); udelay (ELPHEL_DEBUG_DELAY));
@@ -1013,11 +1020,32 @@ static int gammas_init(struct platform_device *pdev) {
     }
     //   init_waitqueue_head(&gammas_wait_queue);
     dev_info(dev, DEV393_NAME(DEV393_GAMMA)" - %d \n",DEV393_MAJOR(DEV393_GAMMA));
+
+    // create device class
+	gamma_dev_class = class_create(THIS_MODULE, DEV393_NAME(DEV393_GAMMA));
+	if (IS_ERR(gamma_dev_class)) {
+		pr_err("Cannot create \"%s\" class", DEV393_NAME(DEV393_GAMMA));
+		return PTR_ERR(gamma_dev_class);
+	}
+
+	// create device
+	chrdev = device_create(
+			  gamma_dev_class,
+			  &pdev->dev,
+			  MKDEV(gamma_major, gamma_minor),
+			  NULL,
+			  "%s",gamma_dev);
+	if(IS_ERR(chrdev)){
+		pr_err("Failed to create a device (gamma). Error code: %ld\n",PTR_ERR(chrdev));
+	}
+
     g_dev_ptr = dev; // to use for debug print
+
     return 0;
 }
 int gammas_remove(struct platform_device *pdev)
 {
+	device_destroy(gamma_dev_class, MKDEV(gamma_major, gamma_minor));
     unregister_chrdev(DEV393_MAJOR(DEV393_GAMMA), DEV393_NAME(DEV393_GAMMA));
 
     return 0;

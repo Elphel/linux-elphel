@@ -164,6 +164,32 @@ static int xi2c_initialized=0; // configure GPIO puins access at first command;
 static int i2c_hardware_on=0; // shadow register for FPFA I2C controller
 #endif
 
+static const char * const xi2c_devs[]={
+	DEV393_DEVNAME(DEV393_I2C_CTRL),
+	DEV393_DEVNAME(DEV393_I2C_8_AINC),
+	DEV393_DEVNAME(DEV393_I2C_16_AINC),
+	DEV393_DEVNAME(DEV393_I2C1_8_AINC),
+	DEV393_DEVNAME(DEV393_I2C1_16_AINC),
+	DEV393_DEVNAME(DEV393_I2C_RAW),
+	DEV393_DEVNAME(DEV393_I2C1_RAW),
+	DEV393_DEVNAME(DEV393_I2C_ENABLE)
+};
+
+static const int xi2c_major = DEV393_MAJOR(DEV393_I2C_CTRL);
+
+static const int xi2c_minor[]={
+	DEV393_MINOR(DEV393_I2C_CTRL),
+	DEV393_MINOR(DEV393_I2C_8_AINC),
+	DEV393_MINOR(DEV393_I2C_16_AINC),
+	DEV393_MINOR(DEV393_I2C1_8_AINC),
+	DEV393_MINOR(DEV393_I2C1_16_AINC),
+	DEV393_MINOR(DEV393_I2C_RAW),
+	DEV393_MINOR(DEV393_I2C1_RAW),
+	DEV393_MINOR(DEV393_I2C_ENABLE)
+};
+
+/** @brief Global device class for sysfs */
+static struct class *xi2c_dev_class;
 
 //void i2c_disable(int n);
 //void i2c_dir_out(int n);
@@ -1360,6 +1386,8 @@ int xi2c_init(struct platform_device *pdev)
 {
     int i,res;
     struct device *dev = &pdev->dev;
+    // char device for sensor port
+    struct device *chrdev;
 
     elphel393_ext_i2c_sysfs_register(pdev);
     dev_info(dev, DEV393_NAME(DEV393_I2C_CTRL)": registered sysfs\n");
@@ -1372,6 +1400,26 @@ int xi2c_init(struct platform_device *pdev)
     }
     printk(X3X3_I2C_DRIVER_NAME" - %d, %d channels\n",DEV393_MAJOR(DEV393_I2C_CTRL),X3X3_I2C_CHANNELS);
     //   thisminor =0;
+
+	// create device class
+	xi2c_dev_class = class_create(THIS_MODULE, DEV393_NAME(DEV393_I2C_CTRL));
+	if (IS_ERR(xi2c_dev_class)) {
+		pr_err("Cannot create \"%s\" class", DEV393_NAME(DEV393_I2C_CTRL));
+		return PTR_ERR(xi2c_dev_class);
+	}
+
+	//create devices
+	for (i=0;i<(sizeof(xi2c_minor)/sizeof(int));i++){
+		chrdev = device_create(
+				  xi2c_dev_class,
+				  &pdev->dev,
+				  MKDEV(xi2c_major, xi2c_minor[i]),
+				  NULL,
+				  "%s",xi2c_devs[i]);
+		if(IS_ERR(chrdev)){
+			pr_err("Failed to create a device (xi2c %d). Error code: %ld\n",i,PTR_ERR(chrdev));
+		}
+	}
 
     elphel393_xi2c_init_of(pdev);
 
@@ -1474,6 +1522,12 @@ int xi2c_init(struct platform_device *pdev)
 
 int xi2c_remove(struct platform_device *pdev)
 {
+	int i;
+	for (i=0;i<(sizeof(xi2c_minor)/sizeof(int));i++){
+		device_destroy(
+			xi2c_dev_class,
+			MKDEV(xi2c_major, xi2c_minor[i]));
+	}
     unregister_chrdev(DEV393_MAJOR(DEV393_I2C_CTRL), DEV393_NAME(DEV393_I2C_CTRL));
     return 0;
 }
