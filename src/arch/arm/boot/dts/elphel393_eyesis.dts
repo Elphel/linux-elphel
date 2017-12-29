@@ -192,8 +192,9 @@
 		compatible = "elphel,elphel393-mem-1.00";
 		/*memsize = <25600>;*/
 		memsize = <76800>;
-		memsize,partitions.circbuf = <16384>,<16384>,<16384>,<16384>; /* line 1 */
-		memsize,partitions.raw = <16384>,<16384>,<16384>,<16384>; /* line 2 */
+		memsize-partitions-circbuf = <16384 16384 16384 16384>; /* line 1 */
+		/* memsize-partitions-raw = <16384 16384 16384 16384>; /* line 2 */
+		memsize-partitions-raw = <0 0 0 0>; /* line 2 */
 		h2d_size = <1024>;
 		d2h_size = <1024>;
 		bidir_size = <1024>;
