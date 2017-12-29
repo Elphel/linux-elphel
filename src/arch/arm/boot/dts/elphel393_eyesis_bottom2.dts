@@ -191,7 +191,14 @@
 	elphel393_mem: elphel393-mem@0 {
 		compatible = "elphel,elphel393-mem-1.00";
 		/*memsize = <25600>;*/
-		memsize = <76800>;
+		memsize = <76800>; /* sum of sizes from line1 and line2 must be <= memsize*/
+		memsize,partitions.circbuf = <16384>,<16384>,<16384>,<16384>; /* line 1 */
+		memsize,partitions.raw = <16384>,<16384>,<16384>,<16384>; /* line 2 */
+		h2d_size = <1024>;
+		d2h_size = <1024>;
+		bidir_size = <1024>;
+		histograms_size = <1024>;
+		logger_size = <1024>;
 	} ;
 
 	elphel393_init: elphel393-init {
