@@ -186,8 +186,8 @@ static int __init elphelmem_init(void)
 
 	elphelmem_of_get_init_data();
 
-	bufsize_be = (__be32 *)of_get_property(node, "memsize", NULL);
-	_elphel_buf.size = be32_to_cpup(bufsize_be);
+	//bufsize_be = (__be32 *)of_get_property(node, "memsize", NULL);
+	//_elphel_buf.size = be32_to_cpup(bufsize_be);
 
 	_elphel_buf.vaddr = dma_alloc_coherent(NULL,(_elphel_buf.size*PAGE_SIZE),&(_elphel_buf.paddr),GFP_KERNEL);
     if(_elphel_buf.vaddr) {
