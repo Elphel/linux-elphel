@@ -92,3 +92,4 @@ struct elphel_buf_t
 };
 extern struct elphel_buf_t *pElphel_buf;
 
+int elphelmem_update_partitions(void);

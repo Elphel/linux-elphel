@@ -138,8 +138,6 @@ static int elphelmem_of_get_init_data(void){
 	of_property_read_u32(node, "histograms_size",&_elphel_buf.histograms_size);
 	of_property_read_u32(node, "logger_size",&_elphel_buf.logger_size);
 
-	pr_debug("SIZE: %d",_elphel_buf.size);
-
 	if (of_property_read_u32_array(node,
 			                       "memsize-partitions-circbuf",
 								   parts,
@@ -169,13 +167,58 @@ static int elphelmem_of_get_init_data(void){
 	return 0;
 }
 
+int elphelmem_update_partitions(void){
+
+	dma_addr_t tmpsize=0;
+
+	// fill out buffers info
+	_elphel_buf.circbuf_chn0_vaddr = _elphel_buf.vaddr;
+	_elphel_buf.circbuf_chn0_paddr = _elphel_buf.paddr;
+
+	tmpsize += _elphel_buf.circbuf_chn0_size*PAGE_SIZE;
+
+	_elphel_buf.circbuf_chn1_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.circbuf_chn1_paddr = _elphel_buf.paddr+tmpsize;
+
+	tmpsize += _elphel_buf.circbuf_chn1_size*PAGE_SIZE;
+
+	_elphel_buf.circbuf_chn2_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.circbuf_chn2_paddr = _elphel_buf.paddr+tmpsize;
+
+	tmpsize += _elphel_buf.circbuf_chn2_size*PAGE_SIZE;
+
+	_elphel_buf.circbuf_chn3_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.circbuf_chn3_paddr = _elphel_buf.paddr+tmpsize;
+
+	tmpsize += _elphel_buf.circbuf_chn3_size*PAGE_SIZE;
+
+	_elphel_buf.raw_chn0_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.raw_chn0_paddr = _elphel_buf.paddr+tmpsize;
+
+	tmpsize += _elphel_buf.raw_chn0_size*PAGE_SIZE;
+
+	_elphel_buf.raw_chn1_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.raw_chn1_paddr = _elphel_buf.paddr+tmpsize;
+
+	tmpsize += _elphel_buf.raw_chn1_size*PAGE_SIZE;
+
+	_elphel_buf.raw_chn2_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.raw_chn2_paddr = _elphel_buf.paddr+tmpsize;
+
+	tmpsize += _elphel_buf.raw_chn2_size*PAGE_SIZE;
+
+	_elphel_buf.raw_chn3_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.raw_chn3_paddr = _elphel_buf.paddr+tmpsize;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(elphelmem_update_partitions);
+
 static int __init elphelmem_init(void)
 {
     struct device_node *node;
 	const __be32 *bufsize_be;
 	pElphel_buf = &_elphel_buf;
-
-	dma_addr_t tmpsize=0;
 
 	node = of_find_node_by_name(NULL, "elphel393-mem");
 	if (!node)
@@ -193,44 +236,7 @@ static int __init elphelmem_init(void)
     if(_elphel_buf.vaddr) {
     	pr_info("Allocated %u pages for DMA at address 0x%x\n", (u32)_elphel_buf.size, (u32)_elphel_buf.paddr);
 
-		// fill out buffers info
-		_elphel_buf.circbuf_chn0_vaddr = _elphel_buf.vaddr;
-		_elphel_buf.circbuf_chn0_paddr = _elphel_buf.paddr;
-
-		tmpsize += _elphel_buf.circbuf_chn0_size*PAGE_SIZE;
-
-		_elphel_buf.circbuf_chn1_vaddr = _elphel_buf.vaddr+tmpsize;
-		_elphel_buf.circbuf_chn1_paddr = _elphel_buf.paddr+tmpsize;
-
-		tmpsize += _elphel_buf.circbuf_chn1_size*PAGE_SIZE;
-
-		_elphel_buf.circbuf_chn2_vaddr = _elphel_buf.vaddr+tmpsize;
-		_elphel_buf.circbuf_chn2_paddr = _elphel_buf.paddr+tmpsize;
-
-		tmpsize += _elphel_buf.circbuf_chn2_size*PAGE_SIZE;
-
-		_elphel_buf.circbuf_chn3_vaddr = _elphel_buf.vaddr+tmpsize;
-		_elphel_buf.circbuf_chn3_paddr = _elphel_buf.paddr+tmpsize;
-
-		tmpsize += _elphel_buf.circbuf_chn3_size*PAGE_SIZE;
-
-		_elphel_buf.raw_chn0_vaddr = _elphel_buf.vaddr+tmpsize;
-		_elphel_buf.raw_chn0_paddr = _elphel_buf.paddr+tmpsize;
-
-		tmpsize += _elphel_buf.raw_chn0_size*PAGE_SIZE;
-
-		_elphel_buf.raw_chn1_vaddr = _elphel_buf.vaddr+tmpsize;
-		_elphel_buf.raw_chn1_paddr = _elphel_buf.paddr+tmpsize;
-
-		tmpsize += _elphel_buf.raw_chn1_size*PAGE_SIZE;
-
-		_elphel_buf.raw_chn2_vaddr = _elphel_buf.vaddr+tmpsize;
-		_elphel_buf.raw_chn2_paddr = _elphel_buf.paddr+tmpsize;
-
-		tmpsize += _elphel_buf.raw_chn2_size*PAGE_SIZE;
-
-		_elphel_buf.raw_chn3_vaddr = _elphel_buf.vaddr+tmpsize;
-		_elphel_buf.raw_chn3_paddr = _elphel_buf.paddr+tmpsize;
+    	elphelmem_update_paritions();
 
     } else {
     	pr_err("ERROR allocating coherent DMA memory buffer\n");
@@ -388,6 +394,16 @@ static ssize_t get_size_circbuf_chn0(struct device *dev, struct device_attribute
     return sprintf(buf,"%u\n", _elphel_buf.circbuf_chn0_size);
 }
 
+static ssize_t set_size_circbuf_chn0(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	u32 val;
+	if (sscanf(buf, "%u", &val)>0){
+		_elphel_buf.circbuf_chn0_size = val;
+	    elphelmem_update_partitions();
+	}
+    return count;
+}
+
 static ssize_t get_paddr_circbuf_chn1(struct device *dev, struct device_attribute *attr, char *buf)
 {
     return sprintf(buf,"0x%x\n", (u32)_elphel_buf.circbuf_chn1_paddr);
@@ -396,6 +412,16 @@ static ssize_t get_paddr_circbuf_chn1(struct device *dev, struct device_attribut
 static ssize_t get_size_circbuf_chn1(struct device *dev, struct device_attribute *attr, char *buf)
 {
     return sprintf(buf,"%u\n", _elphel_buf.circbuf_chn1_size);
+}
+
+static ssize_t set_size_circbuf_chn1(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	u32 val;
+	if (sscanf(buf, "%u", &val)>0){
+		_elphel_buf.circbuf_chn1_size = val;
+	    elphelmem_update_partitions();
+	}
+    return count;
 }
 
 static ssize_t get_paddr_circbuf_chn2(struct device *dev, struct device_attribute *attr, char *buf)
@@ -408,6 +434,16 @@ static ssize_t get_size_circbuf_chn2(struct device *dev, struct device_attribute
     return sprintf(buf,"%u\n", _elphel_buf.circbuf_chn2_size);
 }
 
+static ssize_t set_size_circbuf_chn2(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	u32 val;
+	if (sscanf(buf, "%u", &val)>0){
+		_elphel_buf.circbuf_chn2_size = val;
+	    elphelmem_update_partitions();
+	}
+    return count;
+}
+
 static ssize_t get_paddr_circbuf_chn3(struct device *dev, struct device_attribute *attr, char *buf)
 {
     return sprintf(buf,"0x%x\n", (u32)_elphel_buf.circbuf_chn3_paddr);
@@ -416,6 +452,16 @@ static ssize_t get_paddr_circbuf_chn3(struct device *dev, struct device_attribut
 static ssize_t get_size_circbuf_chn3(struct device *dev, struct device_attribute *attr, char *buf)
 {
     return sprintf(buf,"%u\n", _elphel_buf.circbuf_chn3_size);
+}
+
+static ssize_t set_size_circbuf_chn3(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	u32 val;
+	if (sscanf(buf, "%u", &val)>0){
+		_elphel_buf.circbuf_chn3_size = val;
+	    elphelmem_update_partitions();
+	}
+    return count;
 }
 
 static ssize_t get_paddr_raw_chn0(struct device *dev, struct device_attribute *attr, char *buf)
@@ -428,6 +474,16 @@ static ssize_t get_size_raw_chn0(struct device *dev, struct device_attribute *at
     return sprintf(buf,"%u\n", _elphel_buf.raw_chn0_size);
 }
 
+static ssize_t set_size_raw_chn0(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	u32 val;
+	if (sscanf(buf, "%u", &val)>0){
+		_elphel_buf.circbuf_chn0_size = val;
+	    elphelmem_update_partitions();
+	}
+    return count;
+}
+
 static ssize_t get_paddr_raw_chn1(struct device *dev, struct device_attribute *attr, char *buf)
 {
     return sprintf(buf,"0x%x\n", (u32)_elphel_buf.raw_chn1_paddr);
@@ -436,6 +492,16 @@ static ssize_t get_paddr_raw_chn1(struct device *dev, struct device_attribute *a
 static ssize_t get_size_raw_chn1(struct device *dev, struct device_attribute *attr, char *buf)
 {
     return sprintf(buf,"%u\n", _elphel_buf.raw_chn1_size);
+}
+
+static ssize_t set_size_raw_chn1(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	u32 val;
+	if (sscanf(buf, "%u", &val)>0){
+		_elphel_buf.circbuf_chn1_size = val;
+	    elphelmem_update_partitions();
+	}
+    return count;
 }
 
 static ssize_t get_paddr_raw_chn2(struct device *dev, struct device_attribute *attr, char *buf)
@@ -448,6 +514,16 @@ static ssize_t get_size_raw_chn2(struct device *dev, struct device_attribute *at
     return sprintf(buf,"%u\n", _elphel_buf.raw_chn2_size);
 }
 
+static ssize_t set_size_raw_chn2(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	u32 val;
+	if (sscanf(buf, "%u", &val)>0){
+		_elphel_buf.circbuf_chn2_size = val;
+	    elphelmem_update_partitions();
+	}
+    return count;
+}
+
 static ssize_t get_paddr_raw_chn3(struct device *dev, struct device_attribute *attr, char *buf)
 {
     return sprintf(buf,"0x%x\n", (u32)_elphel_buf.raw_chn3_paddr);
@@ -456,6 +532,16 @@ static ssize_t get_paddr_raw_chn3(struct device *dev, struct device_attribute *a
 static ssize_t get_size_raw_chn3(struct device *dev, struct device_attribute *attr, char *buf)
 {
     return sprintf(buf,"%u\n", _elphel_buf.raw_chn3_size);
+}
+
+static ssize_t set_size_raw_chn3(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	u32 val;
+	if (sscanf(buf, "%u", &val)>0){
+		_elphel_buf.circbuf_chn3_size = val;
+	    elphelmem_update_partitions();
+	}
+    return count;
 }
 
 static ssize_t sync_for_cpu_h2d(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -676,21 +762,21 @@ static DEVICE_ATTR(buffer_pages_histograms,   SYSFS_PERMISSIONS & SYSFS_READONLY
 static DEVICE_ATTR(buffer_address_logger,     SYSFS_PERMISSIONS & SYSFS_READONLY, get_paddr_logger,               NULL);
 static DEVICE_ATTR(buffer_pages_logger,       SYSFS_PERMISSIONS & SYSFS_READONLY, get_size_logger,                NULL);
 static DEVICE_ATTR(buffer_address_circbuf_chn0, SYSFS_PERMISSIONS & SYSFS_READONLY, get_paddr_circbuf_chn0,       NULL);
-static DEVICE_ATTR(  buffer_pages_circbuf_chn0, SYSFS_PERMISSIONS & SYSFS_READONLY,  get_size_circbuf_chn0,       NULL);
+static DEVICE_ATTR(  buffer_pages_circbuf_chn0, SYSFS_PERMISSIONS,                   get_size_circbuf_chn0,       set_size_circbuf_chn0);
 static DEVICE_ATTR(buffer_address_circbuf_chn1, SYSFS_PERMISSIONS & SYSFS_READONLY, get_paddr_circbuf_chn1,       NULL);
-static DEVICE_ATTR(  buffer_pages_circbuf_chn1, SYSFS_PERMISSIONS & SYSFS_READONLY,  get_size_circbuf_chn1,       NULL);
+static DEVICE_ATTR(  buffer_pages_circbuf_chn1, SYSFS_PERMISSIONS,                   get_size_circbuf_chn1,       set_size_circbuf_chn1);
 static DEVICE_ATTR(buffer_address_circbuf_chn2, SYSFS_PERMISSIONS & SYSFS_READONLY, get_paddr_circbuf_chn2,       NULL);
-static DEVICE_ATTR(  buffer_pages_circbuf_chn2, SYSFS_PERMISSIONS & SYSFS_READONLY,  get_size_circbuf_chn2,       NULL);
+static DEVICE_ATTR(  buffer_pages_circbuf_chn2, SYSFS_PERMISSIONS,                   get_size_circbuf_chn2,       set_size_circbuf_chn2);
 static DEVICE_ATTR(buffer_address_circbuf_chn3, SYSFS_PERMISSIONS & SYSFS_READONLY, get_paddr_circbuf_chn3,       NULL);
-static DEVICE_ATTR(  buffer_pages_circbuf_chn3, SYSFS_PERMISSIONS & SYSFS_READONLY,  get_size_circbuf_chn3,       NULL);
+static DEVICE_ATTR(  buffer_pages_circbuf_chn3, SYSFS_PERMISSIONS,                   get_size_circbuf_chn3,       set_size_circbuf_chn3);
 static DEVICE_ATTR(buffer_address_raw_chn0,     SYSFS_PERMISSIONS & SYSFS_READONLY, get_paddr_raw_chn0,           NULL);
-static DEVICE_ATTR(  buffer_pages_raw_chn0,     SYSFS_PERMISSIONS & SYSFS_READONLY,  get_size_raw_chn0,           NULL);
+static DEVICE_ATTR(  buffer_pages_raw_chn0,     SYSFS_PERMISSIONS,                   get_size_raw_chn0,           set_size_raw_chn0);
 static DEVICE_ATTR(buffer_address_raw_chn1,     SYSFS_PERMISSIONS & SYSFS_READONLY, get_paddr_raw_chn1,           NULL);
-static DEVICE_ATTR(  buffer_pages_raw_chn1,     SYSFS_PERMISSIONS & SYSFS_READONLY,  get_size_raw_chn1,           NULL);
+static DEVICE_ATTR(  buffer_pages_raw_chn1,     SYSFS_PERMISSIONS,                   get_size_raw_chn1,           set_size_raw_chn1);
 static DEVICE_ATTR(buffer_address_raw_chn2,     SYSFS_PERMISSIONS & SYSFS_READONLY, get_paddr_raw_chn2,           NULL);
-static DEVICE_ATTR(  buffer_pages_raw_chn2,     SYSFS_PERMISSIONS & SYSFS_READONLY,  get_size_raw_chn2,           NULL);
+static DEVICE_ATTR(  buffer_pages_raw_chn2,     SYSFS_PERMISSIONS,                   get_size_raw_chn2,           set_size_raw_chn2);
 static DEVICE_ATTR(buffer_address_raw_chn3,     SYSFS_PERMISSIONS & SYSFS_READONLY, get_paddr_raw_chn3,           NULL);
-static DEVICE_ATTR(  buffer_pages_raw_chn3,     SYSFS_PERMISSIONS & SYSFS_READONLY,  get_size_raw_chn3,           NULL);
+static DEVICE_ATTR(  buffer_pages_raw_chn3,     SYSFS_PERMISSIONS,                   get_size_raw_chn3,           set_size_raw_chn3);
 static DEVICE_ATTR(sync_for_cpu_h2d,          SYSFS_PERMISSIONS,                  get_sync_for_cpu_h2d,           sync_for_cpu_h2d);
 static DEVICE_ATTR(sync_for_device_h2d,       SYSFS_PERMISSIONS,                  get_sync_for_device_h2d,        sync_for_device_h2d);
 static DEVICE_ATTR(sync_for_cpu_d2h,          SYSFS_PERMISSIONS,                  get_sync_for_cpu_d2h,           sync_for_cpu_d2h);
