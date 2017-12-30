@@ -478,7 +478,7 @@ static ssize_t set_size_raw_chn0(struct device *dev, struct device_attribute *at
 {
 	u32 val;
 	if (sscanf(buf, "%u", &val)>0){
-		_elphel_buf.circbuf_chn0_size = val;
+		_elphel_buf.raw_chn0_size = val;
 	    elphelmem_update_partitions();
 	}
     return count;
@@ -498,7 +498,7 @@ static ssize_t set_size_raw_chn1(struct device *dev, struct device_attribute *at
 {
 	u32 val;
 	if (sscanf(buf, "%u", &val)>0){
-		_elphel_buf.circbuf_chn1_size = val;
+		_elphel_buf.raw_chn1_size = val;
 	    elphelmem_update_partitions();
 	}
     return count;
@@ -518,7 +518,7 @@ static ssize_t set_size_raw_chn2(struct device *dev, struct device_attribute *at
 {
 	u32 val;
 	if (sscanf(buf, "%u", &val)>0){
-		_elphel_buf.circbuf_chn2_size = val;
+		_elphel_buf.raw_chn2_size = val;
 	    elphelmem_update_partitions();
 	}
     return count;
@@ -538,7 +538,7 @@ static ssize_t set_size_raw_chn3(struct device *dev, struct device_attribute *at
 {
 	u32 val;
 	if (sscanf(buf, "%u", &val)>0){
-		_elphel_buf.circbuf_chn3_size = val;
+		_elphel_buf.raw_chn3_size = val;
 	    elphelmem_update_partitions();
 	}
     return count;
