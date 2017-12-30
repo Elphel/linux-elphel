@@ -49,6 +49,46 @@ struct elphel_buf_t
     dma_addr_t logger_paddr;
     ssize_t    logger_size;
 
+    // circbuf channel 0 (in Coherent DMA buffer)
+	void      *circbuf_chn0_vaddr;
+	dma_addr_t circbuf_chn0_paddr;
+	ssize_t    circbuf_chn0_size;
+
+    // circbuf channel 1 (in Coherent DMA buffer)
+	void      *circbuf_chn1_vaddr;
+	dma_addr_t circbuf_chn1_paddr;
+	ssize_t    circbuf_chn1_size;
+
+    // circbuf channel 2 (in Coherent DMA buffer)
+	void      *circbuf_chn2_vaddr;
+	dma_addr_t circbuf_chn2_paddr;
+	ssize_t    circbuf_chn2_size;
+
+    // circbuf channel 3 (in Coherent DMA buffer)
+	void      *circbuf_chn3_vaddr;
+	dma_addr_t circbuf_chn3_paddr;
+	ssize_t    circbuf_chn3_size;
+
+    // raw channel 0 (in Coherent DMA buffer)
+	void      *raw_chn0_vaddr;
+	dma_addr_t raw_chn0_paddr;
+	ssize_t    raw_chn0_size;
+
+    // raw channel 1 (in Coherent DMA buffer)
+	void      *raw_chn1_vaddr;
+	dma_addr_t raw_chn1_paddr;
+	ssize_t    raw_chn1_size;
+
+    // raw channel 2 (in Coherent DMA buffer)
+	void      *raw_chn2_vaddr;
+	dma_addr_t raw_chn2_paddr;
+	ssize_t    raw_chn2_size;
+
+    // raw channel 3 (in Coherent DMA buffer)
+	void      *raw_chn3_vaddr;
+	dma_addr_t raw_chn3_paddr;
+	ssize_t    raw_chn3_size;
+
 };
 extern struct elphel_buf_t *pElphel_buf;
 
