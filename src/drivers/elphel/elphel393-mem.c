@@ -236,7 +236,7 @@ static int __init elphelmem_init(void)
     if(_elphel_buf.vaddr) {
     	pr_info("Allocated %u pages for DMA at address 0x%x\n", (u32)_elphel_buf.size, (u32)_elphel_buf.paddr);
 
-    	elphelmem_update_paritions();
+    	elphelmem_update_partitions();
 
     } else {
     	pr_err("ERROR allocating coherent DMA memory buffer\n");
