@@ -542,7 +542,46 @@ static int videomem_open(struct inode *inode, struct file *filp)
 	privData->buf_size32 = (privData->buf_size)>>2;
 
 	// setup membridge
-	// fill the buffer from membridge
+
+	/*
+	// FROM:
+
+	// from dts: frame_start_chn2 =     <0x10000000>;      // Channel 2 frame start (in bytes)
+	x393_membridge_scanline_startaddr(0x10000000);
+	// what units? Bytes?
+	x393_membridge_scanline_frame_size(privData->buf_size);
+	// number of frames in buffer - 1
+	x393_membridge_scanline_frame_last(1);
+	// Set frame full(padded) width - get from some parameter
+	x393_membridge_scanline_frame_full_width(2592);
+	// set frame window size?!
+	// (window_height << 16)
+	x393_membridge_scanline_window_wh(1940<<16);
+	// Set startXY register
+	// (window_top << 16)
+	x393_membridge_scanline_window_x0y0(0<<16);
+
+	x393_membridge_scanline_startxy(0);
+
+	// TO:
+
+	// start address of the system memory range in QWORDs (4 LSBs==0)
+	x393_membridge_lo_addr64((privData->phys_addr)>>4);
+	// size of the system memory range in QWORDs (4 LSBs==0), rolls over
+	x393_membridge_size64((privData->buf_size)>>4);
+	// start of transfer offset to system memory range in QWORDs (4 LSBs==0)
+	x393_membridge_start64(0);
+	// Full length of transfer in QWORDs
+	x393_membridge_len64((8192*PAGE_SIZE)>>4);
+	// Frame width in QWORDs (last xfer in each line may be partial)
+	x393_membridge_width64(2592>>4);
+
+	// start?
+	x393_membridge_ctrl();
+
+	// wait until transfer is done
+	get_x393_membridge_status_cntrl();
+	*/
 
 	return 0;
 }

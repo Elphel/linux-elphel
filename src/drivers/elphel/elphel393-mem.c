@@ -192,37 +192,37 @@ int elphelmem_update_partitions(void){
 
 	tmpsize += _elphel_buf.circbuf_chn0_size*PAGE_SIZE;
 
-	_elphel_buf.circbuf_chn1_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
+	_elphel_buf.circbuf_chn1_vaddr = _elphel_buf.vaddr+tmpsize;
 	_elphel_buf.circbuf_chn1_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.circbuf_chn1_size*PAGE_SIZE;
 
-	_elphel_buf.circbuf_chn2_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
+	_elphel_buf.circbuf_chn2_vaddr = _elphel_buf.vaddr+tmpsize;
 	_elphel_buf.circbuf_chn2_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.circbuf_chn2_size*PAGE_SIZE;
 
-	_elphel_buf.circbuf_chn3_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
+	_elphel_buf.circbuf_chn3_vaddr = _elphel_buf.vaddr+tmpsize;
 	_elphel_buf.circbuf_chn3_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.circbuf_chn3_size*PAGE_SIZE;
 
-	_elphel_buf.raw_chn0_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
+	_elphel_buf.raw_chn0_vaddr = _elphel_buf.vaddr+tmpsize;
 	_elphel_buf.raw_chn0_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.raw_chn0_size*PAGE_SIZE;
 
-	_elphel_buf.raw_chn1_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
+	_elphel_buf.raw_chn1_vaddr = _elphel_buf.vaddr+tmpsize;
 	_elphel_buf.raw_chn1_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.raw_chn1_size*PAGE_SIZE;
 
-	_elphel_buf.raw_chn2_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
+	_elphel_buf.raw_chn2_vaddr = _elphel_buf.vaddr+tmpsize;
 	_elphel_buf.raw_chn2_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.raw_chn2_size*PAGE_SIZE;
 
-	_elphel_buf.raw_chn3_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
+	_elphel_buf.raw_chn3_vaddr = _elphel_buf.vaddr+tmpsize;
 	_elphel_buf.raw_chn3_paddr = _elphel_buf.paddr+tmpsize;
 
 	return 0;
