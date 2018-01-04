@@ -79,6 +79,9 @@ static struct elphel_buf_t _elphel_buf = {
     .logger_paddr = 0,
     .logger_size = 1024, // should be 2**n !
 
+	// circbuf start offset
+	.circbuf_start_offset = 0x100000,
+
 	// circbuf channel 0 (in Coherent DMA buffer)
 	.circbuf_chn0_vaddr = NULL,
 	.circbuf_chn0_paddr = 0,
@@ -142,6 +145,7 @@ static int elphelmem_of_get_init_data(void){
 	of_property_read_u32(node, "bidir_size",&_elphel_buf.bidir_size);
 	of_property_read_u32(node, "histograms_size",&_elphel_buf.histograms_size);
 	of_property_read_u32(node, "logger_size",&_elphel_buf.logger_size);
+	of_property_read_u32(node, "memsize-circbuf-start-offset",&_elphel_buf.circbuf_start_offset);
 
 	if (of_property_read_u32_array(node,
 			                       "memsize-partitions-circbuf",
@@ -184,7 +188,7 @@ int elphelmem_update_partitions(void){
 	//circbuf_priv[i].buf_size = CCAM_DMA_SIZE;
 	//...
 
-	tmpsize = CIRCBUF_START_OFFSET;
+	tmpsize = _elphel_buf.circbuf_start_offset;
 
 	// fill out buffers info
 	_elphel_buf.circbuf_chn0_vaddr = _elphel_buf.vaddr+tmpsize;

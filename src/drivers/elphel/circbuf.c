@@ -178,10 +178,10 @@ ssize_t circbuf_get_ptr(int sensor_port, size_t offset, size_t len, struct fvec 
 {
 	int ret = 1;
 
-	if (offset > CCAM_DMA_SIZE || sensor_port >= SENSOR_PORTS)
+	if (offset > circbuf_priv[sensor_port].buf_size || sensor_port >= SENSOR_PORTS)
 		return -EINVAL;
 
-	if (offset + len < CCAM_DMA_SIZE) {
+	if (offset + len < circbuf_priv[sensor_port].buf_size) {
 		// the image is not split
 		vect_0->iov_base = &circbuf_priv[sensor_port].buf_ptr[BYTE2DW(offset)];
 		vect_0->iov_dma = circbuf_priv[sensor_port].phys_addr + offset;
@@ -193,7 +193,7 @@ ssize_t circbuf_get_ptr(int sensor_port, size_t offset, size_t len, struct fvec 
 		// the image is split into two segments
 		vect_0->iov_base = &circbuf_priv[sensor_port].buf_ptr[BYTE2DW(offset)];
 		vect_0->iov_dma = circbuf_priv[sensor_port].phys_addr + offset;
-		vect_0->iov_len = CCAM_DMA_SIZE - offset;
+		vect_0->iov_len = circbuf_priv[sensor_port].buf_size - offset;
 		vect_1->iov_base = circbuf_priv[sensor_port].buf_ptr;
 		vect_1->iov_dma = circbuf_priv[sensor_port].phys_addr;
 		vect_1->iov_len = len - vect_0->iov_len;

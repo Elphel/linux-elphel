@@ -49,6 +49,8 @@ struct elphel_buf_t
     dma_addr_t logger_paddr;
     ssize_t    logger_size;
 
+    dma_addr_t circbuf_start_offset;
+
     // circbuf channel 0 (in Coherent DMA buffer)
 	void      *circbuf_chn0_vaddr;
 	dma_addr_t circbuf_chn0_paddr;

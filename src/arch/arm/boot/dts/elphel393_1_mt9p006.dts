@@ -195,6 +195,7 @@
 		memsize-partitions-circbuf = <16384 16384 16384 16384>; /* line 1 */
 		/* memsize-partitions-raw = <16384 16384 16384 16384>; /* line 2 */
 		memsize-partitions-raw = <0 0 0 0>; /* line 2 */
+		memsize-circbuf-start-offset = <0x100000>;
 		h2d_size = <1024>;
 		d2h_size = <1024>;
 		bidir_size = <1024>;
