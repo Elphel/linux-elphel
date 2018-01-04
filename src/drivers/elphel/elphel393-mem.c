@@ -34,7 +34,12 @@
 #include <asm/dma-mapping.h>
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
+
 #include <elphel/elphel393-mem.h>
+
+#include <uapi/elphel/c313a.h>
+
+#include "x393_macro.h"
 
 #define SYSFS_PERMISSIONS         0644 /* default permissions for sysfs files */
 #define SYSFS_READONLY            0444
@@ -171,43 +176,53 @@ int elphelmem_update_partitions(void){
 
 	dma_addr_t tmpsize=0;
 
+	////from circbuf.c
+	//...
+	////nobody knows what the 1st 1MB is for...
+	//circbuf_priv[i].buf_ptr = dma_buf_ptr + BYTE2DW(CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE);
+	//circbuf_priv[i].phys_addr = dma_handle + CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE;
+	//circbuf_priv[i].buf_size = CCAM_DMA_SIZE;
+	//...
+
+	tmpsize = CIRCBUF_START_OFFSET;
+
 	// fill out buffers info
 	_elphel_buf.circbuf_chn0_vaddr = _elphel_buf.vaddr;
 	_elphel_buf.circbuf_chn0_paddr = _elphel_buf.paddr;
 
 	tmpsize += _elphel_buf.circbuf_chn0_size*PAGE_SIZE;
 
-	_elphel_buf.circbuf_chn1_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.circbuf_chn1_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
 	_elphel_buf.circbuf_chn1_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.circbuf_chn1_size*PAGE_SIZE;
 
-	_elphel_buf.circbuf_chn2_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.circbuf_chn2_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
 	_elphel_buf.circbuf_chn2_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.circbuf_chn2_size*PAGE_SIZE;
 
-	_elphel_buf.circbuf_chn3_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.circbuf_chn3_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
 	_elphel_buf.circbuf_chn3_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.circbuf_chn3_size*PAGE_SIZE;
 
-	_elphel_buf.raw_chn0_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.raw_chn0_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
 	_elphel_buf.raw_chn0_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.raw_chn0_size*PAGE_SIZE;
 
-	_elphel_buf.raw_chn1_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.raw_chn1_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
 	_elphel_buf.raw_chn1_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.raw_chn1_size*PAGE_SIZE;
 
-	_elphel_buf.raw_chn2_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.raw_chn2_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
 	_elphel_buf.raw_chn2_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.raw_chn2_size*PAGE_SIZE;
 
-	_elphel_buf.raw_chn3_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.raw_chn3_vaddr = _elphel_buf.vaddr+BYTE2DW(tmpsize);
 	_elphel_buf.raw_chn3_paddr = _elphel_buf.paddr+tmpsize;
 
 	return 0;

@@ -134,6 +134,7 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 	}
 
 	for (i = 0; i < SENSOR_PORTS; i++) {
+		// nobody knows what the 1st 1MB is for...
 		circbuf_priv[i].buf_ptr = dma_buf_ptr + BYTE2DW(CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE);
 		circbuf_priv[i].phys_addr = dma_handle + CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE;
 		circbuf_priv[i].buf_size = CCAM_DMA_SIZE;

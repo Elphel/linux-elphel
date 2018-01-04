@@ -14,6 +14,7 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
+#define DEBUG
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
@@ -25,12 +26,15 @@
 #include <linux/errno.h>
 #include <linux/fs.h>
 
+#include <asm/uaccess.h>
+
 #include "x393.h"
+#include "x393_macro.h"
 #include "x393_videomem.h"
 #include <uapi/elphel/c313a.h>
 #include <uapi/elphel/x393_devices.h>
 
-
+#include <elphel/elphel393-mem.h>
 
 #define VIDEOMEM_MODULE_DESCRIPTION "Video buffer driver"
 //#define VIDEOMEM_DRIVER_NAME        "video_mem"
@@ -64,6 +68,7 @@ static struct elphel_video_buf_t buffer_settings = { ///< some default settings,
         .frames_in_buffer = {         2,          2,          2,          2}  /* Number of frames in channel 3 buffer */
 };
 
+static int selected_channel = 0;
 
 /** Setup memory controller for a sensor channel */
 int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
@@ -96,7 +101,7 @@ int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
    window_width_height.height =           window_height;
    window_left_top.left =                 window_left;
    window_left_top.top =                  window_top;
-   dev_dbg(g_dev_ptr,"{%d}  frame16=%d, command=%d\n",num_sensor,frame16, (int) x393cmd);
+   dev_dbg(g_dev_ptr,"{%d} setup_sensor_memory frame16=%d, command=%d\n",num_sensor,frame16, (int) x393cmd);
    dev_dbg(g_dev_ptr,"sa=0x%08x sa_inc=0x%08x lfn=0x%08x fw=0x%08x wh=0x%08x lt=0x%08x\n",
            window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num.d32, window_full_width.d32,window_width_height.d32,window_left_top.d32);
    MDP(DBGB_VM,num_sensor,"frame16=%d, command=%d\n", frame16, (int) x393cmd)
@@ -250,7 +255,7 @@ int setup_compressor_memory (int num_sensor,       ///< sensor port number (0..3
    window_tile_whs.vert_step =            tile_vstep;
    window_tile_whs.tile_height =          tile_height;
 
-   dev_dbg(g_dev_ptr,"{%d}  frame16=%d, command=%d\n",num_sensor,frame16, (int) x393cmd);
+   dev_dbg(g_dev_ptr,"{%d} setup_compressor_memory frame16=%d, command=%d\n",num_sensor,frame16, (int) x393cmd);
    dev_dbg(g_dev_ptr,"sa=0x%08x sa_inc=0x%08x lfn=0x%08x fw=0x%08x wh=0x%08x lt=0x%08x whs=0x%08x\n",
            window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num.d32, window_full_width.d32,
            window_width_height.d32,window_left_top.d32, window_tile_whs.d32);
@@ -428,13 +433,151 @@ u16 get_memchannel_priority(int chn)       ///< Memory channel (0..16). When usi
     return arbiter_pri.priority;
 }
 
+/** @brief Videomem buffer private data */
+struct raw_priv_t {
+	int                 minor;                             ///< device file minor number
+	unsigned long       *buf_ptr;                          ///< pointer to raw buffer memory region
+	unsigned long       buf_size;                          ///< circular region size in bytes
+    unsigned long       buf_size32;                        ///< circular region size in dwords
+	dma_addr_t          phys_addr;                         ///< physical address of memory region reported by memory driver
+};
+
+/**
+ * @brief This function handles read operations for raw files.
+ * @param[in]   file  pointer to <em>struct file</em>
+ * @param[in]   buf   pointer to buffer where data will be written to
+ * @param[in]   count number of bytes written to @e buf
+ * @param[in]   off   offset
+ * @return      Number of bytes written to @e buf
+ */
+ssize_t vm_read(struct file *file, char *buf, size_t count, loff_t *off)
+{
+	unsigned long p;
+	struct raw_priv_t * privData = (struct raw_priv_t*) file->private_data;
+
+	p = *off;
+
+	if (p >= privData->buf_size) {
+		p = privData->buf_size;
+	}
+
+	if ((p + count) > privData->buf_size){
+		count = privData->buf_size - p;
+	}
+
+	if (count) {
+		if (copy_to_user(buf, &privData->buf_ptr[BYTE2DW(p)], count)){
+			return -EFAULT;
+		}
+		*off+=count;
+	}
+	return count;
+}
+
+/*
+// raw channel 0 (in Coherent DMA buffer)
+.raw_chn0_vaddr = NULL,
+.raw_chn0_paddr = 0,
+.raw_chn0_size = 8192,
+
+// raw channel 1 (in Coherent DMA buffer)
+.raw_chn1_vaddr = NULL,
+.raw_chn1_paddr = 0,
+.raw_chn1_size = 0,
+
+// raw channel 2 (in Coherent DMA buffer)
+.raw_chn2_vaddr = NULL,
+.raw_chn2_paddr = 0,
+.raw_chn2_size = 0,
+
+// raw channel 3 (in Coherent DMA buffer)
+.raw_chn3_vaddr = NULL,
+.raw_chn3_paddr = 0,
+.raw_chn3_size = 0
+*/
+//struct elphel_buf_t *pElphel_buf;
+
+// 16MB = 4096 pages
+// 32MB = 8192 pages
+// TODO: don't forget to reset to default value after testing
 
 // TODO: Implement file operations using membridge for both raw memory access and per-channel image raw (including 16-bit)
-static int     videomem_open    (struct inode *inode, struct file *filp) {return 0;}
-static int     videomem_release (struct inode *inode, struct file *filp) {return 0;}
+//static int     videomem_open    (struct inode *inode, struct file *filp) {return 0;}
+//static int     videomem_release (struct inode *inode, struct file *filp) {return 0;}
 static loff_t  videomem_lseek   (struct file * file, loff_t offset, int orig) {return 0;}
-static ssize_t videomem_read    (struct file * file, char * buf, size_t count, loff_t *off) {return 0;}
+//static ssize_t videomem_read    (struct file * file, char * buf, size_t count, loff_t *off) {return 0;}
 static ssize_t videomem_write   (struct file * file, const char * buf, size_t count, loff_t *off) {return 0;}
+
+/**
+ * @brief Process raw buffer file opening.
+ * @param[in]   inode
+ * @param[in]   filp
+ * @return      Always 0.
+ */
+static int videomem_open(struct inode *inode, struct file *filp)
+{
+	struct raw_priv_t *privData;
+
+	pr_debug("VIDEOMEM_OPEN \n");
+
+	// Problem: pass channel number to the driver,
+	// solution 1: set channel number through sysfs
+	// solution 2: create N links for a char dev:
+	//    /dev/raw0 -> /dev/image_raw
+	//    /dev/raw1 -> /dev/image_raw
+	// there should be a way (there is no way) to read link name then extract channel number from it
+
+	pr_debug("DEV OPENED: %s\n",filp->f_path.dentry->d_iname);
+
+	privData = (struct raw_priv_t*)kmalloc(sizeof(struct raw_priv_t), GFP_KERNEL);
+	if (!privData) {
+		return -ENOMEM;
+	}
+	filp->private_data = privData;
+
+	privData->minor = MINOR(inode->i_rdev);
+	privData->buf_ptr = pElphel_buf->raw_chn0_vaddr;
+	privData->phys_addr = pElphel_buf->raw_chn0_paddr;
+	privData->buf_size = pElphel_buf->raw_chn0_size*PAGE_SIZE;
+	privData->buf_size32 = (privData->buf_size)>>2;
+
+	// setup membridge
+	// fill the buffer from membridge
+
+	return 0;
+}
+
+/**
+ * @brief Process raw buffer file closing
+ * @param[in]   inode
+ * @param[in]   filp
+ * @return      0
+ */
+static int videomem_release(struct inode *inode, struct file *filp)
+{
+	pr_debug("VIDEOMEM_RELEASE\n");
+
+	if (filp->private_data) {
+		kfree(filp->private_data);
+	}
+
+	return 0;
+}
+
+/**
+ * @brief Process read operation on raw buffer file
+ * @param[in]   file   pointer to file structure corresponding to the circular buffer file
+ * @param[out]  buf    pointer to user buffer where the data should be placed
+ * @param[in]   count  the size of requested data transfer
+ * @param[in]   off    file position the user is accessing
+ * @return      The number of bytes copied or negative error code.
+ */
+ssize_t videomem_read(struct file *file, char *buf, size_t count, loff_t *off)
+{
+	//unsigned int minor = MINOR(file->f_inode->i_rdev);
+	pr_debug("VIDEOMEM_READ\n");
+	return vm_read(file, buf, count, off);
+}
 
 static struct file_operations videomem_fops = {
         owner:    THIS_MODULE,
@@ -489,6 +632,10 @@ static ssize_t show_frames_in_buffer(struct device *dev, struct device_attribute
 {
     return sprintf(buf,"0x%x\n", buffer_settings.frames_in_buffer[get_channel_from_name(attr)]);
 }
+static ssize_t get_num_sensor(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"%d\n", selected_channel);
+}
 static ssize_t store_frame_start(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
     sscanf(buf, "%i", &buffer_settings.frame_start[get_channel_from_name(attr)]);
@@ -510,6 +657,12 @@ static ssize_t store_frames_in_buffer(struct device *dev, struct device_attribut
     return count;
 }
 
+static ssize_t set_num_sensor(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    sscanf(buf, "%i", &selected_channel);
+    return count;
+}
+
 static DEVICE_ATTR(frame_start0,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
 static DEVICE_ATTR(frame_start1,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
 static DEVICE_ATTR(frame_start2,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
@@ -526,6 +679,9 @@ static DEVICE_ATTR(frames_in_buffer0,          SYSFS_PERMISSIONS,     show_frame
 static DEVICE_ATTR(frames_in_buffer1,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
 static DEVICE_ATTR(frames_in_buffer2,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
 static DEVICE_ATTR(frames_in_buffer3,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
+
+// selected sensor channel == port
+static DEVICE_ATTR(channel,                    SYSFS_PERMISSIONS,     get_num_sensor,           set_num_sensor);
 
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_frame_start0.attr,
@@ -544,6 +700,7 @@ static struct attribute *root_dev_attrs[] = {
         &dev_attr_frames_in_buffer1.attr,
         &dev_attr_frames_in_buffer2.attr,
         &dev_attr_frames_in_buffer3.attr,
+		&dev_attr_channel.attr,
         NULL
 };
 

@@ -23,6 +23,7 @@
 #define _CIRCBUF_H
 
 #include <linux/poll.h>
+#include <uapi/elphel/c313a.h>
 
 struct fvec {
 	void *iov_base;                              ///< pointer to allocated buffer
