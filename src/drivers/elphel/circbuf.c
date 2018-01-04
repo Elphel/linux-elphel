@@ -133,6 +133,7 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 		}
 	}
 
+	// TODO: take data from pElphel_buf (calc buf_ptr for each channel)
 	for (i = 0; i < SENSOR_PORTS; i++) {
 		// nobody knows what the 1st 1MB is for...
 		circbuf_priv[i].buf_ptr = dma_buf_ptr + BYTE2DW(CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE);
