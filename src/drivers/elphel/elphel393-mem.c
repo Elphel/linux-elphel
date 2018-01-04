@@ -190,6 +190,9 @@ int elphelmem_update_partitions(void){
 
 	tmpsize = _elphel_buf.circbuf_start_offset;
 
+	// vaddrs are (void *) later assigned to buffer pointer
+	// this (void *) is byte size and so are tmpsize units
+
 	// fill out buffers info
 	_elphel_buf.circbuf_chn0_vaddr = _elphel_buf.vaddr+tmpsize;
 	_elphel_buf.circbuf_chn0_paddr = _elphel_buf.paddr+tmpsize;
