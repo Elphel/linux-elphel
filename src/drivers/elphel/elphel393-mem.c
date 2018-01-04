@@ -187,8 +187,8 @@ int elphelmem_update_partitions(void){
 	tmpsize = CIRCBUF_START_OFFSET;
 
 	// fill out buffers info
-	_elphel_buf.circbuf_chn0_vaddr = _elphel_buf.vaddr;
-	_elphel_buf.circbuf_chn0_paddr = _elphel_buf.paddr;
+	_elphel_buf.circbuf_chn0_vaddr = _elphel_buf.vaddr+tmpsize;
+	_elphel_buf.circbuf_chn0_paddr = _elphel_buf.paddr+tmpsize;
 
 	tmpsize += _elphel_buf.circbuf_chn0_size*PAGE_SIZE;
 

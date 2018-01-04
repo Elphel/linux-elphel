@@ -19,6 +19,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+//#define DEBUG
 #include <linux/device.h>
 #include <linux/module.h>
 #include <linux/mm.h>
@@ -133,7 +134,30 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 		}
 	}
 
-	// TODO: take data from pElphel_buf (calc buf_ptr for each channel)
+	circbuf_priv[0].buf_size  = pElphel_buf->circbuf_chn0_size*PAGE_SIZE;
+	circbuf_priv[0].phys_addr = pElphel_buf->circbuf_chn0_paddr;
+	circbuf_priv[0].buf_ptr   = pElphel_buf->circbuf_chn0_vaddr;
+
+	circbuf_priv[1].buf_size  = pElphel_buf->circbuf_chn1_size*PAGE_SIZE;
+	circbuf_priv[1].phys_addr = pElphel_buf->circbuf_chn1_paddr;
+	circbuf_priv[1].buf_ptr   = pElphel_buf->circbuf_chn1_vaddr;
+
+	circbuf_priv[2].buf_size  = pElphel_buf->circbuf_chn2_size*PAGE_SIZE;
+	circbuf_priv[2].phys_addr = pElphel_buf->circbuf_chn2_paddr;
+	circbuf_priv[2].buf_ptr   = pElphel_buf->circbuf_chn2_vaddr;
+
+	circbuf_priv[3].buf_size  = pElphel_buf->circbuf_chn3_size*PAGE_SIZE;
+	circbuf_priv[3].phys_addr = pElphel_buf->circbuf_chn3_paddr;
+	circbuf_priv[3].buf_ptr   = pElphel_buf->circbuf_chn3_vaddr;
+
+	for (i = 0; i < SENSOR_PORTS; i++) {
+		circbuf_priv[i].buf_size32 = circbuf_priv[i].buf_size>>2; // used in many places
+		ccam_dma_buf_ptr[i] = circbuf_priv[i].buf_ptr;
+		set_globalParam(i, G_CIRCBUFSIZE, circbuf_priv[i].buf_size);
+	}
+
+	/*
+	// DONE: take data from pElphel_buf (calc buf_ptr for each channel)
 	for (i = 0; i < SENSOR_PORTS; i++) {
 		// nobody knows what the 1st 1MB is for...
 		circbuf_priv[i].buf_ptr = dma_buf_ptr + BYTE2DW(CIRCBUF_START_OFFSET + i * CCAM_DMA_SIZE);
@@ -145,6 +169,7 @@ int init_ccam_dma_buf_ptr(struct platform_device *pdev)
 		// set circular buffer size in bytes
 		set_globalParam(i, G_CIRCBUFSIZE, circbuf_priv[i].buf_size);
 	}
+	*/
 
 	return 0;
 }
