@@ -29,7 +29,9 @@
 
 #include "x393.h"
 #include "x393_macro.h"
+#include "pgm_functions.h"
 #include "x393_videomem.h"
+
 #include <uapi/elphel/c313a.h>
 #include <uapi/elphel/x393_devices.h>
 
@@ -67,7 +69,7 @@ static struct elphel_video_buf_t buffer_settings = { ///< some default settings,
         .frames_in_buffer = {         2,          2,          2,          2}  /* Number of frames in channel 3 buffer */
 };
 
-static int selected_channel = 0;
+static int membridge_sensor_port = 0; // 0..3
 static int membridge_direction = 0; // 0 - from pl to ps, 1 - from ps to pl
 
 /** Setup memory bridge system memory */
@@ -81,11 +83,23 @@ int setup_membridge_system_memory(
 
 	// no need to wait for anything
 
-	x393_membridge_lo_addr64(lo_addr64);
-	x393_membridge_size64(size64);
-	x393_membridge_start64(start64);
-	x393_membridge_len64(len64);
-	x393_membridge_width64(width64);
+	u29_t lo_addr = {.d32=0};
+	u29_t size =    {.d32=0};
+	u29_t start =   {.d32=0};
+	u29_t len =     {.d32=0};
+	u29_t width =   {.d32=0};
+
+	lo_addr.addr64 = lo_addr64;
+	size.addr64    = size64;
+	start.addr64   = start64;
+	len.addr64     = len64;
+	width.addr64   = width64;
+
+	x393_membridge_lo_addr64(lo_addr);
+	x393_membridge_size64(size);
+	x393_membridge_start64(start);
+	x393_membridge_len64(len);
+	x393_membridge_width64(width);
 
 	return 0;
 }
@@ -93,6 +107,7 @@ int setup_membridge_system_memory(
 /** Setup memory bridge for a specified sensor channel */
 int setup_membridge_memory(
 		int num_sensor,       ///< sensor port number (0..3)
+		int write_direction,  ///< 0 - from fpga mem to system mem, 1 - otherwise
         int window_width,     ///< 13-bit - in 8*16=128 bit bursts
         int window_height,    ///< 16-bit window height (in scan lines)
         int window_left,      ///< 13-bit window left margin in 8-bursts (16 bytes)
@@ -132,10 +147,7 @@ int setup_membridge_memory(
            window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num.d32, window_full_width.d32,
            window_width_height.d32,window_left_top.d32, window_startx_starty.d32);
 
-   MDP(DBGB_VM,num_sensor,"frame16=%d, command=%d\n", frame16, (int) x393cmd)
-   MDP(DBGB_VM,num_sensor,"sa=0x%08x sa_inc=0x%08x lfn=0x%08x fw=0x%08x wh=0x%08x lt=0x%08x sxy=0x%08x\n",
-           window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num, window_full_width.d32,
-           window_width_height.d32,window_left_top.d32, window_startx_starty.d32)
+   membridge_direction = write_direction;
 
    switch (x393cmd){
    case ASAP:
@@ -164,13 +176,13 @@ int setup_membridge_memory(
        */
        break;
    case DIRECT:
-	   x393_membridge_scanline_startaddr             (window_frame_sa,         num_sensor); // Set frame start address
-	   x393_membridge_scanline_frame_size            (window_frame_sa_inc,     num_sensor); // Set frame size (address increment)
-	   x393_membridge_scanline_frame_last            (window_last_frame_num,   num_sensor); // Set last frame number (number of frames in buffer minus 1)
-	   x393_membridge_scanline_frame_full_width      (window_full_width,       num_sensor); // Set frame full(padded) width
-       x393_membridge_scanline_window_wh             (window_width_height,     num_sensor); // Set frame window size
-       x393_membridge_scanline_window_x0y0           (window_left_top,         num_sensor); // Set frame position
-       x393_membridge_scanline_startxy               (window_startx_starty,    num_sensor); // Set start x & y ...
+	   x393_membridge_scanline_startaddr             (window_frame_sa);       // Set frame start address
+	   x393_membridge_scanline_frame_size            (window_frame_sa_inc);   // Set frame size (address increment)
+	   x393_membridge_scanline_frame_last            (window_last_frame_num); // Set last frame number (number of frames in buffer minus 1)
+	   x393_membridge_scanline_frame_full_width      (window_full_width);     // Set frame full(padded) width
+       x393_membridge_scanline_window_wh             (window_width_height);   // Set frame window size
+       x393_membridge_scanline_window_x0y0           (window_left_top);       // Set frame position
+       x393_membridge_scanline_startxy               (window_startx_starty);  // Set start x & y ...
        break;
    }
 
@@ -179,26 +191,24 @@ int setup_membridge_memory(
 
 /** Control membridge memory */
 int  control_membridge_memory (int num_sensor,    ///< sensor port number (0..3)
-                            int cmd,              ///< command: 0 stop, 1 - single, 2 - repetitive, 3 - reset
-                            int reset_frame,      ///< reset addresses to the start of frame, reset buffer (1 of 4) pointer.
-                                                  ///< Should only be used if the channel controller was stopped before
-                            x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
-                            int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
+                               int cmd,           ///< command: 0 stop, 1 - single, 2 - repetitive, 3 - reset
+                               x393cmd_t x393cmd, ///< how to apply commands - directly or through channel sequencer
+                               int frame16)       ///< Frame number the command should be applied to (if not immediate mode)
                                                   ///< @return 0 -OK
 {
 
    x393_mcntrl_mode_scan_t membridge_mode = {.enable =        1, // [    0] (1) enable requests from this channel ( 0 will let current to finish, but not raise want/need)
-                                          .chn_nreset =    1, // [    1] (1) 0: immediately reset all the internal circuitry
-                                          .write_mem =     1, // [    2] (0) 0 - read from memory, 1 - write to memory
-                                          .extra_pages =   0, // [ 4: 3] (0) 2-bit number of extra pages that need to stay (not to be overwritten) in the buffer
-                                          .keep_open =     0, // [    5] (0) (NA in linescan) for 8 or less rows - do not close page between accesses (not used in scanline mode)
-                                          .byte32 =        0, // [    6] (1) (NA in linescan) 32-byte columns (0 - 16-byte), not used in scanline mode
-                                          .reset_frame =   0, // [    8] (0) reset frame number
-                                          .single =        0, // [    9] (0) run single frame
-                                          .repetitive =    1, // [   10] (1) run repetitive frames
-                                          .disable_need =  0, // [   11] (0) disable 'need' generation, only 'want' (compressor channels)
-                                          .skip_too_late = 1, // [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
-                                          .abort_late =    1};// [   14] (0) abort frame if not finished by the new frame sync (wait pending memory transfers)
+                                             .chn_nreset =    1, // [    1] (1) 0: immediately reset all the internal circuitry
+                                             .write_mem =     1, // [    2] (0) 0 - read from memory, 1 - write to memory
+                                             .extra_pages =   0, // [ 4: 3] (0) 2-bit number of extra pages that need to stay (not to be overwritten) in the buffer
+                                             .keep_open =     0, // [    5] (0) (NA in linescan) for 8 or less rows - do not close page between accesses (not used in scanline mode)
+                                             .byte32 =        0, // [    6] (1) (NA in linescan) 32-byte columns (0 - 16-byte), not used in scanline mode
+                                             .reset_frame =   0, // [    8] (0) reset frame number
+                                             .single =        0, // [    9] (0) run single frame
+                                             .repetitive =    1, // [   10] (1) run repetitive frames
+                                             .disable_need =  0, // [   11] (0) disable 'need' generation, only 'want' (compressor channels)
+                                             .skip_too_late = 1, // [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
+                                             .abort_late =    1};// [   14] (0) abort frame if not finished by the new frame sync (wait pending memory transfers)
 
    x393_membridge_cmd_t membridge_cmd = {.enable      = 0, // [    0] (0) enable membridge
 		   	   	   	   	   	   	   	   	 .start_reset = 0};// [ 2: 1] (0) 1 - start (from current address), 3 - start from reset address
@@ -219,11 +229,13 @@ int  control_membridge_memory (int num_sensor,    ///< sensor port number (0..3)
        //seqa_x393_sens_mcntrl_scanline_mode             (frame16, mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    case DIRECT:
+
 	   // 1. wait until absolute frame number?
 	   // 2. wait until copying is done? or not?
-	   x393_membridge_ctrl(membridge_cmd,num_sensor); // Set mode register (write last after other channel registers are set)
+
+	   x393_membridge_scanline_mode(membridge_mode); // Set mode register (write last after other channel registers are set)
+	   x393_membridge_ctrl(membridge_cmd); // Set mode register (write last after other channel registers are set)
 	   //get_x393_membridge_status_cntrl();?!
-	   x393_membridge_scanline_mode                  (mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    }
 
@@ -235,7 +247,7 @@ int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
                          int window_width,     ///< 13-bit - in 8*16=128 bit bursts
                          int window_height,    ///< 16-bit window height (in scan lines)
                          int window_left,      ///< 13-bit window left margin in 8-bursts (16 bytes)
-                         int window_top,       ///< 16-bit window top margin (in scan lines
+                         int window_top,       ///< 16-bit window top margin (in scan lines)
                          x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
                          int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
                                                ///< @return 0 -OK
@@ -680,6 +692,10 @@ static int videomem_open(struct inode *inode, struct file *filp)
 
 	int test_channel=0;
 
+	int p_color, p_pf_height;
+	int width_marg, height_marg, width_bursts;
+	int frame_number;
+
 	pr_debug("VIDEOMEM_OPEN \n");
 
 	// Problem: pass channel number to the driver,
@@ -703,16 +719,83 @@ static int videomem_open(struct inode *inode, struct file *filp)
 	privData->buf_size = pElphel_buf->raw_chn0_size*PAGE_SIZE;
 	privData->buf_size32 = (privData->buf_size)>>2;
 
+	test_channel = 2;
+	membridge_sensor_port = test_channel;
+
+	frame_number = GLOBALPARS(membridge_sensor_port,G_THIS_FRAME) & PARS_FRAMES_MASK;
+
+	//calculate things
+
+    //if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+
+    width_marg =  get_imageParamsThis(membridge_sensor_port,P_ACTUAL_WIDTH);
+    height_marg = get_imageParamsThis(membridge_sensor_port,P_ACTUAL_HEIGHT);
+
+    p_color = get_imageParamsThis(membridge_sensor_port,P_COLOR);
+    p_pf_height = get_imageParamsThis(membridge_sensor_port,P_PF_HEIGHT);
+
+    switch(p_color){
+    case COLORMODE_COLOR:
+    case COLORMODE_COLOR20:
+        width_marg += (2 * COLOR_MARGINS);
+        if ((p_pf_height & 0xffff)==0) { // not a photofinish
+            height_marg += (2 * COLOR_MARGINS);
+        }
+        break;
+    }
+    width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+
+    //int setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
+    //                         int window_width,     ///< 13-bit - in 8*16=128 bit bursts
+    //                         int window_height,    ///< 16-bit window height (in scan lines)
+    //                         int window_left,      ///< 13-bit window left margin in 8-bursts (16 bytes)
+    //                         int window_top,       ///< 16-bit window top margin (in scan lines)
+    //                         x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
+    //                         int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
+
+    //setup_sensor_memory (sensor_port,       // sensor port number (0..3)
+    //                     width_bursts,      // 13-bit - in 8*16=128 bit bursts
+    //                     height_marg,       // 16-bit window height (in scan lines)
+    //                     0,                 // 13-bit window left margin in 8-bursts (16 bytes)
+    //                     0,                 // 16-bit window top margin (in scan lines)
+    //                     (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+    //                     frame16);          // Frame number the command should be applied to (if not immediate mode)
+
+    // setup membridge fpga memory
+
+    //int setup_membridge_memory(
+    //		int num_sensor,       ///< sensor port number (0..3)
+    //		int write_direction,  ///< 0 - from fpga mem to system mem, 1 - otherwise
+    //      int window_width,     ///< 13-bit - in 8*16=128 bit bursts
+    //      int window_height,    ///< 16-bit window height (in scan lines)
+    //      int window_left,      ///< 13-bit window left margin in 8-bursts (16 bytes)
+    //      int window_top,       ///< 16-bit window top margin (in scan lines)
+    //      int start_x,          ///< START X ...
+    //		int start_y,          ///< START Y ...
+    //      x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
+    //      int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
+
+    setup_membridge_memory(membridge_sensor_port, ///< sensor port number (0..3)
+    					   0,                     ///< 0 - from fpga mem to system mem, 1 - otherwise
+						   width_bursts,          ///< 13-bit - in 8*16=128 bit bursts
+						   height_marg,           ///< 16-bit window height (in scan lines)
+						   0,                     ///< 13-bit window left margin in 8-bursts (16 bytes)
+						   0,                     ///< 16-bit window top margin (in scan lines)
+						   0,                     ///< START X ...
+						   0,                     ///< START Y ...
+						   DIRECT,                ///< how to apply commands - directly or through channel sequencer
+						   frame_number);         ///< Frame number the command should be applied to (if not immediate mode)
+
+
 	// setup membridge system memory - everything is in QW
 	setup_membridge_system_memory(
 			(privData->phys_addr)>>4,
 			(privData->buf_size)>>4,
 			0, // start offset?
-			2592>>4,
-			1936>>4
+			width_marg>>4,
+			height_marg>>4
 			);
 
-	test_channel = 2;
 
 	//// get this frame number
     //#define  thisFrameNumber(p)            GLOBALPARS(p,G_THIS_FRAME)                       // Current frame number (may lag from the hardware)
@@ -852,7 +935,7 @@ static ssize_t show_frames_in_buffer(struct device *dev, struct device_attribute
 }
 static ssize_t get_num_sensor(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    return sprintf(buf,"%d\n", selected_channel);
+    return sprintf(buf,"%d\n", membridge_sensor_port);
 }
 static ssize_t store_frame_start(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -877,7 +960,7 @@ static ssize_t store_frames_in_buffer(struct device *dev, struct device_attribut
 
 static ssize_t set_num_sensor(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-    sscanf(buf, "%i", &selected_channel);
+    sscanf(buf, "%i", &membridge_sensor_port);
     return count;
 }
 

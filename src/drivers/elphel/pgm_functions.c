@@ -1975,7 +1975,7 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
                          width_bursts,      // 13-bit - in 8*16=128 bit bursts
                          height_marg,       // 16-bit window height (in scan lines)
                          0,                 // 13-bit window left margin in 8-bursts (16 bytes)
-                         0,                 // 16-bit window top margin (in scan lines
+                         0,                 // 16-bit window top margin (in scan lines)
                          (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
                          frame16);          // Frame number the command should be applied to (if not immediate mode)
     return 0;
