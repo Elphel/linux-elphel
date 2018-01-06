@@ -14,6 +14,7 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
+#define DEBUG
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
@@ -214,6 +215,9 @@ int  control_membridge_memory (int num_sensor,    ///< sensor port number (0..3)
 		   	   	   	   	   	   	   	   	 .start_reset = 0};// [ 2: 1] (0) 1 - start (from current address), 3 - start from reset address
 
    membridge_mode.write_mem = membridge_direction;
+
+   membridge_cmd.enable = cmd;
+   membridge_cmd.start_reset = cmd;
 
    //membridge_cmd.enable = 1;
    //membridge_cmd.start_reset = 3;
@@ -696,6 +700,8 @@ static int videomem_open(struct inode *inode, struct file *filp)
 	int width_marg, height_marg, width_bursts;
 	int frame_number;
 
+	x393_status_ctrl_t s1, s2;
+
 	pr_debug("VIDEOMEM_OPEN \n");
 
 	// Problem: pass channel number to the driver,
@@ -789,13 +795,21 @@ static int videomem_open(struct inode *inode, struct file *filp)
 
 	// setup membridge system memory - everything is in QW
 	setup_membridge_system_memory(
-			(privData->phys_addr)>>4,
-			(privData->buf_size)>>4,
+			(privData->phys_addr)>>3,
+			(privData->buf_size)>>3,
 			0, // start offset?
-			width_marg>>4,
-			height_marg>>4
+			width_marg>>3,
+			height_marg>>3
 			);
 
+	s1 = get_x393_membridge_scanline_status_cntrl();
+	s2 = get_x393_membridge_status_cntrl();
+
+	pr_debug("MEMBRIDGE_STATUS \"0\": scanline_status:0x%08x status:0x%08x\n",s1,s2);
+
+	control_membridge_memory(membridge_sensor_port,1,DIRECT,frame_number);
+
+	//NOTES:
 
 	//// get this frame number
     //#define  thisFrameNumber(p)            GLOBALPARS(p,G_THIS_FRAME)                       // Current frame number (may lag from the hardware)
@@ -876,7 +890,11 @@ static int videomem_release(struct inode *inode, struct file *filp)
 ssize_t videomem_read(struct file *file, char *buf, size_t count, loff_t *off)
 {
 	//unsigned int minor = MINOR(file->f_inode->i_rdev);
-	pr_debug("VIDEOMEM_READ\n");
+	x393_status_ctrl_t s1, s2;
+	s1 = get_x393_membridge_scanline_status_cntrl();
+	s2 = get_x393_membridge_status_cntrl();
+	pr_debug("MEMBRIDGE_STATUSES: scanline_status:0x%08x status:0x%08x\n",s1,s2);
+
 	return vm_read(file, buf, count, off);
 }
 
