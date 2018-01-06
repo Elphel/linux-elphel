@@ -215,8 +215,8 @@ int  control_membridge_memory (int num_sensor,    ///< sensor port number (0..3)
                                              .skip_too_late = 1, // [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
                                              .abort_late =    1};// [   14] (0) abort frame if not finished by the new frame sync (wait pending memory transfers)
 
-   x393_membridge_cmd_t membridge_cmd = {.enable      = 0, // [    0] (0) enable membridge
-		   	   	   	   	   	   	   	   	 .start_reset = 0};// [ 2: 1] (0) 1 - start (from current address), 3 - start from reset address
+   x393_membridge_cmd_t membridge_cmd = {.enable      = 1, // [    0] (0) enable membridge
+		   	   	   	   	   	   	   	   	 .start_reset = 3};// [ 2: 1] (0) 1 - start (from current address), 3 - start from reset address
 
    membridge_mode.write_mem = membridge_direction;
 
