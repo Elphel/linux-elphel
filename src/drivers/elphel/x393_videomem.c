@@ -801,8 +801,8 @@ static int videomem_open(struct inode *inode, struct file *filp)
 			(privData->phys_addr)>>3,
 			(privData->buf_size)>>3,
 			0, // start offset?
-			width_bursts*height_marg,
-			width_bursts
+			(width_marg*height_marg)>>3,
+			(width_marg)>>3
 			);
 
 	s1 = get_x393_membridge_scanline_status_cntrl();
