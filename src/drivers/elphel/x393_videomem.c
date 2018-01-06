@@ -83,6 +83,9 @@ int setup_membridge_system_memory(
 {
 
 	// no need to wait for anything
+	pr_debug("setup_membridge_system_memory: lo_addr64=0x%08x  size64=0x%08x  start64=0x%08x  len64=0x%08x  width64=0x%08x\n",
+			lo_addr64, size64, start64, len64, width64
+			);
 
 	u29_t lo_addr = {.d32=0};
 	u29_t size =    {.d32=0};
@@ -143,12 +146,13 @@ int setup_membridge_memory(
    window_startx_starty.start_x =         start_x;
    window_startx_starty.start_y =         start_y;
 
-   dev_dbg(g_dev_ptr,"{%d} setup_compressor_memory frame16=%d, command=%d\n",num_sensor,frame16, (int) x393cmd);
-   dev_dbg(g_dev_ptr,"sa=0x%08x sa_inc=0x%08x lfn=0x%08x fw=0x%08x wh=0x%08x lt=0x%08x sxy=0x%08x\n",
+   dev_dbg(g_dev_ptr,"{sensor %d} setup_membridge_memory frame16=%d, command=%d\n",num_sensor,frame16, (int) x393cmd);
+   dev_dbg(g_dev_ptr,"sa=0x%08x  sa_inc=0x%08x  lfn=0x%08x  fw=0x%08x  wh=0x%08x  lt=0x%08x  sxy=0x%08x\n",
            window_frame_sa.d32,window_frame_sa_inc.d32, window_last_frame_num.d32, window_full_width.d32,
            window_width_height.d32,window_left_top.d32, window_startx_starty.d32);
 
    membridge_direction = write_direction;
+   pr_debug("write direction is: %d (should be 0)\n",membridge_direction);
 
    switch (x393cmd){
    case ASAP:
@@ -792,14 +796,13 @@ static int videomem_open(struct inode *inode, struct file *filp)
 						   DIRECT,                ///< how to apply commands - directly or through channel sequencer
 						   frame_number);         ///< Frame number the command should be applied to (if not immediate mode)
 
-
 	// setup membridge system memory - everything is in QW
 	setup_membridge_system_memory(
 			(privData->phys_addr)>>3,
 			(privData->buf_size)>>3,
 			0, // start offset?
-			width_marg>>3,
-			height_marg>>3
+			width_bursts*height_marg,
+			width_bursts
 			);
 
 	s1 = get_x393_membridge_scanline_status_cntrl();
