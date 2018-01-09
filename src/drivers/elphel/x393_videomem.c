@@ -48,8 +48,10 @@ static struct device *g_dev_ptr; ///< Global pointer to basic device structure. 
 wait_queue_head_t videomem_wait_queue;
 static DEFINE_SPINLOCK(lock); // for read-modify-write channel enable
 
-// TODO: 1. create one device per channel - get channel number from minor, error when multiple files are opened
-//       2. craete char device for r/w memory access
+/**
+ * VIDEOMEM_RAW & IMAGE_RAW are for debug memory access.
+ * Indexed devices are for per channel access
+ */
 static const char * const videomem_devs[]={
 	DEV393_DEVNAME(DEV393_VIDEOMEM_RAW),
 	DEV393_DEVNAME(DEV393_IMAGE_RAW),
@@ -175,7 +177,7 @@ int setup_membridge_memory(
        // no break
    case RELATIVE:
 	   /**
-	    * Possible future implementation (no need)
+	    * Possible but unlikely future implementation
 	    */
 	   /*
        seqr_x393_membridge_scanline_startaddr       (frame16, window_frame_sa,         num_sensor); // Set frame start address
@@ -189,7 +191,7 @@ int setup_membridge_memory(
        break;
    case ABSOLUTE:
 	   /**
-	    * Possible future implementation (no need)
+	    * Possible but unlikely future implementation
 	    */
 	   /*
        seqa_x393_membridge_scanline_startaddr       (frame16, window_frame_sa,         num_sensor); // Set frame start address
@@ -241,8 +243,11 @@ int  control_membridge_memory (int num_sensor,    ///< sensor port number (0..3)
 		   	   	   	   	   	   	   	   	 .start_reset = 3};// [ 2: 1] (0) 1 - start (from current address), 3 - start from reset address
 
    membridge_mode.reset_frame = 1;
+
    membridge_mode.single = 0;
    membridge_mode.repetitive = 1;
+
+   // TODO: direction can be changed to copy data to fpga memory (the one that's not system memory)
    membridge_mode.write_mem = membridge_direction;
 
    membridge_cmd.enable = cmd;
@@ -251,7 +256,7 @@ int  control_membridge_memory (int num_sensor,    ///< sensor port number (0..3)
    //membridge_cmd.enable = 1;
    //membridge_cmd.start_reset = 3;
 
-   // enable channel 1
+   // enable channel 1 (it's a memory controller hardcoded channel)
    if (membridge_mode.enable){
           memchan_enable(1, 1); // just enable - nothing will change if it was already enabled. Never disabled
    }
@@ -730,24 +735,11 @@ static int videomem_open(struct inode *inode, struct file *filp)
 {
 	struct raw_priv_t *privData;
 
-	int test_channel=0;
-
 	int p_color, p_pf_height;
 	int width_marg, height_marg, width_bursts;
 	int frame_number;
 
-	x393_status_ctrl_t s1, s2;
-
 	pr_debug("VIDEOMEM_OPEN \n");
-
-	// Problem: pass channel number to the driver,
-	// solution 1: set channel number through sysfs
-	// solution 2: create N links for a char dev:
-	//    /dev/raw0 -> /dev/image_raw
-	//    /dev/raw1 -> /dev/image_raw
-	// there should be a way (there is no way) to read link name then extract channel number from it
-
-	//pr_debug("DEV OPENED: %s\n",filp->f_path.dentry->d_iname);
 
 	privData = (struct raw_priv_t*)kmalloc(sizeof(struct raw_priv_t), GFP_KERNEL);
 	if (!privData) {
@@ -756,15 +748,43 @@ static int videomem_open(struct inode *inode, struct file *filp)
 	filp->private_data = privData;
 
 	privData->minor = MINOR(inode->i_rdev);
-	privData->buf_ptr = pElphel_buf->raw_chn0_vaddr;
-	privData->phys_addr = pElphel_buf->raw_chn0_paddr;
-	privData->buf_size = pElphel_buf->raw_chn0_size*PAGE_SIZE;
+
+	membridge_sensor_port = privData->minor - DEV393_MINOR(DEV393_IMAGE_RAW0);
+
+	// temporary
+	if (membridge_sensor_port < 0){
+		membridge_sensor_port =  0;
+	}
+
+	switch(privData->minor){
+		case DEV393_MINOR(DEV393_IMAGE_RAW0):
+			privData->buf_ptr = pElphel_buf->raw_chn0_vaddr;
+			privData->phys_addr = pElphel_buf->raw_chn0_paddr;
+			privData->buf_size = pElphel_buf->raw_chn0_size*PAGE_SIZE;
+			break;
+		case DEV393_MINOR(DEV393_IMAGE_RAW1):
+			privData->buf_ptr = pElphel_buf->raw_chn1_vaddr;
+			privData->phys_addr = pElphel_buf->raw_chn1_paddr;
+			privData->buf_size = pElphel_buf->raw_chn1_size*PAGE_SIZE;
+			break;
+		case DEV393_MINOR(DEV393_IMAGE_RAW2):
+			privData->buf_ptr = pElphel_buf->raw_chn2_vaddr;
+			privData->phys_addr = pElphel_buf->raw_chn2_paddr;
+			privData->buf_size = pElphel_buf->raw_chn2_size*PAGE_SIZE;
+			break;
+		case DEV393_MINOR(DEV393_IMAGE_RAW3):
+			privData->buf_ptr = pElphel_buf->raw_chn3_vaddr;
+			privData->phys_addr = pElphel_buf->raw_chn3_paddr;
+			privData->buf_size = pElphel_buf->raw_chn3_size*PAGE_SIZE;
+			break;
+		default:
+			// temporary
+			privData->buf_ptr = pElphel_buf->raw_chn0_vaddr;
+			privData->phys_addr = pElphel_buf->raw_chn0_paddr;
+			privData->buf_size = pElphel_buf->raw_chn0_size*PAGE_SIZE;
+	}
+
 	privData->buf_size32 = (privData->buf_size)>>2;
-
-	// TODO: remove this
-	test_channel = 2;
-
-	membridge_sensor_port = test_channel;
 
 	// no need
 	frame_number = GLOBALPARS(membridge_sensor_port,G_THIS_FRAME) & PARS_FRAMES_MASK;
