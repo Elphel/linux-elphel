@@ -998,7 +998,7 @@ static ssize_t get_num_sensor(struct device *dev, struct device_attribute *attr,
 
 static ssize_t get_membridge_status(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	x393_status_ctrl_t status = x393_membridge_status();
+	x393_status_membridge_t status = x393_membridge_status();
     return sprintf(buf,"0x%08x\n", status);
 }
 
