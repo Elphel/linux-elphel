@@ -15,7 +15,7 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
- 
+
 /* Each device node should be specified in the following format:
 #define <DEVICE_RFEFERENCE>   ("<dev path>",    "<driver_name>",  major, minor,"<permissions>","<b/c>") [optional comment]
  * Access to individual fields is provide with the macros defined below, for example:
@@ -106,6 +106,11 @@
 // Video memory access uses a single (shared) membridge module, so device driver should have exclusive access
 #define DEV393_VIDEOMEM_RAW   ("videomem_raw",      "video_mem",     142,  1, "0666", "c")  ///< Raw access to video memory using membridge module (NC393: Not yet implemented)
 #define DEV393_IMAGE_RAW      ("image_raw",         "video_mem",     142,  2, "0666", "c")  ///< Access to raw (uncompressed) data in video memory, frame-organized
+// 80-83 - minor to use minor_to_chn function
+#define DEV393_IMAGE_RAW0     ("image_raw0",        "video_mem",     142, 80, "0666", "c")  ///< Channel 0. Access to raw (uncompressed) data in video memory, frame-organized
+#define DEV393_IMAGE_RAW1     ("image_raw1",        "video_mem",     142, 81, "0666", "c")  ///< Channel 1. Access to raw (uncompressed) data in video memory, frame-organized
+#define DEV393_IMAGE_RAW2     ("image_raw2",        "video_mem",     142, 82, "0666", "c")  ///< Channel 2. Access to raw (uncompressed) data in video memory, frame-organized
+#define DEV393_IMAGE_RAW3     ("image_raw3",        "video_mem",     142, 83, "0666", "c")  ///< Channel 3. Access to raw (uncompressed) data in video memory, frame-organized
 
 #define DEV393_DETECT_SENSORS ("detect_sensors",    "detect_sensors",143,  1, "0666", "c")  ///< Probably not needed, only sysfs is used
 #define DEV393_I2C_SENSORS    ("",            "elphel393-sensor-i2c",-1,  -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)

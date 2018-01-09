@@ -52,14 +52,22 @@ static DEFINE_SPINLOCK(lock); // for read-modify-write channel enable
 //       2. craete char device for r/w memory access
 static const char * const videomem_devs[]={
 	DEV393_DEVNAME(DEV393_VIDEOMEM_RAW),
-	DEV393_DEVNAME(DEV393_IMAGE_RAW)
+	DEV393_DEVNAME(DEV393_IMAGE_RAW),
+	DEV393_DEVNAME(DEV393_IMAGE_RAW0),
+	DEV393_DEVNAME(DEV393_IMAGE_RAW1),
+	DEV393_DEVNAME(DEV393_IMAGE_RAW2),
+	DEV393_DEVNAME(DEV393_IMAGE_RAW3)
 };
 
 static const int videomem_major = DEV393_MAJOR(DEV393_VIDEOMEM_RAW);
 
 static const int videomem_minor[]={
 	DEV393_MINOR(DEV393_VIDEOMEM_RAW),
-	DEV393_MINOR(DEV393_IMAGE_RAW)
+	DEV393_MINOR(DEV393_IMAGE_RAW),
+	DEV393_MINOR(DEV393_IMAGE_RAW0),
+	DEV393_MINOR(DEV393_IMAGE_RAW1),
+	DEV393_MINOR(DEV393_IMAGE_RAW2),
+	DEV393_MINOR(DEV393_IMAGE_RAW3)
 };
 
 /** @brief Global device class for sysfs */
@@ -739,7 +747,7 @@ static int videomem_open(struct inode *inode, struct file *filp)
 	//    /dev/raw1 -> /dev/image_raw
 	// there should be a way (there is no way) to read link name then extract channel number from it
 
-	pr_debug("DEV OPENED: %s\n",filp->f_path.dentry->d_iname);
+	//pr_debug("DEV OPENED: %s\n",filp->f_path.dentry->d_iname);
 
 	privData = (struct raw_priv_t*)kmalloc(sizeof(struct raw_priv_t), GFP_KERNEL);
 	if (!privData) {
@@ -753,9 +761,12 @@ static int videomem_open(struct inode *inode, struct file *filp)
 	privData->buf_size = pElphel_buf->raw_chn0_size*PAGE_SIZE;
 	privData->buf_size32 = (privData->buf_size)>>2;
 
+	// TODO: remove this
 	test_channel = 2;
+
 	membridge_sensor_port = test_channel;
 
+	// no need
 	frame_number = GLOBALPARS(membridge_sensor_port,G_THIS_FRAME) & PARS_FRAMES_MASK;
 
 	//calculate things
