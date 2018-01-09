@@ -48,6 +48,8 @@ static struct device *g_dev_ptr; ///< Global pointer to basic device structure. 
 wait_queue_head_t videomem_wait_queue;
 static DEFINE_SPINLOCK(lock); // for read-modify-write channel enable
 
+// TODO: 1. create one device per channel - get channel number from minor, error when multiple files are opened
+//       2. craete char device for r/w memory access
 static const char * const videomem_devs[]={
 	DEV393_DEVNAME(DEV393_VIDEOMEM_RAW),
 	DEV393_DEVNAME(DEV393_IMAGE_RAW)
@@ -73,6 +75,9 @@ static struct elphel_video_buf_t buffer_settings = { ///< some default settings,
 static int membridge_sensor_port = 0; // 0..3
 static int membridge_direction = 0; // 0 - from pl to ps, 1 - from ps to pl
 
+// Membridge can be only accessed by a single source - TODO: use this lock
+static bool membridge_lock = false;
+
 /** Setup memory bridge system memory */
 int setup_membridge_system_memory(
 		int lo_addr64, ///< start address of the system memory range in QWORDs (4 LSBs==0)
@@ -84,8 +89,11 @@ int setup_membridge_system_memory(
 
 	// no need to wait for anything
 	pr_debug("setup_membridge_system_memory: lo_addr64=0x%08x  size64=0x%08x  start64=0x%08x  len64=0x%08x  width64=0x%08x\n",
-			lo_addr64, size64, start64, len64, width64
-			);
+			lo_addr64,
+			size64,
+			start64,
+			len64,
+			width64);
 
 	u29_t lo_addr = {.d32=0};
 	u29_t size =    {.d32=0};
@@ -152,13 +160,15 @@ int setup_membridge_memory(
            window_width_height.d32,window_left_top.d32, window_startx_starty.d32);
 
    membridge_direction = write_direction;
-   pr_debug("write direction is: %d (should be 0)\n",membridge_direction);
 
    switch (x393cmd){
    case ASAP:
        frame16 = 0;
        // no break
    case RELATIVE:
+	   /**
+	    * Possible future implementation (no need)
+	    */
 	   /*
        seqr_x393_membridge_scanline_startaddr       (frame16, window_frame_sa,         num_sensor); // Set frame start address
        seqr_x393_membridge_scanline_frame_size      (frame16, window_frame_sa_inc,     num_sensor); // Set frame size (address increment)
@@ -170,6 +180,9 @@ int setup_membridge_memory(
        */
        break;
    case ABSOLUTE:
+	   /**
+	    * Possible future implementation (no need)
+	    */
 	   /*
        seqa_x393_membridge_scanline_startaddr       (frame16, window_frame_sa,         num_sensor); // Set frame start address
        seqa_x393_membridge_scanline_frame_size      (frame16, window_frame_sa_inc,     num_sensor); // Set frame size (address increment)
@@ -204,20 +217,24 @@ int  control_membridge_memory (int num_sensor,    ///< sensor port number (0..3)
 
    x393_mcntrl_mode_scan_t membridge_mode = {.enable =        1, // [    0] (1) enable requests from this channel ( 0 will let current to finish, but not raise want/need)
                                              .chn_nreset =    1, // [    1] (1) 0: immediately reset all the internal circuitry
-                                             .write_mem =     1, // [    2] (0) 0 - read from memory, 1 - write to memory
-                                             .extra_pages =   0, // [ 4: 3] (0) 2-bit number of extra pages that need to stay (not to be overwritten) in the buffer
+                                             .write_mem =     0, // [    2] (0) 0 - read from memory, 1 - write to memory
+                                             .extra_pages =   1, // [ 4: 3] (0) 2-bit number of extra pages that need to stay (not to be overwritten) in the buffer
                                              .keep_open =     0, // [    5] (0) (NA in linescan) for 8 or less rows - do not close page between accesses (not used in scanline mode)
-                                             .byte32 =        0, // [    6] (1) (NA in linescan) 32-byte columns (0 - 16-byte), not used in scanline mode
-                                             .reset_frame =   0, // [    8] (0) reset frame number
+                                             .byte32 =        1, // [    6] (1) (NA in linescan) 32-byte columns (0 - 16-byte), not used in scanline mode
+                                             .reset_frame =   1, // [    8] (0) reset frame number
                                              .single =        0, // [    9] (0) run single frame
                                              .repetitive =    1, // [   10] (1) run repetitive frames
-                                             .disable_need =  0, // [   11] (0) disable 'need' generation, only 'want' (compressor channels)
+                                             .disable_need =  1, // [   11] (0) disable 'need' generation, only 'want' (compressor channels)
                                              .skip_too_late = 1, // [   12] (0) Skip over missed blocks to preserve frame structure (increment pointers)
+	                                         .copy_frame =    1, // [   13] (0) Copy frame number from the master (sensor) channel. Combine with reset_frame to reset bjuffer
                                              .abort_late =    1};// [   14] (0) abort frame if not finished by the new frame sync (wait pending memory transfers)
 
    x393_membridge_cmd_t membridge_cmd = {.enable      = 1, // [    0] (0) enable membridge
 		   	   	   	   	   	   	   	   	 .start_reset = 3};// [ 2: 1] (0) 1 - start (from current address), 3 - start from reset address
 
+   membridge_mode.reset_frame = 1;
+   membridge_mode.single = 0;
+   membridge_mode.repetitive = 1;
    membridge_mode.write_mem = membridge_direction;
 
    membridge_cmd.enable = cmd;
@@ -226,20 +243,27 @@ int  control_membridge_memory (int num_sensor,    ///< sensor port number (0..3)
    //membridge_cmd.enable = 1;
    //membridge_cmd.start_reset = 3;
 
+   // enable channel 1
+   if (membridge_mode.enable){
+          memchan_enable(1, 1); // just enable - nothing will change if it was already enabled. Never disabled
+   }
+
    switch (x393cmd){
    case ASAP:
        frame16 = 0;
        // no break
    case RELATIVE:
+	   /** no need */
        //seqr_x393_sens_mcntrl_scanline_mode             (frame16, mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    case ABSOLUTE:
+	   /** no need */
        //seqa_x393_sens_mcntrl_scanline_mode             (frame16, mcntrl_mode,             num_sensor); // Set mode register (write last after other channel registers are set)
        break;
    case DIRECT:
 
-	   // 1. wait until absolute frame number?
-	   // 2. wait until copying is done? or not?
+	   // TODO: 1. wait until absolute frame number?
+	   //       2. wait until copying is done? or not?
 
 	   x393_membridge_scanline_mode(membridge_mode); // Set mode register (write last after other channel registers are set)
 	   x393_membridge_ctrl(membridge_cmd); // Set mode register (write last after other channel registers are set)
@@ -805,10 +829,6 @@ static int videomem_open(struct inode *inode, struct file *filp)
 			(width_marg)>>3
 			);
 
-	s1 = get_x393_membridge_scanline_status_cntrl();
-	s2 = get_x393_membridge_status_cntrl();
-
-	pr_debug("MEMBRIDGE_STATUS \"0\": scanline_status:0x%08x status:0x%08x\n",s1,s2);
 
 	control_membridge_memory(membridge_sensor_port,1,DIRECT,frame_number);
 
@@ -823,44 +843,6 @@ static int videomem_open(struct inode *inode, struct file *filp)
 
 	//// get frame sizes
 	//unsigned long get_imageParamsPast(int sensor_port,  int n,  int frame);
-
-	// FROM:
-
-	// from dts: frame_start_chn2 =     <0x10000000>;      // Channel 2 frame start (in bytes)
-	//x393_membridge_scanline_startaddr(buffer_settings.frame_start[test_channel]);
-	// what units? Bytes?
-	////x393_membridge_scanline_frame_size(privData->buf_size);
-	// number of frames in buffer - 1
-	//x393_membridge_scanline_frame_last(buffer_settings.frames_in_buffer[test_channel]);
-	// Set frame full(padded) width - get from some parameter
-	////x393_membridge_scanline_frame_full_width(2592);
-	// set frame window size?!
-	// (window_height << 16)
-	////x393_membridge_scanline_window_wh(1940<<16);
-	// Set startXY register
-	// (window_top << 16)
-	////x393_membridge_scanline_window_x0y0(0<<16);
-
-	////x393_membridge_scanline_startxy(0);
-
-	// TO:
-
-	// start address of the system memory range in QWORDs (4 LSBs==0)
-	///x393_membridge_lo_addr64((privData->phys_addr)>>4);
-	// size of the system memory range in QWORDs (4 LSBs==0), rolls over
-	///x393_membridge_size64((privData->buf_size)>>4);
-	// start of transfer offset to system memory range in QWORDs (4 LSBs==0)
-	///x393_membridge_start64(0);
-	// Full length of transfer in QWORDs
-	///x393_membridge_len64((8192*PAGE_SIZE)>>4);
-	// Frame width in QWORDs (last xfer in each line may be partial)
-	///x393_membridge_width64(2592>>4);
-
-	// start?
-	////x393_membridge_ctrl();
-
-	// wait until transfer is done
-	////get_x393_membridge_status_cntrl();
 
 	return 0;
 }
@@ -893,11 +875,6 @@ static int videomem_release(struct inode *inode, struct file *filp)
 ssize_t videomem_read(struct file *file, char *buf, size_t count, loff_t *off)
 {
 	//unsigned int minor = MINOR(file->f_inode->i_rdev);
-	x393_status_ctrl_t s1, s2;
-	s1 = get_x393_membridge_scanline_status_cntrl();
-	s2 = get_x393_membridge_status_cntrl();
-	pr_debug("MEMBRIDGE_STATUSES: scanline_status:0x%08x status:0x%08x\n",s1,s2);
-
 	return vm_read(file, buf, count, off);
 }
 
@@ -958,6 +935,19 @@ static ssize_t get_num_sensor(struct device *dev, struct device_attribute *attr,
 {
     return sprintf(buf,"%d\n", membridge_sensor_port);
 }
+
+static ssize_t get_membridge_status(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	x393_status_ctrl_t status = get_x393_membridge_status_cntrl();
+    return sprintf(buf,"0x%08x\n", status);
+}
+
+static ssize_t get_membridge_loaddr64(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	x393_status_ctrl_t status = get_x393_membridge_status_cntrl();
+    return sprintf(buf,"0x%08x\n", status);
+}
+
 static ssize_t store_frame_start(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
     sscanf(buf, "%i", &buffer_settings.frame_start[get_channel_from_name(attr)]);
@@ -985,6 +975,34 @@ static ssize_t set_num_sensor(struct device *dev, struct device_attribute *attr,
     return count;
 }
 
+static ssize_t set_membridge_status(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int in;
+	x393_status_ctrl_t d = {.d32=0};
+    sscanf(buf, "%x", &in);
+    d.d32 = in;
+    set_x393_membridge_status_cntrl(d);
+    d = get_x393_membridge_status_cntrl();
+    pr_info("Set membridge status register to 0x%08x, status: 0x%08x\n",in,d);
+
+    return count;
+}
+
+static ssize_t set_membridge_loaddr64(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int in;
+	u29_t lo_addr = {.d32=0};
+
+    sscanf(buf, "%x", &in);
+    lo_addr.d32 = in;
+    x393_membridge_lo_addr64(lo_addr);
+    pr_info("Set membridge system memory address to 0x%08x\n",lo_addr);
+
+    return count;
+}
+
+
+
 static DEVICE_ATTR(frame_start0,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
 static DEVICE_ATTR(frame_start1,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
 static DEVICE_ATTR(frame_start2,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
@@ -1001,8 +1019,11 @@ static DEVICE_ATTR(frames_in_buffer0,          SYSFS_PERMISSIONS,     show_frame
 static DEVICE_ATTR(frames_in_buffer1,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
 static DEVICE_ATTR(frames_in_buffer2,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
 static DEVICE_ATTR(frames_in_buffer3,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
+static DEVICE_ATTR(membridge_status,           SYSFS_PERMISSIONS,     get_membridge_status,            set_membridge_status);
+static DEVICE_ATTR(membridge_addr,             SYSFS_PERMISSIONS,     get_membridge_loaddr64,          set_membridge_loaddr64);
 
 // selected sensor channel == port
+// TODO: switch to multiple device files and remove this
 static DEVICE_ATTR(channel,                    SYSFS_PERMISSIONS,     get_num_sensor,           set_num_sensor);
 
 static struct attribute *root_dev_attrs[] = {
@@ -1023,6 +1044,8 @@ static struct attribute *root_dev_attrs[] = {
         &dev_attr_frames_in_buffer2.attr,
         &dev_attr_frames_in_buffer3.attr,
 		&dev_attr_channel.attr,
+		&dev_attr_membridge_status.attr,
+		&dev_attr_membridge_addr.attr,
         NULL
 };
 
@@ -1117,7 +1140,6 @@ static int videomem_probe(struct platform_device *pdev)
 	}
 
     // Setup interrupt
-
     irq = platform_get_irq_byname(pdev, "membridge_irq");
     if (request_irq(irq,
             videomem_irq_handler,
@@ -1165,7 +1187,6 @@ static struct platform_driver elphel393_videomem = {
 };
 
 module_platform_driver(elphel393_videomem);
-
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
