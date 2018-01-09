@@ -32,6 +32,7 @@
 #include "x393_macro.h"
 #include "pgm_functions.h"
 #include "x393_videomem.h"
+#include "x393_fpga_functions.h"
 
 #include <uapi/elphel/c313a.h>
 #include <uapi/elphel/x393_devices.h>
@@ -42,6 +43,8 @@
 //#define VIDEOMEM_DRIVER_NAME        "video_mem"
 // NC393 debug macros
 #include "debug393.h"
+
+#define MEMBRIDGE_CMD_IRQ_EN 0x3
 
 static const struct of_device_id elphel393_videomem_of_match[];
 static struct device *g_dev_ptr; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
@@ -87,6 +90,8 @@ static int membridge_direction = 0; // 0 - from pl to ps, 1 - from ps to pl
 
 // Membridge can be only accessed by a single source - TODO: use this lock
 static bool membridge_lock = false;
+
+static int hardware_initialized = 0;
 
 /** Setup memory bridge system memory */
 int setup_membridge_system_memory(
@@ -244,8 +249,12 @@ int  control_membridge_memory (int num_sensor,    ///< sensor port number (0..3)
 
    membridge_mode.reset_frame = 1;
 
-   membridge_mode.single = 0;
-   membridge_mode.repetitive = 1;
+   membridge_mode.single = 1;
+   membridge_mode.repetitive = 0;
+   //membridge_mode.single = 0;
+   //membridge_mode.repetitive = 1;
+
+   membridge_mode.extra_pages = 0;
 
    // TODO: direction can be changed to copy data to fpga memory (the one that's not system memory)
    membridge_mode.write_mem = membridge_direction;
@@ -288,7 +297,7 @@ int  control_membridge_memory (int num_sensor,    ///< sensor port number (0..3)
 }
 
 /** Setup memory controller for a sensor channel */
-int  setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
+int  setup_sensor_memory (int num_sensor,      ///< sensor port number (0..3)
                          int window_width,     ///< 13-bit - in 8*16=128 bit bursts
                          int window_height,    ///< 16-bit window height (in scan lines)
                          int window_left,      ///< 13-bit window left margin in 8-bursts (16 bytes)
@@ -739,6 +748,23 @@ static int videomem_open(struct inode *inode, struct file *filp)
 	int width_marg, height_marg, width_bursts;
 	int frame_number;
 
+	// to enable interrupt
+    x393_membridge_ctrl_irq_t membridge_irq_en = {.d32=0};
+	membridge_irq_en.interrupt_cmd = MEMBRIDGE_CMD_IRQ_EN;
+
+	// check fpga
+	if (!is_fpga_programmed()){
+		pr_err("*** Attempted to access hardware without bitsteram ***\n");
+	    return - ENODEV;
+	}
+
+	// extra variable
+	if (!hardware_initialized){
+	    // enable interrupt
+	    x393_membridge_ctrl_irq(membridge_irq_en);
+	    hardware_initialized = 1;
+	}
+
 	pr_debug("VIDEOMEM_OPEN \n");
 
 	privData = (struct raw_priv_t*)kmalloc(sizeof(struct raw_priv_t), GFP_KERNEL);
@@ -926,7 +952,10 @@ static irqreturn_t videomem_irq_handler(int irq,       ///< [in]   irq   interru
 {
     x393_membridge_ctrl_irq_t ctrl_interrupts= {.d32=0};
     ctrl_interrupts.interrupt_cmd = X393_IRQ_RESET;
+
     //TODO: Do what is needed here
+    pr_info("Wake up, videomem interrupt received!!!\n");
+
     x393_membridge_ctrl_irq(ctrl_interrupts); // reset interrupt
     wake_up_interruptible(&videomem_wait_queue);
     return IRQ_HANDLED;
@@ -969,13 +998,7 @@ static ssize_t get_num_sensor(struct device *dev, struct device_attribute *attr,
 
 static ssize_t get_membridge_status(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	x393_status_ctrl_t status = get_x393_membridge_status_cntrl();
-    return sprintf(buf,"0x%08x\n", status);
-}
-
-static ssize_t get_membridge_loaddr64(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	x393_status_ctrl_t status = get_x393_membridge_status_cntrl();
+	x393_status_ctrl_t status = x393_membridge_status();
     return sprintf(buf,"0x%08x\n", status);
 }
 
@@ -1006,7 +1029,7 @@ static ssize_t set_num_sensor(struct device *dev, struct device_attribute *attr,
     return count;
 }
 
-static ssize_t set_membridge_status(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+static ssize_t set_membridge_status_reg(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int in;
 	x393_status_ctrl_t d = {.d32=0};
@@ -1018,20 +1041,6 @@ static ssize_t set_membridge_status(struct device *dev, struct device_attribute 
 
     return count;
 }
-
-static ssize_t set_membridge_loaddr64(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-	int in;
-	u29_t lo_addr = {.d32=0};
-
-    sscanf(buf, "%x", &in);
-    lo_addr.d32 = in;
-    x393_membridge_lo_addr64(lo_addr);
-    pr_info("Set membridge system memory address to 0x%08x\n",lo_addr);
-
-    return count;
-}
-
 
 
 static DEVICE_ATTR(frame_start0,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
@@ -1050,8 +1059,7 @@ static DEVICE_ATTR(frames_in_buffer0,          SYSFS_PERMISSIONS,     show_frame
 static DEVICE_ATTR(frames_in_buffer1,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
 static DEVICE_ATTR(frames_in_buffer2,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
 static DEVICE_ATTR(frames_in_buffer3,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
-static DEVICE_ATTR(membridge_status,           SYSFS_PERMISSIONS,     get_membridge_status,            set_membridge_status);
-static DEVICE_ATTR(membridge_addr,             SYSFS_PERMISSIONS,     get_membridge_loaddr64,          set_membridge_loaddr64);
+static DEVICE_ATTR(membridge_status,           SYSFS_PERMISSIONS,     get_membridge_status,            set_membridge_status_reg);
 
 // selected sensor channel == port
 // TODO: switch to multiple device files and remove this
@@ -1076,7 +1084,6 @@ static struct attribute *root_dev_attrs[] = {
         &dev_attr_frames_in_buffer3.attr,
 		&dev_attr_channel.attr,
 		&dev_attr_membridge_status.attr,
-		&dev_attr_membridge_addr.attr,
         NULL
 };
 
@@ -1182,6 +1189,7 @@ static int videomem_probe(struct platform_device *pdev)
     }
     init_waitqueue_head(&videomem_wait_queue);    // wait queue for video memory driver
     g_dev_ptr = dev; // for debugfs
+
     return 0;
 }
 
