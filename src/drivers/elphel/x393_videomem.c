@@ -14,7 +14,7 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
-//#define DEBUG
+#define DEBUG
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
@@ -835,6 +835,8 @@ static int videomem_open(struct inode *inode, struct file *filp)
         break;
     }
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+    /** shorter version: */
+    //width_bursts = (width_marg+0xf)>>4;
 
     //int setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
     //                         int window_width,     ///< 13-bit - in 8*16=128 bit bursts
@@ -882,8 +884,8 @@ static int videomem_open(struct inode *inode, struct file *filp)
 			(privData->phys_addr)>>3,
 			(privData->buf_size)>>3,
 			0, // start offset?
-			(width_marg*height_marg)>>3,
-			(width_marg)>>3
+			(width_bursts<<1)*height_marg,
+			(width_bursts<<1)
 			);
 
 

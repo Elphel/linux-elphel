@@ -1971,6 +1971,8 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
         break;
     }
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+    /** shorter version: */
+    //width_bursts = (width_marg+0xf)>>4;
     setup_sensor_memory (sensor_port,       // sensor port number (0..3)
                          width_bursts,      // 13-bit - in 8*16=128 bit bursts
                          height_marg,       // 16-bit window height (in scan lines)
