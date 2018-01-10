@@ -1568,6 +1568,17 @@ int setFramePars(int sensor_port,                     ///< sensor port number (0
 	return 0;
 }
 
+/**
+ * @brief wait for target frame number
+ * @param sensor_port
+ * @param frame_num target frame
+ * @return 0
+ */
+int waitFrame(int sensor_port, int frame_num){
+	wait_event_interruptible(aframepars_wait_queue[sensor_port], getThisFrameNumber(sensor_port) >= frame_num);
+	return 0;
+}
+
 //TODO: make some parameters readonly (prohibited from modification from the userland)
 // File operations:
 // open, release - nop
@@ -1688,7 +1699,8 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 			// Skip 0..255 frames
 //			wait_event_interruptible (framepars_wait_queue, getThisFrameNumber()>=target_frame);
 		    dev_dbg(g_devfp_ptr, "getThisFrameNumber(%d) == 0x%x, target_frame = 0x%x\n", sensor_port, (int) getThisFrameNumber(sensor_port), (int)target_frame);
-			wait_event_interruptible(aframepars_wait_queue[sensor_port], getThisFrameNumber(sensor_port) >= target_frame);
+		    waitFrame(sensor_port,target_frame);
+		    //wait_event_interruptible(aframepars_wait_queue[sensor_port], getThisFrameNumber(sensor_port) >= target_frame);
             dev_dbg(g_devfp_ptr, "getThisFrameNumber(%d) == 0x%x\n", sensor_port, (int) getThisFrameNumber(sensor_port));
 
 //       if (getThisFrameNumber()<target_frame) wait_event_interruptible (framepars_wait_queue,getThisFrameNumber()>=target_frame);
@@ -1696,7 +1708,8 @@ loff_t framepars_lseek(struct file * file, loff_t offset, int orig)
 		} else {                                //! Other lseek commands
 			switch (offset & ~0x1f) {
 			case  LSEEK_DAEMON_FRAME:       // wait the daemon enabled and a new frame interrupt (sensor frame sync)
-				wait_event_interruptible(aframepars_wait_queue[sensor_port], get_imageParamsThis(sensor_port, P_DAEMON_EN) & (1 << (offset & 0x1f)));
+				waitFrame(sensor_port,get_imageParamsThis(sensor_port, P_DAEMON_EN) & (1 << (offset & 0x1f)));
+				//wait_event_interruptible(aframepars_wait_queue[sensor_port], get_imageParamsThis(sensor_port, P_DAEMON_EN) & (1 << (offset & 0x1f)));
 				break;
 			default:
 				switch (offset) {
