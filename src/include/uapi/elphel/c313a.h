@@ -1552,6 +1552,9 @@ struct p_names_t {
 
 #define      LSEEK_FSDRAM_RESET   0x01 // re-program FSDRAM (to be programmed again when accessed)
 
+// Videomem/raw image commands
+#define      LSEEK_VIDEOMEM_START 0x10 // setup and start membridge transfer
+
 #define      JPEG_CTRL_MONOCHROME    0x400
 #define      JPEG_CTRL_MONOCHROME_BLOCKED    0x1000
 #define      JPEG_CTRL_NOMOSAIC    0x1000

@@ -46,6 +46,21 @@
 
 #define MEMBRIDGE_CMD_IRQ_EN 0x3
 
+// like in framepars.c
+// lock membridge run
+#undef LOCK_BH_PROCESSPARS
+#define LOCK_BH_FRAMEPARS
+
+#ifdef LOCK_BH_FRAMEPARS
+    #define FLAGS_IBH
+    #define LOCK_IBH(x)   spin_lock_bh(x)
+    #define UNLOCK_IBH(x) spin_unlock_bh(x)
+#else
+    #define FLAGS_IBH     unsigned long flags;
+    #define LOCK_IBH(x)   spin_lock_irqsave(x,flags)
+    #define UNLOCK_IBH(x) spin_unlock_irqrestore(x,flags)
+#endif
+
 static const struct of_device_id elphel393_videomem_of_match[];
 static struct device *g_dev_ptr; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
 wait_queue_head_t videomem_wait_queue;
@@ -87,10 +102,6 @@ static struct elphel_video_buf_t buffer_settings = { ///< some default settings,
 
 static int membridge_sensor_port = 0; // 0..3
 static int membridge_direction = 0; // 0 - from pl to ps, 1 - from ps to pl
-
-// Membridge can be only accessed by a single source - TODO: use this lock
-static bool membridge_lock = false;
-
 static int hardware_initialized = 0;
 
 /** Setup memory bridge system memory */
@@ -662,11 +673,84 @@ u16 get_memchannel_priority(int chn)       ///< Memory channel (0..16). When usi
 /** @brief Videomem buffer private data */
 struct raw_priv_t {
 	int                 minor;                             ///< device file minor number
+	int                 sensor_num;                        ///< sensor number
 	unsigned long       *buf_ptr;                          ///< pointer to raw buffer memory region
 	unsigned long       buf_size;                          ///< circular region size in bytes
     unsigned long       buf_size32;                        ///< circular region size in dwords
 	dma_addr_t          phys_addr;                         ///< physical address of memory region reported by memory driver
 };
+
+int membridge_start(struct file * file){
+
+	struct raw_priv_t * privData = (struct raw_priv_t*) file -> private_data;
+
+	int p_color, p_pf_height;
+	int width_marg, height_marg, width_bursts;
+	int frame_number;
+
+	// no need
+	frame_number = GLOBALPARS(privData->sensor_num,G_THIS_FRAME) & PARS_FRAMES_MASK;
+
+	//calculate things
+
+    //if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+
+    width_marg =  get_imageParamsThis(privData->sensor_num,P_ACTUAL_WIDTH);
+    height_marg = get_imageParamsThis(privData->sensor_num,P_ACTUAL_HEIGHT);
+
+    p_color = get_imageParamsThis(membridge_sensor_port,P_COLOR);
+    p_pf_height = get_imageParamsThis(privData->sensor_num,P_PF_HEIGHT);
+
+    switch(p_color){
+    case COLORMODE_COLOR:
+    case COLORMODE_COLOR20:
+        width_marg += (2 * COLOR_MARGINS);
+        if ((p_pf_height & 0xffff)==0) { // not a photofinish
+            height_marg += (2 * COLOR_MARGINS);
+        }
+        break;
+    }
+    width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+    /** shorter version: */
+    //width_bursts = (width_marg+0xf)>>4;
+
+    setup_membridge_memory(privData->sensor_num, ///< sensor port number (0..3)
+    					   0,                     ///< 0 - from fpga mem to system mem, 1 - otherwise
+						   width_bursts,          ///< 13-bit - in 8*16=128 bit bursts
+						   height_marg,           ///< 16-bit window height (in scan lines)
+						   0,                     ///< 13-bit window left margin in 8-bursts (16 bytes)
+						   0,                     ///< 16-bit window top margin (in scan lines)
+						   0,                     ///< START X ...
+						   0,                     ///< START Y ...
+						   DIRECT,                ///< how to apply commands - directly or through channel sequencer
+						   frame_number);         ///< Frame number the command should be applied to (if not immediate mode)
+
+	// setup membridge system memory - everything is in QW
+	setup_membridge_system_memory(
+			(privData->phys_addr)>>3,
+			(privData->buf_size)>>3,
+			0, // start offset?
+			(width_bursts<<1)*height_marg,
+			(width_bursts<<1)
+			);
+
+
+	control_membridge_memory(membridge_sensor_port,1,DIRECT,frame_number);
+
+	//NOTES:
+
+	//// get this frame number
+    //#define  thisFrameNumber(p)            GLOBALPARS(p,G_THIS_FRAME)                       // Current frame number (may lag from the hardware)
+    //#define  thisCompressorFrameNumber(p)  GLOBALPARS(p,G_COMPRESSOR_FRAME)                 // Current compressed frame number (lags from thisFrameNumber)
+
+	//// wait for certain frame number
+	// wait_event_interruptible(aframepars_wait_queue[sensor_port], getThisFrameNumber(sensor_port) >= target_frame);
+
+	//// get frame sizes
+	//unsigned long get_imageParamsPast(int sensor_port,  int n,  int frame);
+
+	return 0;
+}
 
 /**
  * @brief This function handles read operations for raw files.
@@ -730,9 +814,61 @@ ssize_t vm_read(struct file *file, char *buf, size_t count, loff_t *off)
 // TODO: Implement file operations using membridge for both raw memory access and per-channel image raw (including 16-bit)
 //static int     videomem_open    (struct inode *inode, struct file *filp) {return 0;}
 //static int     videomem_release (struct inode *inode, struct file *filp) {return 0;}
-static loff_t  videomem_lseek   (struct file * file, loff_t offset, int orig) {return 0;}
+//static loff_t  videomem_lseek   (struct file * file, loff_t offset, int orig) {return 0;}
 //static ssize_t videomem_read    (struct file * file, char * buf, size_t count, loff_t *off) {return 0;}
 static ssize_t videomem_write   (struct file * file, const char * buf, size_t count, loff_t *off) {return 0;}
+
+/**
+ * @brief Driver LSEEK  method (and execute commands)
+ * - lseek (SEEK_SET, value) - set absolute frame number
+ * - lseek (SEEK_CUR, value) - set frame number relative to the current frame number (thisFrameNumber),
+ * - lseek (SEEK_CUR, 0)     - (used by ftell()) DOES NOT modify file pointer, returns thisFrameNumber,
+ * - lseek (SEEK_END, value <= 0) - do nothing?, do not modify file pointer
+ * - lseek (SEEK_END, value >  0) - execute commands, do not modify file pointer (and actually use it - frame number the command applies to)
+ * - no commands yet
+ * @param file
+ * @param offset
+ * @param orig SEEK_SET, SEEK_CUR or SEEK_SET END
+ * @return file position (absolute frame number)
+ */
+static loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
+
+	unsigned long target_frame;
+	struct raw_priv_t * privData = (struct raw_priv_t*) file -> private_data;
+	int sensor_port = privData->sensor_num;
+    //sec_usec_t sec_usec;
+    int res;
+
+    pr_debug("(videomem_lseek)  offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port);
+
+	switch (orig) {
+	case SEEK_SET:
+		file->f_pos = offset;
+		break;
+	case SEEK_CUR:
+		if (offset == 0) return getThisFrameNumber(sensor_port);   // do not modify frame number
+		file->f_pos = getThisFrameNumber(sensor_port) + offset;    // modifies frame number, but it is better to use absolute SEEK SET
+		break;
+	case SEEK_END:
+		if (offset <= 0) {
+			file->f_pos = privData->buf_size + offset;
+		} else {
+			switch (offset) {
+				case LSEEK_VIDEOMEM_START:
+					// Check lock here:
+					membridge_start(file);
+					break;
+			}
+		}
+		break;
+	default:
+		return -EINVAL;
+	}
+	// roll-over position
+	//while (file->f_pos < 0) file->f_pos+= circbuf_priv_ptr[chn].buf_size;
+	//while (file->f_pos > circbuf_priv_ptr[chn].buf_size) file->f_pos-= circbuf_priv_ptr[chn].buf_size;
+	return file->f_pos;
+}
 
 /**
  * @brief Process raw buffer file opening.
@@ -743,10 +879,6 @@ static ssize_t videomem_write   (struct file * file, const char * buf, size_t co
 static int videomem_open(struct inode *inode, struct file *filp)
 {
 	struct raw_priv_t *privData;
-
-	int p_color, p_pf_height;
-	int width_marg, height_marg, width_bursts;
-	int frame_number;
 
 	// to enable interrupt
     x393_membridge_ctrl_irq_t membridge_irq_en = {.d32=0};
@@ -782,6 +914,8 @@ static int videomem_open(struct inode *inode, struct file *filp)
 		membridge_sensor_port =  0;
 	}
 
+	privData->sensor_num = membridge_sensor_port;
+
 	switch(privData->minor){
 		case DEV393_MINOR(DEV393_IMAGE_RAW0):
 			privData->buf_ptr = pElphel_buf->raw_chn0_vaddr;
@@ -812,96 +946,8 @@ static int videomem_open(struct inode *inode, struct file *filp)
 
 	privData->buf_size32 = (privData->buf_size)>>2;
 
-	// no need
-	frame_number = GLOBALPARS(membridge_sensor_port,G_THIS_FRAME) & PARS_FRAMES_MASK;
-
-	//calculate things
-
-    //if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-
-    width_marg =  get_imageParamsThis(membridge_sensor_port,P_ACTUAL_WIDTH);
-    height_marg = get_imageParamsThis(membridge_sensor_port,P_ACTUAL_HEIGHT);
-
-    p_color = get_imageParamsThis(membridge_sensor_port,P_COLOR);
-    p_pf_height = get_imageParamsThis(membridge_sensor_port,P_PF_HEIGHT);
-
-    switch(p_color){
-    case COLORMODE_COLOR:
-    case COLORMODE_COLOR20:
-        width_marg += (2 * COLOR_MARGINS);
-        if ((p_pf_height & 0xffff)==0) { // not a photofinish
-            height_marg += (2 * COLOR_MARGINS);
-        }
-        break;
-    }
-    width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
-    /** shorter version: */
-    //width_bursts = (width_marg+0xf)>>4;
-
-    //int setup_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
-    //                         int window_width,     ///< 13-bit - in 8*16=128 bit bursts
-    //                         int window_height,    ///< 16-bit window height (in scan lines)
-    //                         int window_left,      ///< 13-bit window left margin in 8-bursts (16 bytes)
-    //                         int window_top,       ///< 16-bit window top margin (in scan lines)
-    //                         x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
-    //                         int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
-
-    //setup_sensor_memory (sensor_port,       // sensor port number (0..3)
-    //                     width_bursts,      // 13-bit - in 8*16=128 bit bursts
-    //                     height_marg,       // 16-bit window height (in scan lines)
-    //                     0,                 // 13-bit window left margin in 8-bursts (16 bytes)
-    //                     0,                 // 16-bit window top margin (in scan lines)
-    //                     (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
-    //                     frame16);          // Frame number the command should be applied to (if not immediate mode)
-
-    // setup membridge fpga memory
-
-    //int setup_membridge_memory(
-    //		int num_sensor,       ///< sensor port number (0..3)
-    //		int write_direction,  ///< 0 - from fpga mem to system mem, 1 - otherwise
-    //      int window_width,     ///< 13-bit - in 8*16=128 bit bursts
-    //      int window_height,    ///< 16-bit window height (in scan lines)
-    //      int window_left,      ///< 13-bit window left margin in 8-bursts (16 bytes)
-    //      int window_top,       ///< 16-bit window top margin (in scan lines)
-    //      int start_x,          ///< START X ...
-    //		int start_y,          ///< START Y ...
-    //      x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
-    //      int frame16)          ///< Frame number the command should be applied to (if not immediate mode)
-
-    setup_membridge_memory(membridge_sensor_port, ///< sensor port number (0..3)
-    					   0,                     ///< 0 - from fpga mem to system mem, 1 - otherwise
-						   width_bursts,          ///< 13-bit - in 8*16=128 bit bursts
-						   height_marg,           ///< 16-bit window height (in scan lines)
-						   0,                     ///< 13-bit window left margin in 8-bursts (16 bytes)
-						   0,                     ///< 16-bit window top margin (in scan lines)
-						   0,                     ///< START X ...
-						   0,                     ///< START Y ...
-						   DIRECT,                ///< how to apply commands - directly or through channel sequencer
-						   frame_number);         ///< Frame number the command should be applied to (if not immediate mode)
-
-	// setup membridge system memory - everything is in QW
-	setup_membridge_system_memory(
-			(privData->phys_addr)>>3,
-			(privData->buf_size)>>3,
-			0, // start offset?
-			(width_bursts<<1)*height_marg,
-			(width_bursts<<1)
-			);
-
-
-	control_membridge_memory(membridge_sensor_port,1,DIRECT,frame_number);
-
-	//NOTES:
-
-	//// get this frame number
-    //#define  thisFrameNumber(p)            GLOBALPARS(p,G_THIS_FRAME)                       // Current frame number (may lag from the hardware)
-    //#define  thisCompressorFrameNumber(p)  GLOBALPARS(p,G_COMPRESSOR_FRAME)                 // Current compressed frame number (lags from thisFrameNumber)
-
-	//// wait for certain frame number
-	// wait_event_interruptible(aframepars_wait_queue[sensor_port], getThisFrameNumber(sensor_port) >= target_frame);
-
-	//// get frame sizes
-	//unsigned long get_imageParamsPast(int sensor_port,  int n,  int frame);
+	// TODO: remove once lseek is tested
+	membridge_start(filp);
 
 	return 0;
 }
