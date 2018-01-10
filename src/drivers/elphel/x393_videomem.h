@@ -38,5 +38,3 @@ int frames_in_buffer_minus_one (int num_sensor);
 void memchan_enable            (int chn, int enable);
 void set_memchannel_priority   (int chn, u16 priority);
 u16 get_memchannel_priority    (int chn);
-
-loff_t videomem_lseek (struct file * file, loff_t offset, int orig);
