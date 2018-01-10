@@ -1574,7 +1574,7 @@ int setFramePars(int sensor_port,                     ///< sensor port number (0
  * @param frame_num target frame
  * @return 0
  */
-int waitFrame(int sensor_port, int frame_num){
+int waitFrame(int sensor_port, unsigned long frame_num){
 	wait_event_interruptible(aframepars_wait_queue[sensor_port], getThisFrameNumber(sensor_port) >= frame_num);
 	return 0;
 }

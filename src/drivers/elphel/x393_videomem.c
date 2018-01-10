@@ -25,6 +25,7 @@
 
 #include <linux/errno.h>
 #include <linux/fs.h>
+//#include <linux/spinlock.h>
 
 #include <asm/uaccess.h>
 
@@ -33,6 +34,7 @@
 #include "pgm_functions.h"
 #include "x393_videomem.h"
 #include "x393_fpga_functions.h"
+#include "framepars.h"
 
 #include <uapi/elphel/c313a.h>
 #include <uapi/elphel/x393_devices.h>
@@ -63,8 +65,11 @@
 
 static const struct of_device_id elphel393_videomem_of_match[];
 static struct device *g_dev_ptr; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
+
 wait_queue_head_t videomem_wait_queue;
-static DEFINE_SPINLOCK(lock); // for read-modify-write channel enable
+
+static DEFINE_SPINLOCK(lock);             ///< for read-modify-write channel enable
+static DEFINE_SPINLOCK(membridge_lock);   ///< to lock membridge, unlock on membridge_done interrupt
 
 /**
  * VIDEOMEM_RAW & IMAGE_RAW are for debug memory access.
@@ -688,6 +693,12 @@ int membridge_start(struct file * file){
 	int width_marg, height_marg, width_bursts;
 	int frame_number;
 
+	x393_status_membridge_t status = x393_membridge_status();
+
+	if (status.busy) {
+		return -EBUSY;
+	}
+
 	// no need
 	frame_number = GLOBALPARS(privData->sensor_num,G_THIS_FRAME) & PARS_FRAMES_MASK;
 
@@ -736,6 +747,12 @@ int membridge_start(struct file * file){
 
 
 	control_membridge_memory(membridge_sensor_port,1,DIRECT,frame_number);
+
+	// timeout exit?
+	while(true){
+		status = x393_membridge_status();
+		if (!status.busy) break;
+	}
 
 	//NOTES:
 
@@ -816,7 +833,7 @@ ssize_t vm_read(struct file *file, char *buf, size_t count, loff_t *off)
 //static int     videomem_release (struct inode *inode, struct file *filp) {return 0;}
 //static loff_t  videomem_lseek   (struct file * file, loff_t offset, int orig) {return 0;}
 //static ssize_t videomem_read    (struct file * file, char * buf, size_t count, loff_t *off) {return 0;}
-static ssize_t videomem_write   (struct file * file, const char * buf, size_t count, loff_t *off) {return 0;}
+ssize_t videomem_write   (struct file * file, const char * buf, size_t count, loff_t *off) {return 0;}
 
 /**
  * @brief Driver LSEEK  method (and execute commands)
@@ -831,15 +848,15 @@ static ssize_t videomem_write   (struct file * file, const char * buf, size_t co
  * @param orig SEEK_SET, SEEK_CUR or SEEK_SET END
  * @return file position (absolute frame number)
  */
-static loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
-
+loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
+	FLAGS_IBH;
 	unsigned long target_frame;
 	struct raw_priv_t * privData = (struct raw_priv_t*) file -> private_data;
 	int sensor_port = privData->sensor_num;
     //sec_usec_t sec_usec;
     int res;
 
-    pr_debug("(videomem_lseek)  offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port);
+    pr_debug("(videomem_lseek) offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port);
 
 	switch (orig) {
 	case SEEK_SET:
@@ -850,15 +867,38 @@ static loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
 		file->f_pos = getThisFrameNumber(sensor_port) + offset;    // modifies frame number, but it is better to use absolute SEEK SET
 		break;
 	case SEEK_END:
+
 		if (offset <= 0) {
+			// ?
 			file->f_pos = privData->buf_size + offset;
+			break;
 		} else {
+
+			// wait for a frame here (1 action at a time)
+			if (offset >= LSEEK_FRAME_WAIT_REL) {
+				if (offset >= LSEEK_FRAME_WAIT_ABS){
+					target_frame = offset - LSEEK_FRAME_WAIT_ABS;       // Wait for absolute frame number
+				}else{
+					target_frame = getThisFrameNumber(sensor_port) + offset - LSEEK_FRAME_WAIT_REL;
+				}
+				pr_debug("(videomem_lseek) waiting for frame: %d\n",target_frame);
+				// wait for frame then continue
+				waitFrame(sensor_port,target_frame);
+
+				return getThisFrameNumber(sensor_port);
+			}
+
+			// setup and run copying through membridge (1 action at a time)
 			switch (offset) {
 				case LSEEK_VIDEOMEM_START:
 					// Check lock here:
-					membridge_start(file);
+					LOCK_IBH(&membridge_lock);
+					res = membridge_start(file);
+					UNLOCK_IBH(&membridge_lock);
+					if (res<0) return res;
 					break;
 			}
+
 		}
 		break;
 	default:
@@ -876,7 +916,7 @@ static loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
  * @param[in]   filp
  * @return      Always 0.
  */
-static int videomem_open(struct inode *inode, struct file *filp)
+int videomem_open(struct inode *inode, struct file *filp)
 {
 	struct raw_priv_t *privData;
 
@@ -958,7 +998,7 @@ static int videomem_open(struct inode *inode, struct file *filp)
  * @param[in]   filp
  * @return      0
  */
-static int videomem_release(struct inode *inode, struct file *filp)
+int videomem_release(struct inode *inode, struct file *filp)
 {
 	pr_debug("VIDEOMEM_RELEASE\n");
 

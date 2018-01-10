@@ -39,7 +39,7 @@ void          updateFramePars     (int sensor_port, int frame16);
 int           setFrameParStatic   (int sensor_port, unsigned long index, unsigned long val);
 int           setFrameParsStatic  (int sensor_port, int numPars, struct frameparspair_t * pars);
 
-int           waitFrame(int sensor_port, int frame_num);
+int           waitFrame(int sensor_port, unsigned long frame_num);
 
 unsigned long getThisFrameNumber  (int sensor_port); /// just return current thisFrameNumber
 /// set parameters for the frame number frameno, knowing that they should be set not less than maxLatency ahead (may be sensor - dependent)
