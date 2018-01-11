@@ -676,7 +676,7 @@ static inline int membridge_is_busy(void){
 
 int membridge_start(int sensor_port, unsigned long target_frame){
 
-	int p_color, p_pf_height;
+	//int p_color, p_pf_height;
 	int width_marg, height_marg, width_bursts;
 
 	dma_addr_t     phys_addr;
@@ -723,9 +723,10 @@ int membridge_start(int sensor_port, unsigned long target_frame){
     width_marg =  get_imageParamsThis(sensor_port,P_ACTUAL_WIDTH);
     height_marg = get_imageParamsThis(sensor_port,P_ACTUAL_HEIGHT);
 
-    p_color = get_imageParamsThis(sensor_port,P_COLOR);
-    p_pf_height = get_imageParamsThis(sensor_port,P_PF_HEIGHT);
+    //p_color = get_imageParamsThis(sensor_port,P_COLOR);
+    //p_pf_height = get_imageParamsThis(sensor_port,P_PF_HEIGHT);
 
+    /*
     switch(p_color){
         case COLORMODE_COLOR:
         case COLORMODE_COLOR20:
@@ -735,6 +736,7 @@ int membridge_start(int sensor_port, unsigned long target_frame){
             }
             break;
         }
+     */
      width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
 
      setup_membridge_memory(sensor_port, ///< sensor port number (0..3)
