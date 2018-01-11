@@ -48,21 +48,6 @@
 
 #define MEMBRIDGE_CMD_IRQ_EN 0x3
 
-// like in framepars.c
-// lock membridge run
-#undef LOCK_BH_PROCESSPARS
-#define LOCK_BH_FRAMEPARS
-
-#ifdef LOCK_BH_FRAMEPARS
-    #define FLAGS_IBH
-    #define LOCK_IBH(x)   spin_lock_bh(x)
-    #define UNLOCK_IBH(x) spin_unlock_bh(x)
-#else
-    #define FLAGS_IBH     unsigned long flags;
-    #define LOCK_IBH(x)   spin_lock_irqsave(x,flags)
-    #define UNLOCK_IBH(x) spin_unlock_irqrestore(x,flags)
-#endif
-
 static const struct of_device_id elphel393_videomem_of_match[];
 static struct device *g_dev_ptr; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
 
@@ -70,6 +55,8 @@ wait_queue_head_t videomem_wait_queue;
 
 static DEFINE_SPINLOCK(lock);             ///< for read-modify-write channel enable
 static DEFINE_SPINLOCK(membridge_lock);   ///< to lock membridge, unlock on membridge_done interrupt
+
+static int membridge_locked = 0;
 
 /**
  * VIDEOMEM_RAW & IMAGE_RAW are for debug memory access.
@@ -685,7 +672,7 @@ struct raw_priv_t {
 	dma_addr_t          phys_addr;                         ///< physical address of memory region reported by memory driver
 };
 
-static inline int membridge_is_busy(){
+static inline int membridge_is_busy(void){
 	x393_status_membridge_t status = x393_membridge_status();
 	return status.busy;
 }
@@ -699,6 +686,15 @@ int membridge_start(struct file * file){
 	int frame_number;
 
 	x393_status_membridge_t status;
+
+	spin_lock(&membridge_lock);
+	if (membridge_locked==0){
+		membridge_locked=1;
+	}else{
+		spin_unlock(&membridge_lock);
+		return -EBUSY;
+	}
+	spin_unlock(&membridge_lock);
 
 	// no need
 	frame_number = GLOBALPARS(privData->sensor_num,G_THIS_FRAME) & PARS_FRAMES_MASK;
@@ -838,7 +834,7 @@ ssize_t videomem_write   (struct file * file, const char * buf, size_t count, lo
  * @return file position (absolute frame number)
  */
 loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
-	FLAGS_IBH;
+
 	unsigned long target_frame;
 	struct raw_priv_t * privData = (struct raw_priv_t*) file -> private_data;
 	int sensor_port = privData->sensor_num;
@@ -873,9 +869,7 @@ loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
 				return -EBUSY;
 			}
 
-			LOCK_IBH(&membridge_lock);
 			res = membridge_start(file);
-			UNLOCK_IBH(&membridge_lock);
 			if (res<0) return res;
 
 		}
@@ -1055,6 +1049,7 @@ static irqreturn_t videomem_irq_handler(int irq,       ///< [in]   irq   interru
     //TODO: Do what is needed here
     pr_info("Wake up, videomem interrupt received!!!\n");
     x393_membridge_ctrl_irq(ctrl_interrupts); // reset interrupt
+    membridge_locked = 0;
     wake_up_interruptible(&videomem_wait_queue);
     return IRQ_HANDLED;
 }
