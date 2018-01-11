@@ -685,6 +685,11 @@ struct raw_priv_t {
 	dma_addr_t          phys_addr;                         ///< physical address of memory region reported by memory driver
 };
 
+static inline int membridge_is_busy(){
+	x393_status_membridge_t status = x393_membridge_status();
+	return status.busy;
+}
+
 int membridge_start(struct file * file){
 
 	struct raw_priv_t * privData = (struct raw_priv_t*) file -> private_data;
@@ -693,11 +698,7 @@ int membridge_start(struct file * file){
 	int width_marg, height_marg, width_bursts;
 	int frame_number;
 
-	x393_status_membridge_t status = x393_membridge_status();
-
-	if (status.busy) {
-		return -EBUSY;
-	}
+	x393_status_membridge_t status;
 
 	// no need
 	frame_number = GLOBALPARS(privData->sensor_num,G_THIS_FRAME) & PARS_FRAMES_MASK;
@@ -748,11 +749,22 @@ int membridge_start(struct file * file){
 
 	control_membridge_memory(membridge_sensor_port,1,DIRECT,frame_number);
 
+	status = x393_membridge_status();
+	pr_debug("membridge status is %d\n",status.busy);
+
+	/*
 	// timeout exit?
 	while(true){
 		status = x393_membridge_status();
 		if (!status.busy) break;
 	}
+	*/
+
+	wait_event_interruptible(videomem_wait_queue, membridge_is_busy()==0);
+
+	status = x393_membridge_status();
+	pr_debug("membridge status is %d\n",status.busy);
+
 
 	//NOTES:
 
@@ -832,6 +844,7 @@ loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
 	int sensor_port = privData->sensor_num;
     //sec_usec_t sec_usec;
     int res;
+    x393_status_membridge_t status;
 
     pr_debug("(videomem_lseek) offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port);
 
@@ -851,30 +864,19 @@ loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
 			break;
 		} else {
 
-			// wait for a frame here (1 action at a time)
-			if (offset >= LSEEK_FRAME_WAIT_REL) {
-				if (offset >= LSEEK_FRAME_WAIT_ABS){
-					target_frame = offset - LSEEK_FRAME_WAIT_ABS;       // Wait for absolute frame number
-				}else{
-					target_frame = getThisFrameNumber(sensor_port) + offset - LSEEK_FRAME_WAIT_REL;
-				}
-				pr_debug("(videomem_lseek) waiting for frame: %d\n",target_frame);
-				// wait for frame then continue
-				waitFrame(sensor_port,target_frame);
+			target_frame = offset;
+			waitFrame(sensor_port,target_frame);
 
-				return getThisFrameNumber(sensor_port);
+			status = x393_membridge_status();
+
+			if (status.busy) {
+				return -EBUSY;
 			}
 
-			// setup and run copying through membridge (1 action at a time)
-			switch (offset) {
-				case LSEEK_VIDEOMEM_START:
-					// Check lock here:
-					LOCK_IBH(&membridge_lock);
-					res = membridge_start(file);
-					UNLOCK_IBH(&membridge_lock);
-					if (res<0) return res;
-					break;
-			}
+			LOCK_IBH(&membridge_lock);
+			res = membridge_start(file);
+			UNLOCK_IBH(&membridge_lock);
+			if (res<0) return res;
 
 		}
 		break;
@@ -1052,7 +1054,6 @@ static irqreturn_t videomem_irq_handler(int irq,       ///< [in]   irq   interru
 
     //TODO: Do what is needed here
     pr_info("Wake up, videomem interrupt received!!!\n");
-
     x393_membridge_ctrl_irq(ctrl_interrupts); // reset interrupt
     wake_up_interruptible(&videomem_wait_queue);
     return IRQ_HANDLED;
@@ -1280,7 +1281,7 @@ static int videomem_probe(struct platform_device *pdev)
             videomem_irq_handler,
             0, // no flags
             "membridge_irq",
-            NULL)) {
+			NULL)) {
         dev_err(dev, "can not allocate interrupts for %s\n","membridge_irq");
         return -EBUSY;
     }
