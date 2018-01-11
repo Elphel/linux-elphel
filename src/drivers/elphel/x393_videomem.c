@@ -801,29 +801,6 @@ ssize_t vm_read(struct file *file, char *buf, size_t count, loff_t *off)
 	return count;
 }
 
-/*
-// raw channel 0 (in Coherent DMA buffer)
-.raw_chn0_vaddr = NULL,
-.raw_chn0_paddr = 0,
-.raw_chn0_size = 8192,
-
-// raw channel 1 (in Coherent DMA buffer)
-.raw_chn1_vaddr = NULL,
-.raw_chn1_paddr = 0,
-.raw_chn1_size = 0,
-
-// raw channel 2 (in Coherent DMA buffer)
-.raw_chn2_vaddr = NULL,
-.raw_chn2_paddr = 0,
-.raw_chn2_size = 0,
-
-// raw channel 3 (in Coherent DMA buffer)
-.raw_chn3_vaddr = NULL,
-.raw_chn3_paddr = 0,
-.raw_chn3_size = 0
-*/
-//struct elphel_buf_t *pElphel_buf;
-
 // 16MB = 4096 pages
 // 32MB = 8192 pages
 // TODO: don't forget to reset to default value after testing
@@ -993,6 +970,51 @@ int videomem_open(struct inode *inode, struct file *filp)
 }
 
 /**
+ * @brief Process read operation on raw buffer file
+ * @param[in]   file   pointer to file structure corresponding to the circular buffer file
+ * @param[out]  buf    pointer to user buffer where the data should be placed
+ * @param[in]   count  the size of requested data transfer
+ * @param[in]   off    file position the user is accessing
+ * @return      The number of bytes copied or negative error code.
+ */
+ssize_t videomem_read(struct file *file, char *buf, size_t count, loff_t *off)
+{
+	//unsigned int minor = MINOR(file->f_inode->i_rdev);
+	return vm_read(file, buf, count, off);
+}
+
+/**
+ * @brief Process memory map operation on videomem buffer file.
+ * @param[in]   file   pointer to file structure corresponding to the videomem buffer file
+ * @param[in]   vma    contains the information about the virtual address range
+ * @return      0 if file was mapped successfully and negative error code otherwise
+ */
+int videomem_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	int ret;
+	struct raw_priv_t * privData = (struct raw_priv_t*) file -> private_data;
+	unsigned int chn = privData->sensor_num;
+
+	dev_dbg(g_dev_ptr, "vm_start = 0x%lx\n", vma->vm_start);
+	dev_dbg(g_dev_ptr, "vm_end = 0x%lx\n", vma->vm_end);
+	dev_dbg(g_dev_ptr, "vm_pgoff = 0x%lx\n", vma->vm_pgoff);
+	dev_dbg(g_dev_ptr, "vm_file = 0x%lx\n", (unsigned long)vma->vm_file);
+	dev_dbg(g_dev_ptr, "videomem_buffer_phys_addr = 0x%lx\n", (unsigned long)privData->phys_addr);
+
+	/* remap_pfn_range will mark the range VM_IO and VM_RESERVED */
+	ret = remap_pfn_range(vma,
+			vma->vm_start,
+			privData->phys_addr >> PAGE_SHIFT,
+			vma->vm_end - vma->vm_start,
+			vma->vm_page_prot);
+
+	pr_debug("remap_pfn_range returned 0x%x\n", ret);
+	if (ret) return -EAGAIN;
+
+	return 0;
+}
+
+/**
  * @brief Process raw buffer file closing
  * @param[in]   inode
  * @param[in]   filp
@@ -1009,26 +1031,13 @@ int videomem_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-/**
- * @brief Process read operation on raw buffer file
- * @param[in]   file   pointer to file structure corresponding to the circular buffer file
- * @param[out]  buf    pointer to user buffer where the data should be placed
- * @param[in]   count  the size of requested data transfer
- * @param[in]   off    file position the user is accessing
- * @return      The number of bytes copied or negative error code.
- */
-ssize_t videomem_read(struct file *file, char *buf, size_t count, loff_t *off)
-{
-	//unsigned int minor = MINOR(file->f_inode->i_rdev);
-	return vm_read(file, buf, count, off);
-}
-
 static struct file_operations videomem_fops = {
         owner:    THIS_MODULE,
         open:     videomem_open,
         release:  videomem_release,
         llseek:   videomem_lseek,
         read:     videomem_read,
+		mmap:     videomem_mmap,
         write:    videomem_write
 };
 
