@@ -92,7 +92,6 @@ static struct elphel_video_buf_t buffer_settings = { ///< some default settings,
         .frames_in_buffer = {         2,          2,          2,          2}  /* Number of frames in channel 3 buffer */
 };
 
-static int membridge_sensor_port = 0; // 0..3
 static int membridge_direction = 0; // 0 - from pl to ps, 1 - from ps to pl
 static int hardware_initialized = 0;
 
@@ -105,6 +104,12 @@ int setup_membridge_system_memory(
 		int width64)   ///< Frame width in QWORDs (last xfer in each line may be partial)
 {
 
+	u29_t lo_addr = {.d32=0};
+	u29_t size =    {.d32=0};
+	u29_t start =   {.d32=0};
+	u29_t len =     {.d32=0};
+	u29_t width =   {.d32=0};
+
 	// no need to wait for anything
 	pr_debug("setup_membridge_system_memory: lo_addr64=0x%08x  size64=0x%08x  start64=0x%08x  len64=0x%08x  width64=0x%08x\n",
 			lo_addr64,
@@ -112,12 +117,6 @@ int setup_membridge_system_memory(
 			start64,
 			len64,
 			width64);
-
-	u29_t lo_addr = {.d32=0};
-	u29_t size =    {.d32=0};
-	u29_t start =   {.d32=0};
-	u29_t len =     {.d32=0};
-	u29_t width =   {.d32=0};
 
 	lo_addr.addr64 = lo_addr64;
 	size.addr64    = size64;
@@ -664,11 +663,9 @@ u16 get_memchannel_priority(int chn)       ///< Memory channel (0..16). When usi
 
 /** @brief Videomem buffer private data */
 struct raw_priv_t {
-	int                 minor;                             ///< device file minor number
-	int                 sensor_num;                        ///< sensor number
+	int                 sensor_port;                       ///< sensor number
 	unsigned long       *buf_ptr;                          ///< pointer to raw buffer memory region
 	unsigned long       buf_size;                          ///< circular region size in bytes
-    unsigned long       buf_size32;                        ///< circular region size in dwords
 	dma_addr_t          phys_addr;                         ///< physical address of memory region reported by memory driver
 };
 
@@ -677,15 +674,42 @@ static inline int membridge_is_busy(void){
 	return status.busy;
 }
 
-int membridge_start(struct file * file){
-
-	struct raw_priv_t * privData = (struct raw_priv_t*) file -> private_data;
+int membridge_start(int sensor_port, unsigned long target_frame){
 
 	int p_color, p_pf_height;
 	int width_marg, height_marg, width_bursts;
-	int frame_number;
+
+	dma_addr_t     phys_addr;
+	unsigned long  buf_size;
 
 	x393_status_membridge_t status;
+
+	// wait for target frame here
+	waitFrame(sensor_port,target_frame);
+
+	// update sizes (local vars)
+	switch(sensor_port){
+		case 0:
+			phys_addr = pElphel_buf->raw_chn0_paddr;
+			buf_size = pElphel_buf->raw_chn0_size*PAGE_SIZE;
+			break;
+		case 1:
+			phys_addr = pElphel_buf->raw_chn1_paddr;
+			buf_size = pElphel_buf->raw_chn1_size*PAGE_SIZE;
+			break;
+		case 2:
+			phys_addr = pElphel_buf->raw_chn2_paddr;
+			buf_size = pElphel_buf->raw_chn2_size*PAGE_SIZE;
+			break;
+		case 3:
+			phys_addr = pElphel_buf->raw_chn3_paddr;
+			buf_size = pElphel_buf->raw_chn3_size*PAGE_SIZE;
+			break;
+		default:
+			// temporary
+			phys_addr = pElphel_buf->raw_chn0_paddr;
+			buf_size = pElphel_buf->raw_chn0_size*PAGE_SIZE;
+	}
 
 	spin_lock(&membridge_lock);
 	if (membridge_locked==0){
@@ -696,54 +720,44 @@ int membridge_start(struct file * file){
 	}
 	spin_unlock(&membridge_lock);
 
-	// no need
-	frame_number = GLOBALPARS(privData->sensor_num,G_THIS_FRAME) & PARS_FRAMES_MASK;
+    width_marg =  get_imageParamsThis(sensor_port,P_ACTUAL_WIDTH);
+    height_marg = get_imageParamsThis(sensor_port,P_ACTUAL_HEIGHT);
 
-	//calculate things
-
-    //if (frame16 >= PARS_FRAMES) return -1; // wrong frame
-
-    width_marg =  get_imageParamsThis(privData->sensor_num,P_ACTUAL_WIDTH);
-    height_marg = get_imageParamsThis(privData->sensor_num,P_ACTUAL_HEIGHT);
-
-    p_color = get_imageParamsThis(membridge_sensor_port,P_COLOR);
-    p_pf_height = get_imageParamsThis(privData->sensor_num,P_PF_HEIGHT);
+    p_color = get_imageParamsThis(sensor_port,P_COLOR);
+    p_pf_height = get_imageParamsThis(sensor_port,P_PF_HEIGHT);
 
     switch(p_color){
-    case COLORMODE_COLOR:
-    case COLORMODE_COLOR20:
-        width_marg += (2 * COLOR_MARGINS);
-        if ((p_pf_height & 0xffff)==0) { // not a photofinish
-            height_marg += (2 * COLOR_MARGINS);
+        case COLORMODE_COLOR:
+        case COLORMODE_COLOR20:
+            width_marg += (2 * COLOR_MARGINS);
+            if ((p_pf_height & 0xffff)==0) { // not a photofinish
+                height_marg += (2 * COLOR_MARGINS);
+            }
+            break;
         }
-        break;
-    }
-    width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
-    /** shorter version: */
-    //width_bursts = (width_marg+0xf)>>4;
+     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
 
-    setup_membridge_memory(privData->sensor_num, ///< sensor port number (0..3)
-    					   0,                     ///< 0 - from fpga mem to system mem, 1 - otherwise
-						   width_bursts,          ///< 13-bit - in 8*16=128 bit bursts
-						   height_marg,           ///< 16-bit window height (in scan lines)
-						   0,                     ///< 13-bit window left margin in 8-bursts (16 bytes)
-						   0,                     ///< 16-bit window top margin (in scan lines)
-						   0,                     ///< START X ...
-						   0,                     ///< START Y ...
-						   DIRECT,                ///< how to apply commands - directly or through channel sequencer
-						   frame_number);         ///< Frame number the command should be applied to (if not immediate mode)
+     setup_membridge_memory(sensor_port, ///< sensor port number (0..3)
+     					   0,                     ///< 0 - from fpga mem to system mem, 1 - otherwise
+ 						   width_bursts,          ///< 13-bit - in 8*16=128 bit bursts
+ 						   height_marg,           ///< 16-bit window height (in scan lines)
+ 						   0,                     ///< 13-bit window left margin in 8-bursts (16 bytes)
+ 						   0,                     ///< 16-bit window top margin (in scan lines)
+ 						   0,                     ///< START X ...
+ 						   0,                     ///< START Y ...
+ 						   DIRECT,                ///< how to apply commands - directly or through channel sequencer
+ 						   target_frame);         ///< Frame number the command should be applied to (if not immediate mode)
 
-	// setup membridge system memory - everything is in QW
-	setup_membridge_system_memory(
-			(privData->phys_addr)>>3,
-			(privData->buf_size)>>3,
-			0, // start offset?
-			(width_bursts<<1)*height_marg,
-			(width_bursts<<1)
-			);
+ 	// setup membridge system memory - everything is in QW
+ 	setup_membridge_system_memory(
+ 			phys_addr>>3,
+ 			buf_size>>3,
+ 			0, // start offset?
+ 			(width_bursts<<1)*height_marg,
+ 			(width_bursts<<1)
+ 			);
 
-
-	control_membridge_memory(membridge_sensor_port,1,DIRECT,frame_number);
+	control_membridge_memory(sensor_port,1,DIRECT,target_frame);
 
 	status = x393_membridge_status();
 	pr_debug("membridge status is %d\n",status.busy);
@@ -774,7 +788,7 @@ int membridge_start(struct file * file){
 	//// get frame sizes
 	//unsigned long get_imageParamsPast(int sensor_port,  int n,  int frame);
 
-	return 0;
+     return 0;
 }
 
 /**
@@ -837,10 +851,9 @@ loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
 
 	unsigned long target_frame;
 	struct raw_priv_t * privData = (struct raw_priv_t*) file -> private_data;
-	int sensor_port = privData->sensor_num;
+	int sensor_port = privData->sensor_port;
     //sec_usec_t sec_usec;
     int res;
-    x393_status_membridge_t status;
 
     pr_debug("(videomem_lseek) offset=0x%x, orig=0x%x, sensor_port = %d\n", (int)offset, (int)orig, sensor_port);
 
@@ -861,15 +874,7 @@ loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
 		} else {
 
 			target_frame = offset;
-			waitFrame(sensor_port,target_frame);
-
-			status = x393_membridge_status();
-
-			if (status.busy) {
-				return -EBUSY;
-			}
-
-			res = membridge_start(file);
+			res = membridge_start(sensor_port,target_frame);
 			if (res<0) return res;
 
 		}
@@ -892,6 +897,9 @@ loff_t  videomem_lseek(struct file * file, loff_t offset, int orig){
 int videomem_open(struct inode *inode, struct file *filp)
 {
 	struct raw_priv_t *privData;
+
+	int minor;
+	int sensor_port;
 
 	// to enable interrupt
     x393_membridge_ctrl_irq_t membridge_irq_en = {.d32=0};
@@ -918,18 +926,18 @@ int videomem_open(struct inode *inode, struct file *filp)
 	}
 	filp->private_data = privData;
 
-	privData->minor = MINOR(inode->i_rdev);
+	minor = MINOR(inode->i_rdev);
 
-	membridge_sensor_port = privData->minor - DEV393_MINOR(DEV393_IMAGE_RAW0);
+	sensor_port = minor - DEV393_MINOR(DEV393_IMAGE_RAW0);
 
 	// temporary
-	if (membridge_sensor_port < 0){
-		membridge_sensor_port =  0;
+	if (sensor_port < 0){
+		sensor_port =  0;
 	}
 
-	privData->sensor_num = membridge_sensor_port;
+	privData->sensor_port = sensor_port;
 
-	switch(privData->minor){
+	switch(minor){
 		case DEV393_MINOR(DEV393_IMAGE_RAW0):
 			privData->buf_ptr = pElphel_buf->raw_chn0_vaddr;
 			privData->phys_addr = pElphel_buf->raw_chn0_paddr;
@@ -957,10 +965,8 @@ int videomem_open(struct inode *inode, struct file *filp)
 			privData->buf_size = pElphel_buf->raw_chn0_size*PAGE_SIZE;
 	}
 
-	privData->buf_size32 = (privData->buf_size)>>2;
-
 	// TODO: remove once lseek is tested
-	membridge_start(filp);
+	//membridge_start(sensor_port,0);
 
 	return 0;
 }
@@ -989,7 +995,6 @@ int videomem_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	int ret;
 	struct raw_priv_t * privData = (struct raw_priv_t*) file -> private_data;
-	unsigned int chn = privData->sensor_num;
 
 	dev_dbg(g_dev_ptr, "vm_start = 0x%lx\n", vma->vm_start);
 	dev_dbg(g_dev_ptr, "vm_end = 0x%lx\n", vma->vm_end);
@@ -1084,10 +1089,6 @@ static ssize_t show_frames_in_buffer(struct device *dev, struct device_attribute
 {
     return sprintf(buf,"0x%x\n", buffer_settings.frames_in_buffer[get_channel_from_name(attr)]);
 }
-static ssize_t get_num_sensor(struct device *dev, struct device_attribute *attr, char *buf)
-{
-    return sprintf(buf,"%d\n", membridge_sensor_port);
-}
 
 static ssize_t get_membridge_status(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -1116,12 +1117,6 @@ static ssize_t store_frames_in_buffer(struct device *dev, struct device_attribut
     return count;
 }
 
-static ssize_t set_num_sensor(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-    sscanf(buf, "%i", &membridge_sensor_port);
-    return count;
-}
-
 static ssize_t set_membridge_status_reg(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int in;
@@ -1135,6 +1130,41 @@ static ssize_t set_membridge_status_reg(struct device *dev, struct device_attrib
     return count;
 }
 
+static ssize_t set_membridge0(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int sensor_port = 0;
+	unsigned long target_frame;
+	sscanf(buf, "%lu", &target_frame);
+	membridge_start(sensor_port,target_frame);
+    return count;
+}
+
+static ssize_t set_membridge1(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int sensor_port = 1;
+	unsigned long target_frame;
+	sscanf(buf, "%lu", &target_frame);
+	membridge_start(sensor_port,target_frame);
+    return count;
+}
+
+static ssize_t set_membridge2(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int sensor_port = 2;
+	unsigned long target_frame;
+	sscanf(buf, "%lu", &target_frame);
+	membridge_start(sensor_port,target_frame);
+    return count;
+}
+
+static ssize_t set_membridge3(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int sensor_port = 3;
+	unsigned long target_frame;
+	sscanf(buf, "%lu", &target_frame);
+	membridge_start(sensor_port,target_frame);
+    return count;
+}
 
 static DEVICE_ATTR(frame_start0,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
 static DEVICE_ATTR(frame_start1,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
@@ -1152,11 +1182,12 @@ static DEVICE_ATTR(frames_in_buffer0,          SYSFS_PERMISSIONS,     show_frame
 static DEVICE_ATTR(frames_in_buffer1,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
 static DEVICE_ATTR(frames_in_buffer2,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
 static DEVICE_ATTR(frames_in_buffer3,          SYSFS_PERMISSIONS,     show_frames_in_buffer,           store_frames_in_buffer);
-static DEVICE_ATTR(membridge_status,           SYSFS_PERMISSIONS,     get_membridge_status,            set_membridge_status_reg);
 
-// selected sensor channel == port
-// TODO: switch to multiple device files and remove this
-static DEVICE_ATTR(channel,                    SYSFS_PERMISSIONS,     get_num_sensor,           set_num_sensor);
+static DEVICE_ATTR(membridge_status,           SYSFS_PERMISSIONS,     get_membridge_status,            set_membridge_status_reg);
+static DEVICE_ATTR(membridge_start0,           SYSFS_PERMISSIONS,     NULL,            set_membridge0);
+static DEVICE_ATTR(membridge_start1,           SYSFS_PERMISSIONS,     NULL,            set_membridge1);
+static DEVICE_ATTR(membridge_start2,           SYSFS_PERMISSIONS,     NULL,            set_membridge2);
+static DEVICE_ATTR(membridge_start3,           SYSFS_PERMISSIONS,     NULL,            set_membridge3);
 
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_frame_start0.attr,
@@ -1175,7 +1206,10 @@ static struct attribute *root_dev_attrs[] = {
         &dev_attr_frames_in_buffer1.attr,
         &dev_attr_frames_in_buffer2.attr,
         &dev_attr_frames_in_buffer3.attr,
-		&dev_attr_channel.attr,
+		&dev_attr_membridge_start0.attr,
+		&dev_attr_membridge_start1.attr,
+		&dev_attr_membridge_start2.attr,
+		&dev_attr_membridge_start3.attr,
 		&dev_attr_membridge_status.attr,
         NULL
 };
