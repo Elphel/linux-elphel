@@ -14,7 +14,7 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
-//#define DEBUG
+#define DEBUG
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
@@ -694,6 +694,23 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 
 	x393_status_membridge_t status;
 
+	// to enable interrupt
+    x393_membridge_ctrl_irq_t membridge_irq_en = {.d32=0};
+	membridge_irq_en.interrupt_cmd = MEMBRIDGE_CMD_IRQ_EN;
+
+	// check fpga
+	if (!is_fpga_programmed()){
+		pr_err("*** Attempted to access hardware without bitsteram ***\n");
+	    return - ENODEV;
+	}
+
+	// extra variable
+	if (!hardware_initialized){
+	    // enable interrupt
+	    x393_membridge_ctrl_irq(membridge_irq_en);
+	    hardware_initialized = 1;
+	}
+
 	// wait for target frame here
 	waitFrame(sensor_port,target_frame);
 
@@ -914,23 +931,6 @@ int videomem_open(struct inode *inode, struct file *filp)
 
 	int minor;
 	int sensor_port;
-
-	// to enable interrupt
-    x393_membridge_ctrl_irq_t membridge_irq_en = {.d32=0};
-	membridge_irq_en.interrupt_cmd = MEMBRIDGE_CMD_IRQ_EN;
-
-	// check fpga
-	if (!is_fpga_programmed()){
-		pr_err("*** Attempted to access hardware without bitsteram ***\n");
-	    return - ENODEV;
-	}
-
-	// extra variable
-	if (!hardware_initialized){
-	    // enable interrupt
-	    x393_membridge_ctrl_irq(membridge_irq_en);
-	    hardware_initialized = 1;
-	}
 
 	pr_debug("VIDEOMEM_OPEN \n");
 
