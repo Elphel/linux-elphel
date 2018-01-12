@@ -94,6 +94,7 @@ static struct elphel_video_buf_t buffer_settings = { ///< some default settings,
         .frames_in_buffer = {         2,          2,          2,          2}  /* Number of frames in channel 3 buffer */
 };
 
+static int video_frame_number = 0;
 static int membridge_direction = 0; // 0 - from pl to ps, 1 - from ps to pl
 static int hardware_initialized = 0;
 
@@ -139,6 +140,7 @@ int setup_membridge_system_memory(
 int setup_membridge_memory(
 		int num_sensor,       ///< sensor port number (0..3)
 		int write_direction,  ///< 0 - from fpga mem to system mem, 1 - otherwise
+		int video_frame_number, ///< 0 or 1 for now
         int window_width,     ///< 13-bit - in 8*16=128 bit bursts
         int window_height,    ///< 16-bit window height (in scan lines)
         int window_left,      ///< 13-bit window left margin in 8-bursts (16 bytes)
@@ -161,6 +163,12 @@ int setup_membridge_memory(
    x393_mcntrl_window_width_height_t      window_width_height =   {.d32=0};
    x393_mcntrl_window_left_top_t          window_left_top =       {.d32=0};
    x393_mcntrl_window_startx_starty_t     window_startx_starty =  {.d32=0};
+
+   if (video_frame_number>last_frame_num){
+	   video_frame_number = last_frame_num;
+   }
+
+   frame_sa += frame_sa_inc*video_frame_number;
 
    window_frame_sa.frame_sa =             frame_sa;
    window_frame_sa_inc.frame_sa_inc =     frame_sa_inc;
@@ -744,6 +752,7 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 
      setup_membridge_memory(sensor_port, ///< sensor port number (0..3)
      					   0,                     ///< 0 - from fpga mem to system mem, 1 - otherwise
+     					   video_frame_number,    ///< 0/1 - for now, frame number in video memory
  						   width_bursts,          ///< 13-bit - in 8*16=128 bit bursts
  						   height_marg,           ///< 16-bit window height (in scan lines)
  						   0,                     ///< 13-bit window left margin in 8-bursts (16 bytes)
@@ -776,10 +785,10 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 	*/
 
 	wait_event_interruptible(videomem_wait_queue, membridge_is_busy()==0);
+	pr_debug("Got back from interrupt\n");
 
 	status = x393_membridge_status();
 	pr_debug("membridge status is %d\n",status.busy);
-
 
 	//NOTES:
 
@@ -1057,7 +1066,6 @@ static irqreturn_t videomem_irq_handler(int irq,       ///< [in]   irq   interru
     ctrl_interrupts.interrupt_cmd = X393_IRQ_RESET;
 
     //TODO: Do what is needed here
-    pr_info("Wake up, videomem interrupt received!!!\n");
     x393_membridge_ctrl_irq(ctrl_interrupts); // reset interrupt
     membridge_locked = 0;
     wake_up_interruptible(&videomem_wait_queue);
@@ -1099,6 +1107,11 @@ static ssize_t get_membridge_status(struct device *dev, struct device_attribute 
 {
 	x393_status_membridge_t status = x393_membridge_status();
     return sprintf(buf,"0x%08x\n", status);
+}
+
+static ssize_t get_video_frame_num(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"%d\n", video_frame_number);
 }
 
 static ssize_t store_frame_start(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -1171,6 +1184,12 @@ static ssize_t set_membridge3(struct device *dev, struct device_attribute *attr,
     return count;
 }
 
+static ssize_t set_video_frame_num(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	sscanf(buf, "%i", &video_frame_number);
+    return count;
+}
+
 static DEVICE_ATTR(frame_start0,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
 static DEVICE_ATTR(frame_start1,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
 static DEVICE_ATTR(frame_start2,               SYSFS_PERMISSIONS,     show_frame_start,                store_frame_start);
@@ -1194,6 +1213,8 @@ static DEVICE_ATTR(membridge_start1,           SYSFS_PERMISSIONS,     NULL,     
 static DEVICE_ATTR(membridge_start2,           SYSFS_PERMISSIONS,     NULL,            set_membridge2);
 static DEVICE_ATTR(membridge_start3,           SYSFS_PERMISSIONS,     NULL,            set_membridge3);
 
+static DEVICE_ATTR(video_frame_number,           SYSFS_PERMISSIONS,     get_video_frame_num,           set_video_frame_num);
+
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_frame_start0.attr,
         &dev_attr_frame_start1.attr,
@@ -1216,6 +1237,7 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_membridge_start2.attr,
 		&dev_attr_membridge_start3.attr,
 		&dev_attr_membridge_status.attr,
+		&dev_attr_video_frame_number.attr,
         NULL
 };
 
