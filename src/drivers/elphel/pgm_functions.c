@@ -180,7 +180,7 @@
 */
 
 // TODO:remove unneeded
-//#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
+#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
 #include <linux/types.h> // for div 64
 #include <asm/div64.h>   // for div 64
 
@@ -1971,6 +1971,9 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
         break;
     }
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+
+    pr_debug("PGM: width_marg=%d  height_marg=%d width_burts=%d",width_marg, height_marg, width_bursts);
+
     /** shorter version: */
     //width_bursts = (width_marg+0xf)>>4;
     setup_sensor_memory (sensor_port,       // sensor port number (0..3)

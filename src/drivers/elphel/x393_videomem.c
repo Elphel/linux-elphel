@@ -85,6 +85,8 @@ static const int videomem_minor[]={
 /** @brief Global device class for sysfs */
 static struct class *videomem_dev_class;
 
+// About frame full width:
+// https://blog.elphel.com/2015/05/nc393-development-progress-multichannel-memory-controller-for-the-multi-sensor-camera/#Memory_mapping_and_access_types
 static struct elphel_video_buf_t buffer_settings = { ///< some default settings, same as in DT
         .frame_start =      {0x00000000, 0x08000000, 0x10000000, 0x08000000}, /* Frame starts (in bytes) */
         .frame_full_width = {      8192,       8192,       8192,       8192}, /* Frame full widths (in bytes). 1 memory page is 2048 bytes (128 bursts) */
@@ -676,7 +678,7 @@ static inline int membridge_is_busy(void){
 
 int membridge_start(int sensor_port, unsigned long target_frame){
 
-	//int p_color, p_pf_height;
+	int p_color, p_pf_height;
 	int width_marg, height_marg, width_bursts;
 
 	dma_addr_t     phys_addr;
@@ -723,10 +725,9 @@ int membridge_start(int sensor_port, unsigned long target_frame){
     width_marg =  get_imageParamsThis(sensor_port,P_ACTUAL_WIDTH);
     height_marg = get_imageParamsThis(sensor_port,P_ACTUAL_HEIGHT);
 
-    //p_color = get_imageParamsThis(sensor_port,P_COLOR);
-    //p_pf_height = get_imageParamsThis(sensor_port,P_PF_HEIGHT);
+    p_color = get_imageParamsThis(sensor_port,P_COLOR);
+    p_pf_height = get_imageParamsThis(sensor_port,P_PF_HEIGHT);
 
-    /*
     switch(p_color){
         case COLORMODE_COLOR:
         case COLORMODE_COLOR20:
@@ -735,9 +736,11 @@ int membridge_start(int sensor_port, unsigned long target_frame){
                 height_marg += (2 * COLOR_MARGINS);
             }
             break;
-        }
-     */
+     }
+
      width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+
+     pr_debug("VIDEOMEM: width_marg=%d  height_marg=%d width_burts=%d",width_marg, height_marg, width_bursts);
 
      setup_membridge_memory(sensor_port, ///< sensor port number (0..3)
      					   0,                     ///< 0 - from fpga mem to system mem, 1 - otherwise
