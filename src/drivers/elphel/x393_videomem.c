@@ -747,6 +747,12 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 	}
 	spin_unlock(&membridge_lock);
 
+	/** TODO: wait for the next frame then read past parameter
+	 *  if target_frame from sysfs < current frame then wait for current+1
+	 *  if target_frame from sysfs > current frame then wait for target_frame+1
+	 */
+	//get_imageParamsPast(sensor_port,P_ACTUAL_WIDTH,frame_num);
+
     width_marg =  get_imageParamsThis(sensor_port,P_ACTUAL_WIDTH);
     height_marg = get_imageParamsThis(sensor_port,P_ACTUAL_HEIGHT);
 
