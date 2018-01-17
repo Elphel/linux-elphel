@@ -14,7 +14,7 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
-//#define DEBUG
+#define DEBUG
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
@@ -702,6 +702,8 @@ static inline int membridge_is_busy(void){
 
 int membridge_start(int sensor_port, unsigned long target_frame){
 
+	unsigned long frame_num;
+	//unsigned long frame_num_this, frame_num_past;
 	int p_color, p_pf_height;
 	int width_marg, height_marg, width_bursts;
 
@@ -728,6 +730,7 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 	}
 
 	// wait for target frame here
+	// if target_frame is less or equal than current frame
 	waitFrame(sensor_port,target_frame);
 
 	// update sizes (local vars)
@@ -754,26 +757,33 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 			buf_size = pElphel_buf->raw_chn0_size*PAGE_SIZE;
 	}
 
+
+	// membridge busy lock
 	spin_lock(&membridge_lock);
+
 	if (membridge_locked==0){
 		membridge_locked=1;
 	}else{
 		spin_unlock(&membridge_lock);
 		return -EBUSY;
 	}
-	spin_unlock(&membridge_lock);
 
-	/** TODO: wait for the next frame then read past parameter
-	 *  if target_frame from sysfs < current frame then wait for current+1
-	 *  if target_frame from sysfs > current frame then wait for target_frame+1
-	 */
-	//get_imageParamsPast(sensor_port,P_ACTUAL_WIDTH,frame_num);
+	// if went through - get frame number and parameters
+	frame_num = getThisFrameNumber(sensor_port);
 
-    width_marg =  get_imageParamsThis(sensor_port,P_ACTUAL_WIDTH);
+	//frame_num_this = get_imageParamsThis(sensor_port,P_FRAME);
+	//frame_num_past = get_imageParamsPast(sensor_port,P_FRAME,frame_num);
+
+	// get all required parameters under spinlock
+
+    width_marg  = get_imageParamsThis(sensor_port,P_ACTUAL_WIDTH);
     height_marg = get_imageParamsThis(sensor_port,P_ACTUAL_HEIGHT);
 
-    p_color = get_imageParamsThis(sensor_port,P_COLOR);
+    p_color     = get_imageParamsThis(sensor_port,P_COLOR);
     p_pf_height = get_imageParamsThis(sensor_port,P_PF_HEIGHT);
+
+	spin_unlock(&membridge_lock);
+
 
     switch(p_color){
         case COLORMODE_COLOR:
@@ -787,7 +797,7 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 
      width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
 
-     pr_debug("VIDEOMEM: width_marg=%d  height_marg=%d width_burts=%d",width_marg, height_marg, width_bursts);
+     pr_debug("VIDEOMEM: frame_num=%d width_marg=%d  height_marg=%d width_burts=%d", frame_num, width_marg, height_marg, width_bursts);
 
      setup_membridge_memory(sensor_port, ///< sensor port number (0..3)
      					   0,                     ///< 0 - from fpga mem to system mem, 1 - otherwise
@@ -799,7 +809,7 @@ int membridge_start(int sensor_port, unsigned long target_frame){
  						   0,                     ///< START X ...
  						   0,                     ///< START Y ...
  						   DIRECT,                ///< how to apply commands - directly or through channel sequencer
- 						   target_frame);         ///< Frame number the command should be applied to (if not immediate mode)
+						   frame_num);            ///< Frame number the command should be applied to (if not immediate mode)
 
  	// setup membridge system memory - everything is in QW
  	setup_membridge_system_memory(
@@ -830,7 +840,7 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 	pr_debug("membridge status is %d\n",status.busy);
 
 	// fill out raw_info
-	raw_info.frame_num[sensor_port] = target_frame;
+	raw_info.frame_num[sensor_port] = frame_num;
 	raw_info.width[sensor_port]     = width_marg;
 	raw_info.height[sensor_port]    = height_marg;
 	raw_info.bpp[sensor_port]       = 8;
