@@ -98,6 +98,22 @@ static int video_frame_number = 0;
 static int membridge_direction = 0; // 0 - from pl to ps, 1 - from ps to pl
 static int hardware_initialized = 0;
 
+struct raw_info_t {
+	unsigned long frame_num[4];
+	int width[4];
+	int height[4];
+	int bpp[4];
+	loff_t offset[4];
+};
+
+static struct raw_info_t raw_info = {
+	.frame_num = {0,0,0,0},
+	.width     = {0,0,0,0},
+	.height    = {0,0,0,0},
+	.bpp       = {0,0,0,0},
+	.offset     = {0,0,0,0}
+};
+
 /** Setup memory bridge system memory */
 int setup_membridge_system_memory(
 		int lo_addr64, ///< start address of the system memory range in QWORDs (4 LSBs==0)
@@ -813,6 +829,13 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 	status = x393_membridge_status();
 	pr_debug("membridge status is %d\n",status.busy);
 
+	// fill out raw_info
+	raw_info.frame_num[sensor_port] = target_frame;
+	raw_info.width[sensor_port]     = width_marg;
+	raw_info.height[sensor_port]    = height_marg;
+	raw_info.bpp[sensor_port]       = 8;
+	raw_info.offset[sensor_port]    = 0;
+
 	//NOTES:
 
 	//// get this frame number
@@ -1120,6 +1143,58 @@ static ssize_t get_video_frame_num(struct device *dev, struct device_attribute *
     return sprintf(buf,"%d\n", video_frame_number);
 }
 
+static char * print_raw_info(char *buf, int sensor_port){
+
+    buf += sprintf(buf,"absolute frame number = %lu\n",raw_info.frame_num[sensor_port]);
+    buf += sprintf(buf,"width = %d\n" ,raw_info.width[sensor_port]);
+    buf += sprintf(buf,"height = %d\n" ,raw_info.height[sensor_port]);
+    buf += sprintf(buf,"bits per pixel = %d\n" ,raw_info.bpp[sensor_port]);
+    buf += sprintf(buf,"buffer offset = 0x%08x\n" ,raw_info.offset[sensor_port]);
+
+	return buf;
+}
+
+/**
+raw frame info file format (for read):
+
+  absolute frame number = xxx
+  width = xxx
+  height = xxx
+  bits per pixel = xxx
+
+*/
+static ssize_t get_raw_frame_info0(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int sensor_port = 0;
+	char * buf0=buf;
+	buf = print_raw_info(buf,sensor_port);
+	return buf-buf0;
+}
+
+static ssize_t get_raw_frame_info1(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int sensor_port = 1;
+	char * buf0=buf;
+	buf = print_raw_info(buf,sensor_port);
+	return buf-buf0;
+}
+
+static ssize_t get_raw_frame_info2(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int sensor_port = 2;
+	char * buf0=buf;
+	buf = print_raw_info(buf,sensor_port);
+	return buf-buf0;
+}
+
+static ssize_t get_raw_frame_info3(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int sensor_port = 3;
+	char * buf0=buf;
+	buf = print_raw_info(buf,sensor_port);
+	return buf-buf0;
+}
+
 static ssize_t store_frame_start(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
     sscanf(buf, "%i", &buffer_settings.frame_start[get_channel_from_name(attr)]);
@@ -1221,6 +1296,11 @@ static DEVICE_ATTR(membridge_start3,           SYSFS_PERMISSIONS,     NULL,     
 
 static DEVICE_ATTR(video_frame_number,           SYSFS_PERMISSIONS,     get_video_frame_num,           set_video_frame_num);
 
+static DEVICE_ATTR(raw_frame_info0,           SYSFS_PERMISSIONS,    get_raw_frame_info0, NULL);
+static DEVICE_ATTR(raw_frame_info1,           SYSFS_PERMISSIONS,    get_raw_frame_info1, NULL);
+static DEVICE_ATTR(raw_frame_info2,           SYSFS_PERMISSIONS,    get_raw_frame_info2, NULL);
+static DEVICE_ATTR(raw_frame_info3,           SYSFS_PERMISSIONS,    get_raw_frame_info3, NULL);
+
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_frame_start0.attr,
         &dev_attr_frame_start1.attr,
@@ -1244,6 +1324,10 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_membridge_start3.attr,
 		&dev_attr_membridge_status.attr,
 		&dev_attr_video_frame_number.attr,
+		&dev_attr_raw_frame_info0.attr,
+		&dev_attr_raw_frame_info1.attr,
+		&dev_attr_raw_frame_info2.attr,
+		&dev_attr_raw_frame_info3.attr,
         NULL
 };
 
