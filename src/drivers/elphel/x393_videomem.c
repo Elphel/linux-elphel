@@ -102,7 +102,8 @@ struct raw_info_t {
 	unsigned long frame_num[4];
 	unsigned long sec[4];
 	unsigned long usec[4];
-	int width[4];
+	int width[4];          ///< frame width - valid pixels [0..width-1]
+	int fullwidth[4];      ///< width aligned to DDR memory bursts (128 bits)
 	int height[4];
 	int bpp[4];
 	loff_t offset[4];
@@ -113,9 +114,10 @@ static struct raw_info_t raw_info = {
 	.sec       = {0,0,0,0},
 	.usec      = {0,0,0,0},
 	.width     = {0,0,0,0},
+	.fullwidth = {0,0,0,0},
 	.height    = {0,0,0,0},
 	.bpp       = {0,0,0,0},
-	.offset     = {0,0,0,0}
+	.offset    = {0,0,0,0}
 };
 
 /** Setup memory bridge system memory */
@@ -851,7 +853,8 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 	raw_info.frame_num[sensor_port] = frame_num;
 	raw_info.sec[sensor_port]       = seconds;
 	raw_info.usec[sensor_port]      = useconds;
-	raw_info.width[sensor_port]     = width_bursts<<4;
+	raw_info.width[sensor_port]     = width_marg;
+	raw_info.fullwidth[sensor_port] = width_bursts<<4;
 	raw_info.height[sensor_port]    = height_marg;
 	raw_info.bpp[sensor_port]       = 8;
 	raw_info.offset[sensor_port]    = 0;
@@ -1180,6 +1183,7 @@ static ssize_t get_raw_frame_info(struct device *dev, struct device_attribute *a
     buf += sprintf(buf,"absolute frame number = %lu\n",raw_info.frame_num[sensor_port]);
     buf += sprintf(buf,"timestamp,sec = %lu\n" ,raw_info.sec[sensor_port]);
     buf += sprintf(buf,"timestamp,usec = %lu\n" ,raw_info.usec[sensor_port]);
+    buf += sprintf(buf,"fullwidth = %d\n" ,raw_info.fullwidth[sensor_port]);
     buf += sprintf(buf,"width = %d\n" ,raw_info.width[sensor_port]);
     buf += sprintf(buf,"height = %d\n" ,raw_info.height[sensor_port]);
     buf += sprintf(buf,"bits per pixel = %d\n" ,raw_info.bpp[sensor_port]);
