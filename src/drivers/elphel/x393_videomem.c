@@ -14,7 +14,7 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
-#define DEBUG
+//#define DEBUG
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
@@ -1192,6 +1192,28 @@ static ssize_t get_raw_frame_info(struct device *dev, struct device_attribute *a
 	return buf-buf0;
 }
 
+static ssize_t get_mctrl_status_chn(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int chn = get_channel_from_name(attr);
+
+	x393_status_mcntrl_lintile_t status;
+
+	switch(chn){
+		case 1: status = x393_mcntrl_chn1_status(); break;
+		case 2: status = x393_mcntrl_chn2_status(); break;
+		case 3: status = x393_mcntrl_chn3_status(); break;
+		case 4: status = x393_mcntrl_chn4_status(); break;
+	}
+
+    return sprintf(buf,"0x%08x\n", status);
+}
+
+static ssize_t get_cmprs_status(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	x393_cmprs_status_t status = x393_cmprs_status(get_channel_from_name(attr));
+    return sprintf(buf,"0x%08x\n", status);
+}
+
 static ssize_t store_frame_start(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
     sscanf(buf, "%i", &buffer_settings.frame_start[get_channel_from_name(attr)]);
@@ -1264,12 +1286,22 @@ static DEVICE_ATTR(membridge_start1,           SYSFS_PERMISSIONS,     NULL,     
 static DEVICE_ATTR(membridge_start2,           SYSFS_PERMISSIONS,     NULL,            set_membridge);
 static DEVICE_ATTR(membridge_start3,           SYSFS_PERMISSIONS,     NULL,            set_membridge);
 
-static DEVICE_ATTR(video_frame_number,           SYSFS_PERMISSIONS,     get_video_frame_num,           set_video_frame_num);
+static DEVICE_ATTR(video_frame_number,         SYSFS_PERMISSIONS,     get_video_frame_num,           set_video_frame_num);
 
-static DEVICE_ATTR(raw_frame_info0,           SYSFS_PERMISSIONS,    get_raw_frame_info, NULL);
-static DEVICE_ATTR(raw_frame_info1,           SYSFS_PERMISSIONS,    get_raw_frame_info, NULL);
-static DEVICE_ATTR(raw_frame_info2,           SYSFS_PERMISSIONS,    get_raw_frame_info, NULL);
-static DEVICE_ATTR(raw_frame_info3,           SYSFS_PERMISSIONS,    get_raw_frame_info, NULL);
+static DEVICE_ATTR(raw_frame_info0,            SYSFS_PERMISSIONS,    get_raw_frame_info, NULL);
+static DEVICE_ATTR(raw_frame_info1,            SYSFS_PERMISSIONS,    get_raw_frame_info, NULL);
+static DEVICE_ATTR(raw_frame_info2,            SYSFS_PERMISSIONS,    get_raw_frame_info, NULL);
+static DEVICE_ATTR(raw_frame_info3,            SYSFS_PERMISSIONS,    get_raw_frame_info, NULL);
+
+static DEVICE_ATTR(mctrl_status_chn1,    SYSFS_PERMISSIONS,    get_mctrl_status_chn,  NULL);
+static DEVICE_ATTR(mctrl_status_chn2,    SYSFS_PERMISSIONS,    get_mctrl_status_chn,  NULL);
+static DEVICE_ATTR(mctrl_status_chn3,    SYSFS_PERMISSIONS,    get_mctrl_status_chn,  NULL);
+static DEVICE_ATTR(mctrl_status_chn4,    SYSFS_PERMISSIONS,    get_mctrl_status_chn,  NULL);
+
+static DEVICE_ATTR(compressor_status0,    SYSFS_PERMISSIONS,    get_cmprs_status,  NULL);
+static DEVICE_ATTR(compressor_status1,    SYSFS_PERMISSIONS,    get_cmprs_status,  NULL);
+static DEVICE_ATTR(compressor_status2,    SYSFS_PERMISSIONS,    get_cmprs_status,  NULL);
+static DEVICE_ATTR(compressor_status3,    SYSFS_PERMISSIONS,    get_cmprs_status,  NULL);
 
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_frame_start0.attr,
@@ -1298,6 +1330,14 @@ static struct attribute *root_dev_attrs[] = {
 		&dev_attr_raw_frame_info1.attr,
 		&dev_attr_raw_frame_info2.attr,
 		&dev_attr_raw_frame_info3.attr,
+		&dev_attr_mctrl_status_chn1.attr,
+		&dev_attr_mctrl_status_chn2.attr,
+		&dev_attr_mctrl_status_chn3.attr,
+		&dev_attr_mctrl_status_chn4.attr,
+		&dev_attr_compressor_status0.attr,
+		&dev_attr_compressor_status1.attr,
+		&dev_attr_compressor_status2.attr,
+		&dev_attr_compressor_status3.attr,
         NULL
 };
 

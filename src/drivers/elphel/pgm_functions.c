@@ -1972,7 +1972,14 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
     }
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
 
-    pr_debug("PGM: width_marg=%d  height_marg=%d width_burts=%d",width_marg, height_marg, width_bursts);
+    pr_debug("PGM_MEMSENSOR: sport=%d  width_burts=%d  width_marg=%d  height_marg=%d  left_margin=%d  top_margin=%d\n",
+    		sensor_port,
+    		width_bursts,
+    		width_marg,
+			height_marg,
+			0,
+			0
+			);
 
     /** shorter version: */
     //width_bursts = (width_marg+0xf)>>4;
@@ -2086,7 +2093,6 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     cmprs_frame_format.num_macro_cols_m1 = (width_marg>> 4) - 1; // before adding margins
     cmprs_frame_format.num_macro_rows_m1 = (height_marg>> 4) - 1; // before adding margins;
 
-
     switch(thispars->pars[P_COLOR]){
     case COLORMODE_COLOR:
         overlap = 2;
@@ -2096,6 +2102,9 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
         overlap = 4;
         break;
     }
+
+    cmprs_frame_format.left_margin = cmprs_top; // same as top - only for 18x18 tiles to keep Bayer shift (0/1)
+
     if (overlap){
         width_marg += (2 * COLOR_MARGINS);
         if ((thispars->pars[P_PF_HEIGHT] & 0xffff)==0) { // not a photofinish
@@ -2105,7 +2114,6 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     } else {
         tile_width = 4;
     }
-    cmprs_frame_format.left_margin = cmprs_top; // same as top - only for 18x18 tiles to keep Bayer shift (0/1)
 
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
     // Adjusting for tile width. TODO: probably not needed, handled in FPGA - verify (and remove 2 next lines)
@@ -2113,6 +2121,20 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     if ((tile_width>2) && (width_bursts & 2)) width_bursts += 2;
 
     tile_height = 16 + overlap;
+
+    pr_debug("PGM_MEMCOMPRESSOR: sport=%d width_bursts=%d  width_marg=%d  height_marg=%d  num_macro_rows_m1=%d  tile_width=%d  tile_height=%d  margin_left=%d  margin_top=%d P_TILES=%d\n",
+                sensor_port,
+				width_bursts,
+				width_marg,
+				height_marg,
+				(cmprs_frame_format.num_macro_rows_m1 + 1) << 4,
+				tile_width,
+				tile_height,
+				0,
+				cmprs_top,
+				(cmprs_frame_format.num_macro_cols_m1+1)*(cmprs_frame_format.num_macro_rows_m1+1)
+				);
+
     setup_compressor_memory (sensor_port,       // sensor port number (0..3)
                              width_bursts,      // 13-bit - in 8*16=128 bit bursts
                              (cmprs_frame_format.num_macro_rows_m1 + 1) << 4,
