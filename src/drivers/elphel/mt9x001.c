@@ -1138,6 +1138,35 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
     return 0;
 }
 
+/**
+ * get TRIG_PERIOD from framepars, compare and update pix_period
+ * @param pix_period
+ * @param thispars
+ * @return updated pix_period
+ */
+int compare_to_trig_period(int sensor_port,               ///< sensor port - only for debug
+		 	 	 	 	   int pix_period,                ///< current pix_period
+						   struct framepars_t * thispars) ///< sensor current parameters
+{
+
+	int trig_period;
+
+    dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_TRIG] = %d, thispars->pars[P_TRIG_PERIOD] =%d(0x%x)\n",
+            sensor_port,
+			(int)thispars->pars[P_TRIG],
+			(int)thispars->pars[P_TRIG_PERIOD],
+			(int)thispars->pars[P_TRIG_PERIOD]);
+
+	if (thispars->pars[P_TRIG]!=0){
+		trig_period = camsync_to_sensor(thispars->pars[P_TRIG_PERIOD], thispars->pars[P_CLK_SENSOR]);
+		if (trig_period > pix_period) {
+			pix_period=trig_period;
+		}
+	}
+
+	return pix_period;
+}
+
 /** Check if compressor can keep up, limit sensor FPS if needed
  * FPS is limited by increasing verical blanking, it can not be be made too big, so this method does not work to make time lapse rate. horisontal blanking
  * is kept at minimum (to reduce ERS effect) if not specified. If it is specified (>minimal) - it will be used instead.
@@ -1322,17 +1351,20 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
         dev_warn(g_dev_ptr,"** mt9x001_pgm_limitfps(%d) pix_period == 0!! (row_time_in_pixels =%d(0x%x), virt_height=%d(0x%x)\n",sensor_port,row_time_in_pixels,row_time_in_pixels,virt_height,virt_height);
         pix_period = 1000; // just non-zero
     }
+
+    // IMPORTANT: this is moved above setting P_PERIOD
+    // Update period from external trigger (assuming internal/self trigger, we do not know real external trigger period)
+    pix_period = compare_to_trig_period(sensor_port,pix_period,thispars);
+
     dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_PERIOD] =%d(0x%x), pix_period=%d(0x%x)\n",sensor_port,(int)thispars->pars[P_PERIOD],(int)thispars->pars[P_PERIOD],pix_period,pix_period);
     if (thispars->pars[P_PERIOD] != pix_period) {
         SETFRAMEPARS_SET(P_PERIOD, pix_period);
     }
+
+    // switched order
     // Update period from external trigger (assuming internal/self trigger, we do not know real external trigger period)
-    dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_TRIG] = %d, thispars->pars[P_TRIG_PERIOD] =%d(0x%x)\n",
-            sensor_port,(int)thispars->pars[P_TRIG], (int)thispars->pars[P_TRIG_PERIOD], (int)thispars->pars[P_TRIG_PERIOD]);
-    if (thispars->pars[P_TRIG]!=0){
-        trig_period = camsync_to_sensor(thispars->pars[P_TRIG_PERIOD], thispars->pars[P_CLK_SENSOR]);
-        if (trig_period > pix_period)  pix_period=trig_period;
-    }
+    //pix_period = compare_to_trig_period(pix_period,thispars);
+
     // schedule updating P_FP1000S if it changed
     sclk=thispars->pars[P_CLK_SENSOR] ; ///pixel clock, in Hz
 #if USELONGLONG
@@ -1463,6 +1495,10 @@ int mt9x001_pgm_exposure       (int sensor_port,               ///< sensor port 
 
     // is exposure longer then maximal period (specified for constant fps?
     pix_period=video_exposure*row_time_in_pixels;
+
+    // IMPORTANT: inserted here by myself for testing
+    pix_period = compare_to_trig_period(sensor_port,pix_period,thispars);
+
     if (thispars->pars[P_FPSFLAGS] & 2) {
         if (pix_period > thispars->pars[P_PERIOD_MAX]) {
             video_exposure=thispars->pars[P_PERIOD_MAX]/row_time_in_pixels;
