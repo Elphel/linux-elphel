@@ -684,18 +684,22 @@ int mt9x001_pgm_sensorregs   (int sensor_port, struct sensor_t * sensor,  struct
 #ifdef NC353
 #define I2C_READ_DATA16(x) ((i2c_read_data[(x)<<1]<<8)+i2c_read_data[((x)<<1)+1])
 #endif
-/**Detect and initialize sensor and related data structures
+
+/**
+ * Detect and initialize sensor and related data structures
  * - detect sensor type.
  * - if successful, proceed to:,
- * - copy sensor static structure
- * - setup appropriate pgm_* functions
- * - read sensor registers to shadows
- * - initialize appropriate P_* registers (including sensor register shadows) - that initialization will schedule related pgm_* functions
+ *   -- copy sensor static structure
+ *   -- setup appropriate pgm_* functions
+ *   -- read sensor registers to shadows
+ *   -- initialize appropriate P_* registers (including sensor register shadows) - that initialization will schedule related pgm_* functions
+ *
  * TODO: when is P_CLK_FPGA initialized? Needs to be done before this
  * hardware i2c is expected to be reset and initialized - no wrong, it will be programmed in 
- *                                onchange_i2c should be the first after init sensor (even before onchange_sensorphase)
+ * onchange_i2c should be the first after init sensor (even before onchange_sensorphase)
  * onchange_sensorphase will be triggered after this
- * hardware i2c after this function will be disabled, will need onchange_sensorphase to initialize/start it. */
+ * hardware i2c after this function will be disabled, will need onchange_sensorphase to initialize/start it.
+ */
 int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port number (0..3)
                                 struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
                                 struct framepars_t * thispars, ///< sensor current parameters
@@ -705,11 +709,11 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
                                                                ///< @return 0 - OK, negative - error
 
 {
-//    unsigned long flags;               // this function uses software i2c operations - they need to have interrupts (and hardware i2c off)
-    //    unsigned char    i2c_read_data[2]; // each two bytes - one short word, big endian
+    //unsigned long flags;               // this function uses software i2c operations - they need to have interrupts (and hardware i2c off)
+    //unsigned char    i2c_read_data[2]; // each two bytes - one short word, big endian
     u32  i2c_read_dataw;
-//    u8 * i2c_read_data =  (u8*)& i2c_read_dataw; // each two bytes - one short word, big endian
-    //    unsigned char chipver_reg=P_MT9X001_CHIPVER;
+    //u8 * i2c_read_data =  (u8*)& i2c_read_dataw; // each two bytes - one short word, big endian
+    //unsigned char chipver_reg=P_MT9X001_CHIPVER;
     int sensor_subtype=0;
     int i;
     int sensor_multi_regs_number;

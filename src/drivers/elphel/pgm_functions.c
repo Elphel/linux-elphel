@@ -357,107 +357,147 @@ int add_sensor_proc(int port,   ///< sensor port
 /** Detect and initialize sensor and related data structures
  * - detect sensor type
  * - set sensor structure (capabilities),
- * - set function pointers (by directly calling sensor specific \b *_pgm_detectsensor */
+ * - set function pointers (by directly calling sensor specific \b *_pgm_detectsensor
+ */
 int pgm_detectsensor   (int sensor_port,               ///< sensor port number (0..3)
-        struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
-        struct framepars_t * thispars, ///< sensor current parameters
-        struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
-        int frame16)                   ///< 4-bit (hardware) frame number parameters should
-///< be applied to,  negative - ASAP
-///< @return OK - 0, <0 - error
+                        struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+                        struct framepars_t * thispars, ///< sensor current parameters
+                        struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+                        int frame16)                   ///< 4-bit (hardware) frame number parameters should
+                                                       ///< be applied to,  negative - ASAP
+                                                       ///< @return OK - 0, <0 - error
 {
     x393_camsync_mode_t camsync_mode = {.d32=0};
-    x393_camsync_io_t camsync_src =      {.d32=0x00000}; // all disabled (use internal)
-    x393_camsync_io_t camsync_dst =      {.d32=0x00000}; // all disable - nothing to output
+    x393_camsync_io_t   camsync_src  = {.d32=0x00000}; // all disabled (use internal)
+    x393_camsync_io_t   camsync_dst  = {.d32=0x00000}; // all disable - nothing to output
 
-// Setting trigger input, output and preriod to off
+    // Setting trigger input, output and preriod to off
 
     int was_sensor_freq = 0; // 90000000; // getClockFreq(1);
     int qperiod;
     int i2cbytes;
-    int phase;
     int mux,sens;
+
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
 
     if (frame16 >= 0) return -1; // can only work in ASAP mode
+
     common_pars->sensors[sensor_port] =  thispars->pars[P_SENSOR];
+
     if (thispars->pars[P_SENSOR]) {
         dev_dbg(g_dev_ptr,"{%d}  frame16=%d, SENSOR ALREADY DETECTED = %d\n",sensor_port,frame16, (int) thispars->pars[P_SENSOR]);
-        return 0; // Sensor is already detected - do not bother (to re-detect it P_SENSOR should be set to 0)
+        // Sensor is already detected - do not bother (to re-detect it P_SENSOR should be set to 0)
+        return 0;
     }
     // no other initializations, just the sensor-related stuff (starting with lowest sensor clock)    // stop hardware i2c controller, so it will not get stuck when waiting for !busy
 
-
-
     // NC393 - nothing to do here - use a separate module for sensor setup: DT, sysfs, something else (add pin pullup/down)
-    // currently assign same sensor to all subchannles (first present)
-//    thispars->pars[P_SENSOR] = get_detected_sensor_code(sensor_port, -1); // "-1" - first detected sensor
+
+    // currently assign same sensor to all subchannels (first present)
+
+    //thispars->pars[P_SENSOR] = get_detected_sensor_code(sensor_port, -1); // "-1" - first detected sensor
     sens=get_detected_sensor_code(sensor_port, -1); // "-1" - first detected sensor
-//    setFramePar(sensor_port, thispars, P_SENSOR,  sens); //  FIXME: NC393
+
+    //setFramePar(sensor_port, thispars, P_SENSOR,  sens); //  FIXME: NC393
     GLOBALPARS(sensor_port, G_SUBCHANNELS) = get_subchannels(sensor_port);
     mux = get_detected_mux_code(sensor_port); // none/detect/10359
+
     dev_dbg(g_dev_ptr,"port = %d, mux = %d, sens= %d\n",sensor_port, mux, sens);
-//    if ((mux == SENSOR_NONE) && (thispars->pars[P_SENSOR] == SENSOR_NONE))
+
+    //if ((mux == SENSOR_NONE) && (thispars->pars[P_SENSOR] == SENSOR_NONE))
     if ((mux == SENSOR_NONE) && (sens == SENSOR_NONE))
         return 0; // no sensor/mux enabled on this port
+
     //TODO NC393: turn on both sequencers why MRST is active, then i2c frame will definitely match ? Or is it already done in FPGA?
     dev_dbg(g_dev_ptr,"Restarting both command and i2c sequencers for port %d\n",sensor_port);
+
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RESET);
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RUN);  // also programs status update
     i2c_stop_run_reset      (sensor_port, I2C_CMD_RESET);
+
     dev_dbg(g_dev_ptr,"Setting i2c drive mode for port %d\n",sensor_port);
+
     i2c_drive_mode          (sensor_port, SDA_DRIVE_HIGH, SDA_RELEASE);
     i2c_stop_run_reset      (sensor_port, I2C_CMD_RUN); // also programs status update
-    legacy_i2c(1<<sensor_port);// Setup i2c pages for legacy i2c commands. TODO NC393: update for compatibility with 14MPix
+
+    // TODO: move to specific sensor driver
+    legacy_i2c(1<<sensor_port); // Setup i2c pages for legacy i2c commands. TODO NC393: update for compatibility with 14MPix
+
 #ifdef INIT_IN_TRIGGERED
     camsync_mode.trig =     1; // start in stopped triggered mode
 #else
     camsync_mode.trig =     0;
 #endif
+
     camsync_mode.trig_set = 1;
 
-//    This causes mismatch with parameters, let it be there
-//    camsync_mode.ext =      1; // use external timestamp (default)
-//    camsync_mode.ext_set =  1;
+    // This causes mismatch with parameters, let it be there
+    //camsync_mode.ext =      1; // use external timestamp (default)
+    //camsync_mode.ext_set =  1;
+
     x393_camsync_mode (camsync_mode);   // here in immediate mode, no sequencer
-// Set inactive state to all I/O) and period:
+    // Set inactive state to all I/O) and period:
     x393_camsync_trig_src(camsync_src); // here in immediate mode, no sequencer
     x393_camsync_trig_dst(camsync_dst); // here in immediate mode, no sequencer
     set_x393_camsync_trig_period(0);    // here in immediate mode, no sequencer
+
     dev_dbg(g_dev_ptr,"{%d} set_x393_camsync_trig_period(0)\n",sensor_port);
-    //     dev_dbg(g_dev_ptr,"trying MT9P001\n");
-    //      mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
+
+    //dev_dbg(g_dev_ptr,"trying MT9P001\n");
+    //mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
+
     if (mux != SENSOR_NONE) {
         dev_dbg(g_dev_ptr,"Mux mode for port %d is %d, tryng 10359\n",sensor_port, mux);
         MDP(DBGB_PADD, sensor_port,"Mux mode for port %d is %d, tryng 10359\n",sensor_port, mux)
-
         // try multisensor here (before removing MRST)
-        multisensor_pgm_detectsensor (sensor_port, sensor,  thispars, prevpars, frame16);  // multisensor
+
+        // TODO: move to mux driver
+        // ************************************************************************************************
+        // ************************** MULTISENSOR (10359 MUX BOARD) ***************************************
+        // ************************************************************************************************
+        multisensor_pgm_detectsensor (sensor_port, sensor,  thispars, prevpars, frame16);
+        // ************************************************************************************************
+        // ************************************************************************************************
+        // ************************************************************************************************
+
     } else {
         dev_dbg(g_dev_ptr,"Mux mode for port %d SENSOR_NONE, skipping 10359 detection\n",sensor_port);
         MDP(DBGB_PADD, sensor_port,"Mux mode for port %d SENSOR_NONE, skipping 10359 detection\n",sensor_port)
     }
-//    if ((thispars->pars[P_SENSOR]==0) ||  // multisensor not detected
-//            ((thispars->pars[P_SENSOR] & SENSOR_MASK) == SENSOR_MT9X001)) { // or is (from DT) SENSOR_MT9X001
-    if ((thispars->pars[P_SENSOR]==0) &&                    // multisensor not detected
-            (((sens & SENSOR_MASK) == SENSOR_MT9X001) ||    // and from DT it is some SENSOR_MT9*001
-             ((sens & SENSOR_MASK) == SENSOR_MT9P006) )) {  // or SENSOR_MT9P006 or friends
-//        dev_dbg(g_dev_ptr,"removing MRST from the sensor\n");
-//        dev_info(g_dev_ptr,"pgm_detectsensor(%d): TRYING MT9P001\n",sensor_port);
+
+    //if ((thispars->pars[P_SENSOR]==0) ||  // multisensor not detected
+    //   ((thispars->pars[P_SENSOR] & SENSOR_MASK) == SENSOR_MT9X001)) { // or is (from DT) SENSOR_MT9X001
+    if ((thispars->pars[P_SENSOR]==0) &&                // multisensor not detected
+        (((sens & SENSOR_MASK) == SENSOR_MT9X001) ||    // and from DT it is some SENSOR_MT9*001
+         ((sens & SENSOR_MASK) == SENSOR_MT9P006) )) {  // or SENSOR_MT9P006 or friends
+
         dev_dbg(g_dev_ptr,"trying MT9P001, port=%d\n",sensor_port);
         MDP(DBGB_PADD, sensor_port,"trying MT9P001, port=%d\n",sensor_port)
-        mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
+
+        // TODO: move to sensor driver
+        // ************************************************************************************************
+        // ********************************* MT9x00x SENSOR (5MP) *****************************************
+        // ************************************************************************************************
+        mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);
+        // ************************************************************************************************
+        // ************************************************************************************************
+        // ************************************************************************************************
+
     }
+
     setFramePar(sensor_port, thispars, P_CLK_FPGA,  200000000); //  FIXME: NC393
     setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
+
     if (thispars->pars[P_SENSOR] == SENSOR_DETECT) {
         sensor->sensorType=SENSOR_NONE;                 // to prevent from initializing again
         dev_dbg(g_dev_ptr,"No image sensor found\n");
         MDP(DBGB_PADD, sensor_port,"No image sensor found%s\n","")
     }
+
     setFramePar(sensor_port, thispars, P_SENSOR_WIDTH,   sensor->imageWidth);  // Maybe get rid of duplicates?
     setFramePar(sensor_port, thispars, P_SENSOR_HEIGHT,  sensor->imageHeight); // Maybe get rid of duplicates?
+
     if (sensor->i2c_period==0) sensor->i2c_period=2500;           // SCL period in ns, (standard i2c - 2500)
     qperiod=thispars->pars[P_I2C_QPERIOD];
     if (qperiod==0) qperiod=(sensor->i2c_period * (thispars->pars[P_CLK_FPGA]/1000))/4000000;
@@ -468,6 +508,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     // restore/set sensor clock
     if ((was_sensor_freq < sensor->minClockFreq) || (was_sensor_freq > sensor->maxClockFreq)) was_sensor_freq=sensor->nomClockFreq;
     setFramePar(sensor_port, thispars, P_CLK_SENSOR | FRAMEPAIR_FORCE_NEWPROC,  was_sensor_freq); // will schedule clock/phase adjustment
+
     /*
     phase=thispars->pars[P_SENSOR_PHASE];
     // TODO: remove phase adjustment from here
@@ -476,6 +517,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         setFramePar(sensor_port, thispars, P_SENSOR_PHASE | FRAMEPAIR_FORCE_NEWPROC,  phase); // will schedule clock/phase adjustment
     }
     */
+
     setFramePar(sensor_port, thispars, P_I2C_EOF | FRAMEPAIR_FORCE_NEWPROC,  0);         // increment i2c at SOF - change to EOF?
 
     // NOTE: sensor detected - enabling camera interrupts here (actual interrupts will start later)
@@ -483,6 +525,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 
     compressor_interrupts (1,sensor_port); // FIXME: Should they already be set before detection? If not - remove from framepars.php
     sensor_interrupts     (1,sensor_port);
+
     return 0;
 }
 /** Reset and initialize sensor (all is done in sensor-specific functions)

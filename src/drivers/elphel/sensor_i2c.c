@@ -235,7 +235,7 @@ int i2c_page_alloc(int chn)
 EXPORT_SYMBOL_GPL(i2c_page_alloc);
 
 /** Register specific page, can be used with legacy software to register page equal to slave address,
- * and use 0xff for reading. Works with 1byhte addresses and 16-bit data */
+ * and use 0xff for reading. Works with 1-byte addresses and 16-bit data */
 int i2c_page_register(int chn,   ///< Sensor port
         int page)  ///< page to register (for legacy software, use 7-bit slave address
 ///< @return 0 on success, -ENOMEM if page is already registered
