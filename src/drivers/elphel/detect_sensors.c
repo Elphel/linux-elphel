@@ -16,7 +16,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *******************************************************************************/
-
+#define DEBUG
 //#include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
@@ -39,19 +39,17 @@
 
 #define DETECT_SENSORS_MODULE_DESCRIPTION "Detect sensor type(s) attached to each of the ports"
 #define OF_PREFIX_NAME                    "elphel393-detect_sensors"
-struct sensor_port_config_t
- {
-     u32  mux;                 ///< sensor multiplexer, currently 0 (SENSOR_DETECT, SENSOR_MUX_10359 or SENSOR_NONE)
-     u32  sensor[MAX_SENSORS]; ///< Without mux only [0] is used, with 10359 - 0..2 are used (i2c addressing is shifted so 0 is broadcast)
- };
 
+struct sensor_port_config_t *pSensorPortConfig;
+
+// removed static to export
 static struct sensor_port_config_t sensorPortConfig[] = {
         {.mux=SENSOR_NONE,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}},
         {.mux=SENSOR_NONE,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}},
         {.mux=SENSOR_NONE,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}},
         {.mux=SENSOR_NONE,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}}
 };
-//struct sensor_port_config_t *pSensorPortConfig;
+
 static const struct of_device_id elphel393_detect_sensors_of_match[];
 static struct device *g_dev_ptr; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
 struct sensor_name_t {
@@ -393,17 +391,111 @@ static int elphel393_detect_sensors_sysfs_register(struct platform_device *pdev)
      }
  }
 
+/**
+ * Fills the tables in sensorPortConfig with key-value pairs
+ * @param par2addr - pointer to the look-up table
+ * @param table - pointer to the global struct
+ * @return 0
+ */
+static int par2addr_fill(const unsigned short *par2addr, u16 *table){
 
+	int i=0;
+
+	int key;
+	unsigned short value;
+
+	// reset
+	for(i=0;i<MAX_SENSOR_REGS;i++){
+		table[i] = 0;
+	}
+
+	i=0;
+	// fill with key-value pairs
+	while(true){
+		key   = par2addr[2*i];
+		value = par2addr[2*i+1];
+		if ((key==0xffff)||(i>255)){
+			break;
+		}
+		table[key] = value;
+		i++;
+	}
+
+	return 0;
+}
+
+/**
+ * Based on sensorPortConfig[i].sensor[j], filled from DT,
+ *   gets SENSOR_REGS to true register addresses table for
+ *   the specified sensor
+ * @return 0
+ */
+static int par2addr_init(void){
+
+	int port;
+	int sub_chn;
+
+	const unsigned short *par2addr;
+	const unsigned short *pages;
+
+	/*
+	struct sensor_port_config_t {
+		u32  mux;                                    ///< Sensor multiplexer, currently 0 (SENSOR_DETECT, SENSOR_MUX_10359 or SENSOR_NONE)
+	    u32  sensor[MAX_SENSORS];                    ///< Without mux only [0] is used, with 10359 - 0..2 are used (i2c addressing is shifted so 0 is broadcast)
+	    u16  par2addr[MAX_SENSORS][MAX_SENSOR_REGS]; ///< Big LUT. SENSOR_REGSxxx par to sensor reg 'yyy' internal address: haddr+laddr for 16 bit
+	    u16  haddr2rec[MAX_SENSORS][MAX_FPGA_RECS];  ///< Big LUT (but almost empty). Sensor's page address (haddr of reg addr) to fpga i2c record number (fpga line#)
+	};
+	*/
+
+	// all .mux and .sensor are already filled out
+	for (port = 0; port < SENSOR_PORTS; port++){
+
+		// that's from device tree, fpga is not programmed yet
+		dev_dbg(g_dev_ptr,"port: %d mux: %d sensors: %d %d %d %d\n",
+				port,
+				sensorPortConfig[port].mux,
+				sensorPortConfig[port].sensor[0],
+				sensorPortConfig[port].sensor[1],
+				sensorPortConfig[port].sensor[2],
+				sensorPortConfig[port].sensor[3]
+				);
+
+		// sub_chn = 3 is never used
+		for (sub_chn = 0; sub_chn < 4; sub_chn++){
+			//sensorPortConfig[port].sensor[sub_chn];
+			switch (sensorPortConfig[port].sensor[sub_chn]) {
+				case SENSOR_MT9P006:
+					// get sensor table
+					par2addr = mt9x001_par2addr;
+					pages    = mt9x001_pages;
+					break;
+				case SENSOR_MT9F002:
+					// get sensor table
+					break;
+			}
+			if (par2addr){
+				// convert to key-value
+				par2addr_fill(par2addr,sensorPortConfig[port].par2addr[sub_chn]);
+				// save pointer to static LUT
+				sensorPortConfig[port].pages_ptr[sub_chn] = pages;
+			}
+		}
+	}
+
+	return 0;
+}
 
  static int detect_sensors_probe(struct platform_device *pdev)
  {
-     unsigned int irq;
-     int res;
+     //unsigned int irq;
+     //int res;
      struct device *dev = &pdev->dev;
      const struct of_device_id *match;
-     const __be32 *bufsize_be;
-     struct device_node *node;
-//     pSensorPortConfig = sensorPortConfig;
+     //const __be32 *bufsize_be;
+     //struct device_node *node;
+
+     g_dev_ptr = dev; // for debugfs
+     pSensorPortConfig = sensorPortConfig;
 
      elphel393_detect_sensors_sysfs_register(pdev);
      pr_info ("Registered sysfs for detect_sensors");
@@ -415,6 +507,7 @@ static int elphel393_detect_sensors_sysfs_register(struct platform_device *pdev)
 
      detect_sensors_init_of(pdev);
 
+     par2addr_init();
 
      //    dev_dbg(dev, "Registering character device with name "DEV393_NAME(DEV393_DETECT_SENSORS));
      //    res = register_chrdev(DETECT_SENSORS_MAJOR, DEV393_NAME(DEV393_DETECT_SENSORS), &detect_sensors_fops);
@@ -422,7 +515,7 @@ static int elphel393_detect_sensors_sysfs_register(struct platform_device *pdev)
      //        dev_err(dev, "\nlogger_init: couldn't get a major number  %d.\n ",DETECT_SENSORS_MAJOR);
      //        return res;
      //    }
-     g_dev_ptr = dev; // for debugfs
+
      return 0;
  }
 

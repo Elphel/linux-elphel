@@ -16,9 +16,24 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
+#ifndef DETECT_SENSORS_H
+#define DETECT_SENSORS_H
 
 #define DETECT_SENSOR 1 ///< Include sensors, May be OR-ed when looking for sensor/multiplexer code/name
 #define DETECT_MUX 2    ///< Include multiplexers, May be OR-ed when looking for sensor/multiplexer code/name
+
+#define MAX_SENSOR_REGS 256
+#define MAX_FPGA_RECS 256
+
+struct sensor_port_config_t {
+	u32  mux;                                    ///< Sensor multiplexer, currently 0 (SENSOR_DETECT, SENSOR_MUX_10359 or SENSOR_NONE)
+    u32  sensor[MAX_SENSORS];                    ///< Without mux only [0] is used, with 10359 - 0..2 are used (i2c addressing is shifted so 0 is broadcast)
+    u16  par2addr[MAX_SENSORS][MAX_SENSOR_REGS]; ///< Big LUT. SENSOR_REGSxxx par to sensor reg 'yyy' internal address: haddr+laddr for 16 bit
+    u8   haddr2rec[MAX_SENSORS][MAX_FPGA_RECS];  ///< Big LUT (but almost empty). Sensor's page address (haddr of reg addr) to fpga i2c record number (fpga line#)
+    unsigned short *pages_ptr[MAX_SENSORS];
+};
+
+extern struct sensor_port_config_t *pSensorPortConfig;
 
 typedef enum {NONE,PARALLEL12,HISPI4} sens_iface_t; ///< Sensor port interface type
 
@@ -32,3 +47,5 @@ int get_subchannels(int port);
 int set_detected_mux_code(int port, int mux_type);
 int set_detected_sensor_code(int port, int sub_chn,  int mux_type);
 sens_iface_t get_port_interface(int port);
+
+#endif

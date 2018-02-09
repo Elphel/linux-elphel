@@ -17,15 +17,14 @@
 
 #ifndef SENSOR_I2C_H
 #define SENSOR_I2C_H
+
 #define I2C_CMD_STOP  0
 #define I2C_CMD_RUN   1
 #define I2C_CMD_RESET 2
 #define SDA_DRIVE_HIGH 1
 #define SDA_RELEASE    1
 
-
-
-/** I2C device description to be used with i2c sequencer*/
+/** I2C device description to be used with i2c sequencer */
 typedef struct{
 	      char                         name[32];      ///< Device class name (up to 31 characters)
 	      u8                           slave7;        ///< Device class base slave address (7-bit). Instances may have it
@@ -34,7 +33,7 @@ typedef struct{
 	      u8                           data_bytes;    ///< Number of data bytes (1..10), for writes it includes register address bytes
 	      int                          scl_khz;       ///< maximal SCL frequency in KHz (currently limited by 200KHz slowest)
 } x393_i2c_device_t;
-void i2c_page_alloc_init( int chn); // reset page allocation for selscted channel
+void i2c_page_alloc_init( int chn); // reset page allocation for selected channel
 int i2c_stop_run_reset(int chn, int cmd);
 int i2c_drive_mode    (int chn, int sda_drive_high, int sda_release);
 int read_xi2c_frame   (int chn);

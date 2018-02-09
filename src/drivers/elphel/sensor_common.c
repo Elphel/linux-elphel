@@ -23,7 +23,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+#define DEBUG
 //copied from cxi2c.c - TODO:remove unneeded
 #include <linux/sched.h>
 #include <linux/kernel.h>
@@ -31,10 +31,12 @@
 #include <linux/interrupt.h>
 #include <linux/time.h>
 #include <linux/platform_device.h>
+
+#include <linux/string.h>
+#include <linux/spinlock.h>
+
 #include <asm/outercache.h>
 #include <asm/cacheflush.h>
-
-#include <linux/spinlock.h>
 
 
 #include <uapi/elphel/c313a.h>
@@ -51,6 +53,7 @@
 #include "quantization_tables.h"
 #include "x393_macro.h"
 #include "x393.h"
+#include "detect_sensors.h"
 //#include "x393_helpers.h"
 
 #include <asm/delay.h> // just for usleep1000()
@@ -1142,6 +1145,159 @@ int image_acq_stop(struct platform_device *pdev)
 {
 	return 0;
 }
+
+/**
+ * Register i2c pages equal to slave address
+ * @param port
+ * @param sub_chn
+ * @param i2c_dev
+ * @return
+ */
+int fpga_register_i2c_pages(int port, int sub_chn, x393_i2c_device_t i2c_dev){
+
+	int i;
+	int line_num;
+
+	int haddr;
+
+	u16 *table = pSensorPortConfig[port].pages_ptr[sub_chn];
+	u8  *h2r   = pSensorPortConfig[port].haddr2rec[sub_chn];
+
+	bool used_page[256];
+
+	// init
+	for(i=0;i<256;i++){
+		used_page[i] = false;
+	}
+
+	// loop through pages table
+	i=0;
+	while(true){
+
+		haddr = (table[i]>>8)&0xff;
+
+		if ((table[i]==0xffff)||(i>255)){
+			dev_dbg(g_dev_ptr,"haddr2rec table registered (number of entries: %d)\n",i);
+			break;
+		}
+
+		if(!used_page[haddr]){
+			used_page[haddr] = true;
+
+			line_num = i2c_page_alloc(port);
+			if (line_num<0){
+				return line_num;
+			}
+
+			dev_dbg(g_dev_ptr,"Registering page %d for haddr=0x%02x. slave7= 0x%02x\n",line_num, haddr, i2c_dev.slave7);
+
+			//line_num = i2c_dev.slave7;
+			//haddr = 0;
+
+			h2r[haddr] = line_num;
+			i2c_page_register(port,line_num);
+			set_xi2c_wrc(&i2c_dev,port,line_num,haddr);
+		}
+		i++;
+	}
+
+	return 0;
+}
+
+/**
+ * Takes care of a single/multiple ports - registers all required 'write' and 'read' pages for
+ * muxes and sensors
+ * @param ports_mask
+ * @return
+ */
+int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
+	                                    ///< @return 0 (may add errors)
+
+{
+	int port, subchn;
+	x393_i2c_device_t *class_mux, *class_sensor;
+	x393_i2c_device_t dev_sensor;
+	struct sensor_port_config_t pcfg;
+	const char *name;
+	const char *name10359;
+
+	bool mux;
+
+	for(port=0;port<SENSOR_PORTS;port++) if ((1<<port)&ports_mask) {
+
+		i2c_page_alloc_init(port); // reset all pages allocation
+
+		pcfg = pSensorPortConfig[port];
+
+		// pcfg.mux==0 equals 'DETECT'
+		//mux = (pcfg.mux!=SENSOR_NONE)&&(pcfg.mux!=0);
+		mux = (pcfg.mux!=SENSOR_NONE);
+
+		// 'write' recs for mux
+		if (mux){
+
+			// returns 'mux10359', need 'el10359'
+			name = get_name_by_code(pcfg.mux,DETECT_MUX);
+			// get reference name 'mux10359'
+			name10359 = get_name_by_code(SENSOR_MUX_10359,DETECT_MUX);
+
+			dev_dbg(g_dev_ptr,"Comparing %s to reference %s\n",name,name10359);
+
+			if (name!=NULL){
+				// compare in case pcfg.mux was something else
+				if (strncmp(name,name10359,strlen(name10359))==0){
+					name = name_10359;
+				}
+			}
+
+		    class_mux = xi2c_dev_get(name);
+
+		    // TODO: request a line# from fpga table and register it (not class_mux->slave7)
+		    dev_dbg(g_dev_ptr,"Registering page %d for haddr=0x%02x. slave7= 0x%02x\n",class_mux->slave7, 0, class_mux->slave7);
+		    i2c_page_register(port, class_mux->slave7);
+		    set_xi2c_wrc(class_mux, port, class_mux->slave7, 0);
+		}
+
+		// 'write' recs for sensors
+		for(subchn=0;subchn<4;subchn++){
+			if (pcfg.sensor[subchn]!=SENSOR_NONE){
+
+				name = get_name_by_code(pcfg.sensor[subchn],DETECT_SENSOR);
+				class_sensor = xi2c_dev_get(name);
+
+				// copy reference data
+				memcpy(&dev_sensor, class_sensor, sizeof(x393_i2c_device_t));
+				// i2c address rule for MUX ports
+				dev_sensor.slave7 = class_sensor->slave7 + I2C359_INC * subchn;
+				// register line#s for available sensors (w or w/o mux)
+				fpga_register_i2c_pages(port,subchn,dev_sensor);
+			}
+		}
+
+		// Now register one page for reading 10359 and the sensor using sensor speed data
+
+		// 'read' recs for sensors,
+		// TODO: request the # from fpga, do not use LEGACY_READ_PAGE2, check read functions
+		name = get_name_by_code(pcfg.sensor[0],1);
+		class_sensor = xi2c_dev_get(name);
+		memcpy(&dev_sensor, class_sensor, sizeof(x393_i2c_device_t));
+		i2c_page_register(port, LEGACY_READ_PAGE2);
+		set_xi2c_rdc(&dev_sensor, port, LEGACY_READ_PAGE2);
+
+		if (mux){
+			// 'read' recs for 10359
+			// use 'el10359_32' - in DT?
+			// TODO: request the # from fpga, do not use LEGACY_READ_PAGE4, check read functions
+			i2c_page_register(port, LEGACY_READ_PAGE4);
+			dev_sensor.data_bytes=4; // for reading 10359 in 32-bit mode
+			set_xi2c_rdc(&dev_sensor, port, LEGACY_READ_PAGE4);
+		}
+
+	}
+
+	return 0;
+}
+
 //#define I2C359_INC                    2   ///< slave address increment between sensors in 10359A board (broadcast, 1,2,3)
 /** Register i2c pages equal to slave address,
  * Use to convert 353 code  */
@@ -1170,7 +1326,7 @@ int legacy_i2c(int ports) ///< bitmask of the sensor ports to use
         }
         // Now register one page for reading 10359 and the sensor using sensor speed data
         memcpy(&dev_sensor, class_sensor, sizeof(x393_i2c_device_t)); // dev_sensor));
-        dev_dbg(g_dev_ptr, "Registering page to read senors 16-bit on port %d, page= 0x%x\n",sensor_port,LEGACY_READ_PAGE2);
+        dev_dbg(g_dev_ptr, "Registering page to read sensors 16-bit on port %d, page= 0x%x\n",sensor_port,LEGACY_READ_PAGE2);
         i2c_page_register(sensor_port, LEGACY_READ_PAGE2);
         set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE2);
         dev_dbg(g_dev_ptr, "Registering page to read 32-bit data for 10359 on port %d, page= 0x%x\n",sensor_port,LEGACY_READ_PAGE4);

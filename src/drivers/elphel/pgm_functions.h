@@ -16,7 +16,12 @@
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
 
+#ifndef PGM_FUNCTIONS_H
+#define PGM_FUNCTIONS_H
+
 #include "sensor_i2c.h"
+#include "detect_sensors.h"
+
 #define COLOR_MARGINS 2 // add this many pixels each side
 #define X313_TIMESTAMPLEN 28 // pixels used for timestamp (in linescan mode added after the line)
 #define X393_TILEHOR 16
@@ -63,6 +68,17 @@ unsigned long sensor_to_camsync(unsigned long pixel_time, unsigned long sensor_c
 #define SETFRAMEPARS_COND(p,v)       { if (unlikely((v)!=thispars->pars[(p) & 0xffff])) { pars_to_update[nupdate  ].num= (p) ;  pars_to_update[nupdate++].val=(v);} }
 //#define SETFRAMEPARS_COND(p,v)       { if (unlikely((v)!=thispars->pars[p])) { pars_to_update[nupdate  ].num= (p) ;  pars_to_update[nupdate++].val=(v);} }
 
+/*
+struct sensor_port_config_t {
+	u32  mux;                                    ///< Sensor multiplexer, currently 0 (SENSOR_DETECT, SENSOR_MUX_10359 or SENSOR_NONE)
+    u32  sensor[MAX_SENSORS];                    ///< Without mux only [0] is used, with 10359 - 0..2 are used (i2c addressing is shifted so 0 is broadcast)
+    u16  par2addr[MAX_SENSORS][MAX_SENSOR_REGS]; ///< Big LUT. SENSOR_REGSxxx par to sensor reg 'yyy' internal address: haddr+laddr for 16 bit
+    u8   haddr2rec[MAX_SENSORS][MAX_FPGA_RECS];  ///< Big LUT (but almost empty). Sensor's page address (haddr of reg addr) to fpga i2c record number (fpga line#)
+    unsigned short *pages_ptr[MAX_SENSORS];
+};
+
+extern struct sensor_port_config_t *pSensorPortConfig;
+*/
 
 /**Set parameter for the sensor register and send to hardware i2c sequencer
  * @param port Sensor port number
@@ -70,10 +86,10 @@ unsigned long sensor_to_camsync(unsigned long pixel_time, unsigned long sensor_c
  * @param sa7 I2C slave address, 7 bit
  * @param reg sensor register address (8-bit)
  * @param data value to set (16 bits) */
-#define SET_SENSOR_PAR(port,frame,sa7,reg,data) { pars_to_update[nupdate  ].num= P_SENSOR_REGS+(reg) ;\
-                                                 pars_to_update[nupdate++].val=(data);\
-                                                 X3X3_I2C_SEND2((port),(frame), (sa7), (reg), (data)); \
-                                               }
+#define SET_SENSOR_PAR(port,frame,sa7,reg,data) { pars_to_update[nupdate  ].num= P_SENSOR_REGS+(reg);\
+                                                  pars_to_update[nupdate++].val=(data);\
+                                                  X3X3_I2C_SEND2((port),(frame), (sa7), (reg), (data));\
+                                                }
 /**Set parameter for the same register in multiple multiplexed sensors and send to hardware i2c sequencer
  * Similar to SET_SENSOR_PAR, but broadcast set for parameters with individual values.
  * Updates both "parent" parameter (used without multiplexer) and the individual ones
@@ -238,3 +254,4 @@ unsigned long sensor_to_camsync(unsigned long pixel_time, unsigned long sensor_c
                                        } \
                                      }
 
+#endif

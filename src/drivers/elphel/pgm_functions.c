@@ -215,7 +215,7 @@
 #include "x393.h"
 #include "sensor_i2c.h"
 #include "x393_videomem.h"
-#include "detect_sensors.h"
+//#include "detect_sensors.h"
 #include "x393_fpga_functions.h"
 
 // NC393 debug macros
@@ -422,7 +422,8 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     i2c_stop_run_reset      (sensor_port, I2C_CMD_RUN); // also programs status update
 
     // TODO: move to specific sensor driver
-    legacy_i2c(1<<sensor_port); // Setup i2c pages for legacy i2c commands. TODO NC393: update for compatibility with 14MPix
+    //legacy_i2c(1<<sensor_port); // Setup i2c pages for legacy i2c commands. TODO NC393: update for compatibility with 14MPix
+    register_i2c_sensor(1<<sensor_port);
 
 #ifdef INIT_IN_TRIGGERED
     camsync_mode.trig =     1; // start in stopped triggered mode

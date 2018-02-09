@@ -15,6 +15,10 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
+
+#ifndef _MT9X001_H
+#define _MT9X001_H
+
 #define MT9M001_PARTID     0x8411 ///< MT9M00* PartID register value
 #define MT9D001_PARTID     0x8511 ///< MT9D00* PartID register value
 #define MT9T001_PARTID     0x1601 ///< MT9T00* PartID register value
@@ -186,6 +190,19 @@
 ///< <li> --+bit  0   -  1 - normal operation, 0 - stop readout (same as reg 0x07, bit 1)
 ///< <li> --+bit  1   -  0 - normal, appropriate changes are made at frame boudary. 1 - do not update (same as reg 7 bit 0)</ul>
 /** Detect one of Micron/Aptina/On Semiconductor sensors MT9M*, MT9D*,MT9T*, andMT9P* with parallel interface */
+
+/**
+LUT to map SENSOR_REGSxxx to internal sensor register addresses
+  * needed for any sensor
+  * For better manual mapping:
+      - even elements are SENSOR_REGSxxx,
+      - odd elements are sensor's register addresses.
+  * has to be at least 16-bit/entry for 16 bit addresses
+  * (for MT9X001 it's a 1-to-1 mapping)
+*/
+extern const unsigned short mt9x001_par2addr[];
+extern const unsigned short mt9x001_pages[];
+
 int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port number (0..3)
                                 struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
                                 struct framepars_t * thispars, ///< sensor current parameters
@@ -200,4 +217,6 @@ int adjustBinning_mt9x001(void);
 int program_woi_mt9x001(int nonstop);
 int program_gains_mt9x001(void);
 int program_exposure_mt9x001(void);
+#endif
+
 #endif

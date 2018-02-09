@@ -390,6 +390,69 @@
 #define MD9(x)
 #endif
 
+/**
+LUT to map SENSOR_REGSxxx to internal sensor register addresses
+  * needed for any sensor
+  * For better manual mapping:
+      - even elements are SENSOR_REGSxxx,
+      - odd elements are sensor's register addresses.
+  * has to be at least 16-bit/entry for 16 bit addresses
+  * (for MT9X001 it's a 1-to-1 mapping)
+*/
+const unsigned short mt9x001_par2addr[] = {
+		P_MT9X001_CHIPVER,       P_MT9X001_CHIPVER,
+		P_MT9X001_ROWSTART,      P_MT9X001_ROWSTART,
+		P_MT9X001_COLSTART,      P_MT9X001_COLSTART,
+		P_MT9X001_HEIGHT,        P_MT9X001_HEIGHT,
+		P_MT9X001_WIDTH,         P_MT9X001_WIDTH,
+		P_MT9X001_HORBLANK,      P_MT9X001_HORBLANK,
+		P_MT9X001_VERTBLANK,     P_MT9X001_VERTBLANK,
+		P_MT9X001_OUTCTRL,       P_MT9X001_OUTCTRL,
+		P_MT9X001_SHTRWDTHU,     P_MT9X001_SHTRWDTHU,
+		P_MT9X001_SHTRWDTH,      P_MT9X001_SHTRWDTH,
+		P_MT9X001_PXLCTL,        P_MT9X001_PXLCTL,
+		P_MT9X001_RESTART,       P_MT9X001_RESTART,
+		P_MT9X001_SHTRDLY,       P_MT9X001_SHTRDLY,
+		P_MT9X001_RESET,         P_MT9X001_RESET,
+		P_MT9X001_PLL1,          P_MT9X001_PLL1,
+		P_MT9X001_PLL2,          P_MT9X001_PLL2,
+		P_MT9X001_PLL3,          P_MT9X001_PLL3,
+		P_MT9X001_RMODE1,        P_MT9X001_RMODE1,
+		P_MT9X001_RMODE2,        P_MT9X001_RMODE2,
+		P_MT9X001_RMODE3,        P_MT9X001_RMODE3,
+		P_MT9X001_RAM,           P_MT9X001_RAM,
+		P_MT9X001_CAM,           P_MT9X001_CAM,
+		P_MT9X001_GREEN1,        P_MT9X001_GREEN1,
+		P_MT9X001_BLUE,          P_MT9X001_BLUE,
+		P_MT9X001_RED,           P_MT9X001_RED,
+		P_MT9X001_GREEN2,        P_MT9X001_GREEN2,
+		P_MT9X001_ALLGAINS,      P_MT9X001_ALLGAINS,
+		P_MT9X001_DESIRBLACK,    P_MT9X001_DESIRBLACK,
+		P_MT9X001_ROWRBLACKOFFS, P_MT9X001_ROWRBLACKOFFS,
+		P_MT9X001_COARSETHRSH,   P_MT9X001_COARSETHRSH,
+		P_MT9X001_CALTHRESH,     P_MT9X001_CALTHRESH,
+		P_MT9X001_CALGREEN1,     P_MT9X001_CALGREEN1,
+		P_MT9X001_CALGREEN2,     P_MT9X001_CALGREEN2,
+		P_MT9X001_CALCTRL,       P_MT9X001_CALCTRL,
+		P_MT9X001_CALRED,        P_MT9X001_CALRED,
+		P_MT9X001_CALBLUE,       P_MT9X001_CALBLUE,
+		P_MT9X001_7F,            P_MT9X001_7F,
+		P_MT9X001_TEST,          P_MT9X001_TEST,
+		P_MT9X001_CHIPEN,        P_MT9X001_CHIPEN,
+		P_MT9X001_CHIPEN1,       P_MT9X001_CHIPEN1,
+		0xffff // END indicator
+};
+
+/**
+ * get at least one parameter for a page
+ */
+const unsigned short mt9x001_pages[] = {
+		P_MT9X001_CHIPVER,
+		P_MT9X001_ROWSTART, // for testing
+		0x3102,             // for testing (page 0x31)
+		0xffff // END indicator
+};
+
 static struct device *g_dev_ptr=NULL; ///< Global pointer to basic device structure. This pointer is used in debugfs output functions
 void mt9x001_set_device(struct device *dev) // do nothing, now it has it's own device
 {

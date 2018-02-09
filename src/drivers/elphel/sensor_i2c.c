@@ -911,7 +911,7 @@ int x393_xi2c_wait_wr(int chn)  ///< sensor port number
     int rdy;
     unsigned long       timeout_end;
 
-    dev_dbg(sdev, "Waitoing i2c sequencer ready for channel %d\n",chn);
+    dev_dbg(sdev, "Waiting i2c sequencer ready for channel %d\n",chn);
     timeout_end = jiffies + tenth_sec;
     while (jiffies < timeout_end){
         if ((rdy=x393_xi2c_ready_wr( chn)))
