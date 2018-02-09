@@ -521,6 +521,13 @@
 
 #define P_REG_MT9F002_DAC_LD_FBIAS                  0x3EF8
 
+/**
+ * SENSOR_REGSxx
+ */
+#define P_MT9F002_MODEL_ID           0
+#define P_MT9F002_RESET              1
+
+
 //#define P_REG(x) x
 
 //#define P_MT9F002_MODEL_ID 4
@@ -528,6 +535,18 @@
 
 //#define P_REG_HADDR(x)  pi2a[2*(x)+1]>>8 & 0xff
 //#define P_REG_LADDR(x)  pi2a[2*(x)+1] & 0xff
+
+/**
+LUT to map SENSOR_REGSxxx to internal sensor register addresses
+  * needed for any sensor
+  * For better manual mapping:
+      - even elements are SENSOR_REGSxxx,
+      - odd elements are sensor's register addresses.
+  * has to be at least 16-bit/entry for 16 bit addresses
+  * (for MT9X001 it's a 1-to-1 mapping)
+*/
+extern const unsigned short mt9f002_par2addr[];
+extern const unsigned short mt9f002_pages[];
 
 /** Detect one of Micron/Aptina/On Semiconductor sensors MT9M*, MT9D*,MT9T*, andMT9P* with parallel interface */
 int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port number (0..3)
@@ -539,9 +558,3 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
                                                                ///< @return 0 - OK, negative - error
 ;
 void mt9f002_set_device(struct device *dev);
-#if 0
-int adjustBinning_mt9x001(void);
-int program_woi_mt9x001(int nonstop);
-int program_gains_mt9x001(void);
-int program_exposure_mt9x001(void);
-#endif
