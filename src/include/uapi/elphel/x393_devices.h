@@ -115,6 +115,7 @@
 #define DEV393_DETECT_SENSORS ("detect_sensors",    "detect_sensors",143,  1, "0666", "c")  ///< Probably not needed, only sysfs is used
 #define DEV393_I2C_SENSORS    ("",            "elphel393-sensor-i2c",-1,  -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
 #define DEV393_MT9X001        ("",            "elphel393-mt9x001",   -1,  -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
+#define DEV393_MT9F002        ("",            "elphel393-mt9f002",   -1,  -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
 #define DEV393_KLOGGER        ("klogger_393",      "klogger_393",    144,  1, "0666", "c")  ///< kernel event logger to memory (no i/o)
 
 #define _DEV393_DEVNAME(n, ...) n

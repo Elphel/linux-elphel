@@ -207,6 +207,7 @@
 #include "sensor_common.h"
 #include "multi10359.h"
 #include "mt9x001.h"
+#include "mt9f002.h"
 #include "gamma_tables.h"
 #include "quantization_tables.h"
 #include "latency.h"
@@ -487,8 +488,33 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 
     }
 
+    if ((thispars->pars[P_SENSOR]==0) &&
+            ((sens & SENSOR_MASK) == SENSOR_MT9F002)){
+
+    	dev_dbg(g_dev_ptr,"trying MT9F002, port=%d\n",sensor_port);
+    	MDP(DBGB_PADD, sensor_port,"trying MT9F002, port=%d\n",sensor_port)
+        // TODO: move to sensor driver
+        // ************************************************************************************************
+        // ********************************* MT9x00x SENSOR (5MP) *****************************************
+        // ************************************************************************************************
+        mt9f002_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);
+        // ************************************************************************************************
+        // ************************************************************************************************
+        // ************************************************************************************************
+    }
+
     setFramePar(sensor_port, thispars, P_CLK_FPGA,  200000000); //  FIXME: NC393
-    setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
+
+    // Freqs for sensors
+    if ((thispars->pars[P_SENSOR]==0) &&
+        ((sens & SENSOR_MASK) == SENSOR_MT9F002)){
+    	setFramePar(sensor_port, thispars, P_CLK_SENSOR,  24444000);
+    }else{
+    	// this handles MT9x001 & MUX
+    	setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
+    }
+
+
 
     if (thispars->pars[P_SENSOR] == SENSOR_DETECT) {
         sensor->sensorType=SENSOR_NONE;                 // to prevent from initializing again

@@ -34,6 +34,7 @@
 #include <uapi/elphel/x393_devices.h>
 #include <uapi/elphel/c313a.h>
 #include "mt9x001.h"
+#include "mt9f002.h"
 #include "multi10359.h"
 #include "detect_sensors.h"
 
@@ -471,6 +472,8 @@ static int par2addr_init(void){
 					break;
 				case SENSOR_MT9F002:
 					// get sensor table
+					par2addr = mt9f002_par2addr;
+					pages    = mt9f002_pages;
 					break;
 			}
 			if (par2addr){

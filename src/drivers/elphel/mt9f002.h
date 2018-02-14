@@ -527,7 +527,6 @@
 #define P_MT9F002_MODEL_ID           0
 #define P_MT9F002_RESET              1
 
-
 //#define P_REG(x) x
 
 //#define P_MT9F002_MODEL_ID 4
