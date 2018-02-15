@@ -527,6 +527,23 @@
 #define P_MT9F002_MODEL_ID           0
 #define P_MT9F002_RESET              1
 
+#define P_MT9F002_WIDTH              2
+#define P_MT9F002_HEIGHT             3
+
+#define P_MT9F002_EXPOS              4
+
+// do not need global gain? why not
+#define P_MT9F002_GAIN               5
+
+#define P_MT9F002_GAINGR             6
+#define P_MT9F002_GAINR              7
+#define P_MT9F002_GAINB              8
+#define P_MT9F002_GAINGB             9
+
+// nobody needs to control digital gain
+
+#define P_MT9F002_TEST_PATTERN       10
+
 //#define P_REG(x) x
 
 //#define P_MT9F002_MODEL_ID 4
