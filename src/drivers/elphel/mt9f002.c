@@ -61,8 +61,15 @@ LUT to map SENSOR_REGSxxx to internal sensor register addresses
   * (for MT9X001 it's a 1-to-1 mapping)
 */
 const unsigned short mt9f002_par2addr[] = {
-		P_MT9F002_MODEL_ID, P_REG_MT9F002_MODEL_ID,
-		P_MT9F002_RESET, P_REG_MT9F002_RESET_REGISTER,
+		P_MT9F002_MODEL_ID,     P_REG_MT9F002_MODEL_ID,
+		P_MT9F002_RESET,        P_REG_MT9F002_RESET_REGISTER,
+		P_MT9F002_EXPOS,        P_REG_MT9F002_COARSE_INTEGRATION_TIME,
+		P_MT9F002_TEST_PATTERN, P_REG_MT9F002_TEST_PATTERN_MODE,
+		P_MT9F002_GAIN        , P_REG_MT9F002_ANALOG_GAIN_CODE_GLOBAL,
+		P_MT9F002_GAINGR      , P_REG_MT9F002_ANALOG_GAIN_CODE_GREENR,
+		P_MT9F002_GAINR       , P_REG_MT9F002_ANALOG_GAIN_CODE_RED,
+		P_MT9F002_GAINB       , P_REG_MT9F002_ANALOG_GAIN_CODE_BLUE,
+		P_MT9F002_GAINGB      , P_REG_MT9F002_ANALOG_GAIN_CODE_GREENB,
 		0xffff // END indicator
 };
 
@@ -220,12 +227,15 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
 
     u32  i2c_read_dataw;
 
-    int sensor_subtype=0;
-    int i;
-    int sensor_multi_regs_number;
+    //int sensor_subtype=0;
+    //int i;
+    //int sensor_multi_regs_number;
     struct sensor_t * psensor; // current sensor
     x393_sensio_ctl_t sensio_ctl = {.d32=0};
-    unsigned short * sensor_multi_regs;
+    //unsigned short * sensor_multi_regs;
+    struct sensor_port_config_t pcfg;
+    const char *name;
+    x393_i2c_device_t * dc;
 
     //struct sensor_port_config_t pcfg;
     //pcfg = pSensorPortConfig[sensor_port];
@@ -244,6 +254,12 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
 
     psensor= &mt9f002;
 
+    // temporary solution
+    pcfg = pSensorPortConfig[sensor_port];
+    name = get_name_by_code(pcfg.mux,DETECT_SENSOR);
+    dc = xi2c_dev_get(name);
+    psensor->i2c_addr = dc->slave7;
+
     // set control lines
     sensio_ctl.mrst = 1;
     sensio_ctl.mrst_set = 1;
@@ -260,7 +276,8 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     sensio_ctl.mmcm_rst = 0;
     x393_sensio_ctrl(sensio_ctl,sensor_port);
 
-    udelay(50); // is it needed?
+    // what's this? commented out and it still works. 2018/02/13
+    //udelay(50); // is it needed?
 
     X3X3_I2C_RCV2(sensor_port, psensor->i2c_addr, P_REG_MT9F002_MODEL_ID, &i2c_read_dataw);
 
@@ -323,6 +340,10 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 	u8 page, haddr, laddr;
 	u16 data;
 
+	dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+	// sensor is silent before init - this check is redundant
+	if (frame16 >= 0) return -1; // should be ASAP
+
 	n = sizeof(mt9f002_inits)/4; // 4 bytes per pair
 
 	for(i=0;i<n;i++){
@@ -336,7 +357,7 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 		write_xi2c_reg16(sensor_port,page,laddr,data);
 	}
 
-	// donothing
+	// init register shadows here
 
     return 0;
 } 

@@ -783,6 +783,12 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     struct sensor_t * psensor; // current sensor
     x393_sensio_ctl_t sensio_ctl = {.d32=0};
     unsigned short * sensor_multi_regs;
+
+    // temporary
+    struct sensor_port_config_t pcfg;
+    const char *name;
+    x393_i2c_device_t * dc;
+
     dev_dbg(g_dev_ptr,"**mt9x001_pgm_detectsensor**: {%d}  frame16=%d, thispars->pars[P_SENSOR]= 0x%lx\n",sensor_port,frame16, thispars->pars[P_SENSOR]);
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     //  MDD1(printk("sensor=0x%x\n", (int)sensor));
@@ -793,6 +799,12 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
 
     // try MT9P001 first
     psensor= &mt9p001;
+
+    // temporary solution
+    pcfg = pSensorPortConfig[sensor_port];
+    name = get_name_by_code(pcfg.mux,DETECT_SENSOR);
+    dc = xi2c_dev_get(name);
+    psensor->i2c_addr = dc->slave7;
 
     // set control lines
     sensio_ctl.mrst = 1;
