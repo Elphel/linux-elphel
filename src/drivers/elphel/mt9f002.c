@@ -111,8 +111,10 @@ struct sensor_t mt9f002 = {
         .imageHeight = 3288,     ///< nominal image height for final images
         .clearWidth  = 4608,     ///< maximal clear image width
         .clearHeight = 3288,     ///< maximal clear image height;
-        .clearTop    = 106,       ///< top margin to the first clear pixel
-        .clearLeft   = 114,       ///< left margin to the first clear pixel
+        .clearTop    = 32,       ///< top margin to the first clear pixel
+        .clearLeft   = 144,       ///< left margin to the first clear pixel
+        //.clearTop    = 106,       ///< top margin to the first clear pixel
+        //.clearLeft   = 114,       ///< left margin to the first clear pixel
         .arrayWidth  = 4640,     ///< total image array width (including black and boundary)
         .arrayHeight = 3320,     ///< total image array height (including black and boundary)
         .minWidth    = 2,        ///< minimal WOI width
@@ -126,9 +128,9 @@ struct sensor_t mt9f002 = {
 
         .maxShutter  = 0xfffff,  ///< Maximal shutter duration (in lines)
 
-        .flips       = 0,        ///< bit mask bit 0 - flipX, 1 - flipY
+        .flips       = 3,        ///< bit mask bit 0 - flipX, 1 - flipY
         .init_flips  = 0,        ///< normal orientation flips bit mask bit 0 - flipX, 1 - flipY
-        .bayer       = 0,        ///< bayer shift for flips==0
+        .bayer       = 2,        ///< bayer shift for flips==0
         .dcmHor      = 0xff,     ///< 1,2,3,4,5,6,7,8 (doc show [0,6] - change to 0x7f
         .dcmVert     = 0xff,     ///< 1,2,3,4,5,6,7,8
         .binHor      = 0xff,     ///< 1,2,4 0xb{0,1,3}
@@ -233,7 +235,7 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     struct sensor_t * psensor; // current sensor
     x393_sensio_ctl_t sensio_ctl = {.d32=0};
     //unsigned short * sensor_multi_regs;
-    struct sensor_port_config_t pcfg;
+    struct sensor_port_config_t *pcfg;
     const char *name;
     x393_i2c_device_t * dc;
 
@@ -255,10 +257,12 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     psensor= &mt9f002;
 
     // temporary solution
-    pcfg = pSensorPortConfig[sensor_port];
-    name = get_name_by_code(pcfg.mux,DETECT_SENSOR);
+    pcfg = &pSensorPortConfig[sensor_port];
+    name = get_name_by_code(pcfg->sensor[0],DETECT_SENSOR);
     dc = xi2c_dev_get(name);
-    psensor->i2c_addr = dc->slave7;
+    if (dc) {
+    	psensor->i2c_addr = dc->slave7;
+    }
 
     // set control lines
     sensio_ctl.mrst = 1;
@@ -280,7 +284,6 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     //udelay(50); // is it needed?
 
     X3X3_I2C_RCV2(sensor_port, psensor->i2c_addr, P_REG_MT9F002_MODEL_ID, &i2c_read_dataw);
-
     dev_dbg(g_dev_ptr,"Read i2c (port = %d, sa7=0x%lx, reg=0x%x) chip ID=%x\n",sensor_port, psensor->i2c_addr, P_REG_MT9F002_MODEL_ID, i2c_read_dataw);
 
     if ((i2c_read_dataw ^ MT9F002_PARTID)==0) {
@@ -324,6 +327,65 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     //NOTE 353:  hardware i2c is turned off (not needed in 393)
 }
 
+int mt9f002_phases_read_flags(int sensor_port,int shift){
+
+	int res = 0;
+	x393_status_sens_io_t status;
+	x393_sensio_tim2_t reset_flags = {.d32=0};
+
+	// reset flags
+	set_x393_sensio_tim2(reset_flags,sensor_port);
+	// read flags
+	status = x393_sensio_status(sensor_port);
+
+	switch(shift){
+		case 0: res = status.barrel_0;break;
+		case 1: res = status.barrel_1;break;
+		case 2: res = status.barrel_2;break;
+		case 3: res = status.barrel_3;break;
+	}
+
+	return res;
+
+}
+
+int mt9f002_adjust_cable_phase(int sensor_port){
+
+	// insert phase adjustment here - find middle
+	// status: x393_status_sens_io_t status = x393_sensio_status(port) - read barrel - bits[21:14]
+	// set lane phase example: write_sensor_i2c 0 1 0 0x31c08db6 = P_REG_MT9F002_HISPI_TIMING
+	//
+	// for port 0:
+	// reset lanes_alive bits by writing to set_x393_sensio_tim2(port) - reg:0x40e or set_x393_sensio_tim3(port) reg:0x40f
+	//     data: 0x40e x393_sensio_tim2_t D3?-[31:24],D2?-[23:16],D1?-[15:8],D0?-[7:0] - higher 5 bits - which D is which?!
+	//     hact: 0x40f x393_sensio_tim3_t [7:0]
+
+	int phase = 0x8000;
+	int i,j;
+	int status;
+
+	// read it first ?
+	x393_status_ctrl_t status_ctrl = {.d32 = 0};
+
+	// enable status updates
+	status_ctrl.mode = 0x3;
+	set_x393_sensio_status_cntrl(status_ctrl, sensor_port);
+
+	// 4 data lanes, prior knowledge
+	for(i=0;i<4;i++){
+		// 16 values: 8 for CLK phase 0 position CLK, 8 - for CLK phase 4 position
+		for(j=0;j<16;j++){
+			status = mt9f002_phases_read_flags(sensor_port,i);
+		}
+	}
+
+	// disable status updates
+	status_ctrl.mode = 0x0;
+	set_x393_sensio_status_cntrl(status_ctrl, sensor_port);
+
+	return 0;
+}
+
 /** Reset and initialize sensor
  * resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers (stops/re-enables hardware i2c - 353 only)
  * i2c is supposed to be already programmed */
@@ -353,14 +415,19 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 		data  =  mt9f002_inits[2*i+1];
 		page  = pSensorPortConfig[sensor_port].haddr2rec[0][haddr];
 		// write immediately
-		dev_dbg(g_dev_ptr,"{%d} Immediately writing 0x%04x to register 0x%02x%02x\n",sensor_port,data,haddr,laddr);
+		dev_dbg(g_dev_ptr,"{%d} init sensor: writing 0x%04x to register 0x%02x%02x\n",sensor_port,data,haddr,laddr);
 		write_xi2c_reg16(sensor_port,page,laddr,data);
+
 	}
+
+	// sensor is supposed to be streaming by now
+
+	mt9f002_adjust_cable_phase(sensor_port);
 
 	// init register shadows here
 
     return 0;
-} 
+}
 
 // SysFS interface to mt9f002
 

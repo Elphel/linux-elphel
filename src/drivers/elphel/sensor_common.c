@@ -1217,7 +1217,7 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 	int port, subchn;
 	x393_i2c_device_t *class_mux, *class_sensor;
 	x393_i2c_device_t dev_sensor;
-	struct sensor_port_config_t pcfg;
+	struct sensor_port_config_t *pcfg;
 	const char *name;
 	const char *name10359;
 
@@ -1227,17 +1227,17 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 
 		i2c_page_alloc_init(port); // reset all pages allocation
 
-		pcfg = pSensorPortConfig[port];
+		pcfg = &pSensorPortConfig[port];
 
 		// pcfg.mux==0 equals 'DETECT'
 		//mux = (pcfg.mux!=SENSOR_NONE)&&(pcfg.mux!=0);
-		mux = (pcfg.mux!=SENSOR_NONE);
+		mux = (pcfg->mux!=SENSOR_NONE);
 
 		// 'write' recs for mux
 		if (mux){
 
 			// returns 'mux10359', need 'el10359'
-			name = get_name_by_code(pcfg.mux,DETECT_MUX);
+			name = get_name_by_code(pcfg->mux,DETECT_MUX);
 			// get reference name 'mux10359'
 			name10359 = get_name_by_code(SENSOR_MUX_10359,DETECT_MUX);
 
@@ -1260,9 +1260,9 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 
 		// 'write' recs for sensors
 		for(subchn=0;subchn<4;subchn++){
-			if (pcfg.sensor[subchn]!=SENSOR_NONE){
+			if (pcfg->sensor[subchn]!=SENSOR_NONE){
 
-				name = get_name_by_code(pcfg.sensor[subchn],DETECT_SENSOR);
+				name = get_name_by_code(pcfg->sensor[subchn],DETECT_SENSOR);
 				class_sensor = xi2c_dev_get(name);
 
 				// copy reference data
@@ -1278,7 +1278,7 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 
 		// 'read' recs for sensors,
 		// TODO: request the # from fpga, do not use LEGACY_READ_PAGE2, check read functions
-		name = get_name_by_code(pcfg.sensor[0],1);
+		name = get_name_by_code(pcfg->sensor[0],1);
 		class_sensor = xi2c_dev_get(name);
 		memcpy(&dev_sensor, class_sensor, sizeof(x393_i2c_device_t));
 		i2c_page_register(port, LEGACY_READ_PAGE2);
