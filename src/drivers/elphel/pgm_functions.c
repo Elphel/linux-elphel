@@ -379,6 +379,8 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     int i2cbytes;
     int mux,sens;
 
+    pr_info("{%d} pgm_detectsensor\n",sensor_port);
+
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
 
@@ -1497,9 +1499,6 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
 
     X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_width, sensio_width);
 
-    pr_info("{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_width,  0x%x)\n",
-            sensor_port, sensor_port, frame16, sensio_width.d32);
-
     dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_width,  0x%x)\n",
             sensor_port, sensor_port, frame16, sensio_width.d32);
 
@@ -1547,7 +1546,6 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
 
     // Change Bayer for gamma/histograms?
     if (bayer_modified) {
-    	pr_info("OH NO, setting BAYER!!!");
         bayer = thispars->pars[P_BAYER] ^ flips ^ sensor->bayer  ^ 3; // 3 added for NC393;
         setFramePar(sensor_port, thispars, P_COMP_BAYER | FRAMEPAIR_FORCE_PROC,   bayer);
         gamma_ctl.bayer = bayer; // 3 added for NC393
@@ -1564,7 +1562,6 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     // this is VACT delay, important period of time
     if (FRAMEPAR_MODIFIED(P_MEMSENSOR_DLY) && ((start_dly.start_dly = thispars->pars[P_MEMSENSOR_DLY]))){
         X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_mcntrl_scanline_start_delay, start_dly);
-        pr_info("{%d}  Setting sensor-to-memory frame sync delay  to %d (0x%x)\n",sensor_port, start_dly.start_dly,start_dly.start_dly);
         dev_dbg(g_dev_ptr,"{%d}  Setting sensor-to-memory frame sync delay  to %d (0x%x)\n",sensor_port, start_dly.start_dly,start_dly.start_dly);
         MDP(DBGB_PADD, sensor_port,"Setting sensor-to-memory frame sync delay  to %d (0x%x)\n", start_dly.start_dly,start_dly.start_dly)
     }
@@ -2062,7 +2059,7 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
     }
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
 
-    pr_info("PGM_MEMSENSOR: sport=%d  width_burts=%d  width_marg=%d  height_marg=%d  left_margin=%d  top_margin=%d\n",
+    dev_dbg(g_dev_ptr,"PGM_MEMSENSOR: sport=%d  width_burts=%d  width_marg=%d  height_marg=%d  left_margin=%d  top_margin=%d\n",
     		sensor_port,
     		width_bursts,
     		width_marg,

@@ -23,7 +23,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#define DEBUG
+//#define DEBUG
 //copied from cxi2c.c - TODO:remove unneeded
 #include <linux/sched.h>
 #include <linux/kernel.h>
@@ -1222,6 +1222,8 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 	const char *name10359;
 
 	bool mux;
+
+	pr_info("register_i2c_sensor()\n");
 
 	for(port=0;port<SENSOR_PORTS;port++) if ((1<<port)&ports_mask) {
 
