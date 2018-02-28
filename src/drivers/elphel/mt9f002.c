@@ -51,6 +51,9 @@
 #include "sensor_i2c.h"
 //#include "detect_sensors.h"
 
+// hact timeout in udelay(100)s
+#define HACT_TIMEOUT 8192
+
 /**
 LUT to map SENSOR_REGSxxx to internal sensor register addresses
   * needed for any sensor
@@ -65,11 +68,20 @@ const unsigned short mt9f002_par2addr[] = {
 		P_MT9F002_RESET,        P_REG_MT9F002_RESET_REGISTER,
 		P_MT9F002_EXPOS,        P_REG_MT9F002_COARSE_INTEGRATION_TIME,
 		P_MT9F002_TEST_PATTERN, P_REG_MT9F002_TEST_PATTERN_MODE,
-		P_MT9F002_GAIN        , P_REG_MT9F002_ANALOG_GAIN_CODE_GLOBAL,
-		P_MT9F002_GAINGR      , P_REG_MT9F002_ANALOG_GAIN_CODE_GREENR,
-		P_MT9F002_GAINR       , P_REG_MT9F002_ANALOG_GAIN_CODE_RED,
-		P_MT9F002_GAINB       , P_REG_MT9F002_ANALOG_GAIN_CODE_BLUE,
-		P_MT9F002_GAINGB      , P_REG_MT9F002_ANALOG_GAIN_CODE_GREENB,
+		P_MT9F002_GAIN,         P_REG_MT9F002_ANALOG_GAIN_CODE_GLOBAL,
+		P_MT9F002_GAINGR,       P_REG_MT9F002_ANALOG_GAIN_CODE_GREENR,
+		P_MT9F002_GAINR,        P_REG_MT9F002_ANALOG_GAIN_CODE_RED,
+		P_MT9F002_GAINB,        P_REG_MT9F002_ANALOG_GAIN_CODE_BLUE,
+		P_MT9F002_GAINGB,       P_REG_MT9F002_ANALOG_GAIN_CODE_GREENB,
+		P_MT9F002_HISPI_TIMING,             P_REG_MT9F002_HISPI_TIMING,
+		P_MT9F002_SMIA_PLL_MULTIPLIER,      P_REG_MT9F002_SMIA_PLL_MULTIPLIER,
+		P_MT9F002_HISPI_CONTROL_STATUS,     P_REG_MT9F002_HISPI_CONTROL_STATUS,
+		P_MT9F002_DATAPATH_SELECT,          P_REG_MT9F002_DATAPATH_SELECT,
+		P_MT9F002_RESET_REGISTER,           P_REG_MT9F002_RESET_REGISTER,
+		P_MT9F002_ANALOG_GAIN_CODE_GLOBAL,  P_REG_MT9F002_ANALOG_GAIN_CODE_GLOBAL,
+		P_MT9F002_ANALOG_GAIN_CODE_RED,     P_REG_MT9F002_ANALOG_GAIN_CODE_RED,
+		P_MT9F002_ANALOG_GAIN_CODE_BLUE,    P_REG_MT9F002_ANALOG_GAIN_CODE_BLUE,
+		P_MT9F002_COARSE_INTEGRATION_TIME,  P_REG_MT9F002_COARSE_INTEGRATION_TIME,
 		0xffff // END indicator
 };
 
@@ -164,15 +176,16 @@ static bool init_done[4] = {false,false,false,false};
 /** Initial register writes for MT9F002 */
 static unsigned short mt9f002_inits[]=
 {
-		P_REG_MT9F002_HISPI_TIMING,            0x8000, //
-		P_REG_MT9F002_SMIA_PLL_MULTIPLIER,     0x00b4, //
-		P_REG_MT9F002_HISPI_CONTROL_STATUS,    0x8400, //
-		P_REG_MT9F002_DATAPATH_SELECT,         0x9280, //
-		P_REG_MT9F002_RESET_REGISTER,          0x001c,
-		P_REG_MT9F002_ANALOG_GAIN_CODE_GLOBAL, 0x000a,
-		P_REG_MT9F002_ANALOG_GAIN_CODE_RED,    0x000d,
-		P_REG_MT9F002_ANALOG_GAIN_CODE_BLUE,   0x0010,
-		P_REG_MT9F002_COARSE_INTEGRATION_TIME, 0x0060
+		P_MT9F002_HISPI_TIMING,            0x8000, //
+		P_MT9F002_SMIA_PLL_MULTIPLIER,     0x00b4, //
+		P_MT9F002_HISPI_CONTROL_STATUS,    0x8400, //
+		P_MT9F002_DATAPATH_SELECT,         0x9280, //
+		P_MT9F002_RESET_REGISTER,          0x001c,
+		//P_MT9F002_TEST_PATTERN,            0x0002, // color bars
+		P_MT9F002_ANALOG_GAIN_CODE_GLOBAL, 0x000a,
+		P_MT9F002_ANALOG_GAIN_CODE_RED,    0x000d,
+		P_MT9F002_ANALOG_GAIN_CODE_BLUE,   0x0010,
+		P_MT9F002_COARSE_INTEGRATION_TIME, 0x0100
 };
 
 /** Specifying sensor registers to be controlled individually in multi-sensor applications, MT9P006 */
@@ -281,7 +294,7 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     x393_sensio_ctrl(sensio_ctl,sensor_port);
 
     // what's this? commented out and it still works. 2018/02/13
-    //udelay(50); // is it needed?
+    udelay(50); // is it needed?
 
     X3X3_I2C_RCV2(sensor_port, psensor->i2c_addr, P_REG_MT9F002_MODEL_ID, &i2c_read_dataw);
     dev_dbg(g_dev_ptr,"Read i2c (port = %d, sa7=0x%lx, reg=0x%x) chip ID=%x\n",sensor_port, psensor->i2c_addr, P_REG_MT9F002_MODEL_ID, i2c_read_dataw);
@@ -330,35 +343,47 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
 int mt9f002_phases_program_phase(int sensor_port, int phase){
 
 	int i;
-	int read_phase;
+	int read_phase = 0x5555;
 	struct sensor_port_config_t *pcfg;
 	const char *name;
+	int wr_full;
 
 	pcfg = &pSensorPortConfig[sensor_port];
 	name = get_name_by_code(pcfg->sensor[0],DETECT_SENSOR);
 
-	x393_xi2c_write_reg(name,sensor_port,0,P_REG_MT9F002_HISPI_TIMING,phase);
+	//x393_xi2c_write_reg(name,sensor_port,0,P_REG_MT9F002_HISPI_TIMING,phase);
+	// sa7 is not used anymore
+
+	wr_full = x393_xi2c_ready_wr(sensor_port);
+	if (wr_full==0){
+		pr_err("{%d} I2C sequencer is FULL1 for target 0x%04x\n",sensor_port,phase);
+	}
+
+	X3X3_I2C_SEND2_ASAP(sensor_port,0x0,P_MT9F002_HISPI_TIMING,phase);
+	x393_xi2c_wait_wr(sensor_port);
 
 	for(i=0;i<32;i++){
 
-		x393_xi2c_read_reg(name,sensor_port,0,P_REG_MT9F002_HISPI_TIMING,&read_phase);
-
-		if (read_phase!=phase){
-			pr_err("{%d} write error, target value = 0x%04x, read value = 0x%04x \n",sensor_port,read_phase,phase);
-			// write retry
-			if ((i&0x7)==0) {
-				x393_xi2c_write_reg(name,sensor_port,0,P_REG_MT9F002_HISPI_TIMING,phase);
-			}
-		}else{
-			break;
+		wr_full = x393_xi2c_ready_wr(sensor_port);
+		if (wr_full==0){
+			pr_err("{%d} I2C sequencer is FULL2 for target 0x%04x\n",sensor_port,phase);
 		}
 
-		// i2c is slow
-		udelay(1000);
+		X3X3_I2C_RCV2(sensor_port, 0x10, P_REG_MT9F002_HISPI_TIMING, &read_phase);
+		if (read_phase==phase){
+			break;
+		}
+		pr_err("{%d} write error, target value = 0x%04x, read value = 0x%04x \n",sensor_port,phase,read_phase);
+		// write retry
+		if ((i&0x7)==0x7) {
+			pr_err("{%d} write retry: 0x%04x\n",sensor_port,phase);
+			X3X3_I2C_SEND2_ASAP(sensor_port,0x0,P_MT9F002_HISPI_TIMING,phase);
+			x393_xi2c_wait_wr(sensor_port);
+		}
+
+		udelay(100);
 	}
-
 	return 0;
-
 }
 
 int mt9f002_phases_read_flags(int sensor_port,int shift){
@@ -372,16 +397,16 @@ int mt9f002_phases_read_flags(int sensor_port,int shift){
 	set_x393_sensio_tim2(reset_flags,sensor_port);
 
 	// wait for hact
-	for(i=0;i<4000;i++){
+	for(i=0;i<HACT_TIMEOUT;i++){
 		status = x393_sensio_status(sensor_port);
 		if (status.hact_alive){
-			if (i>1) dev_dbg(g_dev_ptr,"{%d} hact recovered after %d\n",sensor_port,i);
+			//if (i>1) dev_dbg(g_dev_ptr,"{%d} hact recovered after %d\n",sensor_port,i);
 			break;
 		}
-		udelay(100);
-		if (i==3999){
+		if (i==(HACT_TIMEOUT-1)){
 			dev_dbg(g_dev_ptr,"{%d} hact never went up after reset\n",sensor_port);
 		}
+		udelay(100);
 	}
 
 	// read flags
@@ -398,7 +423,7 @@ int mt9f002_phases_read_flags(int sensor_port,int shift){
 
 }
 
-int mt9f002_phases_scan_lane(int sensor_port, int phase, int shift, int result[]){
+int mt9f002_phases_scan_lane(int sensor_port, int phase, int shift){
 
 	int i,j;
 	int status;
@@ -406,15 +431,15 @@ int mt9f002_phases_scan_lane(int sensor_port, int phase, int shift, int result[]
 
 	int value = 0;
 	bool switched = false;
-	int start = 0;
-	int count = 0;
+	// i where switched, 1 - first 8 steps, 2 - second 8 steps
+	int i1 = 0;
+	int i2 = 0;//8
+	int im = 0;
 
+	int old_phase = phase;
 	int target_phase;
-	int read_phase;
 
 	int s[16];
-
-	pr_info("{%d} Base phase: 0x%04x\n",sensor_port,phase);
 
 	// 16 values: 8 for CLK phase 0 position CLK, 8 - for CLK phase 4 position
 	for(i=0;i<16;i++){
@@ -428,56 +453,60 @@ int mt9f002_phases_scan_lane(int sensor_port, int phase, int shift, int result[]
 			phase -= clk_half_phase;
 		}
 
-		// set phase
 		target_phase = phase + ((i&0x7)<<(3*shift));
 		mt9f002_phases_program_phase(sensor_port,target_phase);
+		old_phase = target_phase;
 
 		// read status
 		status = mt9f002_phases_read_flags(sensor_port,shift);
 		s[i] = status;
 
-		if (i==0){
+		if ((i==0)||(i==8)){
 			value = status;
-			count = 1;
-		}
-
-		if (i==8){
-			if (!switched){
-				start = 0;
-				count = i;
-			}else{
-				switched = false;
-			}
-		}
-
-		if ((i<8)&&(i!=0)){
+			switched = false;
+		}else{
 			if (value!=status){
-				if (!switched){
-					switched = true;
-					value = status;
-				}
-			}else{
-				if (!switched){
-					count += 1;
+				if (i<8){
+					if (!switched){
+						switched = true;
+						value = status;
+						i1 = i;
+					}else{
+						pr_err("{%d} Unexpected phase shift at %d",sensor_port,i);
+					}
+				}else{
+					if (!switched){
+						switched = true;
+						value = status;
+						i2 = i;
+					}else{
+						pr_err("{%d} Unexpected phase shift at %d",sensor_port,i);
+					}
 				}
 			}
 		}
-
-		if (i>=8){
-			if (value==status){
-				count += 1;
-			}
-		}
-
 	}
 
-	pr_info("%d %d %d %d %d %d %d %d | %d %d %d %d %d %d %d %d\n",s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7],s[8],s[9],s[10],s[11],s[12],s[13],s[14],s[15]);
-	pr_info("start = %d, count = %d\n",start,count);
+	dev_dbg(g_dev_ptr,"%d %d %d %d %d %d %d %d | %d %d %d %d %d %d %d %d\n",s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7],s[8],s[9],s[10],s[11],s[12],s[13],s[14],s[15]);
+	dev_dbg(g_dev_ptr,"i1 = %d, i2 = %d\n",i1,i2);
 
-	result[0] = start;
-	result[1] = count;
+	//i2 = i2&0x7;
+	/*
+	if (i2<i1){
+		i2 += 8;
+	}
+	*/
+	im = ((i1+i2)>>1)&0x7;
+	//im = (i2-4)&0x7;
 
-	return 0;
+	target_phase = phase + (im<<(3*shift));
+
+	dev_dbg(g_dev_ptr,"mid phase: %d (target phase = 0x%04x)",im,target_phase);
+
+	// apply center phase
+	mt9f002_phases_program_phase(sensor_port,target_phase);
+
+	return target_phase;
 }
 
 int mt9f002_phases_adjust(int sensor_port){
@@ -493,7 +522,6 @@ int mt9f002_phases_adjust(int sensor_port){
 
 	int phase = 0x8000;
 	int i;
-	int result[2];
 	x393_status_sens_io_t status;
 
 	// read it first ?
@@ -506,34 +534,31 @@ int mt9f002_phases_adjust(int sensor_port){
 	set_x393_sensio_status_cntrl(status_ctrl, sensor_port);
 
 	// wait for hact (usually alive after 254)
-	for(i=0;i<1024;i++){
+	for(i=0;i<HACT_TIMEOUT;i++){
 		status = x393_sensio_status(sensor_port);
 		if (status.hact_alive){
-			dev_dbg(g_dev_ptr,"{%d} HACT alive at %d\n",sensor_port,i);
+			//dev_dbg(g_dev_ptr,"{%d} HACT alive at %d\n",sensor_port,i);
 			break;
+		}
+		if (i==(HACT_TIMEOUT-1)){
+			dev_dbg(g_dev_ptr,"{%d} HACT never went live\n",sensor_port);
 		}
 		udelay(100);
 	}
 
 	// 4 data lanes - prior knowledge
 	for(i=0;i<4;i++){
-		mt9f002_phases_scan_lane(sensor_port,phase,i,result);
-		// &0x7 = %8
-		phase += ((result[0]+(result[1]>>1))&0x7)<<(3*i);
-
-		if (result[1]<2){
-			dev_dbg(g_dev_ptr,"{%d} Error scanning D%d lane, count=%d\n",sensor_port,i,result[1]);
-		}
+		phase = mt9f002_phases_scan_lane(sensor_port,phase,i);
 	}
 
 	dev_dbg(g_dev_ptr,"{%d} Adjusted phase is 0x%04x\n",sensor_port,phase);
 
 	// apply final phase
-	mt9f002_phases_program_phase(sensor_port,phase);
+	//mt9f002_phases_program_phase(sensor_port,phase,0,false);
 
 	// disable status updates
-	status_ctrl.mode = 0x0;
-	set_x393_sensio_status_cntrl(status_ctrl, sensor_port);
+	//status_ctrl.mode = 0x0;
+	//set_x393_sensio_status_cntrl(status_ctrl, sensor_port);
 
 	return 0;
 }
@@ -569,18 +594,24 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 
 	for(i=0;i<n;i++){
 
-		haddr = (mt9f002_inits[2*i]>>8)&0xff;
-		laddr =  mt9f002_inits[2*i]&0xff;
-		data  =  mt9f002_inits[2*i+1];
-		page  = pSensorPortConfig[sensor_port].haddr2rec[0][haddr];
+		//haddr = (mt9f002_inits[2*i]>>8)&0xff;
+		//laddr =  mt9f002_inits[2*i]&0xff;
+		//data  =  mt9f002_inits[2*i+1];
+		//page  = pSensorPortConfig[sensor_port].haddr2rec[0][haddr];
 		// write immediately
 		//dev_dbg(g_dev_ptr,"{%d} init sensor: writing 0x%04x to register 0x%02x%02x\n",sensor_port,data,haddr,laddr);
-		write_xi2c_reg16(sensor_port,page,laddr,data);
+		//write_xi2c_reg16(sensor_port,page,laddr,data);
+
+		X3X3_I2C_SEND2_ASAP(sensor_port,sensor->i2c_addr,mt9f002_inits[2*i],mt9f002_inits[2*i+1]);
 
 	}
 
 	// sensor is supposed to be streaming by now
 	mt9f002_phases_adjust(sensor_port);
+
+	// extra reset?
+	//X3X3_I2C_SEND2_ASAP(sensor_port,sensor->i2c_addr,P_MT9F002_RESET_REGISTER,0x001c);
+
 	// init register shadows here
 
     return 0;
@@ -654,12 +685,29 @@ static ssize_t store_debug_modes(struct device *dev, struct device_attribute *at
     return count;
 }
 
+static ssize_t show_status_flags(struct device *dev, struct device_attribute *attr, char *buf)
+{
+
+	int i,j;
+	int s[16];
+
+	for(i=0;i<4;i++){
+		for(j=0;j<4;j++){
+			s[4*i+j] = mt9f002_phases_read_flags(i,j);
+		}
+	}
+
+    return sprintf(buf,"%d %d %d %d    %d %d %d %d    %d %d %d %d    %d %d %d %d\n",
+    		            s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7],s[8],s[9],s[10],s[11],s[12],s[13],s[14],s[15]);
+}
+
 static DEVICE_ATTR(sensor_regs0,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
 static DEVICE_ATTR(sensor_regs1,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
 static DEVICE_ATTR(sensor_regs2,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
 static DEVICE_ATTR(sensor_regs3,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
 static DEVICE_ATTR(debug_delays,               SYSFS_PERMISSIONS,     show_debug_delays,               store_debug_delays);
 static DEVICE_ATTR(debug_modes,                SYSFS_PERMISSIONS,     show_debug_modes,                store_debug_modes);
+static DEVICE_ATTR(frame_status,               SYSFS_PERMISSIONS,     show_status_flags,               NULL);
 
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_sensor_regs0.attr,
@@ -668,6 +716,7 @@ static struct attribute *root_dev_attrs[] = {
         &dev_attr_sensor_regs3.attr,
         &dev_attr_debug_delays.attr,
         &dev_attr_debug_modes.attr,
+		&dev_attr_frame_status.attr,
         NULL
 };
 
@@ -711,7 +760,7 @@ int mt9f002_remove(struct platform_device *pdev)
 
 // TODO: add elphel,elphel393-mt9f002-1.00 to device tree
 static const struct of_device_id elphel393_mt9f002_of_match[] = {
-    { .compatible = "elphel,elphel393-mt9x001-1.00" },
+    { .compatible = "elphel,elphel393-mt9f002-1.00" },
     { /* end of list */ }
 };
 MODULE_DEVICE_TABLE(of, elphel393_mt9f002_of_match);

@@ -126,7 +126,7 @@ long long get_frame_pos(unsigned int chn, unsigned int pos);
 #define X3X3_I2C_SEND2_ASAP(port,sa7,reg,data) {\
 												   int _ADDR = pSensorPortConfig[(port)].par2addr[0][(reg)];\
 												   int _PAGE = pSensorPortConfig[(port)].haddr2rec[0][(_ADDR>>8)&0xff];\
-	                                               write_xi2c_reg16((port),(sa7),(reg),(data));\
+	                                               write_xi2c_reg16((port),_PAGE,_ADDR&0xff,(data));\
 											   }
 
 /** Perform I2C read (8  bits address, 16 bits data in "legacy" mode (sensors and 10359),

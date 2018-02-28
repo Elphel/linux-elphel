@@ -328,7 +328,9 @@ int get_bit_delay(int khz)
 // Modified FPGA - added extra division
 //    dly = (1000 * mclk_mhz / 4)/khz;
 //    dly = (1000 * mclk_mhz / 8 )/khz; //
-    dly = (32000 * mclk_mhz / scale_i2c_speed )/khz; //
+
+    // WARNING: for 500KHz it is supposed to write 100, but it actually writes 50
+    dly = (32000 * mclk_mhz / scale_i2c_speed )/khz;
     if (dly > 255)
         dly = 255;
     return dly;
@@ -1483,7 +1485,7 @@ static ssize_t get_i2c_help(struct device *dev,              ///< Linux kernel b
             "tbl_rd*:  read - decoded table entry for current rd_page, write <page> <2-byte addr> <bytes_to_read> <dly>\n"
             "tbl_rd*:  alt:  <class-name> <page> <bytes_to_read or 0 (use class)> <dly or 0 (use class)>\n"
             "tbl_rd* and tbl_wr* return same result when read. Delay is 8 bit, 250 - 200KHz SCL\n"
-            "Read/write i2c register (for the pre-configured device classes), sa7_affset is added to class device slave address\n"
+            "Read/write i2c register (for the pre-configured device classes), sa7_offset is added to class device slave address\n"
             "[<data>] is used for register write, without - register read. Reading i2c* returns result of last i2c read operation\n"
             "i2c*:    read - last read data, write: <class_name> <sa7_offset> <reg_addr> [<data>]\n"
             "i2c_frame*:    read - i2c sequencer frame number (4 bit), write: 0 - stop, 1 - run, 2 - reset, 3 - reset+run\n"

@@ -1175,7 +1175,7 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%0x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16, (int) sensor->i2c_addr, (int) P_MT9X001_ROWSTART,(int)  wt);
     }
     ///TODO:Get rid of get_sensor_i2c_regs16 !!!
-    // the fields that should not chnage in non-stop will not change, so it is OK to write them always
+    // the fields that should not change in non-stop will not change, so it is OK to write them always
     if((styp == MT9T_TYP) || (styp == MT9P_TYP)) { // 3MPix and 5MPix sensors
         v= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RAM] & 0xff88) | ((bv - 1) << 4) | (dv - 1) ;
         if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_RAM]) {

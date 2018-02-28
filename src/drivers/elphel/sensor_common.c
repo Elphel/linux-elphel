@@ -1223,7 +1223,7 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 
 	bool mux;
 
-	pr_info("register_i2c_sensor()\n");
+	dev_dbg(g_dev_ptr,"register_i2c_sensor()\n");
 
 	for(port=0;port<SENSOR_PORTS;port++) if ((1<<port)&ports_mask) {
 
