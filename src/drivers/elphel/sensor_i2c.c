@@ -52,7 +52,7 @@
 #define SYSFS_WRITEONLY           0222
 
 //#define DRV_NAME "elphel_sensor_i2c"
-// FIXME: Warnoings in softtirq.c, do not understand why. using LOCK_BH_SENSORI2C to enable spin_lock_bh, otherwise use spin_lock_irqsave
+// FIXME: Warnings in softtirq.c, do not understand why. using LOCK_BH_SENSORI2C to enable spin_lock_bh, otherwise use spin_lock_irqsave
 #undef LOCK_BH_SENSORI2C
 struct x393_i2c_device_list {
     x393_i2c_device_t i2c_dev;
@@ -755,6 +755,8 @@ int read_xi2c_fifo(int chn) ///< sensor port
     int fifo_lsb, rslt,i;
     x393_i2c_ctltbl_t i2c_cmd;
     x393_status_sens_i2c_t  status;
+    x393_cmdseqmux_status_t  status2;
+
     i2c_autoupdate_status(chn);
     status =  x393_sensi2c_status (chn);
     //	dev_dbg(sdev, "read_xi2c_fifo(%d): status = 0x%08x\n",chn, (int) status.d32);
@@ -771,6 +773,7 @@ int read_xi2c_fifo(int chn) ///< sensor port
         if (likely(status.i2c_fifo_lsb != fifo_lsb)) break;
     }
     dev_dbg(sdev, "read_xi2c_fifo(%d): new status = 0x%08x\n",chn, (int) status.d32);
+    status2 = x393_cmdseqmux_status();
     return rslt;
 }
 EXPORT_SYMBOL_GPL(read_xi2c_fifo);
@@ -946,7 +949,7 @@ int legacy_read_i2c_reg( int          chn,      ///< sensor port number
 
     /* Flush channel i2c read FIFO to make sure it is empty, status mode will be set, if needed */
     // Seems after sensor re-init it was getting some stray data?
-    while (read_xi2c_fifo(chn) >= 0) ; // includes waiting for status propagate
+    while (read_xi2c_fifo(chn) >= 0); // includes waiting for status propagate
     dev_dbg(sdev, "Flushed i2c read fifo for channel %d\n",chn);
 
     /* Initiate i2c read */

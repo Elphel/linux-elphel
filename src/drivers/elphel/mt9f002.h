@@ -17,6 +17,8 @@
 #define MT9F002_PARTID     0x2E01 ///< MT9F002 PartID register value
 #define MT9F002_I2C_ADDR     0x10 ///< MT9P I2C slave address (7 bit)
 
+#define MT9F002_RESET_REGISTER_VALUE 0x001c
+
 /* ON Semi MT9F002 i2c register addresses */
 
 /*
