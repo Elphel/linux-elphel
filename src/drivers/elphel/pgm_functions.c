@@ -404,6 +404,9 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     GLOBALPARS(sensor_port, G_SUBCHANNELS) = get_subchannels(sensor_port);
     mux = get_detected_mux_code(sensor_port); // none/detect/10359
 
+    // set broadcast address here, default is 0 for no-mux, MUX_BROADCAST_INDEX is for mux
+    if (mux != SENSOR_NONE) set_broadcast_address(sensor_port,MUX_BROADCAST_INDEX);
+
     dev_dbg(g_dev_ptr,"port = %d, mux = %d, sens= %d\n",sensor_port, mux, sens);
 
     //if ((mux == SENSOR_NONE) && (thispars->pars[P_SENSOR] == SENSOR_NONE))
@@ -744,7 +747,7 @@ int pgm_afterinit      (int sensor_port,               ///< sensor port number (
     SETFRAMEPARS_UPDATE_SET(P_BIN_HOR | FRAMEPAIR_FORCE_NEW,  1);
     SETFRAMEPARS_UPDATE_SET(P_BIN_VERT | FRAMEPAIR_FORCE_NEW, 1);
     // Set analog gains to 1.0 if not set otherwise
-    // FIXME: Without those 3 lines it is not initialaized  (or immediately reset) from the parameters in autocampars.xml. GAING=0x10000, all the rest - 0
+    // FIXME: Without those 3 lines it is not initialized  (or immediately reset) from the parameters in autocampars.xml. GAING=0x10000, all the rest - 0
     /*
  if (!(GLOBALPARS(G_DEBUG) & (1 <<28))) { // debugging here ! ***********************************
     SETFRAMEPARS_UPDATE_SET(P_GAINR | FRAMEPAIR_FORCE_NEW, 0x20000); ///gain ==1.0
@@ -1043,12 +1046,12 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     }
     // flips changed?
     if (FRAMEPAR_MODIFIED(P_FLIPH)) {
-        if (unlikely((thispars->pars[P_FLIPH] & sensor->flips & 1)!=thispars->pars[P_FLIPH])) { // remove unsupoported flips
+        if (unlikely((thispars->pars[P_FLIPH] & sensor->flips & 1)!=thispars->pars[P_FLIPH])) { // remove unsupported flips
             SETFRAMEPARS_SET(P_FLIPH, (thispars->pars[P_FLIPH] & sensor->flips & 1));
         }
     }
     if (FRAMEPAR_MODIFIED(P_FLIPV)) {
-        if (unlikely((thispars->pars[P_FLIPV] & (sensor->flips>>1) & 1)!=thispars->pars[P_FLIPV])) { // remove unsupoported flips
+        if (unlikely((thispars->pars[P_FLIPV] & (sensor->flips>>1) & 1)!=thispars->pars[P_FLIPV])) { // remove unsupported flips
             SETFRAMEPARS_SET(P_FLIPV, (thispars->pars[P_FLIPV] & (sensor->flips >> 1 ) & 1));
         }
     }
@@ -1432,7 +1435,6 @@ int pgm_triggermode(int sensor_port,               ///< sensor port number (0..3
 /** Program sensor input in FPGA (Bayer, 8/16 bits, FPN, test mode, number of lines).
  * TODO: implement for 393 (program_sensor())
  */
-
 int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3)
 					struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
 					struct framepars_t * thispars, ///< sensor current parameters
@@ -1490,10 +1492,12 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
         sensio_width.sensor_width = thispars->pars[P_ACTUAL_WIDTH]+(2 * margins);
     }
 
-    // fix for MT9F002
+    /*
+    // fix for MT9F002 (moved to the sensor driver)
     if ((sens & SENSOR_MASK) == SENSOR_MT9F002){
-    	sensio_width.sensor_width = 2;
+    	sensio_width.sensor_width = MT9F002_VACT_DELAY;
     }
+    */
 
     X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_width, sensio_width);
 

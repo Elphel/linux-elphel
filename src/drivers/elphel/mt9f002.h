@@ -14,10 +14,15 @@
 *  You should have received a copy of the GNU General Public License
 *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
+#ifndef _MT9F002_H
+#define _MT9F002_H
+
 #define MT9F002_PARTID     0x2E01 ///< MT9F002 PartID register value
 #define MT9F002_I2C_ADDR     0x10 ///< MT9P I2C slave address (7 bit)
 
 #define MT9F002_RESET_REGISTER_VALUE 0x001c
+// number of lines to sacrifice before generating Frame Valid
+#define MT9F002_VACT_DELAY 2
 
 /* ON Semi MT9F002 i2c register addresses */
 
@@ -556,6 +561,13 @@
 #define P_MT9F002_ANALOG_GAIN_CODE_BLUE   18
 #define P_MT9F002_COARSE_INTEGRATION_TIME 19
 
+#define P_MT9F002_Y_ADDR_START       20
+#define P_MT9F002_Y_ADDR_END         21
+#define P_MT9F002_X_ADDR_START       22
+#define P_MT9F002_X_ADDR_END         23
+
+#define P_MT9F002_READ_MODE          24
+
 //#define P_REG(x) x
 
 //#define P_MT9F002_MODEL_ID 4
@@ -586,3 +598,5 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
                                                                ///< @return 0 - OK, negative - error
 ;
 void mt9f002_set_device(struct device *dev);
+
+#endif

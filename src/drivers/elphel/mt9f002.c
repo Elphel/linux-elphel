@@ -82,6 +82,11 @@ const unsigned short mt9f002_par2addr[] = {
 		P_MT9F002_ANALOG_GAIN_CODE_RED,     P_REG_MT9F002_ANALOG_GAIN_CODE_RED,
 		P_MT9F002_ANALOG_GAIN_CODE_BLUE,    P_REG_MT9F002_ANALOG_GAIN_CODE_BLUE,
 		P_MT9F002_COARSE_INTEGRATION_TIME,  P_REG_MT9F002_COARSE_INTEGRATION_TIME,
+		P_MT9F002_Y_ADDR_START,             P_REG_MT9F002_Y_ADDR_START,
+		P_MT9F002_Y_ADDR_END,               P_REG_MT9F002_Y_ADDR_END,
+		P_MT9F002_X_ADDR_START,             P_REG_MT9F002_X_ADDR_START,
+		P_MT9F002_X_ADDR_END,               P_REG_MT9F002_X_ADDR_END,
+		P_MT9F002_READ_MODE,                P_REG_MT9F002_READ_MODE,
 		0xffff // END indicator
 };
 
@@ -123,10 +128,8 @@ struct sensor_t mt9f002 = {
         .imageHeight = 3288,     ///< nominal image height for final images
         .clearWidth  = 4608,     ///< maximal clear image width
         .clearHeight = 3288,     ///< maximal clear image height;
-        .clearTop    = 32,       ///< top margin to the first clear pixel
-        .clearLeft   = 144,       ///< left margin to the first clear pixel
-        //.clearTop    = 106,       ///< top margin to the first clear pixel
-        //.clearLeft   = 114,       ///< left margin to the first clear pixel
+        .clearTop    = 32-MT9F002_VACT_DELAY, ///< top margin to the first clear pixel
+        .clearLeft   = 144,      ///< left margin to the first clear pixel
         .arrayWidth  = 4640,     ///< total image array width (including black and boundary)
         .arrayHeight = 3320,     ///< total image array height (including black and boundary)
         .minWidth    = 2,        ///< minimal WOI width
@@ -176,16 +179,16 @@ static bool init_done[4] = {false,false,false,false};
 /** Initial register writes for MT9F002 */
 static unsigned short mt9f002_inits[]=
 {
-		P_MT9F002_HISPI_TIMING,            0x8000, //
-		P_MT9F002_SMIA_PLL_MULTIPLIER,     0x00b4, //
-		P_MT9F002_HISPI_CONTROL_STATUS,    0x8400, //
-		P_MT9F002_DATAPATH_SELECT,         0x9280, //
-		//P_MT9F002_RESET_REGISTER,          0x001c,
-		//P_MT9F002_TEST_PATTERN,            0x0002, // color bars
-		P_MT9F002_ANALOG_GAIN_CODE_GLOBAL, 0x000a,
-		P_MT9F002_ANALOG_GAIN_CODE_RED,    0x000d,
-		P_MT9F002_ANALOG_GAIN_CODE_BLUE,   0x0010,
-		P_MT9F002_COARSE_INTEGRATION_TIME, 0x0100
+		P_REG_MT9F002_HISPI_TIMING,            0x8000, //
+		P_REG_MT9F002_SMIA_PLL_MULTIPLIER,     0x00b4, //
+		P_REG_MT9F002_HISPI_CONTROL_STATUS,    0x8400, //
+		P_REG_MT9F002_DATAPATH_SELECT,         0x9280, //
+		//P_REG_MT9F002_RESET_REGISTER,          0x001c,
+		//P_REG_MT9F002_TEST_PATTERN,            0x0002, // color bars
+		P_REG_MT9F002_ANALOG_GAIN_CODE_GLOBAL, 0x000a,
+		P_REG_MT9F002_ANALOG_GAIN_CODE_RED,    0x000d,
+		P_REG_MT9F002_ANALOG_GAIN_CODE_BLUE,   0x0010,
+		P_REG_MT9F002_COARSE_INTEGRATION_TIME, 0x0100
 };
 
 /** Specifying sensor registers to be controlled individually in multi-sensor applications, MT9P006 */
@@ -206,9 +209,10 @@ static unsigned short mt9f002_inits[]=
 
 int mt9f002_pgm_detectsensor (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9f002_pgm_initsensor   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
-//int mt9f002_pgm_window       (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
-//int mt9f002_pgm_window_safe  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
-//int mt9f002_pgm_window_common(int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9f002_pgm_sensorin     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9f002_pgm_window       (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9f002_pgm_window_safe  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9f002_pgm_window_common(int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 //int mt9f002_pgm_limitfps     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 //int mt9f002_pgm_exposure     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 //int mt9f002_pgm_gains        (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
@@ -318,9 +322,10 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
 
     add_sensor_proc(sensor_port,onchange_detectsensor,&mt9f002_pgm_detectsensor); // detect sensor type, sets sensor structure (capabilities), function pointers NOTE: will be called directly, not through pointers
     add_sensor_proc(sensor_port,onchange_initsensor,  &mt9f002_pgm_initsensor);   // resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers (stops/re-enables hardware i2c)
+    add_sensor_proc(sensor_port,onchange_sensorin,    &mt9f002_pgm_sensorin);     // currently: VACT delay hack
     //add_sensor_proc(sensor_port,onchange_exposure,    &mt9x001_pgm_exposure);     // program exposure
-    //add_sensor_proc(sensor_port,onchange_window,      &mt9x001_pgm_window);       // program sensor WOI and mirroring (flipping)
-    //add_sensor_proc(sensor_port,onchange_window_safe, &mt9x001_pgm_window_safe);  // program sensor WOI and mirroring (flipping) - now - only flipping? with lower latency
+    add_sensor_proc(sensor_port,onchange_window,      &mt9f002_pgm_window);       // program sensor WOI and mirroring (flipping)
+    add_sensor_proc(sensor_port,onchange_window_safe, &mt9f002_pgm_window_safe);  // program sensor WOI and mirroring (flipping) - now - only flipping? with lower latency
     //add_sensor_proc(sensor_port,onchange_limitfps,    &mt9x001_pgm_limitfps);     // check compressor will keep up, limit sensor FPS if needed
     //add_sensor_proc(sensor_port,onchange_gains,       &mt9x001_pgm_gains);        // program analog gains
     //add_sensor_proc(sensor_port,onchange_triggermode, &mt9x001_pgm_triggermode);  // program sensor trigger mode
@@ -345,18 +350,17 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     //NOTE 353:  hardware i2c is turned off (not needed in 393)
 }
 
+// write to sensor's i2c register, test read
 int mt9f002_phases_program_phase(int sensor_port, int phase){
 
-	int i;
 	int read_phase = 0;
 	struct sensor_port_config_t *pcfg;
 	const char *name;
-	int wr_full;
 
 	pcfg = &pSensorPortConfig[sensor_port];
 	name = get_name_by_code(pcfg->sensor[0],DETECT_SENSOR);
 
-	X3X3_I2C_SEND2_ASAP(sensor_port,0x0,P_MT9F002_HISPI_TIMING,phase);
+	X3X3_I2C_SEND2_LUT_ASAP(sensor_port,0x0,P_REG_MT9F002_HISPI_TIMING,phase);
 
 	X3X3_I2C_RCV2(sensor_port, 0x10, P_REG_MT9F002_HISPI_TIMING, &read_phase);
 	if (read_phase!=phase){
@@ -366,6 +370,7 @@ int mt9f002_phases_program_phase(int sensor_port, int phase){
 	return 0;
 }
 
+// read hact_alive bit from x393_status_sens_io_t
 int mt9f002_phases_read_flags(int sensor_port,int shift){
 
 	int res = 0;
@@ -380,7 +385,6 @@ int mt9f002_phases_read_flags(int sensor_port,int shift){
 	for(i=0;i<HACT_TIMEOUT;i++){
 		status = x393_sensio_status(sensor_port);
 		if (status.hact_alive){
-			//if (i>1) dev_dbg(g_dev_ptr,"{%d} hact recovered after %d\n",sensor_port,i);
 			break;
 		}
 		if (i==(HACT_TIMEOUT-1)){
@@ -403,7 +407,8 @@ int mt9f002_phases_read_flags(int sensor_port,int shift){
 
 }
 
-int mt9f002_phases_scan_lane(int sensor_port, int phase, int shift){
+// phase adjustment for a single lane
+int mt9f002_phases_adjust_lane(int sensor_port, int phase, int shift){
 
 	int i;
 	int status;
@@ -480,7 +485,8 @@ int mt9f002_phases_scan_lane(int sensor_port, int phase, int shift){
 	return target_phase;
 }
 
-int mt9f002_phases_adjust(int sensor_port){
+// phase adjustment for port (all 4 lanes)
+int mt9f002_phases_adjust_port(int sensor_port){
 
 	// insert phase adjustment here - find middle
 	// status: x393_status_sens_io_t status = x393_sensio_status(port) - read barrel - bits[21:14]
@@ -519,7 +525,7 @@ int mt9f002_phases_adjust(int sensor_port){
 
 	// 4 data lanes - prior knowledge
 	for(i=0;i<4;i++){
-		phase = mt9f002_phases_scan_lane(sensor_port,phase,i);
+		phase = mt9f002_phases_adjust_lane(sensor_port,phase,i);
 	}
 
 	dev_dbg(g_dev_ptr,"{%d} Adjusted phase is 0x%04x\n",sensor_port,phase);
@@ -548,6 +554,7 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 	int i;
 	int n;
 	x393_sens_sync_mult_t dis_sof = {.d32=0};
+	//u32 i2c_read_data_dw[256];
 
 	//dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
 	// sensor is silent before init - this check is redundant
@@ -564,24 +571,268 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 
 	for(i=0;i<n;i++){
 		// sa7 is not used
-		X3X3_I2C_SEND2_ASAP(sensor_port,0x0,mt9f002_inits[2*i],mt9f002_inits[2*i+1]);
+		X3X3_I2C_SEND2_LUT_ASAP(sensor_port,0x0,mt9f002_inits[2*i],mt9f002_inits[2*i+1]);
 	}
 
 	// soft reset
 	// sa7 is not used
-	X3X3_I2C_SEND2_ASAP(sensor_port,0x0,P_MT9F002_RESET_REGISTER,MT9F002_RESET_REGISTER_VALUE);
+	X3X3_I2C_SEND2_LUT_ASAP(sensor_port,0x0,P_REG_MT9F002_RESET_REGISTER,MT9F002_RESET_REGISTER_VALUE);
 	// delay (needed?)
 	udelay(100);
 
 	// sensor is supposed to be streaming by now
-	mt9f002_phases_adjust(sensor_port);
+	mt9f002_phases_adjust_port(sensor_port);
 
-	// restore SOF (disabled in pgm_detect)
+	// restore SOF (disabled in mt9f002_pgm_detectsensor)
 	dis_sof.dis_sof = 0;
 	x393_sens_sync_mult(dis_sof,sensor_port);
 
 	// init register shadows here
 
+    return 0;
+}
+
+/**
+ * Program sensor input in FPGA (Bayer, 8/16 bits, FPN, test mode, number of lines).
+ */
+int mt9f002_pgm_sensorin (int sensor_port,               ///< sensor port number (0..3)
+		struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+		struct framepars_t * thispars, ///< sensor current parameters
+		struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+		int frame16)                   ///< 4-bit (hardware) frame number parameters should
+									   ///< be applied to,  negative - ASAP
+									   ///< @return OK - 0, <0 - error
+{
+	x393_sensio_width_t   sensio_width = {.d32=0};
+
+	// this is a hack because there's no delay after SOF in HISPI proto
+	sensio_width.sensor_width = MT9F002_VACT_DELAY;
+	X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_width, sensio_width);
+
+	return 0;
+}
+
+/** Program sensor WOI and mirroring
+ * Validating, changing related parameters/scheduling actions, scheduling i2c commands
+ * As different sensors may produce "bad frames" for different WOI changes (i.e. MT9P001 seems to do fine with FLIP, but not WOI_WIDTH)
+ * pgm_window and pgm_window_safe will do the same - they will just be called with different latencies and with compressor stopped)*/
+int mt9f002_pgm_window     (int sensor_port,               ///< sensor port number (0..3)
+                            struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+                            struct framepars_t * thispars, ///< sensor current parameters
+                            struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+                            int frame16)                   ///< 4-bit (hardware) frame number parameters should
+                                                           ///< be applied to,  negative - ASAP
+                                                           ///< @return 0 - OK, negative - error
+{
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+    return mt9f002_pgm_window_common(sensor_port, sensor,  thispars, prevpars, frame16);
+}
+
+/** Program sensor WOI and mirroring in safe mode (now does the same as mt9x001_pgm_window)
+ * Validating, changing related parameters/scheduling actions, scheduling i2c commands  */
+
+int mt9f002_pgm_window_safe (int sensor_port,               ///< sensor port number (0..3)
+        struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+        struct framepars_t * thispars, ///< sensor current parameters
+        struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+        int frame16)                   ///< 4-bit (hardware) frame number parameters should
+                                       ///< be applied to,  negative - ASAP
+                                       ///< @return 0 - OK, negative - error
+{
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+    return mt9f002_pgm_window_common(sensor_port, sensor,  thispars, prevpars, frame16);
+}
+
+/** Common part of programming sensor WOI */
+int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port number (0..3)
+                                struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+                                struct framepars_t * thispars, ///< sensor current parameters
+                                struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+                                int frame16)                   ///< 4-bit (hardware) frame number parameters should
+                                                               ///< be applied to,  negative - ASAP
+                                                               ///< @return 0 - OK, negative - error
+{
+    int i,dv,dh,bv,bh,ww,wh,wl,wt,flip,flipX,flipY,d, v;
+    int wws,wwe,whs,whe;
+    int compressor_margin; // 0 for JP4, 2 for JPEG
+    struct frameparspair_t  pars_to_update[29];
+    int nupdate=0;
+    int styp = sensor->sensorType & 7;
+
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+
+    dh=  thispars->pars[P_DCM_HOR];
+    dv=  thispars->pars[P_DCM_VERT];
+    bh=  thispars->pars[P_BIN_HOR];
+    bv=  thispars->pars[P_BIN_VERT];
+
+    //wws = sensor->clearLeft;
+    ww  = thispars->pars[P_SENSOR_PIXH] * dh;
+    //wwe = ww + wws - 1;
+    //whs = sensor->clearTop;
+    wh  = thispars->pars[P_SENSOR_PIXV] * dv;
+    //whe = whs + wh + MT9F002_VACT_DELAY * dv - 1;
+
+    compressor_margin = (thispars->pars[P_SENSOR_PIXH] - thispars->pars[P_WOI_WIDTH]) >> 1; // assuming same for H and V
+
+    // 10338 is _not_ flipped (as the other boards, but for legacy compatibility....)
+    flip=((thispars->pars[P_FLIPH] & 1) | ((thispars->pars[P_FLIPV] & 1) << 1 )) ^ sensor->init_flips;
+    flipX =  flip & 1;
+    flipY = (flip & 2)? 1:0;
+    d = 2 * bh * (ww / (2 * bh));
+
+    // correct window width if needed
+    // is this needed?
+    if (unlikely(d != ww)) {
+        SETFRAMEPARS_SET(P_SENSOR_PIXH, d / dh);
+        ww = d;
+        //wwe = ww + wws - 1;
+    }
+
+    // height
+    d = (wh+1) & 0xfffe; // round up to even
+    // correct window height if needed
+    // is this needed?
+    if (unlikely(d != wh)) {
+        SETFRAMEPARS_SET(P_SENSOR_PIXV, d / dv);
+        wh = d;
+        //whe = whs + wh + MT9F002_VACT_DELAY * dv - 1;
+    }
+
+    // Margins
+    wl = thispars->pars[P_WOI_LEFT] - compressor_margin;
+    wt = thispars->pars[P_WOI_TOP]  - compressor_margin;
+    dev_dbg(g_dev_ptr,"{%d}   wl =0x%x, wt=0x%x, ww=0x%x, wh=0x%x, compressor_margin=0x%x\n",sensor_port, wl, wt, ww, wh, compressor_margin);
+
+    // flip margins for mirrored images (except oversized, not to rely on sensor->clearWidth/sensor->clearHeight
+    // get back to this
+    if (!thispars->pars[P_OVERSIZE]) {
+
+        if(flipX) {
+            wl = sensor->clearWidth - ww - wl - (2 * COLOR_MARGINS) * dh;
+            if(wl < 0) wl = 0;
+        }
+        if(flipY) {
+            wt = sensor->clearHeight - wh - wt - (2 * COLOR_MARGINS) * dv;
+            if(wt < 0) wt = 0;
+        }
+        // apply clearTop/clearLeft
+        wt = (wt + sensor->clearTop) & 0xfffe;
+        wl = (wl + sensor->clearLeft) & 0xfffe;
+        dev_dbg(g_dev_ptr,"{%d}   wl =0x%x, wt=0x%x\n",sensor_port, wl, wt);
+
+        // apply binning restrictions
+		d = (bh > 1) ? ((bh > 2) ? 16 : 8) : 4;
+		if(flipX)
+			i = d * ((wl - 2) / d) + 2;
+		else
+			i = d * (wl / d);
+		if(i < wl)
+			i += d;
+		wl = i;
+    }
+
+    wws = wl;
+    wwe = wws + ww - 1;
+
+    whs = wt; // wt already got sensor->clearTop-MT9F002_VACT_DELAY
+    whe = whs + wh + MT9F002_VACT_DELAY*(dv+1) - 1;
+
+    // program sensor width
+    if (wws != thispars->pars[P_SENSOR_REGS+P_MT9F002_X_ADDR_START]) {
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_X_ADDR_START, wws);
+        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",
+        		sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9F002_X_ADDR_START, (int) wws);
+    }
+    if (wwe != thispars->pars[P_SENSOR_REGS+P_MT9F002_X_ADDR_END]) {
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_X_ADDR_END, wwe);
+        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",
+        		sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9F002_X_ADDR_END, (int) wwe);
+    }
+    // program sensor height
+    if (whs!= thispars->pars[P_SENSOR_REGS+P_MT9F002_Y_ADDR_START]) {
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16 ,P_MT9F002_Y_ADDR_START, whs);
+        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",
+        		sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_SENSOR_REGS+P_MT9F002_Y_ADDR_START, (int) whs);
+    }
+    if (whe!= thispars->pars[P_SENSOR_REGS+P_MT9F002_Y_ADDR_END]) {
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16 ,P_MT9F002_Y_ADDR_END, whe);
+        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",
+        		sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_SENSOR_REGS+P_MT9F002_Y_ADDR_END, (int) whe);
+    }
+
+    // write flips and skips
+    // reg 0x3040 = P_REG_MT9F002_READ_MODE
+
+    //P_MT9F002_READ_MODE
+    // bits
+    //   [15] - vertical flip,   0 - normal, 1 - vertical flip, starts from y_addr_end
+    //   [14] - horizontal flip, 0 - normal, 1 - horizontal flip, start from x_addr_end
+    //   [13:12] - reserved
+    //   [11] - X dir analog binning enable - when set:
+    //                                                y_odd_inc must be set to 1
+    //                                                x_odd_inc must be set to 3 for col binning
+    //                                                                         7 for col skipping and binning, along with other register changes
+    //   [10] - X and Y dir binning enable - when set:
+    //                                                y_odd_inc & x_odd_inc must be set to 3 for binning
+    //                                                                                     7 for binning and skipping
+    //   [9] - reserved
+    //   [8:6] - read_mode_x_odd_inc: 1 - normal,
+    //                                3 - read out alternate px pairs to halve horizontal data in a frame
+    //                                7 - read out 1 of 4 pixel pairs to reduce readout 1/4 the amout of pixels
+    //
+    //   [5:0] - read_mode_y_odd_inc: 1  - normal,
+    //                                3  - read out alternate px pairs to halve vertical amount of pixels in a frame
+    //                                7  - 1/4
+    //                                15 - 1/8
+    //                                31 - 1/16
+    //                                63 - 1/32
+
+    // the fields that should not change in non-stop will not change, so it is OK to write them always
+    /*
+    if((styp == MT9T_TYP) || (styp == MT9P_TYP)) { // 3MPix and 5MPix sensors
+        v= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RAM] & 0xff88) | ((bv - 1) << 4) | (dv - 1) ;
+        if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_RAM]) {
+            SET_SENSOR_PAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_RAM, v);
+            dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_PAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port,  sensor_port, frame16,   (int) sensor->i2c_addr, (int) P_MT9X001_RAM, (int) v);
+        }
+        v=(thispars->pars[P_SENSOR_REGS+P_MT9X001_CAM] & 0xff88) | ((bh - 1) << 4) | (dh - 1);
+        if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_CAM]) {
+            SET_SENSOR_PAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_CAM, v);
+            dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_PAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_CAM, (int) v);
+        }
+        v= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE2] & 0x3fff) | // preserve other bits from shadows
+                (flipX ? (1 << 14) : 0) | // FLIPH - will control just alternative rows
+                (flipY ? (1 << 15) : 0) ; // FLIPV
+        if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE2]) {
+            SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_RMODE2, v);
+            dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16, (int) sensor->i2c_addr, (int) P_MT9X001_RMODE2, (int) v);
+
+        }
+    } else { // 1.3 and 2 MPix sensors
+        v=  (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1] & 0xffc3) | // preserve other bits from shadows (trigger mode moved to other function)
+                ((dh == 4) ? (1 << 2) : 0) | // Column skip 4
+                ((dv == 4) ? (1 << 3) : 0) | // Row skip    4
+                ((dh == 8) ? (1 << 4) : 0) | // Column skip 8
+                ((dv == 8) ? (1 << 5) : 0) ; // Row skip    8
+        if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1]) {
+            SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_RMODE1, v);
+            dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_RMODE1, (int) v);
+        }
+        v=  (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE2] & 0x3fe7) | // preserve other bits from shadows
+                ((dh == 2) ? (1 << 3) : 0) | // Column skip 2
+                ((dv == 2) ? (1 << 4) : 0) | // Row skip    2
+                (flipX ? (1 << 14) : 0) | // FLIPH - will control just alternative rows
+                (flipY ? (1 << 15) : 0) ; // FLIPV
+        if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE2]) {
+            SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_RMODE2, v);
+            dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16, (int) sensor->i2c_addr, (int) P_MT9X001_RMODE2, (int) v);
+        }
+
+    }
+    */
+    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
     return 0;
 }
 

@@ -90,6 +90,26 @@ extern struct sensor_port_config_t *pSensorPortConfig;
                                                   pars_to_update[nupdate++].val=(data);\
                                                   X3X3_I2C_SEND2((port),(frame), (sa7), (reg), (data));\
                                                 }
+
+
+/**
+ * Set parameter for the sensor register and send to hardware i2c sequencer
+ * @param port  sensor port number
+ * @param frame frame number to apply, <0 - ASAP
+ * @param reg   sensor register address (8-bit)
+ * @param data  value to set (16 bits)
+ */
+#define SET_SENSOR_PAR_LUT(port,frame,reg,data) {\
+	pars_to_update[nupdate  ].num= P_SENSOR_REGS+(reg);\
+    pars_to_update[nupdate++].val=(data);\
+    int _I = 0;\
+    int _ADDR = pSensorPortConfig[(port)].par2addr[_I][(reg)];\
+    if (!(_ADDR&0xffff0000)) {\
+    	X3X3_I2C_SEND2_LUT((port),(frame), _I, _ADDR, (data));\
+    }\
+}
+
+
 /**Set parameter for the same register in multiple multiplexed sensors and send to hardware i2c sequencer
  * Similar to SET_SENSOR_PAR, but broadcast set for parameters with individual values.
  * Updates both "parent" parameter (used without multiplexer) and the individual ones
@@ -127,6 +147,53 @@ extern struct sensor_port_config_t *pSensorPortConfig;
                                          } \
                                        } \
                                      }
+
+/**Set parameter for the same register in multiple multiplexed sensors and send to hardware i2c sequencer
+ * Similar to SET_SENSOR_PAR_LUT, but broadcast set for parameters with individual values.
+ * Updates both "parent" parameter (used without multiplexer) and the individual ones
+ * (can use 4 elements in pars_to_update array, increase size where needed!).
+ * Relies on the fact that individual parameters are processed later, so it verifies that broadcast
+ * does not modify individual if they are also modified and scheduled to be applied.
+ * @param p - sensor port number
+ * @param f - frame number to apply, <0 - ASAP
+ * @param r - sensor register address (8-bit)
+ * @param v - value to set (16 bits)
+ * @see SET_SENSOR_PAR_LUT */
+#define SET_SENSOR_MBPAR_LUT(p,f,r,v)  {\
+	int _I = pSensorPortConfig[(p)].broadcast_addr;\
+	int _ADDR = pSensorPortConfig[(p)].par2addr[_I][(r)];\
+    if (!(_ADDR&0xffff0000)) {\
+        X3X3_I2C_SEND2_LUT((p), (f), _I, _ADDR, (v));\
+    }\
+    pars_to_update[nupdate  ].num= P_SENSOR_REGS+(r) ;\
+    pars_to_update[nupdate++].val=(v);\
+    {\
+	    int _MINDEX= MULTIREG(p,P_SENSOR_REGS+(r),0); \
+	    if (_MINDEX) { \
+	  	    EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",\
+	  	    		__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
+	  	    if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
+			    pars_to_update[nupdate  ].num= _MINDEX;\
+			    pars_to_update[nupdate++].val=(v);\
+		    }\
+		    _MINDEX++;\
+		    EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",\
+		    		__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
+		    if (!FRAMEPAR_MODIFIED(_MINDEX)) {\
+			    pars_to_update[nupdate  ].num= _MINDEX;\
+			    pars_to_update[nupdate++].val=(v);\
+		    }\
+		    _MINDEX++;\
+		    EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",\
+		    		__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
+		    if (!FRAMEPAR_MODIFIED(_MINDEX)) {\
+			    pars_to_update[nupdate  ].num= _MINDEX;\
+			    pars_to_update[nupdate++].val=(v);\
+		    }\
+	    }\
+    }\
+}
+
 /**Set parameter for the same register in multiple multiplexed sensors and send to hardware i2c sequencer
  * Similar to SET_SENSOR_MBPAR, but it does not update "parent" parameter, only individual ones.
  * (can use 4 elements in pars_to_update array, increase size where needed!).
@@ -163,6 +230,48 @@ extern struct sensor_port_config_t *pSensorPortConfig;
                                         } \
                                      }
 
+/**Set parameter for the same register in multiple multiplexed sensors and send to hardware i2c sequencer
+ * Similar to SET_SENSOR_MBPAR, but it does not update "parent" parameter, only individual ones.
+ * (can use 4 elements in pars_to_update array, increase size where needed!).
+ * Relies on the fact that individual parameters are processed later, so it verifies that broadcast
+ * does not modify individual if they are also modified and scheduled to be applied.
+ * @param p sensor port number
+ * @param f frame number to apply, <0 - ASAP
+ * @param r sensor register address (8-bit)
+ * @param v value to set (16 bits)
+ * @see SET_SENSOR_MBPAR */
+#define SET_SENSOR_MBOPAR_LUT(p,f,r,v)  {\
+	int _I = pSensorPortConfig[(p)].broadcast_addr;\
+	int _ADDR = pSensorPortConfig[(p)].par2addr[_I][(r)];\
+	if (!(_ADDR&0xffff0000)) {\
+		X3X3_I2C_SEND2_LUT((p), (f), _I, _ADDR, (v));\
+	}\
+    {\
+    	int _MINDEX= MULTIREG(p,P_SENSOR_REGS+(r),0); \
+        EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",\
+        		__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
+        if (_MINDEX) { \
+        	if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
+        		pars_to_update[nupdate  ].num= _MINDEX ;\
+                pars_to_update[nupdate++].val=(v);\
+            } \
+            _MINDEX++ ;\
+            EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",\
+            		__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
+            if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
+            	pars_to_update[nupdate  ].num= _MINDEX ;\
+                pars_to_update[nupdate++].val=(v);\
+            }\
+            _MINDEX++ ;\
+            EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s _MINDEX=0x%x, v=0x%x, FRAMEPAR_MODIFIED(_MINDEX)=0x%x\n",\
+            		__FILE__,__LINE__,__FUNCTION__, _MINDEX, (int) (v), (int) FRAMEPAR_MODIFIED(_MINDEX) ));\
+            if (!FRAMEPAR_MODIFIED(_MINDEX)) { \
+            	pars_to_update[nupdate  ].num= _MINDEX ;\
+                pars_to_update[nupdate++].val=(v);\
+            } \
+        } \
+    } \
+}
 
 /**Set individual (multiplexed) sensor parameter (and send to hardware i2c sequencer)
  * Do nothing if there is no individual parameter reserved
@@ -180,6 +289,27 @@ extern struct sensor_port_config_t *pSensorPortConfig;
                                          X3X3_I2C_SEND2((p), (f), ( s )+( I2C359_INC * ( i )), ( r ), ( v )); \
                                        } \
                                      }
+
+/**Set individual (multiplexed) sensor parameter (and send to hardware i2c sequencer)
+ * Do nothing if there is no individual parameter reserved
+ * @param p Sensor port number
+ * @param f Frame number to apply, <0 - ASAP
+ * @param i mux sensor index: 0..2 - individual, 3 - broadcast
+ * @param r sensor register address (8-bit)
+ * @param v value to set (16 bits)
+ */
+#define SET_SENSOR_MIPAR_LUT(p,f,i,r,v)  {\
+	int _MINDEX= MULTIREG(p,P_SENSOR_REGS+(r),(i)); \
+    if (_MINDEX) { \
+    	pars_to_update[nupdate  ].num= _MINDEX ;\
+        pars_to_update[nupdate++].val=(v);\
+    	int _ADDR = pSensorPortConfig[(p)].par2addr[(i)][(r)];\
+    	if (!(_ADDR&0xffff0000)) {\
+    		X3X3_I2C_SEND2_LUT((p), (f), (i), _ADDR, (v));\
+    	}\
+    } \
+}
+
 /**Set individual (multiplexed) sensor parameter if the new value is different from the shadow
  * (and send to hardware i2c sequencer).
  * Do nothing if there is no individual parameter reserved
@@ -201,6 +331,29 @@ extern struct sensor_port_config_t *pSensorPortConfig;
                                        } \
                                      }
 
+/**
+ * Set individual (multiplexed) sensor parameter if the new value is different from the shadow
+ * (and send to hardware i2c sequencer).
+ * Do nothing if there is no individual parameter reserved
+ * @param p Sensor port number
+ * @param f Frame number to apply, <0 - ASAP
+ * @param i mux sensor index: 0..2 - individual, 3 - broadcast
+ * @param r sensor register address (8-bit)
+ * @param v value to set (16 bits)
+ */
+#define SET_SENSOR_MIPAR_COND_LUT (p,f,i,r,v) {\
+	int _MINDEX= MULTIREG(p,P_SENSOR_REGS+(r),(i)); \
+	if ((_MINDEX) && ((v) != thispars->pars[_MINDEX])) { \
+		pars_to_update[nupdate  ].num= _MINDEX ;\
+		pars_to_update[nupdate++].val=(v);\
+    	int _ADDR = pSensorPortConfig[(p)].par2addr[(i)][(r)];\
+    	if (!(_ADDR&0xffff0000)) {\
+    		X3X3_I2C_SEND2_LUT((p), (f), (i), _ADDR, (v));\
+    	}\
+		EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s  X3X3_I2C_SEND2(0x%x, 0x%x, 0x%x, 0x%x)\n"\
+				,__FILE__,__LINE__,__FUNCTION__,(int)(f),(int)(i),(int)_ADDR,(int)(v) )); \
+	 } \
+ }
 
 /**Set individual (multiplexed) sensor parameter (and send to hardware i2c sequencer)
  * Fall back to common parameter if no individual exists
@@ -222,6 +375,33 @@ extern struct sensor_port_config_t *pSensorPortConfig;
                                        } \
                                      }
 
+
+/**Set individual (multiplexed) sensor parameter (and send to hardware i2c sequencer)
+ * Fall back to common parameter if no individual exists
+ * @param p Sensor port number
+ * @param f Frame number to apply, <0 - ASAP
+ * @param i mux sensor index: 0..2 - individual, 3 - broadcast
+ * @param r sensor register address (8-bit) - looked up to 16 bit
+ * @param v value to set (16 bits)
+ * */
+#define SET_SENSOR_MIBPAR_LUT(p,f,i,r,v) {\
+	int _MINDEX= MULTIREG(p,P_SENSOR_REGS+(r),(i)); \
+	int _I = (i);\
+    if (_MINDEX) { \
+    	pars_to_update[nupdate  ].num= _MINDEX ;\
+        pars_to_update[nupdate++].val=(v);\
+    }else{ \
+        pars_to_update[nupdate  ].num= P_SENSOR_REGS+(r) ;\
+        pars_to_update[nupdate++].val=(v);\
+        _I = MUX_BROADCAST_INDEX;\
+    } \
+    int _ADDR = pSensorPortConfig[(p)].par2addr[_I][(r)];\
+    if (!(_ADDR&0xffff0000)) {\
+    	X3X3_I2C_SEND2_LUT((p), (f), _I, _ADDR, (v));\
+    }\
+}
+
+
 /// same, but only if different from the shadow
 /**Set individual (multiplexed) sensor parameter (and send to hardware i2c sequencer)
  * only if the new value is different from the current one.
@@ -229,7 +409,7 @@ extern struct sensor_port_config_t *pSensorPortConfig;
  * @param p Sensor port number
  * @param f Frame number to apply, <0 - ASAP
  * @param s I2C slave address, 7 bit
- * @param i sensor index (1..3)
+ * @param i sensor index (1..3) - actually 0..2, then slave address = (s) + I2C359_INC*(i+1), normal (s) is broadcast
  * @param r sensor register address (8-bit)
  * @param v value to set (16 bits)
  * @see SET_SENSOR_MIBPAR */
@@ -253,5 +433,41 @@ extern struct sensor_port_config_t *pSensorPortConfig;
                                          } \
                                        } \
                                      }
+
+
+/// same, but only if different from the shadow
+/**
+ * - Set individual (muxed) sensor parameter (and send to hardware i2c sequencer)
+ * only if the new value is different from the current one.
+ * - Fall back to common parameter if no individual exists
+ * @param p sensor port number
+ * @param f frame number to apply, <0 - ASAP
+ * @param i mux sensor index: 0..2 - individual, 3 - broadcast
+ * @param r sensor register address, 8 bits are looked up to 16 bits
+ * @param v value to set - 16 bits
+ * @see SET_SENSOR_MIBPAR_LUT
+ * */
+#define SET_SENSOR_MIBPAR_COND_LUT(p,f,i,r,v) {\
+    int _MINDEX= MULTIREG(p,P_SENSOR_REGS+(r),(i));\
+    int _I = (i);\
+    if (_MINDEX) { \
+    	if ((v) != thispars->pars[_MINDEX]) { \
+    		pars_to_update[nupdate  ].num= _MINDEX ;\
+            pars_to_update[nupdate++].val=(v);\
+    	}\
+    }else{\
+        if ((v) != thispars->pars[P_SENSOR_REGS+(r)]) { \
+        	pars_to_update[nupdate  ].num= P_SENSOR_REGS+(r) ;\
+            pars_to_update[nupdate++].val=(v);\
+            _I = pSensorPortConfig[(p)].broadcast_addr;\
+        } \
+    } \
+    int _ADDR = pSensorPortConfig[(p)].par2addr[_I][(r)];\
+    if (!(_ADDR&0xffff0000)) {\
+    	X3X3_I2C_SEND2_LUT((p), (f), _I, _ADDR, (v));\
+    }\
+    EDBG(if (GLOBALPARS(G_DEBUG) & (1 <<4)) printk("%s:%d:%s X3X3_I2C_SEND2_LUT(0x%x, 0x%x, 0x%x, 0x%x)\n",\
+    		__FILE__,__LINE__,__FUNCTION__,(int)(f),(int)_I,(int)_ADDR,(int)(v) )); \
+}
 
 #endif

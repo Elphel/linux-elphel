@@ -45,10 +45,10 @@ struct sensor_port_config_t *pSensorPortConfig;
 
 // removed static to export
 static struct sensor_port_config_t sensorPortConfig[] = {
-        {.mux=SENSOR_NONE,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}},
-        {.mux=SENSOR_NONE,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}},
-        {.mux=SENSOR_NONE,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}},
-        {.mux=SENSOR_NONE,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}}
+        {.mux=SENSOR_NONE,.broadcast_addr=0,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}},
+        {.mux=SENSOR_NONE,.broadcast_addr=0,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}},
+        {.mux=SENSOR_NONE,.broadcast_addr=0,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}},
+        {.mux=SENSOR_NONE,.broadcast_addr=0,.sensor={SENSOR_NONE,SENSOR_NONE,SENSOR_NONE,SENSOR_NONE}}
 };
 
 static const struct of_device_id elphel393_detect_sensors_of_match[];
@@ -126,6 +126,11 @@ sens_iface_t get_iface_by_code(int code, ///< sensor code
     return NONE;
 }
 
+/** Get sensor port multiplexer type */
+int set_broadcast_address(int port,int value){
+	sensorPortConfig[port & 3].broadcast_addr = value;
+	return 0;
+}
 
 /** Get sensor port multiplexer type */
 int get_detected_mux_code(int port) ///< Sensor port number (0..3)
@@ -398,7 +403,7 @@ static int elphel393_detect_sensors_sysfs_register(struct platform_device *pdev)
  * @param table - pointer to the global struct
  * @return 0
  */
-static int par2addr_fill(const unsigned short *par2addr, u16 *table){
+static int par2addr_fill(const unsigned short *par2addr, u32 *table){
 
 	int i=0;
 
@@ -407,7 +412,7 @@ static int par2addr_fill(const unsigned short *par2addr, u16 *table){
 
 	// reset
 	for(i=0;i<MAX_SENSOR_REGS;i++){
-		table[i] = 0;
+		table[i] = 0xffffffff;
 	}
 
 	i=0;

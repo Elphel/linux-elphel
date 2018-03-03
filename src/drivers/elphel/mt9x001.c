@@ -1044,7 +1044,7 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
 
 /** Program sensor WOI and mirroring
  * Validating, changing related parameters/scheduling actions, scheduling i2c commands
- * As different sensors may produce "bad frames" for differnt WOI changes (i.e. MT9P001 seems to do fine with FLIP, but not WOI_WIDTH)
+ * As different sensors may produce "bad frames" for different WOI changes (i.e. MT9P001 seems to do fine with FLIP, but not WOI_WIDTH)
  * pgm_window and pgm_window_safe will do the same - they will just be called with different latencies and with compressor stopped)*/
 int mt9x001_pgm_window     (int sensor_port,               ///< sensor port number (0..3)
                             struct sensor_t * sensor,      ///< sensor static parameters (capabilities)

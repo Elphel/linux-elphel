@@ -1147,7 +1147,7 @@ int image_acq_stop(struct platform_device *pdev)
 }
 
 /**
- * Register i2c pages equal to slave address
+ * Register i2c pages
  * @param port
  * @param sub_chn
  * @param i2c_dev
@@ -1161,13 +1161,14 @@ int fpga_register_i2c_pages(int port, int sub_chn, x393_i2c_device_t i2c_dev){
 	int haddr;
 
 	u16 *table = pSensorPortConfig[port].pages_ptr[sub_chn];
-	u8  *h2r   = pSensorPortConfig[port].haddr2rec[sub_chn];
+	u32  *h2r   = pSensorPortConfig[port].haddr2rec[sub_chn];
 
-	bool used_page[256];
+	bool used_haddr[256];
 
 	// init
 	for(i=0;i<256;i++){
-		used_page[i] = false;
+		used_haddr[i] = false;
+		h2r[i] = 0xffffffff;
 	}
 
 	// loop through pages table
@@ -1183,8 +1184,8 @@ int fpga_register_i2c_pages(int port, int sub_chn, x393_i2c_device_t i2c_dev){
 			break;
 		}
 
-		if(!used_page[haddr]){
-			used_page[haddr] = true;
+		if(!used_haddr[haddr]){
+			used_haddr[haddr] = true;
 
 			line_num = i2c_page_alloc(port);
 			if (line_num<0){
