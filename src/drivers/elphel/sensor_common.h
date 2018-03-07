@@ -128,7 +128,7 @@ long long get_frame_pos(unsigned int chn, unsigned int pos);
 
 #define X3X3_I2C_SEND2_LUT(port,frame,si,reg,data) {\
 													int _PAGE = pSensorPortConfig[(port)].haddr2rec[(si)][((reg)>>8)&0xff];\
-													BUG_ON(!(_PAGE&0xffffff00));\
+													BUG_ON(_PAGE&0xffffff00);\
 													write_xi2c_reg16_abs_asap((port),_PAGE,(frame),(reg)&0xff,(data));\
 												}
 
@@ -157,7 +157,7 @@ long long get_frame_pos(unsigned int chn, unsigned int pos);
  * @param data value to set (16 bits) */
 #define X3X3_I2C_SEND2_LUT_ASAP(port,si,reg,data) {\
 												   int _PAGE = pSensorPortConfig[(port)].haddr2rec[(si)][((reg)>>8)&0xff];\
-												   BUG_ON(!(_PAGE&0xffffff00));\
+												   BUG_ON(_PAGE&0xffffff00);\
 	                                               write_xi2c_reg16((port),_PAGE,(reg)&0xff,(data));\
 											   }
 

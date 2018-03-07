@@ -24,6 +24,38 @@
 // number of lines to sacrifice before generating Frame Valid
 #define MT9F002_VACT_DELAY 2
 
+// Clocks, this is basis
+
+// External sensor clock before pll
+// Constant = 24.444MHz in Hz
+#define MT9F002_EXT_CLK 24444000
+// Virtual pixel clock is used as the basis for frame timing equations.
+// Constant = 244.44MHz in Hz
+#define MT9F002_VT_PIX_CLK 244440000
+// Serial output clock
+// Constant = 733.32MHz in Hz
+#define MT9F002_OP_SYS_CLK 733320000
+
+// Sensor clock dividers and multiplier
+// These should be calculated based on the clocks above
+
+// pll multiplier
+#define MT9F002_PLL_MULTIPLIER_VALUE 0xb4
+// pre_pll_clk_div (0x0304), default value is 0x6
+#define MT9F002_PRE_PLL_CLK_DIV_VALUE 0x6
+// vt_pix_clk_div (0x0300), default value is 0x6
+#define MT9F002_VT_PIX_CLK_DIV_VALUE 0x6
+// vt_sys_clk_div (0x0300), default value is 0x6
+#define MT9F002_VT_SYS_CLK_DIV_VALUE 0x1
+// shift_vt_pix_clk_div, default value is 0x1
+#define MT9F002_SHIFT_VT_PIX_CLK_DIV 0x1
+
+
+
+// Coarse Integration Time Margin
+#define MT9F002_COARSE_EXPOS_MARGIN 0x1
+
+
 /* ON Semi MT9F002 i2c register addresses */
 
 /*
@@ -559,14 +591,19 @@
 #define P_MT9F002_ANALOG_GAIN_CODE_GLOBAL 16
 #define P_MT9F002_ANALOG_GAIN_CODE_RED    17
 #define P_MT9F002_ANALOG_GAIN_CODE_BLUE   18
+
 #define P_MT9F002_COARSE_INTEGRATION_TIME 19
+#define P_MT9F002_FINE_INTEGRATION_TIME   20
 
-#define P_MT9F002_Y_ADDR_START       20
-#define P_MT9F002_Y_ADDR_END         21
-#define P_MT9F002_X_ADDR_START       22
-#define P_MT9F002_X_ADDR_END         23
+#define P_MT9F002_Y_ADDR_START       21
+#define P_MT9F002_Y_ADDR_END         22
+#define P_MT9F002_Y_OUTPUT_SIZE      23
+#define P_MT9F002_X_ADDR_START       24
+#define P_MT9F002_X_ADDR_END         25
+#define P_MT9F002_X_OUTPUT_SIZE      26
+#define P_MT9F002_LINE_LENGTH_PCK    27
 
-#define P_MT9F002_READ_MODE          24
+#define P_MT9F002_READ_MODE          28
 
 //#define P_REG(x) x
 

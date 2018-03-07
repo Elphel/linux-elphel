@@ -800,6 +800,14 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     // try MT9P001 first
     psensor= &mt9p001;
 
+    // temporary solution
+    pcfg = &pSensorPortConfig[sensor_port];
+    name = get_name_by_code(pcfg->sensor[0],DETECT_SENSOR);
+    dc = xi2c_dev_get(name);
+    if (dc){
+        psensor->i2c_addr = dc->slave7;
+    }
+
     // set control lines
     sensio_ctl.mrst = 1;
     sensio_ctl.mrst_set = 1;
@@ -847,14 +855,6 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     }
     //  MDD1(dev_dbg(g_dev_ptr,"sensor=0x%x, sensor_subtype=0x%x\n", (int)sensor, (int)sensor_subtype));
     if (sensor_subtype ==0)   return 0;  // no sensor found
-
-    // temporary solution
-    pcfg = &pSensorPortConfig[sensor_port];
-    name = get_name_by_code(pcfg->sensor[0],DETECT_SENSOR);
-    dc = xi2c_dev_get(name);
-    if (dc){
-        psensor->i2c_addr = dc->slave7;
-    }
 
     // Sensor recognized, go on
     //  memcpy(&sensor, psensor, sizeof(mt9p001)); // copy sensor definitions
