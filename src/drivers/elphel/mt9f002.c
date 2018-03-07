@@ -15,7 +15,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *******************************************************************************/
-#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
+//#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
 /****************** INCLUDE FILES SECTION ***********************************/
 #include <linux/types.h> // for div 64
 #include <asm/div64.h>   // for div 64
@@ -68,11 +68,11 @@ const unsigned short mt9f002_par2addr[] = {
 		P_MT9F002_RESET,        P_REG_MT9F002_RESET_REGISTER,
 		P_MT9F002_EXPOS,        P_REG_MT9F002_COARSE_INTEGRATION_TIME,
 		P_MT9F002_TEST_PATTERN, P_REG_MT9F002_TEST_PATTERN_MODE,
-		P_MT9F002_GAIN,         P_REG_MT9F002_ANALOG_GAIN_CODE_GLOBAL,
-		P_MT9F002_GAINGR,       P_REG_MT9F002_ANALOG_GAIN_CODE_GREENR,
-		P_MT9F002_GAINR,        P_REG_MT9F002_ANALOG_GAIN_CODE_RED,
-		P_MT9F002_GAINB,        P_REG_MT9F002_ANALOG_GAIN_CODE_BLUE,
-		P_MT9F002_GAINGB,       P_REG_MT9F002_ANALOG_GAIN_CODE_GREENB,
+		P_MT9F002_GAIN,         P_REG_MT9F002_GLOBAL_GAIN,
+		P_MT9F002_GAINGR,       P_REG_MT9F002_GREEN1_GAIN,
+		P_MT9F002_GAINR,        P_REG_MT9F002_RED_GAIN,
+		P_MT9F002_GAINB,        P_REG_MT9F002_BLUE_GAIN,
+		P_MT9F002_GAINGB,       P_REG_MT9F002_GREEN2_GAIN,
 		P_MT9F002_HISPI_TIMING,             P_REG_MT9F002_HISPI_TIMING,
 		P_MT9F002_SMIA_PLL_MULTIPLIER,      P_REG_MT9F002_SMIA_PLL_MULTIPLIER,
 		P_MT9F002_HISPI_CONTROL_STATUS,     P_REG_MT9F002_HISPI_CONTROL_STATUS,
@@ -1153,7 +1153,7 @@ int mt9f002_calculate_gain(int parvalue){
 		reg.digital = 1;
 	}
 
-	reg.analog2 = (((parvalue<<6)/reg.digital)>>(reg.colamp+reg.analog3))&0x7f;
+	reg.analog2 = ((((parvalue*64)/reg.digital)>>(reg.colamp+reg.analog3))/0x10000)&0x7f;
 
 	return reg.d32;
 }
@@ -1212,18 +1212,26 @@ int mt9f002_pgm_gains      (int sensor_port,               ///< sensor port numb
     // (not as a result of being limited by minimal/maximal gains)
     if (FRAMEPAR_MODIFIED(P_GAING)) {
     	reg = mt9f002_calculate_gain(gaing);
+    	pr_info("{%d} setting GR gain to 0x%08x\n",sensor_port,reg);
+    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINGR, reg);
     }
 
     if (FRAMEPAR_MODIFIED(P_GAINR)) {
     	reg = mt9f002_calculate_gain(gainr);
+    	pr_info("{%d} setting R gain to 0x%08x\n",sensor_port,reg);
+    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINR, reg);
     }
 
     if (FRAMEPAR_MODIFIED(P_GAINGB)) {
     	reg = mt9f002_calculate_gain(gaingb);
+    	pr_info("{%d} setting GB gain to 0x%08x\n",sensor_port,reg);
+    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINGB, reg);
     }
 
     if (FRAMEPAR_MODIFIED(P_GAINB)) {
     	reg = mt9f002_calculate_gain(gainb);
+    	pr_info("{%d} setting B gain to 0x%08x\n",sensor_port,reg);
+    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINB, reg);
     }
 
     // test mode off/on/select
