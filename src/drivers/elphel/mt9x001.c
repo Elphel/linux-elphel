@@ -805,6 +805,7 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     name = get_name_by_code(pcfg->sensor[0],DETECT_SENSOR);
     dc = xi2c_dev_get(name);
     if (dc){
+    	dev_dbg(g_dev_ptr,"{%d} setting i2c_addr to 0x%02x\n",sensor_port,dc->slave7);
         psensor->i2c_addr = dc->slave7;
     }
 
@@ -963,6 +964,7 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
         udelay ((debug_delays >> 8) & 0xff); // 100);
     }
     first_sensor_i2c=sensor->i2c_addr;
+    // TODO: get rid of first_sensor_i2c, leave only mux index
     if (GLOBALPARS(sensor_port, G_SENS_AVAIL)) {
         first_sensor_i2c+= I2C359_INC * ((GLOBALPARS(sensor_port, G_SENS_AVAIL) & 1)?1:((GLOBALPARS(sensor_port, G_SENS_AVAIL) & 2)?2:3));
     }
@@ -1019,9 +1021,8 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
 
 
     for (i=0; i<sensor_register_overwrites_number;i++ ) { // unconditionally set those registers NOTE: Should be < 63 of them!
-        SET_SENSOR_MBPAR(sensor_port,
+        SET_SENSOR_MBPAR_LUT(sensor_port,
                          frame16, // == -1 (immediate)
-                         sensor->i2c_addr,
                          sensor_register_overwrites[2*i],
                          sensor_register_overwrites[2*i+1]);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x,0x%x,0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) sensor_register_overwrites[2*i], (int) sensor_register_overwrites[2*i+1]);
@@ -1105,7 +1106,7 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
     }
     // program sensor width
     if ((ww-1) != thispars->pars[P_SENSOR_REGS+P_MT9X001_WIDTH]) {
-        SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_WIDTH, ww-1);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_WIDTH, ww-1);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_WIDTH, (int) ww-1);
     }
     // height
@@ -1117,7 +1118,7 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
     }
     // program sensor height
     if ((wh-1) != thispars->pars[P_SENSOR_REGS+P_MT9X001_HEIGHT]) {
-        SET_SENSOR_MBPAR(sensor_port, frame16 ,sensor->i2c_addr, P_MT9X001_HEIGHT, wh-1);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_HEIGHT, wh-1);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_HEIGHT, (int) wh-1);
     }
     // Margins
@@ -1165,13 +1166,13 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
     }
     // Program sensor left margin
     if (wl != thispars->pars[P_SENSOR_REGS+P_MT9X001_COLSTART]) {
-        SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_COLSTART, wl);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_COLSTART, wl);
         dev_dbg(g_dev_ptr,"{%d}   XSET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port,  sensor_port, frame16, (int) sensor->i2c_addr, (int) P_MT9X001_COLSTART, (int) wl);
 
     }
     // Program sensor top margin
     if (wt != thispars->pars[P_SENSOR_REGS+P_MT9X001_ROWSTART]) {
-        SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_ROWSTART, wt);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_ROWSTART, wt);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%0x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16, (int) sensor->i2c_addr, (int) P_MT9X001_ROWSTART,(int)  wt);
     }
     ///TODO:Get rid of get_sensor_i2c_regs16 !!!
@@ -1179,19 +1180,19 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
     if((styp == MT9T_TYP) || (styp == MT9P_TYP)) { // 3MPix and 5MPix sensors
         v= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RAM] & 0xff88) | ((bv - 1) << 4) | (dv - 1) ;
         if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_RAM]) {
-            SET_SENSOR_PAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_RAM, v);
+            SET_SENSOR_PAR_LUT(sensor_port, frame16, P_MT9X001_RAM, v);
             dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_PAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port,  sensor_port, frame16,   (int) sensor->i2c_addr, (int) P_MT9X001_RAM, (int) v);
         }
         v=(thispars->pars[P_SENSOR_REGS+P_MT9X001_CAM] & 0xff88) | ((bh - 1) << 4) | (dh - 1);
         if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_CAM]) {
-            SET_SENSOR_PAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_CAM, v);
+            SET_SENSOR_PAR_LUT(sensor_port, frame16, P_MT9X001_CAM, v);
             dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_PAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_CAM, (int) v);
         }
         v= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE2] & 0x3fff) | // preserve other bits from shadows
                 (flipX ? (1 << 14) : 0) | // FLIPH - will control just alternative rows
                 (flipY ? (1 << 15) : 0) ; // FLIPV
         if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE2]) {
-            SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_RMODE2, v);
+            SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_RMODE2, v);
             dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16, (int) sensor->i2c_addr, (int) P_MT9X001_RMODE2, (int) v);
 
         }
@@ -1202,7 +1203,7 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
                 ((dh == 8) ? (1 << 4) : 0) | // Column skip 8
                 ((dv == 8) ? (1 << 5) : 0) ; // Row skip    8
         if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1]) {
-            SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_RMODE1, v);
+            SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_RMODE1, v);
             dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_RMODE1, (int) v);
         }
         v=  (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE2] & 0x3fe7) | // preserve other bits from shadows
@@ -1211,7 +1212,7 @@ int mt9x001_pgm_window_common  (int sensor_port,               ///< sensor port 
                 (flipX ? (1 << 14) : 0) | // FLIPH - will control just alternative rows
                 (flipY ? (1 << 15) : 0) ; // FLIPV
         if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE2]) {
-            SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_RMODE2, v);
+            SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_RMODE2, v);
             dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16, (int) sensor->i2c_addr, (int) P_MT9X001_RMODE2, (int) v);
         }
 
@@ -1384,7 +1385,7 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     // schedule updating P_MT9X001_HORBLANK senosr register and shadow FIXME: Seems hor_blank is too high. is the width itself subtracted?
     if (hor_blank != thispars->pars[P_SENSOR_REGS+P_MT9X001_HORBLANK]) {
         dev_dbg(g_dev_ptr,"{%d} hor_blank =%d(0x%x), thispars->pars[P_SENSOR_REGS+P_MT9X001_HORBLANK]=%d(0x%x)\n",sensor_port,hor_blank,hor_blank,(int)thispars->pars[P_SENSOR_REGS+P_MT9X001_HORBLANK],(int)thispars->pars[P_SENSOR_REGS+P_MT9X001_HORBLANK]);
-        SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_HORBLANK, hor_blank);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_HORBLANK, hor_blank);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_HORBLANK, (int)hor_blank);
     }
     // Now calculate P_PERIOD (extending it as needed)
@@ -1469,7 +1470,7 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     // schedule updating P_MT9X001_VERTBLANK sensor register and shadow
     dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK] =%d(0x%x), vert_blank=%d(0x%x)\n",sensor_port,(int)thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK],(int)thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK],vert_blank,vert_blank);
     if (vert_blank != thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK]) {
-        SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_VERTBLANK, vert_blank);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_VERTBLANK, vert_blank);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MPAR(0x%x, 0x%x,0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_VERTBLANK, (int) vert_blank);
     }
     if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to gains and sensor register shadows
@@ -1637,12 +1638,12 @@ int mt9x001_pgm_exposure       (int sensor_port,               ///< sensor port 
     // schedule updating P_MT9X001_VERTBLANK sensor register and shadow
     // high word of shutter width (>=3MPix)
     if (((styp == MT9T_TYP) || (styp == MT9P_TYP)) && ((video_exposure >> 16) != thispars->pars[P_SENSOR_REGS+P_MT9X001_SHTRWDTHU])) {
-        SET_SENSOR_MBPAR(sensor_port, frame16,sensor->i2c_addr, P_MT9X001_SHTRWDTHU, video_exposure >> 16);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_SHTRWDTHU, video_exposure >> 16);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_SHTRWDTHU, (int) (video_exposure >> 16));
     }
     // low word of shutter width (all sensors)
     if ((video_exposure & 0xffff) != thispars->pars[P_SENSOR_REGS+P_MT9X001_SHTRWDTH]) {
-        SET_SENSOR_MBPAR(sensor_port, frame16,sensor->i2c_addr, P_MT9X001_SHTRWDTH, video_exposure & 0xffff);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_SHTRWDTH, video_exposure & 0xffff);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int)  P_MT9X001_SHTRWDTH, (int) (video_exposure & 0xffff));
     }
     //  dev_dbg(g_dev_ptr,"{%d}  nupdate=0x%x\n",sensor_port, (int) nupdate);
@@ -1937,7 +1938,7 @@ int mt9x001_pgm_gains      (int sensor_port,               ///< sensor port numb
             maxAnaGain);
     // apply sensor register gain red if it was changed
     if (newRegGain != thispars->pars[P_SENSOR_REGS+P_MT9X001_RED]) {
-        SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_RED, newRegGain);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_RED, newRegGain);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_RED, (int) newRegGain);
     }
     // schedule application of (residual after analog gain adjustment) digital gain to the red channel
@@ -1955,7 +1956,7 @@ int mt9x001_pgm_gains      (int sensor_port,               ///< sensor port numb
             maxAnaGain);
     // apply sensor register gain green if it was changed
     if (newRegGain != thispars->pars[P_SENSOR_REGS+P_MT9X001_GREEN1]) {
-        SET_SENSOR_MBPAR(sensor_port, frame16,sensor->i2c_addr, P_MT9X001_GREEN1, newRegGain);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_GREEN1, newRegGain);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_GREEN1, (int) newRegGain);
     }
     // schedule application of (residual after analog gain adjustment) digital gain to the green channel
@@ -1972,7 +1973,7 @@ int mt9x001_pgm_gains      (int sensor_port,               ///< sensor port numb
             maxAnaGain);
     // apply sensor register gain blue if it was changed
     if (newRegGain != thispars->pars[P_SENSOR_REGS+P_MT9X001_BLUE]) {
-        SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_BLUE, newRegGain);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_BLUE, newRegGain);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%0x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_BLUE, (int) newRegGain);
     }
     // schedule application of (residual after analog gain adjustment) digital gain to the blue channel
@@ -1990,7 +1991,7 @@ int mt9x001_pgm_gains      (int sensor_port,               ///< sensor port numb
             maxAnaGain);
     // apply sensor register gain second green if it was changed
     if (newRegGain != thispars->pars[P_SENSOR_REGS+P_MT9X001_GREEN2]) {
-        SET_SENSOR_MBPAR(sensor_port, frame16,sensor->i2c_addr, P_MT9X001_GREEN2, newRegGain);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_GREEN2, newRegGain);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_GREEN2, (int) newRegGain);
     }
     // schedule application of (residual after analog gain adjustment) digital gain to the second green channel
@@ -2001,7 +2002,7 @@ int mt9x001_pgm_gains      (int sensor_port,               ///< sensor port numb
     testmode= thispars->pars[P_TESTSENSOR ];// (on?0x10000:0) | (Micron_tests_mode) 0x0 - off, 0x10000..0x1000F
     testmode= (testmode & 0x10000)? (((testmode & 0xf) << 3) | 1) : 0;
     if (testmode != thispars->pars[P_SENSOR_REGS+P_MT9X001_TEST]) {
-        SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr , P_MT9X001_TEST, testmode) ;
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_TEST, testmode) ;
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_TEST, (int) testmode);
 
     }
@@ -2056,7 +2057,7 @@ int mt9x001_pgm_triggermode        (int sensor_port,               ///< sensor p
         if (!(thispars->pars[P_TRIG] & 4)){
             frame16 = -1;
         }
-        SET_SENSOR_MBPAR(sensor_port, frame16,sensor->i2c_addr, P_MT9X001_RMODE1, newreg);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_RMODE1, newreg);
         dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_RMODE1, (int) newreg);
     }
     if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to gains and sensor register shadows
@@ -2121,7 +2122,7 @@ int mt9x001_pgm_sensorregs     (int sensor_port,               ///< sensor port 
                     for (index=(index32<<5); mask; index++, mask >>= 1) {
                         if (mask & 1) {
                             // apply broadcast  register write and schedule change the individual ones (if they are not modified)
-                            SET_SENSOR_MBOPAR(sensor_port, frame16, sensor->i2c_addr,(index-P_SENSOR_REGS),thispars->pars[index]);
+                            SET_SENSOR_MBOPAR_LUT(sensor_port, frame16, (index-P_SENSOR_REGS),thispars->pars[index]);
                             dev_dbg(g_dev_ptr,"{%d} SET_SENSOR_MBOPAR(0x%x, 0x%x, 0x%lx,0x%x,0x%lx)\n",sensor_port,sensor_port, frame16, sensor->i2c_addr,(index-P_SENSOR_REGS),thispars->pars[index]);
                         }
                     }
@@ -2141,9 +2142,9 @@ int mt9x001_pgm_sensorregs     (int sensor_port,               ///< sensor port 
                     for (index=(index32<<5); mask && (index < ((P_MULTI_REGS) + ((MAX_SENSORS) * (P_MULTI_NUMREGS)))); index++, mask >>= 1) {
                         if (mask & 1) {
                             if ((MULTIRVRSREG(sensor_port, index)) >0 ) {
-                                X3X3_I2C_SEND2(sensor_port,
+                                X3X3_I2C_SEND2_LUT(sensor_port,
                                                frame16,
-                                               sensor->i2c_addr + ((MULTIRVRSREG(sensor_port,index)>> 16) * I2C359_INC),
+                                               (MULTIRVRSREG(sensor_port,index)>>16),
                                                ((MULTIRVRSREG(sensor_port,index) & 0xffff)-P_SENSOR_REGS),
                                                thispars->pars[index]);
                                 dev_dbg(g_dev_ptr,"  X3X3_I2C_SEND2(0x%x, 0x%x, 0x%lx,0x%x,0x%lx)\n",
