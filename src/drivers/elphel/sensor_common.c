@@ -1225,6 +1225,7 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 	const char *name10359;
 
 	bool mux;
+	bool broadcast_set = false;
 
 	dev_dbg(g_dev_ptr,"register_i2c_sensor()\n");
 
@@ -1260,20 +1261,45 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 		    // TODO: request a line# from fpga table and register it (not class_mux->slave7)
 		    i2c_page_register(port, class_mux->slave7);
 		    set_xi2c_wrc(class_mux, port, class_mux->slave7, 0);
-		}
 
-		// 'write' recs for sensors
-		for(subchn=0;subchn<4;subchn++){
+			// 'write' recs for sensors
+			for(subchn=0;subchn<4;subchn++){
+				if (pcfg->sensor[subchn]!=SENSOR_NONE){
+
+					// set the 1st found sensor type to broadcast
+					if (!broadcast_set){
+						broadcast_set = true;
+						pcfg->sensor[pcfg->broadcast_addr] = pcfg->sensor[subchn];
+					}
+					// init par2addr and other tables for sensors
+				    detect_sensors_par2addr_init(port,subchn);
+
+					name = get_name_by_code(pcfg->sensor[subchn],DETECT_SENSOR);
+					class_sensor = xi2c_dev_get(name);
+
+					// copy reference data
+					memcpy(&dev_sensor, class_sensor, sizeof(x393_i2c_device_t));
+
+					if (subchn==pcfg->broadcast_addr){
+						dev_sensor.slave7 = class_sensor->slave7;
+					}else{
+						// i2c address increment rule for MUX ports
+						dev_sensor.slave7 = class_sensor->slave7 + I2C359_INC * (subchn+1);
+					}
+
+					// register line#s for available sensors (w or w/o mux)
+					fpga_register_i2c_pages(port,subchn,dev_sensor);
+				}
+			}
+		}else{
+			// single sensor this port, subchn is 0
+			subchn = 0;
 			if (pcfg->sensor[subchn]!=SENSOR_NONE){
-
+				detect_sensors_par2addr_init(port,subchn);
 				name = get_name_by_code(pcfg->sensor[subchn],DETECT_SENSOR);
 				class_sensor = xi2c_dev_get(name);
-
-				// copy reference data
 				memcpy(&dev_sensor, class_sensor, sizeof(x393_i2c_device_t));
-				// i2c address rule for MUX ports
-				dev_sensor.slave7 = class_sensor->slave7 + I2C359_INC * subchn;
-				// register line#s for available sensors (w or w/o mux)
+				dev_sensor.slave7 = class_sensor->slave7;
 				fpga_register_i2c_pages(port,subchn,dev_sensor);
 			}
 		}

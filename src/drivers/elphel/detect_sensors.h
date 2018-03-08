@@ -47,6 +47,7 @@ typedef enum {NONE,PARALLEL12,HISPI4} sens_iface_t; ///< Sensor port interface t
 int          get_code_by_name(const char * name, int type);
 const char * get_name_by_code(int code, int type);
 sens_iface_t get_iface_by_code(int code, int type);
+int detect_sensors_par2addr_init(int port, int sub_chn);
 
 int get_detected_mux_code(int port);
 int set_broadcast_address(int port,int value);

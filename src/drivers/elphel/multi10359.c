@@ -754,19 +754,19 @@ if (GLOBALPARS(sensor_port, G_MULTI_CFG) & (1 <<G_MULTI_CFG_BEFORE)) {
   dev_dbg(g_dev_ptr,"selected=%x, thispars->pars[P_MULTI_SELECTED]=%x composite=%x sequence=%x\n", selected, (int) thispars->pars[P_MULTI_SELECTED], composite, sequence);
 
   if ((ww-1) != thispars->pars[P_SENSOR_REGS+P_MT9X001_WIDTH]) {
-     SET_SENSOR_MBPAR(sensor_port, frame16, sensor->i2c_addr, P_MT9X001_WIDTH, ww-1);
+     SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_WIDTH, ww-1);
      dev_dbg(g_dev_ptr,"SET_SENSOR_MBPAR(0x%x,0x%x, 0x%x, 0x%x)\n", frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_WIDTH, (int) ww-1);
   }
 // Program binning/decimation (also common but some older sensors)
   if((styp == MT9T_TYP) || (styp == MT9P_TYP)) { // 3MPix and 5MPix sensors
      v= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RAM] & 0xff88) | ((bv - 1) << 4) | (dv - 1) ;
      if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_RAM]) {
-        SET_SENSOR_PAR(sensor_port, frame16,sensor->i2c_addr, P_MT9X001_RAM, v);
+        SET_SENSOR_PAR_LUT(sensor_port, frame16, P_MT9X001_RAM, v);
         dev_dbg(g_dev_ptr,"SET_SENSOR_PAR(0x%x,0x%x, 0x%x, 0x%x)\n", frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_RAM, (int) v);
      }
      v=(thispars->pars[P_SENSOR_REGS+P_MT9X001_CAM] & 0xff88) | ((bh - 1) << 4) | (dh - 1);
      if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_CAM]) {
-        SET_SENSOR_PAR(sensor_port, frame16,sensor->i2c_addr, P_MT9X001_CAM, v);
+        SET_SENSOR_PAR_LUT(sensor_port, frame16, P_MT9X001_CAM, v);
         dev_dbg(g_dev_ptr,"SET_SENSOR_PAR(0x%x,0x%x, 0x%x, 0x%x)\n", frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_CAM, (int) v);
      }
   } else { // 1.3 and 2 MPix sensors
@@ -776,7 +776,7 @@ if (GLOBALPARS(sensor_port, G_MULTI_CFG) & (1 <<G_MULTI_CFG_BEFORE)) {
          ((dh == 8) ? (1 << 4) : 0) | // Column skip 8
          ((dv == 8) ? (1 << 5) : 0) ; // Row skip    8
      if (v != thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1]) {
-        SET_SENSOR_MBPAR(sensor_port,frame16,sensor->i2c_addr, P_MT9X001_RMODE1, v);
+        SET_SENSOR_MBPAR_LUT(sensor_port,frame16, P_MT9X001_RMODE1, v);
         dev_dbg(g_dev_ptr,"SET_SENSOR_MBPAR(0x%x,0x%x, 0x%x, 0x%x)\n", frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_RMODE1, (int) v);
      }
    }
@@ -788,24 +788,24 @@ if (GLOBALPARS(sensor_port, G_MULTI_CFG) & (1 <<G_MULTI_CFG_BEFORE)) {
      wt=sensor_wt(wois[(P_MULTI_TOP1-   P_MULTI_WOI)+SENSOR_IN_SEQ(i,sequence)], wh, sFlipY[i], dv,     thispars->pars[P_OVERSIZE], sensor);
 
 // program sensor height
-     SET_SENSOR_MIBPAR_COND(sensor_port,frame16,sensor->i2c_addr, i, P_MT9X001_HEIGHT, wh-1);
+     SET_SENSOR_MIBPAR_COND_LUT(sensor_port,frame16, i, P_MT9X001_HEIGHT, wh-1);
 // Program sensor left margin
-     SET_SENSOR_MIBPAR_COND(sensor_port,frame16,sensor->i2c_addr, i, P_MT9X001_COLSTART, wl);
+     SET_SENSOR_MIBPAR_COND_LUT(sensor_port,frame16, i, P_MT9X001_COLSTART, wl);
 // Program sensor top margin
-       SET_SENSOR_MIBPAR_COND(sensor_port,frame16,sensor->i2c_addr, i, P_MT9X001_ROWSTART, wt);
+     SET_SENSOR_MIBPAR_COND_LUT(sensor_port,frame16, i, P_MT9X001_ROWSTART, wt);
 
      if((styp == MT9T_TYP) || (styp == MT9P_TYP)) { // 3MPix and 5MPix sensors
        v= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE2] & 0x3fff) | // preserve other bits from shadows
            (sFlipX[i] ? (1 << 14) : 0) | // FLIPH - will control just alternative rows
            (sFlipY[i] ? (1 << 15) : 0) ; // FLIPV
-       SET_SENSOR_MIBPAR_COND(sensor_port,frame16,sensor->i2c_addr, i, P_MT9X001_RMODE2, v);
+       SET_SENSOR_MIBPAR_COND_LUT(sensor_port,frame16, i, P_MT9X001_RMODE2, v);
      } else { // 1.3 and 2 MPix sensors
        v=  (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE2] & 0x3fe7) | // preserve other bits from shadows
            ((dh == 2) ? (1 << 3) : 0) | // Column skip 2
            ((dv == 2) ? (1 << 4) : 0) | // Row skip    2
            (sFlipX[i] ? (1 << 14) : 0) | // FLIPH - will control just alternative rows
            (sFlipY[i] ? (1 << 15) : 0) ; // FLIPV
-       SET_SENSOR_MIBPAR_COND(sensor_port,frame16,sensor->i2c_addr, i, P_MT9X001_RMODE2, v);
+       SET_SENSOR_MIBPAR_COND_LUT(sensor_port,frame16, i, P_MT9X001_RMODE2, v);
      }
    }
   if (!(GLOBALPARS(sensor_port, G_MULTI_CFG) & (1 <<G_MULTI_CFG_BEFORE))) {  // try after sensors
@@ -1120,6 +1120,7 @@ int multisensor_pgm_detectsensor   (int sensor_port,               ///< sensor p
                                 &sensor_id[i],
                                 2);
 #else
+    // do not forget when updated read macro
     rslt=  X3X3_I2C_RCV2 (sensor_port,
                           MT9P001_I2C_ADDR + ((i+1) * I2C359_INC),
                           P_MT9X001_CHIPVER,

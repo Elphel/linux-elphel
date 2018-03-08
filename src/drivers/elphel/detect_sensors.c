@@ -436,10 +436,7 @@ static int par2addr_fill(const unsigned short *par2addr, u32 *table){
  *   the specified sensor
  * @return 0
  */
-static int par2addr_init(void){
-
-	int port;
-	int sub_chn;
+int detect_sensors_par2addr_init(int port,int sub_chn){
 
 	const unsigned short *par2addr;
 	const unsigned short *pages;
@@ -453,23 +450,43 @@ static int par2addr_init(void){
 	};
 	*/
 
+	switch (sensorPortConfig[port].sensor[sub_chn]) {
+		case SENSOR_MT9P006:
+			// get sensor table
+			par2addr = mt9x001_par2addr;
+			pages    = mt9x001_pages;
+			break;
+		case SENSOR_MT9F002:
+			// get sensor table
+			par2addr = mt9f002_par2addr;
+			pages    = mt9f002_pages;
+			break;
+	}
+	if (par2addr){
+		// convert to key-value
+		par2addr_fill(par2addr,sensorPortConfig[port].par2addr[sub_chn]);
+		// save pointer to static LUT
+		sensorPortConfig[port].pages_ptr[sub_chn] = pages;
+	}
+
+	/*
 	// all .mux and .sensor are already filled out
-	for (port = 0; port < SENSOR_PORTS; port++){
+	for (portx = 0; portx < SENSOR_PORTS; portx++){
 
 		// that's from device tree, fpga is not programmed yet
 		dev_dbg(g_dev_ptr,"port: %d mux: %d sensors: %d %d %d %d\n",
-				port,
-				sensorPortConfig[port].mux,
-				sensorPortConfig[port].sensor[0],
-				sensorPortConfig[port].sensor[1],
-				sensorPortConfig[port].sensor[2],
-				sensorPortConfig[port].sensor[3]
+				portx,
+				sensorPortConfig[portx].mux,
+				sensorPortConfig[portx].sensor[0],
+				sensorPortConfig[portx].sensor[1],
+				sensorPortConfig[portx].sensor[2],
+				sensorPortConfig[portx].sensor[3]
 				);
 
 		// sub_chn = 3 is never used
 		for (sub_chn = 0; sub_chn < 4; sub_chn++){
 			//sensorPortConfig[port].sensor[sub_chn];
-			switch (sensorPortConfig[port].sensor[sub_chn]) {
+			switch (sensorPortConfig[portx].sensor[sub_chn]) {
 				case SENSOR_MT9P006:
 					// get sensor table
 					par2addr = mt9x001_par2addr;
@@ -483,12 +500,13 @@ static int par2addr_init(void){
 			}
 			if (par2addr){
 				// convert to key-value
-				par2addr_fill(par2addr,sensorPortConfig[port].par2addr[sub_chn]);
+				par2addr_fill(par2addr,sensorPortConfig[portx].par2addr[sub_chn]);
 				// save pointer to static LUT
-				sensorPortConfig[port].pages_ptr[sub_chn] = pages;
+				sensorPortConfig[portx].pages_ptr[sub_chn] = pages;
 			}
 		}
 	}
+	*/
 
 	return 0;
 }
@@ -515,7 +533,8 @@ static int par2addr_init(void){
 
      detect_sensors_init_of(pdev);
 
-     par2addr_init();
+     // move this fucntion to a later stage, right before fpga pages get allocated (pgm_functions.c)
+     //detect_sensors_par2addr_init();
 
      //    dev_dbg(dev, "Registering character device with name "DEV393_NAME(DEV393_DETECT_SENSORS));
      //    res = register_chrdev(DETECT_SENSORS_MAJOR, DEV393_NAME(DEV393_DETECT_SENSORS), &detect_sensors_fops);

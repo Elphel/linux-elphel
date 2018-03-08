@@ -806,6 +806,7 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     dc = xi2c_dev_get(name);
     if (dc){
     	dev_dbg(g_dev_ptr,"{%d} setting i2c_addr to 0x%02x\n",sensor_port,dc->slave7);
+    	//pr_info("{%d} Setting i2c_addr to 0x%02x\n",sensor_port,dc->slave7);
         psensor->i2c_addr = dc->slave7;
     }
 
@@ -827,8 +828,10 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     udelay(50); // is it needed?
     X3X3_I2C_RCV2(sensor_port, psensor->i2c_addr, P_MT9X001_CHIPVER, &i2c_read_dataw);
     dev_dbg(g_dev_ptr,"Read i2c (port = %d, sa7=0x%lx, reg=0x%x) chip ID=%x\n",sensor_port, psensor->i2c_addr, P_MT9X001_CHIPVER, i2c_read_dataw);
+    //pr_info("Read i2c (port = %d, sa7=0x%lx, reg=0x%x) chip ID=%x\n",sensor_port, psensor->i2c_addr, P_MT9X001_CHIPVER, i2c_read_dataw);
     if (((i2c_read_dataw ^ MT9P001_PARTID) & MT9X001_PARTIDMASK)==0) {
         dev_dbg(g_dev_ptr,"Found MT9P001 2592x1944 sensor, chip ID=%x\n",i2c_read_dataw);
+        //pr_info("Found MT9P001 2592x1944 sensor, chip ID=%x\n",i2c_read_dataw);
         sensor_subtype=MT9P_TYP; //1;
     }
     //  dev_dbg(g_dev_ptr,"sensor id= 0x%x\n",i2c_read_data[0]);

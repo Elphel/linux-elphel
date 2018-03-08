@@ -100,10 +100,10 @@ extern struct sensor_port_config_t *pSensorPortConfig;
  * @param data  value to set (16 bits)
  */
 #define SET_SENSOR_PAR_LUT(port,frame,reg,data) {\
+	int _I = pSensorPortConfig[(port)].broadcast_addr;\
+	int _ADDR = pSensorPortConfig[(port)].par2addr[_I][(reg)];\
 	pars_to_update[nupdate  ].num= P_SENSOR_REGS+(reg);\
     pars_to_update[nupdate++].val=(data);\
-    int _I = 0;\
-    int _ADDR = pSensorPortConfig[(port)].par2addr[_I][(reg)];\
     if (!(_ADDR&0xffff0000)) {\
     	X3X3_I2C_SEND2_LUT((port),(frame), _I, _ADDR, (data));\
     }\
