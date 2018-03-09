@@ -1264,14 +1264,10 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 				*/
 				//name = name_10359;
 			//}
-			pr_info("checkpoint 1: %s\n",name);
 		    class_mux = xi2c_dev_get(name);
-		    pr_info("checkpoint 2\n");
 		    // TODO: request a line# from fpga table and register it (not class_mux->slave7)
 		    i2c_page_register(port, class_mux->slave7);
-		    pr_info("checkpoint 3\n");
 		    set_xi2c_wrc(class_mux, port, class_mux->slave7, 0);
-		    pr_info("checkpoint 4\n");
 
 			// 'write' recs for sensors
 			for(subchn=0;subchn<4;subchn++){
