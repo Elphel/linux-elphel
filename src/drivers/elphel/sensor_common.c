@@ -1222,7 +1222,8 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 	x393_i2c_device_t dev_sensor;
 	struct sensor_port_config_t *pcfg;
 	const char *name;
-	const char *name10359;
+	//const char *name10359;
+	//const char *detect;
 
 	bool mux;
 	bool broadcast_set = false;
@@ -1243,24 +1244,34 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 		if (mux){
 
 			// returns 'mux10359', need 'el10359'
-			name = get_name_by_code(pcfg->mux,DETECT_MUX);
+			//name = get_name_by_code(pcfg->mux,DETECT_MUX);
 			// get reference name 'mux10359'
-			name10359 = get_name_by_code(SENSOR_MUX_10359,DETECT_MUX);
+			//name10359 = get_name_by_code(SENSOR_MUX_10359,DETECT_MUX);
+			// get reference name 'detect'
 
-			dev_dbg(g_dev_ptr,"Comparing %s to reference %s\n",name,name10359);
+			// there's only one mux - 10359, so
+			name = "el10359";
 
-			if (name!=NULL){
+			//dev_dbg(g_dev_ptr,"Comparing %s to reference %s\n",name,name10359);
+			//pr_info("Comparing %s to reference %s\n",name,name10359);
+
+			//if (name!=NULL){
 				// compare in case pcfg.mux was something else
+				/*
 				if (strncmp(name,name10359,strlen(name10359))==0){
 					name = name_10359;
 				}
-			}
-
+				*/
+				//name = name_10359;
+			//}
+			pr_info("checkpoint 1: %s\n",name);
 		    class_mux = xi2c_dev_get(name);
-
+		    pr_info("checkpoint 2\n");
 		    // TODO: request a line# from fpga table and register it (not class_mux->slave7)
 		    i2c_page_register(port, class_mux->slave7);
+		    pr_info("checkpoint 3\n");
 		    set_xi2c_wrc(class_mux, port, class_mux->slave7, 0);
+		    pr_info("checkpoint 4\n");
 
 			// 'write' recs for sensors
 			for(subchn=0;subchn<4;subchn++){
