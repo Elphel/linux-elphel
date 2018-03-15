@@ -312,6 +312,7 @@
 <li>                     bit 4 - global reset release (GRR) mode - (only when combined with bit 2)
 </ul>*/
 #define P_BGFRAME       16 ///< Background measurement mode - will use 16-bit mode and no FPN correction
+#define P_CLK_SENSPIX   17 ///< Sensor's internal pixel clock in Hz (if defined as in MT9F002)
 //#define P_IMGSZMEM      17 ///< image size in video memory (calculated when channel 0 is programmed) NC393: Not used ???
 //#define P_COMP_BAYER    17 ///< -> 119 derivative, readonly - calculated from P_BAYER and COMPMOD_BYRSH to separate sensor and compressor channels
 // image page numbers depend on image size/pixel depth, so changing any of them will invalidate all pages
