@@ -20,26 +20,45 @@
 #define MT9F002_PARTID     0x2E01 ///< MT9F002 PartID register value
 #define MT9F002_I2C_ADDR     0x10 ///< MT9P I2C slave address (7 bit)
 
+// bit 9 should have set masking for broken frames
 #define MT9F002_RESET_REGISTER_VALUE 0x001c
 // number of lines to sacrifice before generating Frame Valid
 #define MT9F002_VACT_DELAY 2
 
 // Clocks, this is basis
 
+// from x393_parameters.vh:
+// 220MHz -> 22MHz - the real clock is 22MHz - that's why multiplier is 0xb4
+// The 3 parameters below are needed to calculate sensor clock
+// line 568
+#define PXD_CLK_DIV 10
+// line 940
+#define CLKFBOUT_MULT_PCLK    36, // 880 MHz
+// line 941
+#define CLKOUT_DIV_PCLK        4, // 220 MHz
+
+// note: there is also DIVCLK_DIVIDE_PCLK
+
+#define MT9F002_IFACE_CLK 24444000*PXD_CLK_DIV/CLKFBOUT_MULT_PCLK/CLKOUT_DIV_PCLK
+
 // External sensor clock before pll
-// Constant = 24.444MHz in Hz
-#define MT9F002_EXT_CLK 24444000
+
+// This is not a constant = 24.444MHz in Hz
+
+#define MT9F002_EXT_CLK MT9F002_IFACE_CLK
 // Virtual pixel clock is used as the basis for frame timing equations.
-// Constant = 244.44MHz in Hz
-#define MT9F002_VT_PIX_CLK 244440000
+// Constant = 220MHz in Hz
+#define MT9F002_VT_PIX_CLK 220000000
+// OP_PIX_CLK
+#define MT9F002_OP_PIX_CLK 110000000
 // Serial output clock
-// Constant = 733.32MHz in Hz
-#define MT9F002_OP_SYS_CLK 733320000
+// Constant = 660MHz in Hz
+#define MT9F002_OP_SYS_CLK 660000000
 
 // Sensor clock dividers and multiplier
 // These should be calculated based on the clocks above
 
-// pll multiplier
+// pll multiplier, default is 0xa5 (165), also tried 0xa2 (162)
 #define MT9F002_PLL_MULTIPLIER_VALUE 0xb4
 // pre_pll_clk_div (0x0304), default value is 0x6
 #define MT9F002_PRE_PLL_CLK_DIV_VALUE 0x6
@@ -603,7 +622,14 @@
 #define P_MT9F002_X_OUTPUT_SIZE      26
 #define P_MT9F002_LINE_LENGTH_PCK    27
 
-#define P_MT9F002_READ_MODE          28
+#define P_MT9F002_X_ODD_INC             28
+#define P_MT9F002_MIN_LINE_BLANKING_PCK 29
+#define P_MT9F002_MIN_LINE_LENGTH_PCK   30
+
+#define P_MT9F002_FRAME_LENGTH_LINES    31
+#define P_MT9F002_MIN_FRAME_BLANKING_LINES  32
+
+#define P_MT9F002_READ_MODE          33
 
 //#define P_REG(x) x
 

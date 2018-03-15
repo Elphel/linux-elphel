@@ -506,7 +506,8 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         // ************************************************************************************************
     }
 
-    setFramePar(sensor_port, thispars, P_CLK_FPGA,  200000000); //  FIXME: NC393
+    //setFramePar(sensor_port, thispars, P_CLK_FPGA,  200000000); //  FIXME: NC393
+    setFramePar(sensor_port, thispars, P_CLK_FPGA,  240000000);
 
     // Freqs for sensors
     if ((thispars->pars[P_SENSOR]==0) &&

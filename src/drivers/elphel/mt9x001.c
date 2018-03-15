@@ -360,7 +360,7 @@
 
 
 /**
- * \def D(x) optional debug output 
+ * \def D(x) optional debug output
  */
 
 #if ELPHEL_DEBUG
@@ -629,31 +629,31 @@ static unsigned short sensor_reg_copy[SENSOR_PORTS][256]; ///< Read all 256 sens
 // a place to add some general purpose register writes to sensors during init
 
 /** Register initial writes for MT9M001 */
-static  unsigned short mt9m001_inits[]= 
+static  unsigned short mt9m001_inits[]=
 {
 };
 
 /** Register initial writes for MT9D001 */
-static  unsigned short mt9d001_inits[]= 
+static  unsigned short mt9d001_inits[]=
 {
         P_MT9X001_CALTHRESH , 0xa39d,
         P_MT9X001_CALCTRL,    0x8498
 };
 
 /** Register initial writes for MT9T031 */
-static  unsigned short mt9t001_inits[]= 
+static  unsigned short mt9t001_inits[]=
 {
 };
 
 /** Register initial writes for MT9P006 */
-static  unsigned short mt9p001_inits[]= 
+static  unsigned short mt9p001_inits[]=
 {
 //        P_MT9X001_OUTCTRL,  0x2, // set slowest output signals (clock and non-clock) to reduce EMI (for FCC part 15)
         P_MT9X001_OUTCTRL,  0x1f82, // NC393: Restoring default, will adjust later
         P_MT9X001_7F     ,  0x0  // Should be written 0 to prevent blue "blooming" columns
 };
 /** Specifying sensor registers to be controlled individually in multi-sensor applications, MT9M001 */
-static  unsigned short mt9m001_multiregs[]= 
+static  unsigned short mt9m001_multiregs[]=
 {
         P_MT9X001_ROWSTART,
         P_MT9X001_COLSTART,
@@ -673,7 +673,7 @@ static  unsigned short mt9m001_multiregs[]=
 };
 
 /** Specifying sensor registers to be controlled individually in multi-sensor applications, MT9D001 */
-static  unsigned short mt9d001_multiregs[]= 
+static  unsigned short mt9d001_multiregs[]=
 {
         P_MT9X001_ROWSTART,
         P_MT9X001_COLSTART,
@@ -693,7 +693,7 @@ static  unsigned short mt9d001_multiregs[]=
 };
 
 /** Specifying sensor registers to be controlled individually in multi-sensor applications, MTTM031 */
-static  unsigned short mt9t001_multiregs[]= 
+static  unsigned short mt9t001_multiregs[]=
 {
         P_MT9X001_ROWSTART,
         P_MT9X001_COLSTART,
@@ -713,7 +713,7 @@ static  unsigned short mt9t001_multiregs[]=
 };
 
 /** Specifying sensor registers to be controlled individually in multi-sensor applications, MT9P006 */
-static  unsigned short mt9p001_multiregs[]= 
+static  unsigned short mt9p001_multiregs[]=
 {
         P_MT9X001_ROWSTART,
         P_MT9X001_COLSTART,
@@ -758,7 +758,7 @@ int mt9x001_pgm_sensorregs   (int sensor_port, struct sensor_t * sensor,  struct
  *   -- initialize appropriate P_* registers (including sensor register shadows) - that initialization will schedule related pgm_* functions
  *
  * TODO: when is P_CLK_FPGA initialized? Needs to be done before this
- * hardware i2c is expected to be reset and initialized - no wrong, it will be programmed in 
+ * hardware i2c is expected to be reset and initialized - no wrong, it will be programmed in
  * onchange_i2c should be the first after init sensor (even before onchange_sensorphase)
  * onchange_sensorphase will be triggered after this
  * hardware i2c after this function will be disabled, will need onchange_sensorphase to initialize/start it.
@@ -1043,7 +1043,7 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     MDF4(for (i=0; i<1023; i++) {if ((i & 0x1f)==0) dev_dbg(g_dev_ptr,"\n"); dev_dbg(g_dev_ptr," 0x%06lx",GLOBALPARS (sensor_port, G_SENSOR_CALIB+i));});
 
     return 0;
-} 
+}
 
 
 /** Program sensor WOI and mirroring
@@ -1397,7 +1397,7 @@ int mt9x001_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     //pgm_limitfps
     /* NOTE: Was this for a long time - make sure replacement does not break anything !!!
      *
-  int wh = thispars->pars[P_SENSOR_REGS+P_MT9X001_HEIGHT] + 1; 
+  int wh = thispars->pars[P_SENSOR_REGS+P_MT9X001_HEIGHT] + 1;
   int dv = thispars->pars[P_DCM_VERT];
   int height = 2 * (wh / (2 * dv));
   if((height * dv) < wh) height++;
@@ -1809,7 +1809,7 @@ int mt9x001_pgm_gains      (int sensor_port,               ///< sensor port numb
         limitsModified+=2;
         if (maxAnaGain > (sensor->maxGain256 << 8)) { ///sensor->maxGain256 is not calibrated, so digital gain should be able to accomodate for variations
             maxAnaGain = (sensor->maxGain256 << 8);
-            SETFRAMEPARS_SET(P_GAIN_MIN, maxAnaGain);
+            SETFRAMEPARS_SET(P_GAIN_MAX, maxAnaGain);
         }
     }
     //  maxGain= maxAnaGain * (MAX_DIGITAL_GAIN >> 8);
@@ -2167,7 +2167,7 @@ int mt9x001_pgm_sensorregs     (int sensor_port,               ///< sensor port 
     }
     if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
     return 0;
-} 
+}
 
 //static short sensor_reg_copy[SENSOR_PORTS][256]; // Read all 256 sensor registers here - during initialization and on demand
 //                                                 // Later may increase to include multiple subchannels on 10359

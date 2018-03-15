@@ -1,6 +1,6 @@
 /***************************************************************************//**
  * @file      mt9f002.c
- * @brief     Handles On Semiconductor MT9F002 14MPx sensor
+ * @brief     Handles MT9F002 On Semiconductor 14MPx sensor
  *
  * @copyright Copyright 2018 (C) Elphel, Inc.
  * @par <b>License</b>
@@ -78,9 +78,6 @@ const unsigned short mt9f002_par2addr[] = {
 		P_MT9F002_HISPI_CONTROL_STATUS,     P_REG_MT9F002_HISPI_CONTROL_STATUS,
 		P_MT9F002_DATAPATH_SELECT,          P_REG_MT9F002_DATAPATH_SELECT,
 		P_MT9F002_RESET_REGISTER,           P_REG_MT9F002_RESET_REGISTER,
-		P_MT9F002_ANALOG_GAIN_CODE_GLOBAL,  P_REG_MT9F002_ANALOG_GAIN_CODE_GLOBAL,
-		P_MT9F002_ANALOG_GAIN_CODE_RED,     P_REG_MT9F002_ANALOG_GAIN_CODE_RED,
-		P_MT9F002_ANALOG_GAIN_CODE_BLUE,    P_REG_MT9F002_ANALOG_GAIN_CODE_BLUE,
 		P_MT9F002_COARSE_INTEGRATION_TIME,  P_REG_MT9F002_COARSE_INTEGRATION_TIME,
 		P_MT9F002_FINE_INTEGRATION_TIME,    P_REG_MT9F002_FINE_INTEGRATION_TIME,
 		P_MT9F002_Y_ADDR_START,             P_REG_MT9F002_Y_ADDR_START,
@@ -90,6 +87,11 @@ const unsigned short mt9f002_par2addr[] = {
 		P_MT9F002_Y_OUTPUT_SIZE,            P_REG_MT9F002_SMIA_Y_OUTPUT_SIZE,
 		P_MT9F002_X_OUTPUT_SIZE,            P_REG_MT9F002_SMIA_X_OUTPUT_SIZE,
 		P_MT9F002_LINE_LENGTH_PCK,          P_REG_MT9F002_LINE_LENGTH_PCK,
+        P_MT9F002_X_ODD_INC,                P_REG_MT9F002_SMIA_X_ODD_INC,
+        P_MT9F002_MIN_LINE_BLANKING_PCK,    P_REG_MT9F002_SMIA_MIN_LINE_BLANKING_PCK,
+        P_MT9F002_MIN_LINE_LENGTH_PCK,      P_REG_MT9F002_SMIA_MIN_LINE_LENGTH_PCK,
+		P_MT9F002_FRAME_LENGTH_LINES,       P_REG_MT9F002_FRAME_LENGTH_LINES,
+		P_MT9F002_MIN_FRAME_BLANKING_LINES, P_REG_MT9F002_SMIA_MIN_FRAME_BLANKING_LINES,
 		P_MT9F002_READ_MODE,                P_REG_MT9F002_READ_MODE,
 		0xffff // END indicator
 };
@@ -150,20 +152,21 @@ struct sensor_t mt9f002 = {
         .flips       = 3,        ///< bit mask bit 0 - flipX, 1 - flipY
         .init_flips  = 0,        ///< normal orientation flips bit mask bit 0 - flipX, 1 - flipY
         .bayer       = 2,        ///< bayer shift for flips==0
+
         .dcmHor      = 0xff,     ///< 1,2,3,4,5,6,7,8 (doc show [0,6] - change to 0x7f
         .dcmVert     = 0xff,     ///< 1,2,3,4,5,6,7,8
         .binHor      = 0xff,     ///< 1,2,4 0xb{0,1,3}
         .binVert     = 0xff,     ///< 1,2,3,4 0xf [0,3]
-        .maxGain256  = 4032,     ///< (15.75) maximal analog gain times 0x100
+        .maxGain256  = 4064,     ///< (15.875) maximal analog gain times 0x100
         .minGain256  = 384,      ///< 1.5 times 0x100
 
         .minClockFreq= 20000000, ///< Minimal clock frequency
         .maxClockFreq= 24444000, ///< Maximal clock frequency
         .nomClockFreq= 24444000, ///< nominal clock frequency
+
         .sensorType  = SENSOR_MT9F002,  ///< sensor type (for Elphel cameras)
         .i2c_addr    = MT9F002_I2C_ADDR,           ///< sensor i2c slave address (7 bits)
-        .i2c_period  = 2500,     ///< SCL period in ns, (standard i2c - 2500)
-        .i2c_bytes   = 2,        ///< number of bytes/ register
+
         .hact_delay  = -2500,    ///< -2.5ns delay in ps
         .sensorDelay = 2460,     ///< Dealy from sensor clock at FPGA output to pixel data transition (FPGA input), short cable (ps)
         .needReset=    SENSOR_NEED_RESET_CLK | SENSOR_NEED_RESET_PHASE   ///< bit 0 - need reset after clock frequency change, bit 1 - need reset after phase change
@@ -217,7 +220,7 @@ int mt9f002_pgm_sensorin     (int sensor_port, struct sensor_t * sensor,  struct
 int mt9f002_pgm_window       (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9f002_pgm_window_safe  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9f002_pgm_window_common(int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
-//int mt9f002_pgm_limitfps     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9f002_pgm_limitfps     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9f002_pgm_exposure     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9f002_pgm_gains        (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 //int mt9f002_pgm_triggermode  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
@@ -225,18 +228,6 @@ int mt9f002_pgm_gains        (int sensor_port, struct sensor_t * sensor,  struct
 
 /**
  * Detect and initialize sensor and related data structures
- * - detect sensor type.
- * - if successful, proceed to:,
- *   -- copy sensor static structure
- *   -- setup appropriate pgm_* functions
- *   -- read sensor registers to shadows
- *   -- initialize appropriate P_* registers (including sensor register shadows) - that initialization will schedule related pgm_* functions
- *
- * TODO: when is P_CLK_FPGA initialized? Needs to be done before this
- * hardware i2c is expected to be reset and initialized - no wrong, it will be programmed in 
- * onchange_i2c should be the first after init sensor (even before onchange_sensorphase)
- * onchange_sensorphase will be triggered after this
- * hardware i2c after this function will be disabled, will need onchange_sensorphase to initialize/start it.
  */
 int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port number (0..3)
                                 struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
@@ -250,7 +241,6 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
 
     u32  i2c_read_dataw;
 
-    //int sensor_subtype=0;
     //int i;
     //int sensor_multi_regs_number;
     struct sensor_t * psensor; // current sensor
@@ -279,7 +269,7 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
 
     psensor= &mt9f002;
 
-    // temporary solution
+    // temporary solution (move to the common code)
     pcfg = &pSensorPortConfig[sensor_port];
     name = get_name_by_code(pcfg->sensor[0],DETECT_SENSOR);
     dc = xi2c_dev_get(name);
@@ -318,19 +308,20 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     	return 0;  // no sensor found
     }
 
-    // Sensor recognized, go on
+    // Sensor is recognized, go on
 
     // copy sensor definitions
     memcpy(sensor, psensor, sizeof(mt9f002));
     dev_dbg(g_dev_ptr,"{%d} copied %d bytes of sensor static parameters\n",sensor_port,sizeof(mt9f002));
 
+    // add functions to common pgm_functions
     add_sensor_proc(sensor_port,onchange_detectsensor,&mt9f002_pgm_detectsensor); // detect sensor type, sets sensor structure (capabilities), function pointers NOTE: will be called directly, not through pointers
     add_sensor_proc(sensor_port,onchange_initsensor,  &mt9f002_pgm_initsensor);   // resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers (stops/re-enables hardware i2c)
     add_sensor_proc(sensor_port,onchange_sensorin,    &mt9f002_pgm_sensorin);     // currently: VACT delay hack
     add_sensor_proc(sensor_port,onchange_exposure,    &mt9f002_pgm_exposure);     // program exposure
     add_sensor_proc(sensor_port,onchange_window,      &mt9f002_pgm_window);       // program sensor WOI and mirroring (flipping)
     add_sensor_proc(sensor_port,onchange_window_safe, &mt9f002_pgm_window_safe);  // program sensor WOI and mirroring (flipping) - now - only flipping? with lower latency
-    //add_sensor_proc(sensor_port,onchange_limitfps,    &mt9x001_pgm_limitfps);     // check compressor will keep up, limit sensor FPS if needed
+    add_sensor_proc(sensor_port,onchange_limitfps,    &mt9f002_pgm_limitfps);     // check compressor will keep up, limit sensor FPS if needed
     add_sensor_proc(sensor_port,onchange_gains,       &mt9f002_pgm_gains);        // program analog gains
     //add_sensor_proc(sensor_port,onchange_triggermode, &mt9x001_pgm_triggermode);  // program sensor trigger mode
     //add_sensor_proc(sensor_port,onchange_sensorregs,  &mt9x001_pgm_sensorregs);   // write sensor registers (only changed from outside the driver as they may have different latencies)?
@@ -341,9 +332,7 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     //  setFramePar(thispars, P_SENSOR  | FRAMEPAIR_FORCE_NEWPROC,  sensor->sensorType); // force actions
     //  MDD1(dev_dbg(g_dev_ptr,"\n"));
 
-
-    // CCAM_ARO_ON set. Does it need to be set here? Not earlier (as it is now set for NC393)
-    dev_dbg(g_dev_ptr,"{%d}  set ARO (TRIGGER) line HIGH\n",sensor_port);
+    // skipped multisensor regs
 
     sensio_ctl.d32=0;
     sensio_ctl.aro = 1;
@@ -354,6 +343,7 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     //NOTE 353:  hardware i2c is turned off (not needed in 393)
 }
 
+// part of mt9f002_pgm_initsensor
 // write to sensor's i2c register, test read
 int mt9f002_phases_program_phase(int sensor_port, int phase){
 
@@ -374,6 +364,7 @@ int mt9f002_phases_program_phase(int sensor_port, int phase){
 	return 0;
 }
 
+// part of mt9f002_pgm_initsensor
 // read hact_alive bit from x393_status_sens_io_t
 int mt9f002_phases_read_flags(int sensor_port,int shift){
 
@@ -411,6 +402,7 @@ int mt9f002_phases_read_flags(int sensor_port,int shift){
 
 }
 
+// part of mt9f002_pgm_initsensor
 // phase adjustment for a single lane
 int mt9f002_phases_adjust_lane(int sensor_port, int phase, int shift){
 
@@ -489,6 +481,7 @@ int mt9f002_phases_adjust_lane(int sensor_port, int phase, int shift){
 	return target_phase;
 }
 
+// part of mt9f002_pgm_initsensor
 // phase adjustment for port (all 4 lanes)
 int mt9f002_phases_adjust_port(int sensor_port){
 
@@ -544,9 +537,10 @@ int mt9f002_phases_adjust_port(int sensor_port){
 	return 0;
 }
 
-/** Reset and initialize sensor
- * resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers (stops/re-enables hardware i2c - 353 only)
- * i2c is supposed to be already programmed */
+/**
+ * Reset and initialize sensor
+ * Resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers.
+ */
 int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port number (0..3)
                                 struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
                                 struct framepars_t * thispars, ///< sensor current parameters
@@ -557,10 +551,16 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 {
 	int i;
 	int n;
+	int color;
+
 	x393_sens_sync_mult_t dis_sof = {.d32=0};
 	struct frameparspair_t pars_to_update[262+(MAX_SENSORS * P_MULTI_NUMREGS )]; // for all the sensor registers. Other P_* values will reuse the same ones
-	int regaddr,regval,regnum,mreg,j;
+	int regaddr,regval,regnum,j;
+
 	int nupdate=0;
+
+	int colamp_gain, a2_gain, gain, a2_inc;
+
 	u32 i2c_read_data_dw[256];
 
 	//dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
@@ -578,14 +578,14 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 	for(i=0;i<n;i++){
 		// sa7 is not used
 		// use broadcast address - which should be 0 for a single sensor?
-		X3X3_I2C_SEND2_LUT_ASAP(sensor_port,0x0,mt9f002_inits[2*i],mt9f002_inits[2*i+1]);
+		X3X3_I2C_SEND2_LUT_ASAP(sensor_port,0,mt9f002_inits[2*i],mt9f002_inits[2*i+1]);
 	}
 
 	// soft reset
 	// sa7 is not used
-	X3X3_I2C_SEND2_LUT_ASAP(sensor_port,0x0,P_REG_MT9F002_RESET_REGISTER,MT9F002_RESET_REGISTER_VALUE);
+	X3X3_I2C_SEND2_LUT_ASAP(sensor_port,0,P_REG_MT9F002_RESET_REGISTER,MT9F002_RESET_REGISTER_VALUE);
 	// delay (needed?)
-	udelay(100);
+	//udelay(100);
 
 	// sensor is supposed to be streaming by now
 	mt9f002_phases_adjust_port(sensor_port);
@@ -611,13 +611,8 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
         regval=i2c_read_data_dw[i];
         regnum=P_SENSOR_REGS+i;
         SETFRAMEPARS_SET(regnum,regval);
-        // update multisensor regs
-        if ((mreg=MULTIREG(sensor_port,regnum,0))) {
-        	for (j=0;j<MAX_SENSORS; j++) {
-                SETFRAMEPARS_SET(mreg+j,regval);
-        	}
-        }
     }
+
     for (i=0;i<256;i++) {
         sensor_reg_copy[sensor_port][i] = i2c_read_data_dw[i];
     }
@@ -625,8 +620,41 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
     // in mt9x00x there's setFrameParsStatic-call ?!!! Parameters that never change?
     if (nupdate)  setFrameParsStatic(sensor_port,nupdate,pars_to_update);  // save changes to sensor register shadows for all frames
     //if (nupdate) setFramePars(sensor_port,thispars,nupdate,pars_to_update);  // save changes to sensor register shadows
+
     // next are global pars?
-    //
+
+    // set gains ranges
+    SETFRAMEPARS_SET(P_GAIN_MIN, (sensor->minGain256)<<8); // less than that may not saturate sensor and confuse autoexposure/white balancing
+    SETFRAMEPARS_SET(P_GAIN_MAX, (sensor->maxGain256)<<8);
+    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
+
+    // G_* parameters - can write directly
+    // fill out the gain tables
+    for (color=0;color<4;color++){
+    	// 175 =
+    	// 48 (for colamp=1) +
+    	// 48 (for colamp=2) +
+    	// 79 (for colamp=3)
+
+    	colamp_gain = 2;
+    	a2_gain = 0x30;
+    	a2_inc = 0;
+
+        for (i=0;i<176;i++) {
+        	// for mt9x00x
+            //GLOBALPARS(sensor_port, G_SENSOR_CALIB+(color<<8)+i)= (i>32)? ((i-16)<<14) : (i<<13); // one extra
+        	// for mt9f002
+        	if ((i==48)||(i==96)){
+        		colamp_gain *= 2;
+        		a2_inc = 0;
+        	}
+        	// actual formula
+        	//gain = ((colamp_gain*(a2_gain+a2_inc))<<16)/64;
+        	gain = (colamp_gain*(a2_gain+a2_inc))<<10;
+        	GLOBALPARS(sensor_port, G_SENSOR_CALIB+(color<<8)+i)= gain; // one extra
+        	a2_inc += 1;
+        }
+    }
 
     return 0;
 }
@@ -649,6 +677,60 @@ int mt9f002_pgm_sensorin (int sensor_port,               ///< sensor port number
 	X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_width, sensio_width);
 
 	return 0;
+}
+
+// also defines vertical blanking
+int mt9f002_calc_frame_length_lines(struct framepars_t * thispars){
+
+	int v0;
+
+	int y_addr_start = thispars->pars[P_SENSOR_REGS+P_MT9F002_Y_ADDR_START];
+	int y_addr_end   = thispars->pars[P_SENSOR_REGS+P_MT9F002_Y_ADDR_END];
+	int min_frame_blanking_lines = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_FRAME_BLANKING_LINES];
+
+	// TODO: do
+	int subsampling_factor = 1;
+
+	v0 = (y_addr_end - y_addr_start + 1)/subsampling_factor + min_frame_blanking_lines;
+
+	return v0;
+}
+
+// also defines horizontal blanking
+int mt9f002_calc_line_length_pck(struct framepars_t * thispars){
+
+	int v0;
+	int v1;
+	int v2;
+
+	int x_addr_start = thispars->pars[P_SENSOR_REGS+P_MT9F002_X_ADDR_START];
+	int x_addr_end   = thispars->pars[P_SENSOR_REGS+P_MT9F002_X_ADDR_END];
+	int x_odd_inc    = thispars->pars[P_SENSOR_REGS+P_MT9F002_X_ODD_INC];
+	int min_line_blanking_pck = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_LINE_BLANKING_PCK];
+
+	int x_output_size = thispars->pars[P_SENSOR_REGS+P_MT9F002_X_OUTPUT_SIZE];
+
+	// does not match with the default value
+	//v0 = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_LINE_LENGTH_PCK];
+	v0 = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_LINE_LENGTH_PCK]-2;
+	// typo in the datasheet formula?
+	//v1 = (x_addr_end-x_addr_start+x_odd_inc)/(1+x_odd_inc)+min_line_blanking_pck;
+	//v1 = ((x_addr_end-x_addr_start+x_odd_inc)*2/(1+x_odd_inc)+min_line_blanking_pck)/2;
+
+	// what?!
+	v1 = (x_addr_end-x_addr_start+1)+min_line_blanking_pck;
+
+	//pr_info("x_addr_end=0x%08x x_addr_start=0x%08x x_odd_inc=0x%08x min_line_blanking_pck=0x%08x\n",x_addr_end,x_addr_start,x_odd_inc,min_line_blanking_pck);
+	v2 = MT9F002_VT_PIX_CLK/MT9F002_OP_PIX_CLK*x_output_size/4 + 0x5E;
+
+	//pr_info("v0=0x%08x v1=0x%08x v2=0x%08x\n",v0,v1,v2);
+
+	if (v0<v1) v0 = v1;
+	if (v0<v2) v0 = v2;
+
+	//pr_info("result = 0x%08x\n",v0);
+
+	return v0;
 }
 
 /** Program sensor WOI and mirroring
@@ -698,6 +780,9 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
     int nupdate=0;
     int styp = sensor->sensorType & 7;
 
+    int fll;
+    int llp;
+
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
 
@@ -705,7 +790,6 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
     dv=  thispars->pars[P_DCM_VERT];
     bh=  thispars->pars[P_BIN_HOR];
     bv=  thispars->pars[P_BIN_VERT];
-
     //wws = sensor->clearLeft;
     ww  = thispars->pars[P_SENSOR_PIXH] * dh;
     //wwe = ww + wws - 1;
@@ -814,6 +898,20 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
         		sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9F002_Y_OUTPUT_SIZE, (int) wh);
     }
 
+    // recalc something after this one?
+    fll = mt9f002_calc_frame_length_lines(thispars);
+    pr_info("old fll=0x%08x, new fll=0x%08x\n",thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES],fll);
+    if (fll!=thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES]){
+    	pr_info("old fll=0x%08x, new fll=0x%08x\n",thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES],fll);
+    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_FRAME_LENGTH_LINES, fll);
+    }
+
+    // recalc exposure after this one
+    llp = mt9f002_calc_line_length_pck(thispars);
+    //llp = 0x2350;
+    if (llp!=thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK]){
+    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_LINE_LENGTH_PCK, llp);
+    }
 
     // write flips and skips
     // reg 0x3040 = P_REG_MT9F002_READ_MODE
@@ -889,6 +987,228 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
     return 0;
 }
 
+/**
+ * get TRIG_PERIOD from framepars, compare and update pix_period
+ * @param pix_period
+ * @param thispars
+ * @return updated pix_period
+ */
+int compare_to_trig_period_mt9f002(int sensor_port,               ///< sensor port - only for debug
+		 	 	 	 	           int pix_period,                ///< current pix_period
+						           struct framepars_t * thispars) ///< sensor current parameters
+{
+
+	int trig_period;
+
+    dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_TRIG] = %d, thispars->pars[P_TRIG_PERIOD] =%d(0x%x)\n",
+            sensor_port,
+			(int)thispars->pars[P_TRIG],
+			(int)thispars->pars[P_TRIG_PERIOD],
+			(int)thispars->pars[P_TRIG_PERIOD]);
+
+	if (thispars->pars[P_TRIG]!=0){
+		trig_period = camsync_to_sensor(thispars->pars[P_TRIG_PERIOD], thispars->pars[P_CLK_SENSOR]);
+		if (trig_period > pix_period) {
+			pix_period=trig_period;
+		}
+	}
+
+	return pix_period;
+}
+
+/** Check if compressor can keep up, limit sensor FPS if needed
+ * FPS is limited by increasing verical blanking, it can not be be made too big, so this method does not work to make time lapse rate. horisontal blanking
+ * is kept at minimum (to reduce ERS effect) if not specified. If it is specified (>minimal) - it will be used instead.
+ * calculate line period.
+ *
+ * FIXME - uses P_VIRTUAL_WIDTH w/o decreasing it when changing image size? Replace VIRT_WIDTH with HOR_BANK?
+ * Or require always set them to zero when chnaging WOI?
+ * FIXME for multisensor - needs per-sensor individual parameters. This uses sensor registers, not the general parameters (i.e. height) */
+int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3)
+                            struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+                            struct framepars_t * thispars, ///< sensor current parameters
+                            struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+                            int frame16)                   ///< 4-bit (hardware) frame number parameters should
+                                                           ///< be applied to,  negative - ASAP
+                                                           ///< @return 0 - OK, negative - error
+{
+
+	struct frameparspair_t pars_to_update[16]; // maximum 7 registers updated (need to recount)
+    int nupdate=0;
+
+    // decimation horizontal
+    int dh=  thispars->pars[P_DCM_HOR]?thispars->pars[P_DCM_HOR]:1;
+    // width = PIXELS HORIZONTAL
+    int ww=  thispars->pars[P_SENSOR_PIXH] * dh;
+
+    int binning_cost = 0;
+    int width,i;
+    int row_time_in_pixels=0;
+    int hor_blank_min;
+    int hor_blank=0;
+    int p1,p2, pix_period, sclk,fp1000s, trig_period;
+    int styp = sensor->sensorType & 7;
+    int height;
+    int virt_height;
+    int vert_blank;
+
+    uint64_t ull_fp1000s;
+
+    int target_virt_width=(thispars->pars[P_VIRT_KEEP])?(thispars->pars[P_VIRT_WIDTH]):0;
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+
+    width = 2 * ww / (2 * dh);
+
+	if((width * dh) < ww) width++;
+
+	/*
+	switch(thispars->pars[P_BIN_VERT]) {
+	case 2:
+		switch(thispars->pars[P_BIN_HOR]) {
+		case 1: binning_cost = 276;    break;
+		case 2: binning_cost = 236;    break;
+		case 4: binning_cost = 236;    break;
+		break;
+		}
+		break;
+	case 4:
+		switch(thispars->pars[P_BIN_HOR]) {
+		case 1: binning_cost = 826;    break;
+		case 2: binning_cost = 826;    break;
+		case 4: binning_cost = 826;    break;
+		break;
+		}
+		break;
+	}
+	*/
+
+	//hor_blank_min = 0x138;
+
+	//dev_dbg(g_dev_ptr,"{%d} hor_blank_min =%d(0x%x)\n",sensor_port,hor_blank_min,hor_blank_min);
+	//hor_blank = hor_blank_min;
+	//dev_dbg(g_dev_ptr,"{%d} hor_blank =%d(0x%x)\n",sensor_port,hor_blank,hor_blank);
+	row_time_in_pixels = thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK];
+
+	//dev_dbg(g_dev_ptr,"{%d} row_time_in_pixels =%d(0x%x)\n",sensor_port,row_time_in_pixels,row_time_in_pixels);
+	//i = 2 * (41 + 208 * thispars->pars[P_BIN_VERT] + 99); //strange 41 and 99, why not 140?
+	//if(i > row_time_in_pixels)  row_time_in_pixels = i;
+
+	/*
+	dev_dbg(g_dev_ptr,"{%d} row_time_in_pixels =%d(0x%x)\n",sensor_port,row_time_in_pixels,row_time_in_pixels);
+	if(target_virt_width > row_time_in_pixels) { // extend line by adding horizontal blanking
+		hor_blank = target_virt_width - width;
+		if (hor_blank > sensor->maxHorBlank) hor_blank = sensor->maxHorBlank;
+		row_time_in_pixels = width + hor_blank;
+		dev_dbg(g_dev_ptr,"{%d} row_time_in_pixels =%d(0x%x)\n",sensor_port,row_time_in_pixels,row_time_in_pixels);
+	}
+	*/
+
+    // schedule updating P_VIRT_WIDTH if it changed FIXME: Does not come here?
+    dev_dbg(g_dev_ptr,"{%d} row_time_in_pixels =%d(0x%x), thispars->pars[P_VIRT_WIDTH ]=%d(0x%x)\n",sensor_port,row_time_in_pixels,row_time_in_pixels,(int)thispars->pars[P_VIRT_WIDTH ],(int)thispars->pars[P_VIRT_WIDTH ]);
+    if (thispars->pars[P_VIRT_WIDTH ] != row_time_in_pixels) {
+        SETFRAMEPARS_SET(P_VIRT_WIDTH, row_time_in_pixels);
+    }
+    /*
+    // schedule updating P_MT9X001_HORBLANK senosr register and shadow FIXME: Seems hor_blank is too high. is the width itself subtracted?
+    if (hor_blank != thispars->pars[P_SENSOR_REGS+P_MT9X001_HORBLANK]) {
+        dev_dbg(g_dev_ptr,"{%d} hor_blank =%d(0x%x), thispars->pars[P_SENSOR_REGS+P_MT9X001_HORBLANK]=%d(0x%x)\n",sensor_port,hor_blank,hor_blank,(int)thispars->pars[P_SENSOR_REGS+P_MT9X001_HORBLANK],(int)thispars->pars[P_SENSOR_REGS+P_MT9X001_HORBLANK]);
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_HORBLANK, hor_blank);
+        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_HORBLANK, (int)hor_blank);
+    }
+    */
+    // Now calculate P_PERIOD (extending it as needed)
+    //   int vh, vb, wh, h, dv, sclk, row_time_in_pixels, ve, e, i;
+    // calculate minimal virtual heigth for current window height
+    //pgm_limitfps
+    /* NOTE: Was this for a long time - make sure replacement does not break anything !!!
+     *
+  int wh = thispars->pars[P_SENSOR_REGS+P_MT9X001_HEIGHT] + 1;
+  int dv = thispars->pars[P_DCM_VERT];
+  int height = 2 * (wh / (2 * dv));
+  if((height * dv) < wh) height++;
+     */
+    height = thispars->pars[P_SENSOR_PIXV];
+    //virt_height = height + sensor->minVertBlank;
+    virt_height = thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES];
+    if (thispars->pars[P_VIRT_KEEP]) {
+        if (virt_height < thispars->pars[P_VIRT_HEIGHT]) {
+            virt_height = thispars->pars[P_VIRT_HEIGHT];
+        }
+    }
+
+    dev_dbg(g_dev_ptr,"{%d} height =%d(0x%x), virt_height=%d(0x%x)\n",sensor_port,height,height,virt_height,virt_height);
+    // limit frame rate (using minimal period), but only in sync mode - async should be programmed to observe minimal period
+    if ((thispars->pars[P_TRIG] & 4) == 0) {
+        int virt_height1= thispars->pars[P_PERIOD_MIN]/row_time_in_pixels; // always non-zero, calculated by pgm_limitfps (common)
+        if ((row_time_in_pixels * virt_height1) < thispars->pars[P_PERIOD_MIN]) virt_height1++; //round up
+        if (virt_height < virt_height1) virt_height = virt_height1;
+        dev_dbg(g_dev_ptr,"{%d} height =%d(0x%x), modified virt_height=%d(0x%x)\n",sensor_port,height,height,virt_height,virt_height);
+    }
+
+    vert_blank= virt_height - height;
+
+    /*
+    if(vert_blank > sensor->maxVertBlank) {
+        vert_blank = sensor->maxVertBlank;
+        virt_height = vert_blank + height;
+    }
+    dev_dbg(g_dev_ptr,"{%d} vert_blank =%d(0x%x), virt_height=%d(0x%x)\n",sensor_port,vert_blank,vert_blank,virt_height,virt_height);
+    */
+
+    // schedule updating P_VIRT_HEIGHT if it changed
+    dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_VIRT_HEIGHT] =%d(0x%x), virt_height=%d(0x%x)\n",sensor_port,(int)thispars->pars[P_VIRT_HEIGHT],(int)thispars->pars[P_VIRT_HEIGHT ],virt_height,virt_height);
+    if (thispars->pars[P_VIRT_HEIGHT ] != virt_height) {
+        SETFRAMEPARS_SET(P_VIRT_HEIGHT, virt_height);
+    }
+    // schedule updating P_PERIOD if it changed
+    pix_period=row_time_in_pixels*virt_height;
+    if (!pix_period ){
+        dev_warn(g_dev_ptr,"** mt9f002_pgm_limitfps(%d) pix_period == 0!! (row_time_in_pixels =%d(0x%x), virt_height=%d(0x%x)\n",sensor_port,row_time_in_pixels,row_time_in_pixels,virt_height,virt_height);
+        pix_period = 1000; // just non-zero
+    }
+
+    pr_info("check 0: pix_period = 0x%08x (0x%08x*0x%08x)\n",pix_period,row_time_in_pixels,virt_height);
+
+    // IMPORTANT: this is moved above setting P_PERIOD
+    // Update period from external trigger (assuming internal/self trigger, we do not know real external trigger period)
+    pix_period = compare_to_trig_period_mt9f002(sensor_port,pix_period,thispars);
+
+    dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_PERIOD] =%d(0x%x), pix_period=%d(0x%x)\n",sensor_port,(int)thispars->pars[P_PERIOD],(int)thispars->pars[P_PERIOD],pix_period,pix_period);
+    if (thispars->pars[P_PERIOD] != pix_period) {
+        SETFRAMEPARS_SET(P_PERIOD, pix_period);
+    }
+
+    // switched order
+    // Update period from external trigger (assuming internal/self trigger, we do not know real external trigger period)
+    //pix_period = compare_to_trig_period(pix_period,thispars);
+
+    sclk = MT9F002_VT_PIX_CLK;
+
+    ull_fp1000s=((long long) 1000)* ((long long) sclk);
+    __div64_32(&ull_fp1000s,pix_period);
+    fp1000s= ull_fp1000s;
+
+    pr_info("check 1: FP1000S = 0x%08x\n",fp1000s);
+
+    dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_FP1000S] =%d(0x%x), fp1000s=%d(0x%x)\n",sensor_port,(int)thispars->pars[P_FP1000S],(int)thispars->pars[P_FP1000S],fp1000s,fp1000s);
+    if (thispars->pars[P_FP1000S] != fp1000s) {
+        SETFRAMEPARS_SET(P_FP1000S, fp1000s);
+    }
+    /*
+    // schedule updating P_MT9X001_VERTBLANK sensor register and shadow
+    dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK] =%d(0x%x), vert_blank=%d(0x%x)\n",sensor_port,(int)thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK],(int)thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK],vert_blank,vert_blank);
+    if (vert_blank != thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK]) {
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_VERTBLANK, vert_blank);
+        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MPAR(0x%x, 0x%x,0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_VERTBLANK, (int) vert_blank);
+    }
+    */
+
+    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to gains and sensor register shadows
+    return 0;
+}
+
 /** Program sensor exposure */
 int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number (0..3)
                           struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
@@ -907,8 +1227,10 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     struct frameparspair_t pars_to_update[16]; // maximum 7? registers updated
     int nupdate=0;
 
+    // P_VEXPOS is the coarse exposure, reg value
     int video_exposure = thispars->pars[P_VEXPOS];
     // when P_VEXPOS is used exposure will be overwritten
+    // set in microseconds
     int exposure       = thispars->pars[P_EXPOS];
     // this sensor has the following 2 registers
     int coarse_exposure;
@@ -917,7 +1239,7 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     // vt_pix_clk
     // TODO: Do not forget this - add those div registers?!
     //int sclk = thispars->pars[P_CLK_SENSOR]*MT9F002_PLL_MULTIPLIER_VALUE*0x2/0x6/0x6; // pixel clock in Hz before PLL, but PLL setting is ~240MHz?
-    int sclk;// = (thispars->pars[P_CLK_SENSOR]/0x6/0x6)*0x2*MT9F002_PLL_MULTIPLIER_VALUE;
+    int sclk = MT9F002_VT_PIX_CLK;// = (thispars->pars[P_CLK_SENSOR]/0x6/0x6)*0x2*MT9F002_PLL_MULTIPLIER_VALUE;
 
     int vert_blank;
 
@@ -929,9 +1251,6 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
 
     // wrong frame
     if (frame16 >= PARS_FRAMES) return -1;
-
-    sclk = MT9F002_VT_PIX_CLK;
-    pr_info("SCLK = %d (%08x)\n",sclk,sclk);
 
     pr_info("EXPOS: %d\n",thispars->pars[P_EXPOS]);
 
@@ -945,16 +1264,34 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
 
     	pr_info("using P_EXPOS\n");
     	// exposure is in microseconds
-    	exposure = thispars->pars[P_EXPOS];
-
-    	ull_video_exposure = (long long) (MT9F002_VT_PIX_CLK / 1000000) * (long long) exposure;
+    	exposure        = thispars->pars[P_EXPOS];
     	line_length_pck = thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK];
-    	pr_info("ull_video_exposure = %d (%ull)\n",ull_video_exposure,ull_video_exposure);
+
+    	pr_info("exposure = 0x%08x, line_length_pck = 0x%08x\n",exposure,line_length_pck);
+
+    	// actual equation is : sclk*(exposure/10^6) - the result is in Hz*s
+    	ull_video_exposure = (long long) (sclk / 1000000) * (long long) exposure;
+    	// result is a reg value for coarse exposure
     	__div64_32(&ull_video_exposure,line_length_pck);
-    	pr_info("ull_video_exposure = %d (%ull)\n",ull_video_exposure,ull_video_exposure);
 
     	coarse_exposure = ull_video_exposure;
+
+    	pr_info("coarse exposure = %d (0x%08x)\n",coarse_exposure,coarse_exposure);
+
+    	// at the same time the fine exposure will be:
+    	ull_video_exposure = (long long) (sclk / 1000000) * (long long) exposure;
+    	fine_exposure = ull_video_exposure - (long long) coarse_exposure * (long long) line_length_pck;
+
+    	pr_info("fine exposure = %d (0x%08x)\n",fine_exposure,fine_exposure);
+
     }
+
+    if (exposure <1)       exposure=1;
+    if (video_exposure <1) video_exposure=1;
+
+    // check against max shutter?
+
+
 
     /*
     dev_dbg(g_dev_ptr,"{%d} sensor_port=%d,  frame16=%d, frame=0x%lx (%s)exposure=0x%lx, (%s)video_exposure=0x%lx\n",sensor_port, sensor_port, frame16, thispars->pars[P_FRAME], FRAMEPAR_MODIFIED(P_EXPOS)?"*":" ",thispars->pars[P_EXPOS],FRAMEPAR_MODIFIED(P_VEXPOS)?"*":" ",thispars->pars[P_VEXPOS] );
@@ -1077,9 +1414,10 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
         }
     }
 
+    */
     // is video exposure P_VEXPOS modified?
-    if (thispars->pars[P_VEXPOS] != fine_exposure) {
-        SETFRAMEPARS_SET(P_VEXPOS, fine_exposure);
+    if (thispars->pars[P_VEXPOS] != coarse_exposure) {
+        SETFRAMEPARS_SET(P_VEXPOS, coarse_exposure);
     }
     // is exposure P_EXPOS modified?
     if (thispars->pars[P_EXPOS] != exposure) {
@@ -1088,17 +1426,18 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
 
     // Now sensor registers
     // schedule updating P_MT9X001_VERTBLANK sensor register and shadow
-    */
+
     // coarse integration time
     if (coarse_exposure != thispars->pars[P_SENSOR_REGS+P_MT9F002_COARSE_INTEGRATION_TIME]) {
         SET_SENSOR_MBPAR_LUT(sensor_port,frame16,P_MT9F002_COARSE_INTEGRATION_TIME, coarse_exposure);
         dev_dbg(g_dev_ptr,"{%d} SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",
         		sensor_port, sensor_port, frame16,(int) sensor->i2c_addr,(int)P_MT9F002_COARSE_INTEGRATION_TIME,(int)coarse_exposure);
     }
-    /*
+
     // fine integration time
+    /*
     if (fine_exposure != thispars->pars[P_SENSOR_REGS+P_MT9F002_FINE_INTEGRATION_TIME]) {
-        SET_SENSOR_MBPAR_LUT(sensor_port,frame16,sensor->i2c_addr,P_MT9F002_FINE_INTEGRATION_TIME, fine_exposure);
+        SET_SENSOR_MBPAR_LUT(sensor_port,frame16,P_MT9F002_FINE_INTEGRATION_TIME, fine_exposure);
         dev_dbg(g_dev_ptr,"{%d} SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",
         		sensor_port, sensor_port, frame16,(int) sensor->i2c_addr,(int)P_MT9F002_FINE_INTEGRATION_TIME,(int)fine_exposure);
     }
@@ -1112,57 +1451,182 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     return 0;
 }
 
-int mt9f002_calculate_gain(int parvalue){
+/**
+ * new: Get gain table index by register value
+ * TODO: reduce hardcoding
+ * What if the table is recalibrated?
+ * @param gain
+ * @return table index
+ */
+int gain_get_table_index_by_reg_mt9f002(unsigned long gain){
 
-	typedef union {
-	    struct {
-	          u32            analog2: 7; // [6:0]   analog gain 2
-	          u32            analog3: 3; // [9:7]   analog gain 3
-	          u32            colamp : 2; // [11:10] colamp
-	          u32            digital: 4; // [15:12] digital
-	    };
-	    u32 d32; // [31: 0] cast to u32
-	} gain;
+	int colamp_gain;
+	int a2_gain;
+	int index_base = 0;
+	int index_inc = 0;
+	int index = 0;
 
-	gain reg = {.d32=0};
+	colamp_gain = (gain>>10)&0x3;
+	a2_gain = gain&0x7f;
 
-	if (parvalue > 0x200000){
-		reg.analog2 = 0;
-		reg.analog3 = 1;
-		reg.colamp = 3;
-		reg.digital = 4;
-	}else if (parvalue > 0x100000){
-		reg.analog2 = 0;
-		reg.analog3 = 1;
-		reg.colamp = 3;
-		reg.digital = 2;
-	}else if (parvalue > 0x60000){
-		reg.analog2 = 0;
-		reg.analog3 = 1;
-		reg.colamp = 3;
-		reg.digital = 1;
-	}else if (parvalue > 0x30000){
-		reg.analog2 = 0;
-		reg.analog3 = 1;
-		reg.colamp = 2;
-		reg.digital = 1;
-	}else if (parvalue > 0x18000){
-		reg.analog2 = 0;
-		reg.analog3 = 1;
-		reg.colamp = 1;
-		reg.digital = 1;
+	switch(colamp_gain){
+	case 1:
+		index_base = 0;
+		break;
+	case 2:
+		index_base = 48;
+		break;
+	case 3:
+		index_base = 96;
+		break;
 	}
 
-	reg.analog2 = ((((parvalue*64)/reg.digital)>>(reg.colamp+reg.analog3))/0x10000)&0x7f;
+	index_inc = a2_gain - 0x30;
 
-	return reg.d32;
+	index = index_base + index_inc;
+
+	return index;
 }
+
+/**
+ * new: Get initial approximation of table index by parameter value
+ * TODO: reduce hardcoding
+ * @param g
+ * @return
+ */
+int gain_get_table_index_by_par_mt9f002(int g){
+
+	int index_base = 0;
+	int index_inc = 0;
+	int index = 0;
+	int colamp_gain = 0;
+
+	if (g>=0x60000){
+		index_base = 96;
+		colamp_gain = 3;
+	}else if (g>=0x30000){
+		index_base = 48;
+		colamp_gain = 2;
+	}else{
+		index_base = 0;
+		colamp_gain = 1;
+	}
+	g = g>>colamp_gain;
+	index_inc = (g*64)/0x10000 - 0x30;
+
+	if (index_inc<0){
+		index_inc = 0;
+	}
+
+	index = index_base + index_inc;
+
+	return index;
+}
+
+/**
+ * new: Calculate reg value from par value
+ * TODO: reduce hardcoding
+ * @param parvalue
+ * @return regvalue (+added sensor's digital gain)
+ */
+int gain_get_reg_by_par(int parvalue){
+
+	int colamp_gain = 0;
+	int a2_gain;
+	int regvalue;
+
+	if (parvalue>=0x60000){
+		colamp_gain = 3;
+	}else if(parvalue>=0x30000){
+		colamp_gain = 2;
+	}else if(parvalue>=0x18000){
+		colamp_gain = 1;
+	}
+
+	a2_gain = ((parvalue>>colamp_gain)*64/0x10000)&0x7f;
+	// add digital gain = 1 here
+	regvalue = 0x1000|(colamp_gain<<10)|a2_gain;
+	return regvalue;
+}
+
+#define SHIFT_DGAIN 1 // shift digital gain right, so 1.0 is 0x8000 an the full range is 4:1 - make it a parameter?
+
+/** Split full gain (0x1000~1.0) into analog register gain and residual digital gain (also 0x10000~1.0)
+ *  provide some hysteresis for analog gain (1/2 step) when goin to positive, but never let residual
+ *  gain to be <1.0 (0x10000). Uses gain correction table.  */
+unsigned long gain_ajust_mt9f002(
+        unsigned long   gain,       ///< required full gain
+        unsigned long * gainTab,    ///< pointer to 81 element table of actual gains for each step. Uses calculated ones after init
+        unsigned long   curRegGain, ///< current value of the sensor gain register
+        unsigned long * newRegGain, ///< pointer to the new value of the sensor gain register
+        unsigned long   anaGainEn,  ///< enable analog gain adjustment (0 - use current)
+        unsigned long   minGain,    ///< minimal allowed value of the analog gain (normally 0x10000 ~ 1.0)
+        unsigned long   maxGain)    ///< maximal allowed value of the analog gain (normally 0xfc000 ~ 15.75)
+                                    ///< @return residual value of the digital gain (>=1.0 0x10000) except limited by the minGain
+{
+    int g=gain;
+    int gainIndex;     // index of the gain value in the table (each register value has index, each index has preferrable register value)
+    int curGainIndex;  // current index in the gains table matching sensor register value
+    uint64_t ull_gain;
+
+    dev_dbg(g_dev_ptr,"gain=0x%lx, curRegGain=0x%lx, minGain=0x%lx, maxGain=0x%lx\n",gain,curRegGain,minGain,maxGain);
+    // sensor's digital gain bits are ignored when getting table index
+    // curRegGain &=0xfff;
+    // find out gain index for the current value of the sensor gain register
+    curGainIndex = gain_get_table_index_by_reg_mt9f002(curRegGain);
+
+    if (anaGainEn) {
+        if (g<minGain) g=minGain;
+        if (g>maxGain) g=maxGain;
+        // calculate theoretical gainIndex (0..175)
+        gainIndex=gain_get_table_index_by_par_mt9f002(g);
+        dev_dbg(g_dev_ptr,"gainIndex=0x%x\n",gainIndex);
+        // adjust using gain table
+        while ((gainIndex>0)  && (gainTab[gainIndex-1]>=g) && (gainTab[gainIndex-1]>=minGain)) gainIndex--; // adjust down
+        while ((gainIndex<175) && (gainTab[gainIndex+1]< g) && (gainTab[gainIndex+1]<=maxGain)) gainIndex++; // adjust up
+        dev_dbg(g_dev_ptr,"gainIndex=0x%x\n",gainIndex);
+        // Apply hysteresis
+        if ((gainIndex==(curGainIndex+1)) && (((gainTab[gainIndex]+gainTab[gainIndex+1])>>1)>g)) gainIndex--;
+        dev_dbg(g_dev_ptr,"gainIndex=0x%x\n",gainIndex);
+        //  did the analog gain change?
+        *newRegGain=gain_get_reg_by_par(gainTab[gainIndex]);
+    }else {
+        gainIndex=curGainIndex;
+        *newRegGain=curRegGain;
+    }
+    dev_dbg(g_dev_ptr,"*newRegGain=0x%lx\n",*newRegGain);
+    // now divide gains
+    ull_gain =((long long) gain) << 16;
+    __div64_32(&ull_gain, gainTab[gainIndex]);
+    dev_dbg(g_dev_ptr,"((unsigned long) ull_gain)=0x%lx\n",(unsigned long) ull_gain);
+    return ((unsigned long) ull_gain) >> SHIFT_DGAIN;
+}
+
+/** Apply scale (0x10000~1.0) to data using 64-bit intermediate data */
+inline unsigned long mt9f002_applyScale16 (unsigned long data,  ///< 32-bit unsigned data
+                                   unsigned long scale) ///< 32 bit (0x10000 for scale 1.0)
+                                                        ///< @return scaled result
+{
+    return  (unsigned long) ((((long long) data)  * scale) >> 16);
+}
+/** Calculate ratio of the two 32-bit numbers, scaling it by 16 bits, so equal numbers will result in 0x10000 (1.0) using 64 by 32 bit division */
+inline unsigned long mt9f002_getScale16 (unsigned long nominator,   ///< 32-bit nominator
+                                 unsigned long denominator) ///< 32-bit denominator
+                                                            ///< 32 bit result scaled by 16 bits
+{
+    uint64_t ull_result =((long long) nominator) << 16;
+    __div64_32(&ull_result, denominator);
+    return (unsigned long) ull_result;
+}
+
+
 /**
  * Program analog gains
  * program analog gains TODO: Make separate read-only P_ACTUAL_GAIN** ?
  * apply sensor-specific restrictions on the allowed gain values
  * includes sensor test mode on/off/selection
  */
+#define MAX_DIGITAL_GAIN 0x300 //integer x256 (0x300 ~3.0)
 int mt9f002_pgm_gains      (int sensor_port,               ///< sensor port number (0..3)
                             struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
                             struct framepars_t * thispars, ///< sensor current parameters
@@ -1184,55 +1648,252 @@ int mt9f002_pgm_gains      (int sensor_port,               ///< sensor port numb
     unsigned long maxGain;
 
     int limitsModified=0;
-    //int gaingModified=FRAMEPAR_MODIFIED(P_GAING);
+    int gaingModified=FRAMEPAR_MODIFIED(P_GAING);
 
     unsigned long gainr, gaing, gaingb, gainb;
-    //unsigned long rscale_all, gscale_all, bscale_all;
-    //unsigned long rscale, gscale, bscale, rscale_ctl, gscale_ctl, bscale_ctl;
-    //unsigned long newval;
-
+    unsigned long rscale_all, gscale_all, bscale_all;
+    unsigned long rscale, gscale, bscale, rscale_ctl, gscale_ctl, bscale_ctl;
+    unsigned long newval;
 
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
-    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 
-    //make sure limits are OK. Allow violating minimal gain here
+    // wrong frame
+    if (frame16 >= PARS_FRAMES) return -1;
+
+    // NOTES:
+    //     - Those gain registers include digital gain - bits [15:12] - include or not?
+    //
+
+    ///make sure limits are OK. Allow violating minimal gain here
+    if (FRAMEPAR_MODIFIED(P_GAIN_MIN)) {
+        limitsModified=1;
+        if (minAnaGain < 0x18000) {
+            minAnaGain = 0x18000;
+            SETFRAMEPARS_SET(P_GAIN_MIN, minAnaGain);
+        }
+    }
+    if (FRAMEPAR_MODIFIED(P_GAIN_MAX)) {
+        limitsModified+=2;
+        if (maxAnaGain > (sensor->maxGain256 << 8)) { ///sensor->maxGain256 is not calibrated, so digital gain should be able to accomodate for variations
+            maxAnaGain = (sensor->maxGain256 << 8);
+            SETFRAMEPARS_SET(P_GAIN_MAX, maxAnaGain);
+        }
+    }
+    //  maxGain= maxAnaGain * (MAX_DIGITAL_GAIN >> 8);
+    maxGain= (maxAnaGain * MAX_DIGITAL_GAIN)  >> 8; ///should not overflow for Micron as max digital gain <4.0 (0x400), max analog <0x100000)
 
     gainr= thispars->pars[P_GAINR];
     gaing= thispars->pars[P_GAING];
     gaingb=thispars->pars[P_GAINGB];
     gainb= thispars->pars[P_GAINB];
+    rscale_all=thispars->pars[P_RSCALE_ALL];
+    gscale_all=thispars->pars[P_GSCALE_ALL];
+    bscale_all=thispars->pars[P_BSCALE_ALL];
+    rscale=rscale_all & ((1<<CSCALES_WIDTH)-1);
+    gscale=gscale_all & ((1<<CSCALES_WIDTH)-1);
+    bscale=bscale_all & ((1<<CSCALES_WIDTH)-1);
+    rscale_ctl=(rscale_all >> CSCALES_CTL_BIT) & ((1<<CSCALES_CTL_WIDTH)-1);
+    gscale_ctl=(gscale_all >> CSCALES_CTL_BIT) & ((1<<CSCALES_CTL_WIDTH)-1);
+    bscale_ctl=(bscale_all >> CSCALES_CTL_BIT) & ((1<<CSCALES_CTL_WIDTH)-1);
 
-    // scales will not be modified if they make gains out of limit, but gains will be. So automatic white balance should deal with gains, not with scales.
+    ///
+    // what's this fixme is about?
+    // FIXME: use different gain limitation when anaGainEn==0 (from current analog channel gain to that * MAX_DIGITAL_GAIN>>8),
+    //        make P_GAIN_CTRL trigger this function
+    ///
+
+    // Scales will not be modified if they make gains out of limit, but gains will be. So automatic white balance should deal with gains, not with scales.
     // Preserving application-set values for scales simplifies recovery when the green gain is adjusted so all colors fit in the limits
+    dev_dbg(g_dev_ptr,"{%d}, gainr=0x%lx, gaing=0x%lx, gaingb=0x%lx, gainb=0x%lx, rscale_all=0x%lx, gscale_all=0x%lx, bscale_all=0x%lx\n",
+    		sensor_port, gainr, gaing, gaingb, gainb, rscale_all, gscale_all, bscale_all);
 
+    ///Verify that green gain itself is within limits:
+    if (FRAMEPAR_MODIFIED(P_GAING) || limitsModified) {
+        if (gaing < minAnaGain) {
+            gaing = minAnaGain;
+            gaingModified=1;
+            SETFRAMEPARS_SET(P_GAING, gaing); // Update as it was set too low
+        } else if (gaing > maxGain) {
+            gaing = maxGain;
+            gaingModified=1;
+            SETFRAMEPARS_SET(P_GAING, gaing); // Update as it was set too high
+        }
+    }
 
     // Second part - combine P_*SCALE and P_GAIN* parameters
+    if ((gaingModified || (FRAMEPAR_MODIFIED(P_RSCALE_ALL))) // either green color or red scale changed
+            && (rscale_ctl== CSCALES_CTL_NORMAL)             // update red from rscale is enabled
+            && !FRAMEPAR_MODIFIED(P_GAINR) )  {              // red gain is not specifically modified
+
+    	// Update red gain to rscale and gaing, limit it if it is out of range
+        if (((newval=mt9f002_applyScale16(gaing,rscale)))!=gainr) {
+        	if      (newval < minAnaGain) newval = minAnaGain;
+            else if (newval > maxGain)    newval = maxGain;
+        	// don't update if it was already limited in previous frames to the same value
+            if (gainr!=newval) {
+                gainr=newval;
+                SETFRAMEPARS_SET(P_GAINR, gainr);
+            }
+        }
+
+    }
+
+    if ((gaingModified || (FRAMEPAR_MODIFIED(P_GSCALE_ALL)))
+            && (gscale_ctl== CSCALES_CTL_NORMAL)
+            && !FRAMEPAR_MODIFIED(P_GAINGB) ) {
+
+        // Update green2 gain to gscale and gaing
+        if (((newval=mt9f002_applyScale16(gaing,gscale)))!=gaingb) {
+            if      (newval < minAnaGain) newval = minAnaGain;
+            else if (newval > maxGain)    newval = maxGain;
+            // don't update if it was already limited in previous frames to the same value
+            if (gaingb!=newval) {
+                gaingb=newval;
+                SETFRAMEPARS_SET(P_GAINGB, gaingb);
+            }
+        }
+
+    }
+
+    if ((gaingModified || (FRAMEPAR_MODIFIED(P_BSCALE_ALL)))
+            && (bscale_ctl== CSCALES_CTL_NORMAL)
+            && !FRAMEPAR_MODIFIED(P_GAINB) ) {
+        // Update blue gain to bscale and gaing
+        if (((newval=mt9f002_applyScale16(gaing,bscale)))!=gainb) {
+            if      (newval < minAnaGain) newval = minAnaGain;
+            else if (newval > maxGain)    newval = maxGain;
+            // don't update if it was already limited in previous frames to the same value
+            if (gainb!=newval) {
+                gainb=newval;
+                SETFRAMEPARS_SET(P_GAINB, gainb);
+            }
+        }
+    }
+
 
     // Update scales only if the corresponding color gains (not the base green one) were modified outside of the driver
     // (not as a result of being limited by minimal/maximal gains)
-    if (FRAMEPAR_MODIFIED(P_GAING)) {
-    	reg = mt9f002_calculate_gain(gaing);
-    	pr_info("{%d} setting GR gain to 0x%08x\n",sensor_port,reg);
-    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINGR, reg);
+    if ((FRAMEPAR_MODIFIED(P_GAINR))  && (rscale_ctl!= CSCALES_CTL_DISABLE)) {
+        rscale=mt9f002_getScale16(gainr, gaing);
+        dev_dbg(g_dev_ptr,"{%d} gainr=0x%lx, gaing=0x%lx, rscale=0x%lx\n",sensor_port,gainr, gaing, rscale);
+    }
+    if ((FRAMEPAR_MODIFIED(P_GAINGB)) && (gscale_ctl!= CSCALES_CTL_DISABLE)) {
+        gscale=mt9f002_getScale16(gaingb,gaing);
+        dev_dbg(g_dev_ptr,"{%d} gaingb=0x%lx, gaing=0x%lx, gscale=0x%lx\n",sensor_port,gaingb, gaing, gscale);
+    }
+    if ((FRAMEPAR_MODIFIED(P_GAINB))  && (bscale_ctl!= CSCALES_CTL_DISABLE)) {
+        bscale=mt9f002_getScale16(gainb, gaing);
+        dev_dbg(g_dev_ptr,"{%d} gainb=0x%lx, gaing=0x%lx, bscale=0x%lx\n",sensor_port,gainb, gaing, bscale);
     }
 
-    if (FRAMEPAR_MODIFIED(P_GAINR)) {
-    	reg = mt9f002_calculate_gain(gainr);
-    	pr_info("{%d} setting R gain to 0x%08x\n",sensor_port,reg);
-    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINR, reg);
+    // remove recalc flag
+    if (rscale_ctl == CSCALES_CTL_RECALC) rscale_ctl = CSCALES_CTL_NORMAL;
+    if (gscale_ctl == CSCALES_CTL_RECALC) gscale_ctl = CSCALES_CTL_NORMAL;
+    if (bscale_ctl == CSCALES_CTL_RECALC) bscale_ctl = CSCALES_CTL_NORMAL;
+    // update P_*SCALE if either scale or scale control changed
+    if (((newval=((rscale_ctl<<CSCALES_CTL_BIT) | (rscale & ((1<<CSCALES_WIDTH)-1)))))!=rscale_all) {
+        SETFRAMEPARS_SET(P_RSCALE, newval);
+        dev_dbg(g_dev_ptr,"{%d} newval=0x%lx\n",sensor_port,newval);
+    }
+    dev_dbg(g_dev_ptr,"{%d} newval=0x%lx\n",sensor_port,newval);
+    if (((newval=((gscale_ctl<<CSCALES_CTL_BIT) | (gscale & ((1<<CSCALES_WIDTH)-1)))))!=gscale_all) {
+        SETFRAMEPARS_SET(P_GSCALE, newval);
+        dev_dbg(g_dev_ptr,"{%d} newval=0x%lx\n",sensor_port,newval);
+    }
+    dev_dbg(g_dev_ptr,"{%d} newval=0x%lx\n",sensor_port,newval);
+    if (((newval=((bscale_ctl<<CSCALES_CTL_BIT) | (bscale & ((1<<CSCALES_WIDTH)-1)))))!=bscale_all) {
+        SETFRAMEPARS_SET(P_BSCALE, newval);
+        dev_dbg(g_dev_ptr,"{%d} newval=0x%lx\n",sensor_port,newval);
     }
 
-    if (FRAMEPAR_MODIFIED(P_GAINGB)) {
-    	reg = mt9f002_calculate_gain(gaingb);
-    	pr_info("{%d} setting GB gain to 0x%08x\n",sensor_port,reg);
-    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINGB, reg);
+    dev_dbg(g_dev_ptr,"{%d} newval=0x%lx\n",sensor_port,newval);
+    dev_dbg(g_dev_ptr,"{%d} gainr=0x%lx, gaing=0x%lx, gaingb=0x%lx, gainb=0x%lx, rscale_all=0x%lx, gscale_all=0x%lx, bscale_all=0x%lx\n",
+    		sensor_port,gainr, gaing, gaingb, gainb, rscale_all, gscale_all, bscale_all);
+
+
+    // Third part: Split overall gains into analog and digital components
+
+    // Split required gain for red into analog register change (with half step hysteresis) and
+
+    digitalGain= gain_ajust_mt9f002(gainr,
+            &GLOBALPARS(sensor_port, G_SENSOR_CALIB+(COLOR_RED<<8)),
+            thispars->pars[P_SENSOR_REGS+P_MT9F002_GAINR],
+            &newRegGain,
+            anaGainEn,
+            minAnaGain,
+            maxAnaGain);
+
+    //pr_info("{%d} RED thispar=0x%08x newRegGain=0x%08x digitalGain=0x%08x\n",sensor_port,thispars->pars[P_SENSOR_REGS+P_MT9F002_GAINR],newRegGain,digitalGain);
+
+    // apply sensor register gain red if it was changed
+    if (newRegGain != thispars->pars[P_SENSOR_REGS+P_MT9F002_GAINR]) {
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINR, newRegGain);
+        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16, (int) P_MT9F002_GAINR, (int) newRegGain);
+    }
+    // schedule application of (residual after analog gain adjustment) digital gain to the red channel
+    if (digitalGain != thispars->pars[P_DGAINR]) {
+        SETFRAMEPARS_SET(P_DGAINR, digitalGain);
     }
 
-    if (FRAMEPAR_MODIFIED(P_GAINB)) {
-    	reg = mt9f002_calculate_gain(gainb);
-    	pr_info("{%d} setting B gain to 0x%08x\n",sensor_port,reg);
-    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINB, reg);
+    // Split required gain for green_red into analog register change (with half step hysteresis) and
+    digitalGain= gain_ajust_mt9f002(gaing,
+            &GLOBALPARS(sensor_port, G_SENSOR_CALIB+(COLOR_GREEN1<<8)),
+            thispars->pars[P_SENSOR_REGS+P_MT9F002_GAINGR],
+            &newRegGain,
+            anaGainEn,
+            minAnaGain,
+            maxAnaGain);
+
+    // apply sensor register gain red if it was changed
+    if (newRegGain != thispars->pars[P_SENSOR_REGS+P_MT9F002_GAINGR]) {
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINGR, newRegGain);
+        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9F002_GAINGR, (int) newRegGain);
     }
+    // schedule application of (residual after analog gain adjustment) digital gain to the red channel
+    if (digitalGain != thispars->pars[P_DGAING]) {
+        SETFRAMEPARS_SET(P_DGAING, digitalGain);
+    }
+
+
+    // Split required gain for blue into analog register change (with half step hysteresis) and
+    digitalGain= gain_ajust_mt9f002(gainb,
+            &GLOBALPARS(sensor_port, G_SENSOR_CALIB+(COLOR_BLUE<<8)),
+            thispars->pars[P_SENSOR_REGS+P_MT9F002_GAINB],
+            &newRegGain,
+            anaGainEn,
+            minAnaGain,
+            maxAnaGain);
+
+    // apply sensor register gain red if it was changed
+    if (newRegGain != thispars->pars[P_SENSOR_REGS+P_MT9F002_GAINB]) {
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINB, newRegGain);
+        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16, (int) P_MT9F002_GAINB, (int) newRegGain);
+    }
+    // schedule application of (residual after analog gain adjustment) digital gain to the red channel
+    if (digitalGain != thispars->pars[P_DGAINB]) {
+        SETFRAMEPARS_SET(P_DGAINB, digitalGain);
+    }
+
+
+    // Split required gain for blue into analog register change (with half step hysteresis) and
+    digitalGain= gain_ajust_mt9f002(gaingb,
+            &GLOBALPARS(sensor_port, G_SENSOR_CALIB+(COLOR_GREEN2<<8)),
+            thispars->pars[P_SENSOR_REGS+P_MT9F002_GAINGB],
+            &newRegGain,
+            anaGainEn,
+            minAnaGain,
+            maxAnaGain);
+
+    // apply sensor register gain red if it was changed
+    if (newRegGain != thispars->pars[P_SENSOR_REGS+P_MT9F002_GAINGB]) {
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_GAINGB, newRegGain);
+        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9F002_GAINGB, (int) newRegGain);
+    }
+    // schedule application of (residual after analog gain adjustment) digital gain to the red channel
+    if (digitalGain != thispars->pars[P_DGAINGB]) {
+        SETFRAMEPARS_SET(P_DGAINGB, digitalGain);
+    }
+
 
     // test mode off/on/select
     testmode= thispars->pars[P_TESTSENSOR];
