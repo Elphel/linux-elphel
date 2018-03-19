@@ -512,7 +512,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     // Freqs for sensors
     if ((thispars->pars[P_SENSOR]==0) &&
         ((sens & SENSOR_MASK) == SENSOR_MT9F002)){
-    	setFramePar(sensor_port, thispars, P_CLK_SENSOR,  24444000);
+    	setFramePar(sensor_port, thispars, P_CLK_SENSOR,  MT9F002_VT_PIX_CLK);
     }else{
     	// this handles MT9x001 & MUX
     	setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
@@ -1335,6 +1335,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     if (min_period != thispars->pars[P_PERIOD_MIN]) {
         SETFRAMEPARS_SET(P_PERIOD_MIN, min_period);  // set it (and propagate to the later frames)
         dev_dbg(g_dev_ptr,"{%d}  SETFRAMEPARS_SET(P_PERIOD_MIN,  0x%x)\n", sensor_port, min_period);
+        pr_info("{%d} min period got updated to 0x%x (clk_sensor=%d, clk_fpga=%d)\n", sensor_port, min_period,clk_sensor,clk_fpga);
         MDP(DBGB_PADD, sensor_port,"SETFRAMEPARS_SET(P_PERIOD_MIN,  0x%x)\n", min_period)
     }
     if (((thispars->pars[P_FPSFLAGS] & 2)==0) || (period < min_period)) period=0x7fffffff; // no upper limit
@@ -2213,6 +2214,19 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     tile_height = 16 + overlap;
 
     pr_debug("PGM_MEMCOMPRESSOR: sport=%d width_bursts=%d  width_marg=%d  height_marg=%d  num_macro_rows_m1=%d  tile_width=%d  tile_height=%d  margin_left=%d  margin_top=%d P_TILES=%d\n",
+                sensor_port,
+				width_bursts,
+				width_marg,
+				height_marg,
+				(cmprs_frame_format.num_macro_rows_m1 + 1) << 4,
+				tile_width,
+				tile_height,
+				0,
+				cmprs_top,
+				(cmprs_frame_format.num_macro_cols_m1+1)*(cmprs_frame_format.num_macro_rows_m1+1)
+				);
+
+    pr_info("PGM_MEMCOMPRESSOR: sport=%d width_bursts=%d  width_marg=%d  height_marg=%d  num_macro_rows_m1=%d  tile_width=%d  tile_height=%d  margin_left=%d  margin_top=%d P_TILES=%d\n",
                 sensor_port,
 				width_bursts,
 				width_marg,

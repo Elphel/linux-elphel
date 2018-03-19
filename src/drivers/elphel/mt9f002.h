@@ -21,7 +21,9 @@
 #define MT9F002_I2C_ADDR     0x10 ///< MT9P I2C slave address (7 bit)
 
 // bit 9 should have set masking for broken frames
-#define MT9F002_RESET_REGISTER_VALUE 0x001c
+// cleared bit 3 allows writing to some RO registers
+//#define MT9F002_RESET_REGISTER_VALUE 0x001c
+#define MT9F002_RESET_REGISTER_VALUE 0x0014
 // number of lines to sacrifice before generating Frame Valid
 #define MT9F002_VACT_DELAY 2
 
@@ -58,7 +60,8 @@
 // Sensor clock dividers and multiplier
 // These should be calculated based on the clocks above
 
-// pll multiplier, default is 0xa5 (165), also tried 0xa2 (162)
+// pll multiplier, default is 0xa5 (165) for 24MHz
+// is set to 0xb4 (180) becuase clock is 22MHz (not 24)
 #define MT9F002_PLL_MULTIPLIER_VALUE 0xb4
 // pre_pll_clk_div (0x0304), default value is 0x6
 #define MT9F002_PRE_PLL_CLK_DIV_VALUE 0x6
@@ -68,12 +71,11 @@
 #define MT9F002_VT_SYS_CLK_DIV_VALUE 0x1
 // shift_vt_pix_clk_div, default value is 0x1
 #define MT9F002_SHIFT_VT_PIX_CLK_DIV 0x1
-
-
+// op_pix_clk divider
+#define MT9F002_OP_PIX_CLK_DIV 0xc
 
 // Coarse Integration Time Margin
 #define MT9F002_COARSE_EXPOS_MARGIN 0x1
-
 
 /* ON Semi MT9F002 i2c register addresses */
 

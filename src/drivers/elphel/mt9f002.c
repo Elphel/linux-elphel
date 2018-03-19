@@ -51,7 +51,7 @@
 #include "sensor_i2c.h"
 //#include "detect_sensors.h"
 
-// hact timeout in udelay(100)s
+// hact timeout in udelay(100)s - for data lanes' phase adjustment
 #define HACT_TIMEOUT 8192
 
 /**
@@ -131,7 +131,7 @@ void mt9f002_set_device(struct device *dev) // do nothing, now it has it's own d
 struct sensor_t mt9f002 = {
         // sensor constants
         .imageWidth  = 4384,     ///< nominal image width for final images
-        .imageHeight = 3288,     ///< nominal image height for final images
+        .imageHeight = 3280,     ///< nominal image height for final images
         .clearWidth  = 4608,     ///< maximal clear image width
         .clearHeight = 3288,     ///< maximal clear image height;
         .clearTop    = 32-MT9F002_VACT_DELAY, ///< top margin to the first clear pixel
@@ -142,10 +142,10 @@ struct sensor_t mt9f002 = {
         .minHeight   = 2,        ///< minimal WOI height
 
         .minHorBlank = 0,        ///< minimal horizontal blanking, in pixels in no-decimation, no-binning mode.
-        .minLineDur  = 0,      ///< minimal total line duration, in pixels in no-decimation, no-binning mode.
-        .maxHorBlank = 0,     ///< maximal horizontal blanking/Virtual frame width (depends on sensor type)
+        .minLineDur  = 0,        ///< minimal total line duration, in pixels in no-decimation, no-binning mode.
+        .maxHorBlank = 0,        ///< maximal horizontal blanking/Virtual frame width (depends on sensor type)
         .minVertBlank= 0,        ///< minimal vertical blanking
-        .maxVertBlank= 0,     ///< maximal vertical blanking/Virtual frame height (depends on sensor type)
+        .maxVertBlank= 0,        ///< maximal vertical blanking/Virtual frame height (depends on sensor type)
 
         .maxShutter  = 0xfffff,  ///< Maximal shutter duration (in lines)
 
@@ -160,9 +160,9 @@ struct sensor_t mt9f002 = {
         .maxGain256  = 4064,     ///< (15.875) maximal analog gain times 0x100
         .minGain256  = 384,      ///< 1.5 times 0x100
 
-        .minClockFreq= 20000000, ///< Minimal clock frequency
-        .maxClockFreq= 24444000, ///< Maximal clock frequency
-        .nomClockFreq= 24444000, ///< nominal clock frequency
+        .minClockFreq= 200000000, ///< Minimal clock frequency
+        .maxClockFreq= 240000000, ///< Maximal clock frequency
+        .nomClockFreq= 220000000, ///< nominal clock frequency
 
         .sensorType  = SENSOR_MT9F002,  ///< sensor type (for Elphel cameras)
         .i2c_addr    = MT9F002_I2C_ADDR,           ///< sensor i2c slave address (7 bits)
@@ -584,7 +584,7 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 	// soft reset
 	// sa7 is not used
 	X3X3_I2C_SEND2_LUT_ASAP(sensor_port,0,P_REG_MT9F002_RESET_REGISTER,MT9F002_RESET_REGISTER_VALUE);
-	// delay (needed?)
+	// delay is not needed, however if bit[0]=1 then it is needed
 	//udelay(100);
 
 	// sensor is supposed to be streaming by now
@@ -696,6 +696,22 @@ int mt9f002_calc_frame_length_lines(struct framepars_t * thispars){
 	return v0;
 }
 
+int mt9f002_calc_frame_length_lines_2(int whs, int whe,struct framepars_t * thispars){
+
+	int v0;
+
+	int y_addr_start = whs;
+	int y_addr_end   = whe;
+	int min_frame_blanking_lines = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_FRAME_BLANKING_LINES];
+
+	// TODO: do
+	int subsampling_factor = 1;
+
+	v0 = (y_addr_end - y_addr_start + 1)/subsampling_factor + min_frame_blanking_lines;
+
+	return v0;
+}
+
 // also defines horizontal blanking
 int mt9f002_calc_line_length_pck(struct framepars_t * thispars){
 
@@ -712,7 +728,7 @@ int mt9f002_calc_line_length_pck(struct framepars_t * thispars){
 
 	// does not match with the default value
 	//v0 = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_LINE_LENGTH_PCK];
-	v0 = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_LINE_LENGTH_PCK]-2;
+	v0 = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_LINE_LENGTH_PCK];
 	// typo in the datasheet formula?
 	//v1 = (x_addr_end-x_addr_start+x_odd_inc)/(1+x_odd_inc)+min_line_blanking_pck;
 	//v1 = ((x_addr_end-x_addr_start+x_odd_inc)*2/(1+x_odd_inc)+min_line_blanking_pck)/2;
@@ -723,12 +739,12 @@ int mt9f002_calc_line_length_pck(struct framepars_t * thispars){
 	//pr_info("x_addr_end=0x%08x x_addr_start=0x%08x x_odd_inc=0x%08x min_line_blanking_pck=0x%08x\n",x_addr_end,x_addr_start,x_odd_inc,min_line_blanking_pck);
 	v2 = MT9F002_VT_PIX_CLK/MT9F002_OP_PIX_CLK*x_output_size/4 + 0x5E;
 
-	//pr_info("v0=0x%08x v1=0x%08x v2=0x%08x\n",v0,v1,v2);
+	pr_info("v0=0x%08x v1=0x%08x v2=0x%08x\n",v0,v1,v2);
 
 	if (v0<v1) v0 = v1;
 	if (v0<v2) v0 = v2;
 
-	//pr_info("result = 0x%08x\n",v0);
+	pr_info("result = 0x%08x\n",v0);
 
 	return v0;
 }
@@ -900,7 +916,7 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
 
     // recalc something after this one?
     fll = mt9f002_calc_frame_length_lines(thispars);
-    pr_info("old fll=0x%08x, new fll=0x%08x\n",thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES],fll);
+    //fll = mt9f002_calc_frame_length_lines_2(whs,whe,thispars);
     if (fll!=thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES]){
     	pr_info("old fll=0x%08x, new fll=0x%08x\n",thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES],fll);
     	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_FRAME_LENGTH_LINES, fll);
@@ -1160,6 +1176,7 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     // schedule updating P_VIRT_HEIGHT if it changed
     dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_VIRT_HEIGHT] =%d(0x%x), virt_height=%d(0x%x)\n",sensor_port,(int)thispars->pars[P_VIRT_HEIGHT],(int)thispars->pars[P_VIRT_HEIGHT ],virt_height,virt_height);
     if (thispars->pars[P_VIRT_HEIGHT ] != virt_height) {
+    	pr_info("setting virt_height to %d\n",virt_height);
         SETFRAMEPARS_SET(P_VIRT_HEIGHT, virt_height);
     }
     // schedule updating P_PERIOD if it changed
@@ -1184,7 +1201,7 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     // Update period from external trigger (assuming internal/self trigger, we do not know real external trigger period)
     //pix_period = compare_to_trig_period(pix_period,thispars);
 
-    sclk = MT9F002_VT_PIX_CLK;
+    sclk = thispars->pars[P_CLK_SENSOR];
 
     ull_fp1000s=((long long) 1000)* ((long long) sclk);
     __div64_32(&ull_fp1000s,pix_period);
@@ -1196,6 +1213,13 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     if (thispars->pars[P_FP1000S] != fp1000s) {
         SETFRAMEPARS_SET(P_FP1000S, fp1000s);
     }
+
+    // this sets the vertical blanking
+    if (virt_height!=thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES]){
+    	pr_info("limit fps, old frame_length_lines=0x%08x, new frame_length_lines=0x%08x\n",thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES],virt_height);
+    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_FRAME_LENGTH_LINES, virt_height);
+    }
+
     /*
     // schedule updating P_MT9X001_VERTBLANK sensor register and shadow
     dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK] =%d(0x%x), vert_blank=%d(0x%x)\n",sensor_port,(int)thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK],(int)thispars->pars[P_SENSOR_REGS+P_MT9X001_VERTBLANK],vert_blank,vert_blank);
@@ -1236,10 +1260,13 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     int coarse_exposure;
     int fine_exposure;
 
+    int frame_length_lines = thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES];
+    int line_length_pck = thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK];
+
     // vt_pix_clk
     // TODO: Do not forget this - add those div registers?!
     //int sclk = thispars->pars[P_CLK_SENSOR]*MT9F002_PLL_MULTIPLIER_VALUE*0x2/0x6/0x6; // pixel clock in Hz before PLL, but PLL setting is ~240MHz?
-    int sclk = MT9F002_VT_PIX_CLK;// = (thispars->pars[P_CLK_SENSOR]/0x6/0x6)*0x2*MT9F002_PLL_MULTIPLIER_VALUE;
+    int sclk = thispars->pars[P_CLK_SENSOR];// = (thispars->pars[P_CLK_SENSOR]/0x6/0x6)*0x2*MT9F002_PLL_MULTIPLIER_VALUE;
 
     int vert_blank;
 
@@ -1247,7 +1274,6 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     int row_time_in_pixels=thispars->pars[P_VIRT_WIDTH];
     int pix_period;
 
-    int line_length_pck;
 
     // wrong frame
     if (frame16 >= PARS_FRAMES) return -1;
@@ -1260,12 +1286,22 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     // else  : use P_EXPOS
     if ((video_exposure>0)&&(FRAMEPAR_MODIFIED(P_VEXPOS)||!(FRAMEPAR_MODIFIED(P_EXPOS)||FRAMEPAR_MODIFIED(P_VIRT_WIDTH)))) {
     	pr_info("using P_VEXPOS\n");
+
+    	coarse_exposure = video_exposure;
+
+    	ull_exposure = ((long long)(video_exposure * line_length_pck)) * ((long long) 1000000);
+    	__div64_32(&ull_exposure,sclk);
+    	exposure = ull_exposure;
+
     }else{
 
     	pr_info("using P_EXPOS\n");
     	// exposure is in microseconds
     	exposure        = thispars->pars[P_EXPOS];
-    	line_length_pck = thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK];
+
+    	//line_length_pck = thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK];
+    	// always start with min line_length_pck for the current window
+    	line_length_pck = mt9f002_calc_line_length_pck(thispars);
 
     	pr_info("exposure = 0x%08x, line_length_pck = 0x%08x\n",exposure,line_length_pck);
 
@@ -1275,8 +1311,20 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     	__div64_32(&ull_video_exposure,line_length_pck);
 
     	coarse_exposure = ull_video_exposure;
+    	//frame_length_lines = thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES];
 
-    	pr_info("coarse exposure = %d (0x%08x)\n",coarse_exposure,coarse_exposure);
+    	pr_info("coarse exposure = 0x%08x vs 0x%08x = frame_length_lines \n",coarse_exposure,frame_length_lines);
+
+    	if (coarse_exposure>(frame_length_lines-1)){
+    		pr_info("COARSE IS GREATER THAN FRAME LENGTH");
+    		// set coarse to max
+    		coarse_exposure = frame_length_lines-1;
+    		ull_video_exposure = (long long) (sclk / 1000000) * (long long) exposure;
+    		__div64_32(&ull_video_exposure,coarse_exposure);
+    		// extend line length
+    		line_length_pck = ull_video_exposure;
+    	}
+
 
     	// at the same time the fine exposure will be:
     	ull_video_exposure = (long long) (sclk / 1000000) * (long long) exposure;
@@ -1287,10 +1335,36 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     }
 
     if (exposure <1)       exposure=1;
-    if (video_exposure <1) video_exposure=1;
+    if (coarse_exposure <1) coarse_exposure=1;
 
     // check against max shutter?
+    // is exposure longer then maximal period (specified for constant fps?
+    pix_period = line_length_pck*frame_length_lines;
 
+    // IMPORTANT: inserted here by myself for testing
+    //pix_period = compare_to_trig_period(sensor_port,pix_period,thispars);
+
+    // 0x2 == keep frame rate
+    // 0x1 == limit frame rate
+    if (thispars->pars[P_FPSFLAGS] & 0x2) {
+    	if (pix_period > thispars->pars[P_PERIOD_MAX]) {
+    		// already done this?!
+    		coarse_exposure = frame_length_lines-1;
+    		ull_video_exposure = (long long) (sclk / 1000000) * (long long) exposure;
+    		__div64_32(&ull_video_exposure,coarse_exposure);
+    		// extend line length
+    		line_length_pck = ull_video_exposure;
+    	}
+    }else{
+    	// update fps here
+    	SETFRAMEPARS_SET(P_PERIOD, pix_period);
+    	ull_fp1000s=((long long) 1000)* ((long long) sclk);
+    	__div64_32(&ull_fp1000s,pix_period);
+    	fp1000s= ull_fp1000s;
+    	if (thispars->pars[P_FP1000S] != fp1000s) {
+    		SETFRAMEPARS_SET(P_FP1000S, fp1000s);
+    	}
+    }
 
 
     /*
@@ -1434,6 +1508,10 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
         		sensor_port, sensor_port, frame16,(int) sensor->i2c_addr,(int)P_MT9F002_COARSE_INTEGRATION_TIME,(int)coarse_exposure);
     }
 
+    if (line_length_pck != thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK]){
+    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_LINE_LENGTH_PCK, line_length_pck);
+    }
+
     // fine integration time
     /*
     if (fine_exposure != thispars->pars[P_SENSOR_REGS+P_MT9F002_FINE_INTEGRATION_TIME]) {
@@ -1445,8 +1523,8 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
 
     if (nupdate) setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to gains and sensor register shadows
 
-    dev_dbg(g_dev_ptr,"{%d} coarse exposure = %d (0x%x),  fine exposure = %d (0x%x) OK!\n",
-    		sensor_port, (int) coarse_exposure, (int) coarse_exposure, (int) fine_exposure, (int) fine_exposure);
+    dev_dbg(g_dev_ptr,"{%d} coarse exposure = %d (0x%x),  line_length_pck = %d (0x%08x),  fine exposure = %d (0x%x)\n",
+    		sensor_port, (int) coarse_exposure, (int) coarse_exposure, (int) line_length_pck, (int) line_length_pck, (int) fine_exposure, (int) fine_exposure);
 
     return 0;
 }
@@ -1636,8 +1714,6 @@ int mt9f002_pgm_gains      (int sensor_port,               ///< sensor port numb
                                                            ///< @return 0 - OK, negative - error
 
 {
-	int reg;
-
     struct frameparspair_t pars_to_update[38]; // 22+12 needed
     int nupdate=0;
 
