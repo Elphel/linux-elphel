@@ -498,7 +498,8 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr,                ///< pointer 
 	int  index_time = jptr->jpeg_wp - 11;
     char time_buff[27];
     char * exif_meta_time_string;
-    int global_flips, extra_flips;
+    // calcualte bayer without flips - extra xor
+    int global_flips, extra_flips, bayer;
     unsigned char orientations[]="1638274545273816";
     unsigned char orientation_short[2];
     int maker_offset;
@@ -521,6 +522,12 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr,                ///< pointer 
 		extra_flips=get_imageParamsFrame(sensor_port, P_MULTI_MODE_FLIPS,frame);
 		global_flips=extra_flips & 3;
 	}
+
+	// calculate bayer without flips
+	bayer  = get_imageParamsFrame(sensor_port, P_COMP_BAYER, frame);
+	bayer ^= get_imageParamsFrame(sensor_port, P_COMPMOD_BYRSH, frame);
+	// subtract flips
+	bayer ^= global_flips;
 
 	orientation_short[0]=0;
 	orientation_short[1]=0xf & orientations[(get_imageParamsFrame(sensor_port, P_PORTRAIT, frame)&3) | (global_flips<<2)];
@@ -552,7 +559,7 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr,                ///< pointer 
 		putlong_meta_raw_irq(sensor_port, get_imageParamsFrame(sensor_port, P_WOI_LEFT,frame) | (get_imageParamsFrame(sensor_port, P_WOI_WIDTH,frame)<<16),  maker_offset+32); //No Past
 		putlong_meta_raw_irq(sensor_port, get_imageParamsFrame(sensor_port, P_WOI_TOP,frame) | (get_imageParamsFrame(sensor_port, P_WOI_HEIGHT,frame)<<16),  maker_offset+36); //No Past
 		putlong_meta_raw_irq(sensor_port,   global_flips |
-				((get_imageParamsFrame(sensor_port, P_BAYER, frame)<<2)     & 0xc) |
+				((bayer<<2) & 0xc) |
 				((get_imageParamsFrame(sensor_port, P_COLOR, frame)<<4)     & 0xF0) |
 				((get_imageParamsFrame(sensor_port, P_DCM_HOR, frame)<<8)   & 0xF00) |
 				((get_imageParamsFrame(sensor_port, P_DCM_VERT, frame)<<12) & 0xF000) |

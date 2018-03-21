@@ -1249,12 +1249,18 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     cycles=thispars->pars[P_TILES]; // number of tiles nc393: [P_TILES] == 0!
     //  dev_dbg(g_dev_ptr,"{%d}  tiles=%d(0x%x)\n",sensor_port,cycles,cycles);
+
     switch (thispars->pars[P_COLOR] & 0x0f){
     case COLORMODE_MONO6:
     case COLORMODE_COLOR:
     case COLORMODE_JP46:
     case COLORMODE_JP46DC:
     case COLORMODE_COLOR20:
+
+        // TEMPORARY FIX FOR JPEG and friends: add extra line of tiles
+    	// compressor uses P_ACTUAL_WIDTH not P_WOI_WIDTH
+        cycles += (thispars->pars[P_ACTUAL_WIDTH]>>4);
+
         cycles*=6; // now - blocks per frame
         break;
     default:
@@ -1335,7 +1341,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     if (min_period != thispars->pars[P_PERIOD_MIN]) {
         SETFRAMEPARS_SET(P_PERIOD_MIN, min_period);  // set it (and propagate to the later frames)
         dev_dbg(g_dev_ptr,"{%d}  SETFRAMEPARS_SET(P_PERIOD_MIN,  0x%x)\n", sensor_port, min_period);
-        pr_info("{%d} min period got updated to 0x%x (clk_sensor=%d, clk_fpga=%d)\n", sensor_port, min_period,clk_sensor,clk_fpga);
+        //pr_info("{%d} min period got updated to 0x%x (clk_sensor=%d, clk_fpga=%d)\n", sensor_port, min_period,clk_sensor,clk_fpga);
         MDP(DBGB_PADD, sensor_port,"SETFRAMEPARS_SET(P_PERIOD_MIN,  0x%x)\n", min_period)
     }
     if (((thispars->pars[P_FPSFLAGS] & 2)==0) || (period < min_period)) period=0x7fffffff; // no upper limit
@@ -1551,6 +1557,7 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     // Change Bayer for gamma/histograms?
     if (bayer_modified) {
         bayer = thispars->pars[P_BAYER] ^ flips ^ sensor->bayer  ^ 3; // 3 added for NC393;
+        //pr_info("P_BAYER=%d  flips=%d  sensor->bayer=%d\n",thispars->pars[P_BAYER],flips,sensor->bayer);
         setFramePar(sensor_port, thispars, P_COMP_BAYER | FRAMEPAIR_FORCE_PROC,   bayer);
         gamma_ctl.bayer = bayer; // 3 added for NC393
         gamma_ctl.bayer_set = 1;
@@ -2214,19 +2221,6 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     tile_height = 16 + overlap;
 
     pr_debug("PGM_MEMCOMPRESSOR: sport=%d width_bursts=%d  width_marg=%d  height_marg=%d  num_macro_rows_m1=%d  tile_width=%d  tile_height=%d  margin_left=%d  margin_top=%d P_TILES=%d\n",
-                sensor_port,
-				width_bursts,
-				width_marg,
-				height_marg,
-				(cmprs_frame_format.num_macro_rows_m1 + 1) << 4,
-				tile_width,
-				tile_height,
-				0,
-				cmprs_top,
-				(cmprs_frame_format.num_macro_cols_m1+1)*(cmprs_frame_format.num_macro_rows_m1+1)
-				);
-
-    pr_info("PGM_MEMCOMPRESSOR: sport=%d width_bursts=%d  width_marg=%d  height_marg=%d  num_macro_rows_m1=%d  tile_width=%d  tile_height=%d  margin_left=%d  margin_top=%d P_TILES=%d\n",
                 sensor_port,
 				width_bursts,
 				width_marg,
