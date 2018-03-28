@@ -704,6 +704,27 @@ int mt9f002_calc_frame_length_lines(struct framepars_t * thispars){
 	return v0;
 }
 
+// also defines vertical blanking
+int mt9f002_calc_frame_length_lines_2(int y_addr_start,
+		                              int y_addr_end,
+									  int min_frame_blanking_lines){
+
+	int v0;
+
+	int subsampling_factor = 1;
+
+	v0 = (y_addr_end - y_addr_start + 1)/subsampling_factor + min_frame_blanking_lines;
+
+	/*
+	if (coarse_exposure>(v0-1)){
+		v0 = coarse_exposure + 1;
+		pr_info("frame_length_lines will get extended\n");
+	}
+	*/
+
+	return v0;
+}
+
 // also defines horizontal blanking
 int mt9f002_calc_line_length_pck(struct framepars_t * thispars){
 
@@ -736,6 +757,39 @@ int mt9f002_calc_line_length_pck(struct framepars_t * thispars){
 	//if (v0<v3) v0 = v3;
 
 	pr_info("result = 0x%08x\n",v0);
+
+	return v0;
+}
+
+// also defines horizontal blanking
+int mt9f002_calc_line_length_pck_2(int x_addr_start,
+								   int x_addr_end,
+								   int x_odd_inc,
+								   int x_output_size,
+								   int min_line_blanking_pck,
+								   int min_line_length_pck){
+
+	int v0, v1, v2;
+	// does not match with the power on default value
+	v0 = min_line_length_pck;
+	// incorrect formula?
+	//v1 = (x_addr_end-x_addr_start+x_odd_inc)/(1+x_odd_inc)+min_line_blanking_pck;
+	v1 = (x_addr_end-x_addr_start+x_odd_inc)/(1+x_odd_inc)+min_line_blanking_pck/2;
+	// temporary hack
+	//v0 = v1;
+	//v1 = ((x_addr_end-x_addr_start+x_odd_inc)*2/(1+x_odd_inc)+min_line_blanking_pck)/2;
+	v2 = MT9F002_VT_PIX_CLK/MT9F002_OP_PIX_CLK*x_output_size/4 + 0x5E;
+	// what?!
+	//v3 = (x_addr_end-x_addr_start+1)+min_line_blanking_pck;
+
+	//pr_info("x_addr_end=0x%08x x_addr_start=0x%08x x_odd_inc=0x%08x min_line_blanking_pck=0x%08x\n",x_addr_end,x_addr_start,x_odd_inc,min_line_blanking_pck);
+	//pr_info("v0=0x%08x v1=0x%08x v2=0x%08x\n",v0,v1,v2);
+
+	if (v0<v1) v0 = v1+2;
+	if (v0<v2) v0 = v2;
+	//if (v0<v3) v0 = v3;
+
+	//pr_info("result = 0x%08x\n",v0);
 
 	return v0;
 }
@@ -786,12 +840,18 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
     struct frameparspair_t  pars_to_update[29];
     int nupdate=0;
 
+    int min_frame_blanking_lines = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_FRAME_BLANKING_LINES];
+    int min_line_blanking_pck    = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_LINE_BLANKING_PCK];
+    int min_line_length_pck      = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_LINE_LENGTH_PCK];
+    //int min_line_length_pck = 0x04c8;
+
+    int ww_odd_inc = 1;
     int fll, llp;
 
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 
-    pr_info("mt9f002_pgm_window_common: %d\n",thispars->pars[P_EXPOS]);
+    //pr_info("mt9f002_pgm_window_common: %d\n",thispars->pars[P_EXPOS]);
 
     dh=  thispars->pars[P_DCM_HOR];
     dv=  thispars->pars[P_DCM_VERT];
@@ -856,7 +916,7 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
         wt = (wt + sensor->clearTop) & 0xfffe;
         wl = (wl + sensor->clearLeft) & 0xfffe;
         dev_dbg(g_dev_ptr,"{%d} wl =0x%x, wt=0x%x\n",sensor_port, wl, wt);
-        pr_info("{%d} wl =0x%x, wt=0x%x\n",sensor_port, wl, wt);
+        //pr_info("{%d} wl =0x%x, wt=0x%x\n",sensor_port, wl, wt);
 
         /*
         // apply binning restrictions
@@ -874,60 +934,63 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
     wws = wl;
     wwe = wws + ww - 1;
 
-    whs = wt - MT9F002_VACT_DELAY; // wt already got sensor->clearTop-MT9F002_VACT_DELAY
-    whe = whs + wh + MT9F002_VACT_DELAY*(dv+1) - 1;
+    // need sensor->clearTop-MT9F002_VACT_DELAY - beacause the 1st 2 rows are ignored
+    whs = wt - MT9F002_VACT_DELAY;
+    //whe = whs + wh + MT9F002_VACT_DELAY*(dv+1) - 1; // ?!
+    whe = whs + wh + MT9F002_VACT_DELAY*(dv) - 1;
     // will be different if binning/skipping
     wh = whe - whs + 1;
 
     // program sensor width
     if (wws != thispars->pars[P_SENSOR_REGS+P_MT9F002_X_ADDR_START]) {
         SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_X_ADDR_START, wws);
-        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
+        dev_dbg(g_dev_ptr,"{%d} SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
         		sensor_port, sensor_port, frame16, (int) P_MT9F002_X_ADDR_START, (int) wws);
     }
     if (wwe != thispars->pars[P_SENSOR_REGS+P_MT9F002_X_ADDR_END]) {
         SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_X_ADDR_END, wwe);
-        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
+        dev_dbg(g_dev_ptr,"{%d} SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
         		sensor_port, sensor_port, frame16, (int) P_MT9F002_X_ADDR_END, (int) wwe);
     }
     if (ww != thispars->pars[P_SENSOR_REGS+P_MT9F002_X_OUTPUT_SIZE]) {
         SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_X_OUTPUT_SIZE, ww);
-        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
+        dev_dbg(g_dev_ptr,"{%d} SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
         		sensor_port, sensor_port, frame16, (int) P_MT9F002_X_OUTPUT_SIZE, (int) ww);
     }
 
     // program sensor height
     if (whs!= thispars->pars[P_SENSOR_REGS+P_MT9F002_Y_ADDR_START]) {
         SET_SENSOR_MBPAR_LUT(sensor_port, frame16 ,P_MT9F002_Y_ADDR_START, whs);
-        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
+        dev_dbg(g_dev_ptr,"{%d} SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
         		sensor_port, sensor_port, frame16, (int) P_SENSOR_REGS+P_MT9F002_Y_ADDR_START, (int) whs);
     }
     if (whe!= thispars->pars[P_SENSOR_REGS+P_MT9F002_Y_ADDR_END]) {
         SET_SENSOR_MBPAR_LUT(sensor_port, frame16 ,P_MT9F002_Y_ADDR_END, whe);
-        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
+        dev_dbg(g_dev_ptr,"{%d} SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
         		sensor_port, sensor_port, frame16, (int) P_SENSOR_REGS+P_MT9F002_Y_ADDR_END, (int) whe);
     }
     if (wh != thispars->pars[P_SENSOR_REGS+P_MT9F002_Y_OUTPUT_SIZE]) {
         SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_Y_OUTPUT_SIZE, wh);
-        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
+        dev_dbg(g_dev_ptr,"{%d} SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x)\n",
         		sensor_port, sensor_port, frame16, (int) P_MT9F002_Y_OUTPUT_SIZE, (int) wh);
     }
 
     // recalc something after this one?
-    fll = mt9f002_calc_frame_length_lines(thispars);
+    //fll = mt9f002_calc_frame_length_lines(thispars);
+    fll = mt9f002_calc_frame_length_lines_2(whs,whe,min_frame_blanking_lines);
     // this sets the vertical blanking
     if (fll!=thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES]){
-    	pr_info("limit fps, old frame_length_lines=0x%08x, new frame_length_lines=0x%08x\n",
+    	dev_dbg(g_dev_ptr,"limit fps, old frame_length_lines=0x%08x, new frame_length_lines=0x%08x\n",
     			thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES], fll);
     	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_FRAME_LENGTH_LINES, fll);
     }
 
     // recalc exposure after this one
-    llp = mt9f002_calc_line_length_pck(thispars);
+    //llp = mt9f002_calc_line_length_pck(thispars);
+    llp = mt9f002_calc_line_length_pck_2(wws,wwe,ww_odd_inc,ww,min_line_blanking_pck,min_line_length_pck);
     if (llp != thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK]){
     	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_LINE_LENGTH_PCK, llp);
     }
-
 
     // write flips and skips
     // reg 0x3040 = P_REG_MT9F002_READ_MODE
@@ -1076,7 +1139,7 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 
-    pr_info("mt9f002_pgm_limitfps: %d\n",thispars->pars[P_EXPOS]);
+    //pr_info("mt9f002_pgm_limitfps: %d\n",thispars->pars[P_EXPOS]);
 
 
     width = 2 * ww / (2 * dh);
@@ -1163,7 +1226,10 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     // this should be based on exposure
     //virt_height = height + sensor->minVertBlank;
     //virt_height = mt9f002_calc_frame_length_lines(thispars);
+
+    // this is allowed minimum
     virt_height = thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES];
+
     if (thispars->pars[P_VIRT_KEEP]) {
         if (virt_height < thispars->pars[P_VIRT_HEIGHT]) {
             virt_height = thispars->pars[P_VIRT_HEIGHT];
@@ -1174,17 +1240,12 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     // limit frame rate (using minimal period), but only in sync mode - async should be programmed to observe minimal period
     // ignore trig - period
     //if ((thispars->pars[P_TRIG] & 4) == 0) {
+    	// this is calculated minimum for compressor
     	virt_height_min = thispars->pars[P_PERIOD_MIN]/row_time_in_pixels; // always non-zero, calculated by pgm_limitfps (common)
         if ((row_time_in_pixels * virt_height_min) < thispars->pars[P_PERIOD_MIN]) virt_height_min++; //round up
         if (virt_height < virt_height_min) virt_height = virt_height_min;
         dev_dbg(g_dev_ptr,"{%d} height =%d(0x%x), modified virt_height=%d(0x%x)\n",sensor_port,height,height,virt_height,virt_height);
     //}
-
-	pr_info("{%d} row_time_in_pixels = %d, thispars->pars[P_VIRT_WIDTH] = %d, period_min = %d, virt_height_min = %d\n",
-		sensor_port, row_time_in_pixels,
-					 (int)thispars->pars[P_VIRT_WIDTH],
-					 (int)thispars->pars[P_PERIOD_MIN],
-					 virt_height_min);
 
     // schedule updating P_VIRT_HEIGHT if it changed
     dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_VIRT_HEIGHT] =%d(0x%x), virt_height=%d(0x%x)\n",
@@ -1194,8 +1255,9 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
 			virt_height,
 			virt_height);
 
-    if (thispars->pars[P_VIRT_HEIGHT]!= virt_height) {
-    	pr_info("Will set virt_height to %d\n",virt_height);
+    // no need to set it here, can update in pgm_exposure
+    if (virt_height != thispars->pars[P_VIRT_HEIGHT]) {
+    	//pr_info("Will set virt_height to %d\n",virt_height);
         SETFRAMEPARS_SET(P_VIRT_HEIGHT, virt_height);
     }
 
@@ -1231,13 +1293,14 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
 
     dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_FP1000S] =%d(0x%x), fp1000s=%d(0x%x)\n",sensor_port,(int)thispars->pars[P_FP1000S],(int)thispars->pars[P_FP1000S],fp1000s,fp1000s);
     if (thispars->pars[P_FP1000S] != fp1000s) {
-    	pr_info("pgm_limitfps fp1000s = %d\n",fp1000s);
+    	//pr_info("pgm_limitfps fp1000s = %d\n",fp1000s);
         SETFRAMEPARS_SET(P_FP1000S, fp1000s);
     }
 
-    if (virt_height!=thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES]){
-    	pr_info("limit fps, old frame_length_lines=0x%08x, new frame_length_lines=0x%08x\n",
-    			thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES],virt_height);
+    // update to compressor minimum
+    if (virt_height != thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES]){
+    	//pr_info("LIMIT_FPS, old frame_length_lines=0x%08x, new frame_length_lines=0x%08x\n",
+    	//		thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES],virt_height);
     	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_FRAME_LENGTH_LINES, virt_height);
     }
 
@@ -1273,6 +1336,7 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     int fine_exposure;
 
     int frame_length_lines;// = thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES];
+    int virt_height;
     //int line_length_pck = thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK];
 
     // vt_pix_clk
@@ -1287,20 +1351,21 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     // wrong frame
     if (frame16 >= PARS_FRAMES) return -1;
 
-    //frame_length_lines = thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES];
-    frame_length_lines = thispars->pars[P_VIRT_HEIGHT];
+    frame_length_lines = thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES];
+    virt_height = thispars->pars[P_VIRT_HEIGHT];
+    //frame_length_lines = thispars->pars[P_VIRT_HEIGHT];
 
     //pr_info("EXPOS: %d\n",thispars->pars[P_EXPOS]);
 
     exposure = thispars->pars[P_EXPOS];
-    pr_info("mt9f002_pgm_exposure: %d\n",thispars->pars[P_EXPOS]);
+    //pr_info("mt9f002_pgm_exposure: %d\n",thispars->pars[P_EXPOS]);
 
-    pr_info("fll = %d vs VIRT_HEIGHT = %d\n",frame_length_lines,thispars->pars[P_VIRT_HEIGHT]);
+    //pr_info("fll = %d vs VIRT_HEIGHT = %d\n",frame_length_lines,thispars->pars[P_VIRT_HEIGHT]);
 
     // if yes: use number of lines == use P_VEXPOS for calculations, update P_EXPOS as well
     // else  : use P_EXPOS
     if ((video_exposure>0)&&(FRAMEPAR_MODIFIED(P_VEXPOS)||!(FRAMEPAR_MODIFIED(P_EXPOS)||FRAMEPAR_MODIFIED(P_VIRT_WIDTH)))) {
-    	pr_info("using P_VEXPOS\n");
+    	//pr_info("using P_VEXPOS\n");
 
     	coarse_exposure = video_exposure;
 
@@ -1310,7 +1375,7 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
 
     }else{
 
-    	pr_info("using P_EXPOS\n");
+    	//pr_info("using P_EXPOS\n");
     	// exposure is in microseconds
     	exposure        = thispars->pars[P_EXPOS];
 
@@ -1366,7 +1431,7 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     if (thispars->pars[P_FPSFLAGS] & 0x2) {
     	if (pix_period > thispars->pars[P_PERIOD_MAX]) {
     		// already done this?!
-    		coarse_exposure = frame_length_lines-1;
+    		coarse_exposure = virt_height-1;
     		//ull_video_exposure = (long long) (sclk / 1000000) * (long long) exposure;
     		//__div64_32(&ull_video_exposure,coarse_exposure);
     		// extend line length
@@ -1375,25 +1440,28 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     }else{
     	// update fps here
     	if (coarse_exposure >= frame_length_lines-1){
-    		frame_length_lines = coarse_exposure + 1;
-    		pix_period = row_time_in_pixels*frame_length_lines;
+    		virt_height = coarse_exposure + 1;
+    	}else{
+    		virt_height = frame_length_lines;
     	}
 
-    	if (frame_length_lines != thispars->pars[P_VIRT_HEIGHT]) {
-    		pr_info("pgm_exposure: Will set virt_height to %d\n", frame_length_lines);
-    	    SETFRAMEPARS_SET(P_VIRT_HEIGHT, frame_length_lines);
-    	}
-
-    	SETFRAMEPARS_SET(P_PERIOD, pix_period);
-    	ull_fp1000s=((long long) 1000)* ((long long) sclk);
-    	__div64_32(&ull_fp1000s,pix_period);
-    	fp1000s= ull_fp1000s;
-    	if (thispars->pars[P_FP1000S] != fp1000s) {
-    		pr_info("pgm_exposure fp1000s = %d\n",fp1000s);
-    		SETFRAMEPARS_SET(P_FP1000S, fp1000s);
-    	}
+    	pix_period = row_time_in_pixels*virt_height;
     }
 
+	if (virt_height != thispars->pars[P_VIRT_HEIGHT]) {
+		//pr_info("pgm_exposure: Will set virt_height to %d\n", virt_height);
+	    SETFRAMEPARS_SET(P_VIRT_HEIGHT, virt_height);
+	}
+
+	SETFRAMEPARS_SET(P_PERIOD, pix_period);
+	ull_fp1000s=((long long) 1000)* ((long long) sclk);
+	__div64_32(&ull_fp1000s,pix_period);
+	fp1000s= ull_fp1000s;
+
+	if (thispars->pars[P_FP1000S] != fp1000s) {
+		//pr_info("pgm_exposure fp1000s = %d\n",fp1000s);
+		SETFRAMEPARS_SET(P_FP1000S, fp1000s);
+	}
 
     /*
     dev_dbg(g_dev_ptr,"{%d} sensor_port=%d,  frame16=%d, frame=0x%lx (%s)exposure=0x%lx, (%s)video_exposure=0x%lx\n",sensor_port, sensor_port, frame16, thispars->pars[P_FRAME], FRAMEPAR_MODIFIED(P_EXPOS)?"*":" ",thispars->pars[P_EXPOS],FRAMEPAR_MODIFIED(P_VEXPOS)?"*":" ",thispars->pars[P_VEXPOS] );

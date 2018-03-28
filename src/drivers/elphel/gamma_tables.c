@@ -131,7 +131,7 @@
 #include "gamma_tables.h"
 #include "x393.h"
 #include "detect_sensors.h"
-#include "x393_fpga_functions.h" // to check bitsteram
+#include "x393_fpga_functions.h" // to check bitstream
 
 /**
  * @brief optional debug output 

@@ -727,7 +727,7 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 
 	// check fpga
 	if (!is_fpga_programmed()){
-		pr_err("*** Attempted to access hardware without bitsteram ***\n");
+		pr_err("*** Attempted to access hardware without bitstream ***\n");
 	    return - ENODEV;
 	}
 

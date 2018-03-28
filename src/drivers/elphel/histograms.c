@@ -119,7 +119,7 @@
 #include "x393.h"
 #include "histograms.h"
 #include "detect_sensors.h"
-#include "x393_fpga_functions.h" // to check bitsteram
+#include "x393_fpga_functions.h" // to check bitstream
 /**
  * \def MDF21(x) optional debug output 
  */

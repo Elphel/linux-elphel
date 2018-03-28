@@ -314,7 +314,7 @@ int initSequencers(int sensor_port)
     sec_usec_t sec_usec;
     FLAGS_IBH
     if (!is_fpga_programmed()){
-        dev_err(g_devfp_ptr,"*** Attempted to access hardware without bitsteram ***\n");
+        dev_err(g_devfp_ptr,"*** Attempted to access hardware without bitstream ***\n");
         return - ENODEV;
     }
     if (!hardware_initialized) {
