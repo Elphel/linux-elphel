@@ -25,7 +25,7 @@
 #define _ASM_CMOSCAM_H
 #define SAFE_CHECK  1 // perform more verification on the paremeters
 //#define ELPHEL_DEBUG 0 //global debug on/off in multiple files
-//#define ELPHEL_DEBUG_STARTUP 000a4c00 ; 
+//#define ELPHEL_DEBUG_STARTUP 000a4c00 ;
 //#define ELPHEL_DEBUG_STARTUP 0 ; // removed - add write to fpga init script
 //#define ELPHEL_DEBUG 0 //global debug on/off in multiple files
 #define ELPHEL_DEBUG 0 //global debug on/off in multiple files
@@ -171,7 +171,7 @@
 #ifndef I2C_16_WRITEARG
  #define I2C_16_WRITEREG 0x3   // write 2 bytes to an i2c register
  #define I2C_16_READREG  0x4   // read 2 bytes from an i2c register
-  
+
  #define I2C_16_WRITEARG(slave, reg, value) (((slave) << 24) | ((reg) << 16) | (value))
  #define I2C_16_READARG(slave, reg) (((slave) << 24) | ((reg) << 16))
 
@@ -312,6 +312,7 @@
 <li>                     bit 4 - global reset release (GRR) mode - (only when combined with bit 2)
 </ul>*/
 #define P_BGFRAME       16 ///< Background measurement mode - will use 16-bit mode and no FPN correction
+#define P_CLK_SENSPIX   17 ///< Sensor's internal pixel clock in Hz (if defined as in MT9F002)
 //#define P_IMGSZMEM      17 ///< image size in video memory (calculated when channel 0 is programmed) NC393: Not used ???
 //#define P_COMP_BAYER    17 ///< -> 119 derivative, readonly - calculated from P_BAYER and COMPMOD_BYRSH to separate sensor and compressor channels
 // image page numbers depend on image size/pixel depth, so changing any of them will invalidate all pages
@@ -865,9 +866,9 @@
 
 //#define P_HISTRQ        67 // per-frame enabling of histogram calculation - bit 0 - Y (G), bit 2 - C (R,G2,B)
 //#define   HISTRQ_BITY    0
-//#define   HISTRQ_BITC    1 
+//#define   HISTRQ_BITC    1
 #define   HISTRQ_BIT_Y    0
-#define   HISTRQ_BIT_C    1 
+#define   HISTRQ_BIT_C    1
 
 #define P_HISTRQ_Y  (P_HISTRQ | FRAMEPAIR_FRAME_BITS(1, HISTRQ_BIT_Y) | FRAMEPAIR_JUST_THIS) ///< request calculation of the Y-histogram for just this frame
 #define P_HISTRQ_C  (P_HISTRQ | FRAMEPAIR_FRAME_BITS(1, HISTRQ_BIT_C) | FRAMEPAIR_JUST_THIS) ///< request calculation of the C-histogram for just this frame
@@ -1552,6 +1553,9 @@ struct p_names_t {
 
 #define      LSEEK_FSDRAM_RESET   0x01 // re-program FSDRAM (to be programmed again when accessed)
 
+// Videomem/raw image commands
+#define      LSEEK_VIDEOMEM_START 0x10 // setup and start membridge transfer
+
 #define      JPEG_CTRL_MONOCHROME    0x400
 #define      JPEG_CTRL_MONOCHROME_BLOCKED    0x1000
 #define      JPEG_CTRL_NOMOSAIC    0x1000
@@ -1647,14 +1651,16 @@ struct p_names_t {
 /*  For past compatibility, CCMA_DMA_SIZE...
 */
 //#define CCAM_DMA_SIZE  CCAM_WORDS_PER_DMABUF
+// Moved to DT
 #define CCAM_DMA_SIZE        0x4000000     ///< Each channel buffer size  in BYTES (was in DWORDS in NC353) TODO NC393: use only for initial allocation, move to DT
-#define CIRCBUF_START_OFFSET 0x100000      ///< Offset for the first bufer TODO NC393: use only for initial allocation, move to DT
+// Moved to DT
+//#define CIRCBUF_START_OFFSET 0x100000      ///< Offset for the first bufer TODO NC393: use only for initial allocation, move to DT
 
 /*
 *       CCAM_MMAP_OFFSET... -- offsets in bytes in memory mapped region.
 *       CCAM_MMAP_SIZE -- no. of bytes to mmap.
 */
-// CCAM_DMA1_SIZE should be 2^N 
+// CCAM_DMA1_SIZE should be 2^N
 #ifdef NC353
 #define CCAM_CHUNK_PER_DMA1BUF 16  /* no. of 64Kbyte chunks per buffer */
 #define CCAM_WORDS_PER_DMA1BUF (CCAM_CHUNK_PER_DMA1BUF<<14) /*32bit words...*/
@@ -1746,7 +1752,7 @@ struct sensorproc_t {
 *! Structure also includes 8 bytes of timestamp (after 2 bytes skipped) - they will be obtained from the circbuf data
 *! that goes after the encoded frame, so total is 36 bytes (26+2+8)
 !****************************************************************************************************/
-// move fram x353.h 
+// move fram x353.h
 #define DEFAULT_COLOR_SATURATION_BLUE 0x90 ///< 100*relative saturation blue
 #define DEFAULT_COLOR_SATURATION_RED  0xb6 ///< 100*relative saturation red
 
@@ -1804,7 +1810,7 @@ struct i2c_timing_t {
         unsigned char slave2master; //0x01, //! slave -> master
         unsigned char master2slave; //0x01, //! master -> slave
         unsigned char filter_sda;   //0x07, //! filter SDA read data by testing multiple times - currently just zero/non zero
-        unsigned char filter_scl;  //0x07};//! filter SCL read data by testing multiple times - currently just zero/non zero 
+        unsigned char filter_scl;  //0x07};//! filter SCL read data by testing multiple times - currently just zero/non zero
 };
 
 /// Gamma data for one component, including direct and reverse tables, hash (i.e. black level+gamma) and links for caching
@@ -1895,7 +1901,7 @@ struct __attribute__((__packed__)) gamma_stuct_t {
 #define HISTOGRAM_CACHE_NUMBER 8 // 16   // Was 8 // number of frames histograms are kept after acquisition (should be 2^n)
 #define COLOR_RED            0
 #define COLOR_GREEN1         1
-#define COLOR_GREEN2         2 
+#define COLOR_GREEN2         2
 #define COLOR_BLUE           3
 
 
@@ -2089,7 +2095,7 @@ struct huffman_encoded_t {
 ///NOTE page 0 is write protected, page 15 (0x0f) is "default" page
 #define AUTOCAMPARS_CMD_RESTORE  1  /// restore specified groups of parameters from the specified page
 #define AUTOCAMPARS_CMD_SAVE     2  /// save all current parameters to the specified group (page 0 is write-protected)
-#define AUTOCAMPARS_CMD_DFLT     3  /// make selected page the default one (used at startup), page 0 OK 
+#define AUTOCAMPARS_CMD_DFLT     3  /// make selected page the default one (used at startup), page 0 OK
 #define AUTOCAMPARS_CMD_SAVEDFLT 4  /// save all current parameters to the specified group (page 0 is write-protected) and make it default (used at startup)
 #define AUTOCAMPARS_CMD_INIT     5  /// reset sensor/sequencers, restore all parameters from the specified page
 
