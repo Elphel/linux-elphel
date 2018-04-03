@@ -1651,10 +1651,10 @@ struct p_names_t {
 /*  For past compatibility, CCMA_DMA_SIZE...
 */
 //#define CCAM_DMA_SIZE  CCAM_WORDS_PER_DMABUF
-// Moved to DT
+// Will be Moved to DT in Rocko
 #define CCAM_DMA_SIZE        0x4000000     ///< Each channel buffer size  in BYTES (was in DWORDS in NC353) TODO NC393: use only for initial allocation, move to DT
-// Moved to DT
-//#define CIRCBUF_START_OFFSET 0x100000      ///< Offset for the first bufer TODO NC393: use only for initial allocation, move to DT
+// Will be Moved to DT in Rocko
+#define CIRCBUF_START_OFFSET 0x100000      ///< Offset for the first bufer TODO NC393: use only for initial allocation, move to DT
 
 /*
 *       CCAM_MMAP_OFFSET... -- offsets in bytes in memory mapped region.
