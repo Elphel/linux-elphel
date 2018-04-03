@@ -27,6 +27,14 @@
 // number of lines to sacrifice before generating Frame Valid
 #define MT9F002_VACT_DELAY 2
 
+// !!! Unpredicted operation:
+// * Value from the datasheet works while image width is above border
+//   suspecting sensor's ADCs performance
+// * if width < BORDER_WIDTH row_time_in_pixels become 1:1
+//   else                    row_time_in_pixels 1:2
+#define MIN_LINE_LENGTH_PCK_FROM_DATASHEET 0x4c8
+#define X_OUTPUT_BORDER_SIZE               912
+
 // Clocks, this is basis
 
 // from x393_parameters.vh:

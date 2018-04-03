@@ -981,12 +981,20 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
     // this sets the vertical blanking
     if (fll!=thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES]){
     	dev_dbg(g_dev_ptr,"limit fps, old frame_length_lines=0x%08x, new frame_length_lines=0x%08x\n",
-    			thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES], fll);
+    			(int) thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES], fll);
     	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_FRAME_LENGTH_LINES, fll);
     }
 
+    // need this fix for max possible fps
+    if (ww >= X_OUTPUT_BORDER_SIZE){
+    	min_line_length_pck = MIN_LINE_LENGTH_PCK_FROM_DATASHEET;
+    }
+    // else, leave as thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_LINE_LENGTH_PCK]
+    // which is 0x930
+
     // recalc exposure after this one
     //llp = mt9f002_calc_line_length_pck(thispars);
+
     llp = mt9f002_calc_line_length_pck_2(wws,wwe,ww_odd_inc,ww,min_line_blanking_pck,min_line_length_pck);
     if (llp != thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK]){
     	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_LINE_LENGTH_PCK, llp);
@@ -1173,6 +1181,12 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
 	//hor_blank = hor_blank_min;
 	//dev_dbg(g_dev_ptr,"{%d} hor_blank =%d(0x%x)\n",sensor_port,hor_blank,hor_blank);
 	row_time_in_pixels = 2*thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK];
+
+	// fps correction
+	if (ww < X_OUTPUT_BORDER_SIZE){
+		row_time_in_pixels = thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK];
+	}
+
 	//row_time_in_pixels = mt9f002_calc_line_length_pck(thispars);
 
 
