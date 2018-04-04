@@ -555,7 +555,7 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 
 	x393_sens_sync_mult_t dis_sof = {.d32=0};
 	struct frameparspair_t pars_to_update[262+(MAX_SENSORS * P_MULTI_NUMREGS )]; // for all the sensor registers. Other P_* values will reuse the same ones
-	int regaddr,regval,regnum,j;
+	int regaddr,regval,regnum;
 
 	int nupdate=0;
 
@@ -680,32 +680,7 @@ int mt9f002_pgm_sensorin (int sensor_port,               ///< sensor port number
 }
 
 // also defines vertical blanking
-int mt9f002_calc_frame_length_lines(struct framepars_t * thispars){
-
-	int v0;
-
-	int y_addr_start = thispars->pars[P_SENSOR_REGS+P_MT9F002_Y_ADDR_START];
-	int y_addr_end   = thispars->pars[P_SENSOR_REGS+P_MT9F002_Y_ADDR_END];
-	int min_frame_blanking_lines = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_FRAME_BLANKING_LINES];
-	//int coarse_exposure = thispars->pars[P_VEXPOS];
-
-	// TODO: do
-	int subsampling_factor = 1;
-
-	v0 = (y_addr_end - y_addr_start + 1)/subsampling_factor + min_frame_blanking_lines;
-
-	/*
-	if (coarse_exposure>(v0-1)){
-		v0 = coarse_exposure + 1;
-		pr_info("frame_length_lines will get extended\n");
-	}
-	*/
-
-	return v0;
-}
-
-// also defines vertical blanking
-int mt9f002_calc_frame_length_lines_2(int y_addr_start,
+int mt9f002_calc_frame_length_lines(int y_addr_start,
 		                              int y_addr_end,
 									  int min_frame_blanking_lines){
 
@@ -726,43 +701,7 @@ int mt9f002_calc_frame_length_lines_2(int y_addr_start,
 }
 
 // also defines horizontal blanking
-int mt9f002_calc_line_length_pck(struct framepars_t * thispars){
-
-	int v0, v1, v2, v3;
-
-	int x_addr_start = thispars->pars[P_SENSOR_REGS+P_MT9F002_X_ADDR_START];
-	int x_addr_end   = thispars->pars[P_SENSOR_REGS+P_MT9F002_X_ADDR_END];
-	int x_odd_inc    = thispars->pars[P_SENSOR_REGS+P_MT9F002_X_ODD_INC];
-	int min_line_blanking_pck = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_LINE_BLANKING_PCK];
-
-	int x_output_size = thispars->pars[P_SENSOR_REGS+P_MT9F002_X_OUTPUT_SIZE];
-
-	// does not match with the power on default value
-	v0 = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_LINE_LENGTH_PCK];
-	// incorrect formula?
-	//v1 = (x_addr_end-x_addr_start+x_odd_inc)/(1+x_odd_inc)+min_line_blanking_pck;
-	v1 = (x_addr_end-x_addr_start+x_odd_inc)/(1+x_odd_inc)+min_line_blanking_pck/2;
-	//v1 = ((x_addr_end-x_addr_start+x_odd_inc)*2/(1+x_odd_inc)+min_line_blanking_pck)/2;
-	v2 = MT9F002_VT_PIX_CLK/MT9F002_OP_PIX_CLK*x_output_size/4 + 0x5E;
-	// what?!
-	//v3 = (x_addr_end-x_addr_start+1)+min_line_blanking_pck;
-
-	//pr_info("x_addr_end=0x%08x x_addr_start=0x%08x x_odd_inc=0x%08x min_line_blanking_pck=0x%08x\n",x_addr_end,x_addr_start,x_odd_inc,min_line_blanking_pck);
-
-
-	pr_info("v0=0x%08x v1=0x%08x v2=0x%08x\n",v0,v1,v2);
-
-	if (v0<v1) v0 = v1;
-	if (v0<v2) v0 = v2;
-	//if (v0<v3) v0 = v3;
-
-	pr_info("result = 0x%08x\n",v0);
-
-	return v0;
-}
-
-// also defines horizontal blanking
-int mt9f002_calc_line_length_pck_2(int x_addr_start,
+int mt9f002_calc_line_length_pck(int x_addr_start,
 								   int x_addr_end,
 								   int x_odd_inc,
 								   int x_output_size,
@@ -977,7 +916,7 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
 
     // recalc something after this one?
     //fll = mt9f002_calc_frame_length_lines(thispars);
-    fll = mt9f002_calc_frame_length_lines_2(whs,whe,min_frame_blanking_lines);
+    fll = mt9f002_calc_frame_length_lines(whs,whe,min_frame_blanking_lines);
     // this sets the vertical blanking
     if (fll!=thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES]){
     	dev_dbg(g_dev_ptr,"limit fps, old frame_length_lines=0x%08x, new frame_length_lines=0x%08x\n",
@@ -995,7 +934,7 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
     // recalc exposure after this one
     //llp = mt9f002_calc_line_length_pck(thispars);
 
-    llp = mt9f002_calc_line_length_pck_2(wws,wwe,ww_odd_inc,ww,min_line_blanking_pck,min_line_length_pck);
+    llp = mt9f002_calc_line_length_pck(wws,wwe,ww_odd_inc,ww,min_line_blanking_pck,min_line_length_pck);
     if (llp != thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK]){
     	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_LINE_LENGTH_PCK, llp);
     }
@@ -1182,7 +1121,7 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
 	//dev_dbg(g_dev_ptr,"{%d} hor_blank =%d(0x%x)\n",sensor_port,hor_blank,hor_blank);
 	row_time_in_pixels = 2*thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK];
 
-	// fps correction
+	// fps correction for smaller window widths
 	if (ww < X_OUTPUT_BORDER_SIZE){
 		row_time_in_pixels = thispars->pars[P_SENSOR_REGS+P_MT9F002_LINE_LENGTH_PCK];
 	}
