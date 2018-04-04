@@ -847,7 +847,7 @@ inline void _processParsASAP(int sensor_port,                   ///< sensor port
                 MDP(DBGB_FASAP,sensor_port,"Calling SENSOR-SPECIFIC  pgm_func[%d] ASAP, now frame = 0x%x\n",i,thisFrameNumber(sensor_port))
 				rslt = sensorproc->pgm_func[i + 32] (sensor_port, &(sensorproc->sensor), procpars, prevpars, -1);
 			}
-			// it was dev_warn - and it AFFECTED other ports
+			// it was dev_warn - and it AFFECTED other ports.
 			if (rslt < 0) dev_dbg(g_devfp_ptr,"port %d: %s:%d:%s - error=%d",sensor_port,  __FILE__, __LINE__, __FUNCTION__, rslt); // Nothing to do with errors here - just report?
 			procpars->functions &= ~mask;
 			dev_dbg(g_devfp_ptr,"%s : port= %d, .functions=0x%08lx)\n",__func__, sensor_port, procpars->functions);
