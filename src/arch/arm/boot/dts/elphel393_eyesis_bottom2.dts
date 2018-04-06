@@ -301,6 +301,10 @@
         compatible = "elphel,elphel393-mt9x001-1.00";
     };
 
+    elphel393_mt9f002: elphel393-mt9f002@0 {
+        compatible = "elphel,elphel393-mt9f002-1.00";
+    };
+
     elphel393_clock10359:elphel393-clock10359@0{
         compatible = "elphel,elphel393_clock10359-1.00";
     };
