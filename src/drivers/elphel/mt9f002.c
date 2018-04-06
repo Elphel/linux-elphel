@@ -337,6 +337,11 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     sensio_ctl.d32=0;
     sensio_ctl.aro = 1;
     sensio_ctl.aro_set = 1;
+    // trigger bits
+    sensio_ctl.gp0_set = 1;
+    sensio_ctl.gp0 = 0x3; // normal iaro - 'active low'
+    sensio_ctl.gp1_set = 1;
+    sensio_ctl.gp1 = 0x3; // inverted iaro - 'active high'
     x393_sensio_ctrl(sensio_ctl,sensor_port);
 
     return sensor->sensorType;
