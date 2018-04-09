@@ -297,7 +297,8 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     x393_sensio_ctrl(sensio_ctl,sensor_port);
 
     // delay until sensor gets responsive to i2c commands
-    udelay(100);
+    // 100us - was not enough
+    udelay(200);
 
     X3X3_I2C_RCV2(sensor_port, psensor->i2c_addr, P_REG_MT9F002_MODEL_ID, &i2c_read_dataw);
     dev_dbg(g_dev_ptr,"Read i2c (port = %d, sa7=0x%lx, reg=0x%x) chip ID=%x\n",sensor_port, psensor->i2c_addr, P_REG_MT9F002_MODEL_ID, i2c_read_dataw);
