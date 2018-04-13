@@ -440,6 +440,7 @@
 
 #define P_REG_MT9F002_OTPM_TCFG_READ_4B             0x3138
 #define P_REG_MT9F002_OTPM_CFG                      0x3140
+#define P_REG_MT9F002_SLAVE_MODE                    0x3158
 #define P_REG_MT9F002_GLOBAL_FLASH_START            0x315A
 #define P_REG_MT9F002_GLOBAL_SEQ_TRIGGER            0x315E
 #define P_REG_MT9F002_GLOBAL_RST_END                0x3160
@@ -641,6 +642,7 @@
 #define P_MT9F002_MIN_FRAME_BLANKING_LINES  32
 
 #define P_MT9F002_READ_MODE          33
+#define P_MT9F002_SLAVE_MODE         34
 
 //#define P_REG(x) x
 

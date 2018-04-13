@@ -93,6 +93,7 @@ const unsigned short mt9f002_par2addr[] = {
 		P_MT9F002_FRAME_LENGTH_LINES,       P_REG_MT9F002_FRAME_LENGTH_LINES,
 		P_MT9F002_MIN_FRAME_BLANKING_LINES, P_REG_MT9F002_SMIA_MIN_FRAME_BLANKING_LINES,
 		P_MT9F002_READ_MODE,                P_REG_MT9F002_READ_MODE,
+		P_MT9F002_SLAVE_MODE,               P_REG_MT9F002_SLAVE_MODE,
 		0xffff // END indicator
 };
 
@@ -195,7 +196,9 @@ static unsigned short mt9f002_inits[]=
 		P_REG_MT9F002_ANALOG_GAIN_CODE_GLOBAL, 0x000a,
 		P_REG_MT9F002_ANALOG_GAIN_CODE_RED,    0x000d,
 		P_REG_MT9F002_ANALOG_GAIN_CODE_BLUE,   0x0010,
-		P_REG_MT9F002_COARSE_INTEGRATION_TIME, 0x0100
+		P_REG_MT9F002_COARSE_INTEGRATION_TIME, 0x0100,
+		P_REG_MT9F002_SLAVE_MODE             , 0x2000,// disable GRR
+		P_REG_MT9F002_GPI_STATUS             , 0xfcff // configure GPI1 as trigger input
 };
 
 /** Specifying sensor registers to be controlled individually in multi-sensor applications, MT9P006 */
@@ -223,7 +226,7 @@ int mt9f002_pgm_window_common(int sensor_port, struct sensor_t * sensor,  struct
 int mt9f002_pgm_limitfps     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9f002_pgm_exposure     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9f002_pgm_gains        (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
-//int mt9f002_pgm_triggermode  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9f002_pgm_triggermode  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 //int mt9f002_pgm_sensorregs   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 
 /**
@@ -324,7 +327,7 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     add_sensor_proc(sensor_port,onchange_window_safe, &mt9f002_pgm_window_safe);  // program sensor WOI and mirroring (flipping) - now - only flipping? with lower latency
     add_sensor_proc(sensor_port,onchange_limitfps,    &mt9f002_pgm_limitfps);     // check compressor will keep up, limit sensor FPS if needed
     add_sensor_proc(sensor_port,onchange_gains,       &mt9f002_pgm_gains);        // program analog gains
-    //add_sensor_proc(sensor_port,onchange_triggermode, &mt9x001_pgm_triggermode);  // program sensor trigger mode
+    add_sensor_proc(sensor_port,onchange_triggermode, &mt9f002_pgm_triggermode);  // program sensor trigger mode
     //add_sensor_proc(sensor_port,onchange_sensorregs,  &mt9x001_pgm_sensorregs);   // write sensor registers (only changed from outside the driver as they may have different latencies)?
 
     setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType); // should cause other actions
@@ -1031,21 +1034,18 @@ int compare_to_trig_period_mt9f002(int sensor_port,               ///< sensor po
 {
 
 	int trig_period;
+	int new_pix_period = pix_period;
 
-    dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_TRIG] = %d, thispars->pars[P_TRIG_PERIOD] =%d(0x%x)\n",
-            sensor_port,
-			(int)thispars->pars[P_TRIG],
-			(int)thispars->pars[P_TRIG_PERIOD],
-			(int)thispars->pars[P_TRIG_PERIOD]);
-
+	// in triggered mode fps is exact
 	if (thispars->pars[P_TRIG]!=0){
-		trig_period = camsync_to_sensor(thispars->pars[P_TRIG_PERIOD], thispars->pars[P_CLK_SENSOR]);
-		if (trig_period > pix_period) {
-			pix_period=trig_period;
+		trig_period = camsync_to_sensor(thispars->pars[P_TRIG_PERIOD],thispars->pars[P_CLK_SENSOR]);
+		//if ((pix_period>trig_period)&&((pix_period-1)<trig_period)){
+		if (pix_period<trig_period){
+			new_pix_period = trig_period;
 		}
 	}
 
-	return pix_period;
+	return new_pix_period;
 }
 
 /** Check if compressor can keep up, limit sensor FPS if needed
@@ -1078,18 +1078,22 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     int row_time_in_pixels=0;
     int hor_blank_min;
     int hor_blank=0;
-    int p1, p2, pix_period, sclk,fp1000s, trig_period;
+    int p1, p2, pix_period, sclk,fp1000s;
 
     int height;
+    // virtual height read from sensor register
     int virt_height;
-    int virt_height_min;
+    // virtual height calculated from trig_period
+    int virt_height_trig;
     int vert_blank;
 
     uint64_t ull_fp1000s;
 
     int target_virt_width=(thispars->pars[P_VIRT_KEEP])?(thispars->pars[P_VIRT_WIDTH]):0;
 
-    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+    unsigned long trig_period;
+
+    dev_dbg(g_dev_ptr,"{%d} pgm_limit_fps frame16=%d\n",sensor_port,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 
     //pr_info("mt9f002_pgm_limitfps: %d\n",thispars->pars[P_EXPOS]);
@@ -1196,15 +1200,31 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     }
 
     dev_dbg(g_dev_ptr,"{%d} height =%d(0x%x), virt_height=%d(0x%x)\n",sensor_port,height,height,virt_height,virt_height);
-    // limit frame rate (using minimal period), but only in sync mode - async should be programmed to observe minimal period
-    // ignore trig - period
-    //if ((thispars->pars[P_TRIG] & 4) == 0) {
-    	// this is calculated minimum for compressor
-    	virt_height_min = thispars->pars[P_PERIOD_MIN]/row_time_in_pixels; // always non-zero, calculated by pgm_limitfps (common)
-        if ((row_time_in_pixels * virt_height_min) < thispars->pars[P_PERIOD_MIN]) virt_height_min++; //round up
-        if (virt_height < virt_height_min) virt_height = virt_height_min;
-        dev_dbg(g_dev_ptr,"{%d} height =%d(0x%x), modified virt_height=%d(0x%x)\n",sensor_port,height,height,virt_height,virt_height);
-    //}
+
+    // trig_period can be long, but it is already compared to P_PERIOD_MIN (compressor capability)
+    trig_period = camsync_to_sensor(thispars->pars[P_TRIG_PERIOD], thispars->pars[P_CLK_SENSOR]);
+
+    // if trig_period < row_time_in_pixels then virt_height_trig==0 - ignore for now
+    virt_height_trig = trig_period/row_time_in_pixels;
+	// reduce by 1 to make sure sensor's slave mode is active before trigger comes
+	if (virt_height_trig>=1) virt_height_trig -=1;
+
+	// handle 16 bits overflow
+	if ((virt_height_trig>>16) & 0xffff){
+		dev_warn(g_dev_ptr,"(%d) virt_height 16 bits overflow: %d (%08x)\n",sensor_port,virt_height_trig,virt_height_trig);
+		virt_height_trig = 0xffff;
+	}
+
+	// round up? no
+	//if ((row_time_in_pixels * virt_height_min) < trig_period) virt_height_min++;
+
+	// this line will not recover from longer trigger periods
+	//if (virt_height < virt_height_min) virt_height = virt_height_min;
+
+	// update except if zero
+	if (virt_height_trig) virt_height = virt_height_trig;
+
+	dev_dbg(g_dev_ptr,"{%d} height =%d(0x%x), modified virt_height=%d(0x%x)\n",sensor_port,height,height,virt_height,virt_height);
 
     // schedule updating P_VIRT_HEIGHT if it changed
     dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_VIRT_HEIGHT] =%d(0x%x), virt_height=%d(0x%x)\n",
@@ -1221,8 +1241,12 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     }
 
     // schedule updating P_PERIOD if it changed
-    pix_period=row_time_in_pixels*virt_height;
-    if (!pix_period ){
+
+    // in triggered mode fps is exact
+    pix_period = row_time_in_pixels*virt_height;
+    pix_period = compare_to_trig_period_mt9f002(sensor_port,pix_period,thispars);
+
+    if (!pix_period){
         dev_warn(g_dev_ptr,"** mt9f002_pgm_limitfps(%d) pix_period == 0!! (row_time_in_pixels =%d(0x%x), virt_height=%d(0x%x)\n",sensor_port,row_time_in_pixels,row_time_in_pixels,virt_height,virt_height);
         pix_period = 1000; // just non-zero
     }
@@ -1256,7 +1280,7 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
         SETFRAMEPARS_SET(P_FP1000S, fp1000s);
     }
 
-    // update to compressor minimum
+    // update
     if (virt_height != thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES]){
     	//pr_info("LIMIT_FPS, old frame_length_lines=0x%08x, new frame_length_lines=0x%08x\n",
     	//		thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES],virt_height);
@@ -1307,6 +1331,7 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     int row_time_in_pixels=thispars->pars[P_VIRT_WIDTH];
     int pix_period;
 
+    dev_dbg(g_dev_ptr,"{%d} pgm_exposure frame16=%d\n",sensor_port,frame16);
     // wrong frame
     if (frame16 >= PARS_FRAMES) return -1;
 
@@ -1314,9 +1339,7 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     virt_height = thispars->pars[P_VIRT_HEIGHT];
     //frame_length_lines = thispars->pars[P_VIRT_HEIGHT];
 
-    //pr_info("EXPOS: %d\n",thispars->pars[P_EXPOS]);
-
-    exposure = thispars->pars[P_EXPOS];
+    //exposure = thispars->pars[P_EXPOS];
     //pr_info("mt9f002_pgm_exposure: %d\n",thispars->pars[P_EXPOS]);
 
     //pr_info("fll = %d vs VIRT_HEIGHT = %d\n",frame_length_lines,thispars->pars[P_VIRT_HEIGHT]);
@@ -1368,15 +1391,15 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
 
 
     	// at the same time the fine exposure will be:
-    	ull_video_exposure = (long long) (sclk / 1000000) * (long long) exposure;
-    	fine_exposure = ull_video_exposure - (long long) coarse_exposure * (long long) row_time_in_pixels;
+    	//ull_video_exposure = (long long) (sclk / 1000000) * (long long) exposure;
+    	//fine_exposure = ull_video_exposure - (long long) coarse_exposure * (long long) row_time_in_pixels;
 
     	//pr_info("fine exposure = %d (0x%08x)\n",fine_exposure,fine_exposure);
 
     }
 
-    if (exposure <1)       exposure=1;
-    if (coarse_exposure <1) coarse_exposure=1;
+    if (exposure < 1) exposure=1;
+    if (coarse_exposure < 1) coarse_exposure=1;
 
     // check against max shutter?
     // is exposure longer then maximal period (specified for constant fps?
@@ -1403,7 +1426,7 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     	}else{
     		virt_height = frame_length_lines;
     	}
-
+    	//virt_height will not overflow 16 bits
     	pix_period = row_time_in_pixels*virt_height;
     }
 
@@ -1411,6 +1434,9 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
 		//pr_info("pgm_exposure: Will set virt_height to %d\n", virt_height);
 	    SETFRAMEPARS_SET(P_VIRT_HEIGHT, virt_height);
 	}
+
+	// pix_period is calculated based in exposure, compare to trig_period
+	pix_period = compare_to_trig_period_mt9f002(sensor_port,pix_period,thispars);
 
 	SETFRAMEPARS_SET(P_PERIOD, pix_period);
 	ull_fp1000s=((long long) 1000)* ((long long) sclk);
@@ -1563,6 +1589,13 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_FRAME_LENGTH_LINES, frame_length_lines);
     }
     */
+
+    // update
+    if (virt_height != thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES]){
+    	//pr_info("LIMIT_FPS, old frame_length_lines=0x%08x, new frame_length_lines=0x%08x\n",
+    	//		thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES],virt_height);
+    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_FRAME_LENGTH_LINES, virt_height);
+    }
 
     // coarse integration time
     if (coarse_exposure != thispars->pars[P_SENSOR_REGS+P_MT9F002_COARSE_INTEGRATION_TIME]) {
@@ -2046,7 +2079,55 @@ int mt9f002_pgm_gains      (int sensor_port,               ///< sensor port numb
 }
 
 
+/** Program trigger mode as sensor-specific  */
+int mt9f002_pgm_triggermode        (int sensor_port,               ///< sensor port number (0..3)
+                                    struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+                                    struct framepars_t * thispars, ///< sensor current parameters
+                                    struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+                                    int frame16)                   ///< 4-bit (hardware) frame number parameters should
+                                                                   ///< be applied to,  negative - ASAP
+                                                                   ///< @return 0 - OK, negative - error
+{
+    struct frameparspair_t pars_to_update[4];
+    int nupdate=0;
+    unsigned long newreg;
 
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+
+    if (thispars->pars[P_TRIG]==4){
+    	newreg = 0xa000;
+    	// limit exposure here ?
+    }else{
+    	newreg = 0x2000;
+    }
+
+    if (newreg != thispars->pars[P_SENSOR_REGS+P_MT9F002_SLAVE_MODE]){
+    	// turn off triggered mode immediately, turn on later (or should made at least before changing camsync parameters)
+        if (!(thispars->pars[P_TRIG] & 4)){
+            frame16 = -1;
+        }
+    	SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_SLAVE_MODE, newreg);
+    }
+
+    /*
+    newreg= (thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1] & 0xfe7f) | // old value without snapshot and GRR bits
+            ((thispars->pars[P_TRIG] & 4)?0x100:0) |                    // snapshot mode for P_TRIG==4 or 20
+            ((thispars->pars[P_TRIG] & 0x10)?0x80:0);                   // GRR mode for P_TRIG==20
+
+    if (newreg != thispars->pars[P_SENSOR_REGS+P_MT9X001_RMODE1]) {
+        // turn off triggered mode immediately, turn on later (or should made at least before changing camsync parameters)
+        if (!(thispars->pars[P_TRIG] & 4)){
+            frame16 = -1;
+        }
+        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9X001_RMODE1, newreg);
+        dev_dbg(g_dev_ptr,"{%d}   SET_SENSOR_MBPAR(0x%x, 0x%x, 0x%x, 0x%x, 0x%x)\n",sensor_port, sensor_port, frame16,  (int) sensor->i2c_addr, (int) P_MT9X001_RMODE1, (int) newreg);
+    }
+    */
+
+    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes sensor register shadows
+    return 0;
+}
 
 
 
