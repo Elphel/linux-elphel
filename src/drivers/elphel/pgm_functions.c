@@ -1230,6 +1230,8 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     struct frameparspair_t pars_to_update[8]; // 4 needed, increase if more entries will be added
     int nupdate=0;
     int async=(thispars->pars[P_TRIG] & 4)?1:0;
+    // avoid zero division
+    int fps_flags = (thispars->pars[P_FP1000SLIM]!=0)?thispars->pars[P_FPSFLAGS]:0;
     int cycles;  // number of FPGA clock cycles per frame;
     int min_period;  // number of pixel clock periods needed for the compressor (or user limit)
     int period=0;
@@ -1310,7 +1312,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     dev_dbg(sensor_port,"%s min_period =%d(0x%x)\n",sensor_port,min_period,min_period);
 #endif
     // is there limit set for the FPS?
-    if (thispars->pars[P_FPSFLAGS]) {
+    if (fps_flags) {
 #if USELONGLONG
         ull_period=(((long long) clk_sensor) * (long long) 1000);
 #ifdef __div64_32
@@ -1330,7 +1332,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     }
     dev_dbg(g_dev_ptr,"{%d}  period=%d\n", sensor_port, period);
     MDP(DBGB_PADD, sensor_port,"period =%d(0x%x)\n", period, period)
-    if ((thispars->pars[P_FPSFLAGS] & 1) && (period>min_period)) min_period=period;
+    if ((thispars->pars[P_FP1000SLIM]!=0) && (thispars->pars[P_FPSFLAGS] & 1) && (period>min_period)) min_period=period;
     // *********************************************************** P_PF_HEIGHT
     pfh=thispars->pars[P_PF_HEIGHT] &0xffff ;
     if (pfh>0) {
@@ -1339,13 +1341,16 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     }
 
     if (min_period != thispars->pars[P_PERIOD_MIN]) {
-        SETFRAMEPARS_SET(P_PERIOD_MIN, min_period);  // set it (and propagate to the later frames)
+    	// set it (and propagate to the later frames)
+        SETFRAMEPARS_SET(P_PERIOD_MIN, min_period);
         dev_dbg(g_dev_ptr,"{%d}  SETFRAMEPARS_SET(P_PERIOD_MIN,  0x%x)\n", sensor_port, min_period);
         //pr_info("{%d} min period got updated to 0x%x (clk_sensor=%d, clk_fpga=%d)\n", sensor_port, min_period,clk_sensor,clk_fpga);
         MDP(DBGB_PADD, sensor_port,"SETFRAMEPARS_SET(P_PERIOD_MIN,  0x%x)\n", min_period)
     }
-    if (((thispars->pars[P_FPSFLAGS] & 2)==0) || (period < min_period)) period=0x7fffffff; // no upper limit
-    if (period != thispars->pars[P_PERIOD_MAX]) SETFRAMEPARS_SET(P_PERIOD_MAX, period);         // set it (and propagate to the later frames)
+    // no upper limit
+    if (((fps_flags & 2)==0) || (period < min_period)) period=0x7fffffff;
+    // set it (and propagate to the later frames)
+    if (period != thispars->pars[P_PERIOD_MAX]) SETFRAMEPARS_SET(P_PERIOD_MAX, period);
     // Now see if the sequencer period needs to be adjusted
     //  if (async && (thispars->pars[P_TRIG_PERIOD] >=256)) { // <256 - single trig
     //  if (async && (thispars->pars[P_TRIG_PERIOD] !=1)) { // <256 - single trig, here only ==1 is for single
@@ -1358,7 +1363,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
         min_period_camsync = sensor_to_camsync(min_period, thispars->pars[P_CLK_SENSOR]);
         if (thispars->pars[P_TRIG_PERIOD] < min_period_camsync) SETFRAMEPARS_SET(P_TRIG_PERIOD, min_period_camsync);  // set it (and propagate to the later frames)
         //        if (async &&  (thispars->pars[P_FPSFLAGS] & 2) && (thispars->pars[P_TRIG_PERIOD] > period)) {
-        if (async &&  (thispars->pars[P_FPSFLAGS] & 2)) {
+        if (async && (fps_flags & 2)) {
             period_camsync = sensor_to_camsync(period, thispars->pars[P_CLK_SENSOR]);
             if (thispars->pars[P_TRIG_PERIOD] > period_camsync) {
                 SETFRAMEPARS_SET(P_TRIG_PERIOD, period_camsync);  // set it (and propagate to the later frames)
