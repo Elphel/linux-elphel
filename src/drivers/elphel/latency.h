@@ -86,7 +86,9 @@
 #ifndef _LATENCY_H
 #define _LATENCY_H
 ///TODO: not used  yet, but it is possible to specify a function with non-zero latency that does not work with the sequencer - only in ASAP mode
-const unsigned long ahead_tab[]= 
+//const unsigned long ahead_tab[]=
+// changed to short which is more than enough
+const unsigned short ahead_tab[] =
   {                   /// ASAP C,S   C,NS, A,S   A,NS  NOL
 #if 0
   onchange_recalcseq,     0,    0,    0,    0,    0,   0, /// recalculate sequences/latencies, according to P_SKIP, P_TRIG

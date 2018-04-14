@@ -26,6 +26,7 @@
 #define MAX_FPGA_RECS 256
 
 #define MUX_BROADCAST_INDEX 3
+#define AHEAD_TAB_FUNCS_COUNT 32*7
 
 struct sensor_port_config_t {
 	u32  mux;                                    ///< Sensor multiplexer, currently 0 (SENSOR_DETECT, SENSOR_MUX_10359 or SENSOR_NONE)
@@ -37,7 +38,9 @@ struct sensor_port_config_t {
     //u8   haddr2rec[MAX_SENSORS][MAX_FPGA_RECS];  ///< Big LUT (but almost empty). Sensor's page address (haddr of reg addr) to fpga i2c record number (fpga line#)
     // u32 is for error handling
     u32   haddr2rec[MAX_SENSORS][MAX_FPGA_RECS];  ///< Big LUT (but almost empty). Sensor's page address (haddr of reg addr) to fpga i2c record number (fpga line#)
-    unsigned short *pages_ptr[MAX_SENSORS];
+    const unsigned short *pages_ptr[MAX_SENSORS];
+    // original table is const unsigned long, 32 functions is MAX
+    const unsigned short *ahead_tab[MAX_SENSORS];
 };
 
 extern struct sensor_port_config_t *pSensorPortConfig;

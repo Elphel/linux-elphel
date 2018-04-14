@@ -202,6 +202,7 @@ LUT to map SENSOR_REGSxxx to internal sensor register addresses
 */
 extern const unsigned short mt9x001_par2addr[];
 extern const unsigned short mt9x001_pages[];
+extern const unsigned short mt9x001_ahead_tab[];
 
 int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port number (0..3)
                                 struct sensor_t * sensor,      ///< sensor static parameters (capabilities)

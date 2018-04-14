@@ -33,6 +33,7 @@
 #include "x393.h"
 #include <uapi/elphel/x393_devices.h>
 #include <uapi/elphel/c313a.h>
+#include "latency.h"
 #include "mt9x001.h"
 #include "mt9f002.h"
 #include "multi10359.h"
@@ -191,7 +192,13 @@ sens_iface_t get_port_interface(int port)  ///< Sensor port number (0..3)
     return port_iface[port];
 }
 
-
+/** init port and subchn with default ahead_tab from latency.h */
+int init_port_ahead_table(int port,
+						  int sub_chn)
+{
+	sensorPortConfig[port & 3].ahead_tab[sub_chn] = ahead_tab;
+	return 0;
+}
 
 /** Set sensor port multiplexer type */
 int set_detected_mux_code(int port,      ///< Sensor port number (0..3)
@@ -391,6 +398,7 @@ static int elphel393_detect_sensors_sysfs_register(struct platform_device *pdev)
                  for (sub_chn = 0; sub_chn < num_sub; sub_chn++){
                      pr_info ("Setting sensor %d:%d '%s' (0x%x)\n",port, sub_chn, names[sub_chn], get_code_by_name(names[sub_chn], DETECT_SENSOR));
                      set_detected_sensor_code(port, sub_chn,  get_code_by_name(names[sub_chn], DETECT_SENSOR));
+                     init_port_ahead_table(port,sub_chn);
                  }
              }
          }
@@ -440,6 +448,7 @@ int detect_sensors_par2addr_init(int port,int sub_chn){
 
 	const unsigned short *par2addr;
 	const unsigned short *pages;
+	const unsigned short *atab;
 
 	/*
 	struct sensor_port_config_t {
@@ -453,13 +462,15 @@ int detect_sensors_par2addr_init(int port,int sub_chn){
 	switch (sensorPortConfig[port].sensor[sub_chn]) {
 		case SENSOR_MT9P006:
 			// get sensor table
-			par2addr = mt9x001_par2addr;
-			pages    = mt9x001_pages;
+			par2addr  = mt9x001_par2addr;
+			pages     = mt9x001_pages;
+			atab      = mt9x001_ahead_tab;
 			break;
 		case SENSOR_MT9F002:
 			// get sensor table
-			par2addr = mt9f002_par2addr;
-			pages    = mt9f002_pages;
+			par2addr  = mt9f002_par2addr;
+			pages     = mt9f002_pages;
+			atab      = mt9f002_ahead_tab;
 			break;
 	}
 	if (par2addr){
@@ -467,6 +478,9 @@ int detect_sensors_par2addr_init(int port,int sub_chn){
 		par2addr_fill(par2addr,sensorPortConfig[port].par2addr[sub_chn]);
 		// save pointer to static LUT
 		sensorPortConfig[port].pages_ptr[sub_chn] = pages;
+	}
+	if(atab){
+		sensorPortConfig[port].ahead_tab[sub_chn] = atab;
 	}
 
 	/*

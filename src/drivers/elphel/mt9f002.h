@@ -663,6 +663,7 @@ LUT to map SENSOR_REGSxxx to internal sensor register addresses
 */
 extern const unsigned short mt9f002_par2addr[];
 extern const unsigned short mt9f002_pages[];
+extern const unsigned short mt9f002_ahead_tab[];
 
 /** Detect one of Micron/Aptina/On Semiconductor sensors MT9M*, MT9D*,MT9T*, andMT9P* with parallel interface */
 int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port number (0..3)
