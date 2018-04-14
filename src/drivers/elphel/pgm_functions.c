@@ -2827,15 +2827,8 @@ int pgm_recalcseq  (int sensor_port,               ///< sensor port number (0..3
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d, safe=%d, async=%d, nooverlap=%d\n",sensor_port,frame16, safe, async, nooverlap);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
 
+    // not null is guaranteed
     port_ahead_tab = pSensorPortConfig[sensor_port].ahead_tab[ba];
-    // init at an earlier stages and remove this check
-    if (!port_ahead_tab){
-    	dev_warn(g_dev_ptr,"prm_recalcseq: port_ahead_tab is NULL\n");
-    	return 0;
-    }
-
-    //pr_info("pat pgm_exposure values: %d %d %d %d %d %d\n",pat[64],pat[65],pat[66],pat[67],pat[68],pat[69]);
-    //pr_info("ahd pgm_exposure values: %d %d %d %d %d %d\n",ahead_tab[64],ahead_tab[65],ahead_tab[66],ahead_tab[67],ahead_tab[68],ahead_tab[69]);
 
     //for (i=0; i < (sizeof(port_ahead_tab)/sizeof(port_ahead_tab[0])); i+=7) {
     for (i=0; i < AHEAD_TAB_FUNCS_COUNT; i+=7) {
