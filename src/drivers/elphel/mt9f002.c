@@ -379,7 +379,7 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     add_sensor_proc(sensor_port,onchange_limitfps,    &mt9f002_pgm_limitfps);     // check compressor will keep up, limit sensor FPS if needed
     add_sensor_proc(sensor_port,onchange_gains,       &mt9f002_pgm_gains);        // program analog gains
     add_sensor_proc(sensor_port,onchange_triggermode, &mt9f002_pgm_triggermode);  // program sensor trigger mode
-    add_sensor_proc(sensor_port,onchange_sensorregs,  &mt9x001_pgm_sensorregs);   // write sensor registers (only changed from outside the driver as they may have different latencies)?
+    add_sensor_proc(sensor_port,onchange_sensorregs,  &mt9f002_pgm_sensorregs);   // write sensor registers (only changed from outside the driver as they may have different latencies)?
 
     setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType); // should cause other actions
 
