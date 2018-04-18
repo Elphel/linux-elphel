@@ -2134,9 +2134,9 @@ int mt9x001_pgm_sensorregs     (int sensor_port,               ///< sensor port 
     // mask out all non sensor pars
     //  unsigned long bmask32= ((thispars->mod32) >> (P_SENSOR_REGS>>5)) & (P_SENSOR_NUMREGS-1) ;
     // It will be the first for the frame (before automatic sensor changes).
-    // Add testing for programmed sensor and move vbalues to later frames (not here butin the pgm_functions)
+    // Add testing for programmed sensor and move values to later frames (not here butin the pgm_functions)
 
-    //  unsigned long bmask32= ((thispars->mod32) >> (P_SENSOR_REGS>>5)) & (P_SENSOR_NUMREGS-1) ; // wromg!, only valid for P_SENSOR_NUMREGS==256 (that is the case, actually)
+    //  unsigned long bmask32= ((thispars->mod32) >> (P_SENSOR_REGS>>5)) & (P_SENSOR_NUMREGS-1) ; // wrong!, only valid for P_SENSOR_NUMREGS==256 (that is the case, actually)
     unsigned long bmask32= ((thispars->mod32) >> (P_SENSOR_REGS>>5)) & (( 1 << (P_SENSOR_NUMREGS >> 5))-1) ;
     unsigned long mask;
     int index,index32;
