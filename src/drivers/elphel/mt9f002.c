@@ -278,7 +278,7 @@ int mt9f002_pgm_limitfps     (int sensor_port, struct sensor_t * sensor,  struct
 int mt9f002_pgm_exposure     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9f002_pgm_gains        (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9f002_pgm_triggermode  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
-//int mt9f002_pgm_sensorregs   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9f002_pgm_sensorregs   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 
 /**
  * Detect and initialize sensor and related data structures
@@ -379,7 +379,7 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     add_sensor_proc(sensor_port,onchange_limitfps,    &mt9f002_pgm_limitfps);     // check compressor will keep up, limit sensor FPS if needed
     add_sensor_proc(sensor_port,onchange_gains,       &mt9f002_pgm_gains);        // program analog gains
     add_sensor_proc(sensor_port,onchange_triggermode, &mt9f002_pgm_triggermode);  // program sensor trigger mode
-    //add_sensor_proc(sensor_port,onchange_sensorregs,  &mt9x001_pgm_sensorregs);   // write sensor registers (only changed from outside the driver as they may have different latencies)?
+    add_sensor_proc(sensor_port,onchange_sensorregs,  &mt9x001_pgm_sensorregs);   // write sensor registers (only changed from outside the driver as they may have different latencies)?
 
     setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType); // should cause other actions
 
@@ -740,42 +740,13 @@ int mt9f002_pgm_sensorin (int sensor_port,               ///< sensor port number
 }
 
 // also defines vertical blanking
-int mt9f002_calc_frame_length_lines(int y_addr_start,
-		                              int y_addr_end,
-									  int min_frame_blanking_lines){
+int mt9f002_calc_frame_length_lines(int height,
+									int min_frame_blanking_lines){
 
 	int v0;
-
-	int subsampling_factor = 1;
-
-	v0 = (y_addr_end - y_addr_start + 1)/subsampling_factor + min_frame_blanking_lines;
-
-	/*
-	if (coarse_exposure>(v0-1)){
-		v0 = coarse_exposure + 1;
-		pr_info("frame_length_lines will get extended\n");
-	}
-	*/
-
-	return v0;
-}
-
-// also defines vertical blanking
-int mt9f002_calc_frame_length_lines_2(int height,
-									  int min_frame_blanking_lines){
-
-	int v0;
-
 	int subsampling_factor = 1;
 
 	v0 = height/subsampling_factor + min_frame_blanking_lines;
-
-	/*
-	if (coarse_exposure>(v0-1)){
-		v0 = coarse_exposure + 1;
-		pr_info("frame_length_lines will get extended\n");
-	}
-	*/
 
 	return v0;
 }
@@ -1006,9 +977,9 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
     }
 
     /*
-    // this is NOT needed when woi sizes change
+    // this is NOT needed when woi sizes change ?
     //fll = mt9f002_calc_frame_length_lines(thispars);
-    fll = mt9f002_calc_frame_length_lines(whs,whe,min_frame_blanking_lines);
+    fll = mt9f002_calc_frame_length_lines(wh,min_frame_blanking_lines);
     // this sets the vertical blanking
     if (fll!=thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES]){
     	dev_dbg(g_dev_ptr,"limit fps, old frame_length_lines=0x%08x, new frame_length_lines=0x%08x\n",
@@ -1016,6 +987,7 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
         SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_MT9F002_FRAME_LENGTH_LINES, fll);
     }
     */
+
 
     // need this fix for max possible fps
     if (ww >= X_OUTPUT_BORDER_SIZE){
@@ -1285,7 +1257,7 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
     //virt_height = mt9f002_calc_frame_length_lines(thispars);
 
     // this is allowed minimum
-    virt_height_min = mt9f002_calc_frame_length_lines_2(wh,thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_FRAME_BLANKING_LINES]);
+    virt_height_min = mt9f002_calc_frame_length_lines(wh,thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_FRAME_BLANKING_LINES]);
     // this is current setting
     virt_height = thispars->pars[P_SENSOR_REGS+P_MT9F002_FRAME_LENGTH_LINES];
 
@@ -2186,6 +2158,25 @@ int mt9f002_pgm_triggermode        (int sensor_port,               ///< sensor p
 }
 
 
+/** Program sensor registers (probably just those that are manually set)
+ * NOTE: all modes but ASAP are limited to 64 registers/frame, no overflow checks are performed! */
+int mt9f002_pgm_sensorregs     (int sensor_port,               ///< sensor port number (0..3)
+                                struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+                                struct framepars_t * thispars, ///< sensor current parameters
+                                struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+                                int frame16)                   ///< 4-bit (hardware) frame number parameters should
+                                                               ///< be applied to,  negative - ASAP
+                                                               ///< @return 0 - OK, negative - error
+
+{
+
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+
+    pr_info("pgm_sensorregs call\n");
+
+    return 0;
+}
 
 
 // SysFS interface to mt9f002

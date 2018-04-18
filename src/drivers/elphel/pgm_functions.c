@@ -2905,7 +2905,9 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
         break;
     }
     cmprs_mode.run_set = 1;
-    if (thispars->pars[P_COMPRESSOR_RUN] == COMPRESSOR_RUN_STOP) { // turn comressor off first
+
+    // turn comressor off first
+    if (thispars->pars[P_COMPRESSOR_RUN] == COMPRESSOR_RUN_STOP) {
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
     }
     // enable memory after the compressor, same latency
@@ -2916,9 +2918,12 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
                                frame16);
-    if (thispars->pars[P_COMPRESSOR_RUN] != COMPRESSOR_RUN_STOP) { // turn comressor on after memory
+
+    // turn comressor on after memory
+    if (thispars->pars[P_COMPRESSOR_RUN] != COMPRESSOR_RUN_STOP) {
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
     }
+
     dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, sensor_port, frame16, cmprs_mode.d32);
     MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, frame16, cmprs_mode.d32)
 
@@ -2990,6 +2995,7 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
                                frame16);
+
     dev_dbg(g_dev_ptr,"{%d}@0x%lx: X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, getThisFrameNumber(sensor_port), sensor_port, frame16, cmprs_mode.d32);
     MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32)
     return 0;
