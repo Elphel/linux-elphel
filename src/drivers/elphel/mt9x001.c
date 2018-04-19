@@ -786,6 +786,7 @@ static  unsigned short mt9p001_multiregs[]=
 
 int mt9x001_pgm_detectsensor (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9x001_pgm_initsensor   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+int mt9x001_pgm_sensorin     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9x001_pgm_window       (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9x001_pgm_window_safe  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9x001_pgm_window_common(int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
@@ -918,6 +919,7 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     dev_dbg(g_dev_ptr,"{%d} copied %d bytes of sensor static parameters\n",sensor_port,sizeof(mt9p001));
     add_sensor_proc(sensor_port,onchange_detectsensor,&mt9x001_pgm_detectsensor); // detect sensor type, sets sensor structure (capabilities), function pointers NOTE: will be called directly, not through pointers
     add_sensor_proc(sensor_port,onchange_initsensor,  &mt9x001_pgm_initsensor);   // resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers (stops/re-enables hardware i2c)
+    add_sensor_proc(sensor_port,onchange_sensorin,    &mt9x001_pgm_sensorin);     // see mt9f002
     add_sensor_proc(sensor_port,onchange_exposure,    &mt9x001_pgm_exposure);     // program exposure
     add_sensor_proc(sensor_port,onchange_window,      &mt9x001_pgm_window);       // program sensor WOI and mirroring (flipping)
     add_sensor_proc(sensor_port,onchange_window_safe, &mt9x001_pgm_window_safe);  // program sensor WOI and mirroring (flipping) - now - only flipping? with lower latency
@@ -1094,6 +1096,33 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     MDF4(for (i=0; i<1023; i++) {if ((i & 0x1f)==0) dev_dbg(g_dev_ptr,"\n"); dev_dbg(g_dev_ptr," 0x%06lx",GLOBALPARS (sensor_port, G_SENSOR_CALIB+i));});
 
     return 0;
+}
+
+/**
+ * Program sensor input in FPGA (Bayer, 8/16 bits, FPN, test mode, number of lines).
+ */
+int mt9x001_pgm_sensorin (int sensor_port,               ///< sensor port number (0..3)
+		struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+		struct framepars_t * thispars, ///< sensor current parameters
+		struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+		int frame16)                   ///< 4-bit (hardware) frame number parameters should
+									   ///< be applied to,  negative - ASAP
+									   ///< @return OK - 0, <0 - error
+{
+	x393_sensio_width_t   sensio_width = {.d32=0};
+
+    int cframe16 = getThisFrameNumber(sensor_port);
+
+    dev_dbg(g_dev_ptr,"{%d} s_i cframe16=0x%08x frame16=%d\n",sensor_port,cframe16,frame16);
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+
+	// mt9f002 needed MT9F002_VACT_DELAY here, but mt9x001 needs 0 - has no real effect probably
+	if (!(thispars->pars[P_FRAMESYNC_DLY] & 0x10000)){
+		sensio_width.sensor_width = 0;
+		X393_SEQ_SEND1(sensor_port, frame16, x393_sensio_width, sensio_width);
+	}
+
+	return 0;
 }
 
 

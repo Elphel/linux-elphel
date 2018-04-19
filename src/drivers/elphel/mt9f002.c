@@ -140,7 +140,7 @@ const unsigned short mt9f002_ahead_tab[] =
 	onchange_initsensor,    1,    0,    0,    0,    0,   0, /// resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers (stops/re-enables hardware i2c)
 	onchange_afterinit,     0,    0,    0,    0,    0,   0, /// restore image size, decimation,... after sensor reset or set them according to sensor capabilities if none were specified
 	onchange_multisens,     0,    2,    1,    1,    1,   0, /// chnages related to multiplexed sensors
-	onchange_window,        0,    2,    1,    1,    1,   0, /// program sensor WOI and mirroring (flipping) - NOTE: 1 bad frame to skip
+	onchange_window,        0,    2,    1,    2,    1,   0, /// program sensor WOI and mirroring (flipping) - NOTE: 1 bad frame to skip
 	onchange_window_safe,   0,    1,    1,    1,    1,   0, /// program sensor WOI and mirroring (flipping) - NOTE: no bad frames
 	onchange_exposure,      0,    2,    1,    2,    1,   0, /// program exposure
 	onchange_gains,         0,    1,    1,    1,    1,   0, /// program analog gains
@@ -156,7 +156,7 @@ const unsigned short mt9f002_ahead_tab[] =
 	onchange_memcompressor, 0,    0,    0,    0,    0,   0, /// program memory channel 2 (memory->compressor) (delays programming until onchange_comprestart if needed)
 	/// For Micron sensors limitfps should have the same latency as changing window height, otherwise when WOI_HEIGHT 0x3c0->0x790 and next frame VBLANK 0x13e->0x284
 	/// sensor waits till the counter overflows (>10 seconds) without any frame sync pulses
-	onchange_limitfps,      0,    2,    1,    1,    1,   0, /// check compressor will keep up, limit sensor FPS if needed
+	onchange_limitfps,      0,    2,    1,    2,    1,   0, /// check compressor will keep up, limit sensor FPS if needed
 	onchange_compmode,      0,    0,    0,    0,    0,   0, /// program compressor modes
 	onchange_focusmode,     1,    0,    0,    0,    0,   0, /// program focus modes (through writing the tables, so no sequencer)
 	onchange_trigseq,       0,    2,    1,    1,    1,   0, /// NC393: OK to program through the sequencer (full 32 bits)
@@ -732,9 +732,16 @@ int mt9f002_pgm_sensorin (int sensor_port,               ///< sensor port number
 {
 	x393_sensio_width_t   sensio_width = {.d32=0};
 
+    int cframe16 = getThisFrameNumber(sensor_port);
+
+    dev_dbg(g_dev_ptr,"{%d} s_i cframe16=0x%08x frame16=%d\n",sensor_port,cframe16,frame16);
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+
 	// this is a hack because there's no delay after SOF in HISPI proto
-	sensio_width.sensor_width = MT9F002_VACT_DELAY;
-	X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_width, sensio_width);
+	if (!(thispars->pars[P_FRAMESYNC_DLY] & 0x10000)){
+		sensio_width.sensor_width = MT9F002_VACT_DELAY;
+		X393_SEQ_SEND1(sensor_port, frame16, x393_sensio_width, sensio_width);
+	}
 
 	return 0;
 }
@@ -827,7 +834,7 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
     int dv,dh,bv,bh,ww,wh,wl,wt,flip,flipX,flipY,d, v;
     int wws,wwe,whs,whe;
     int compressor_margin; // 0 for JP4, 2 for JPEG
-    struct frameparspair_t  pars_to_update[29];
+    struct frameparspair_t  pars_to_update[12];
     int nupdate=0;
 
     int min_frame_blanking_lines = thispars->pars[P_SENSOR_REGS+P_MT9F002_MIN_FRAME_BLANKING_LINES];
@@ -843,7 +850,9 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
     int whs_vact_delay = 0;
     int whe_vact_delay = 0;
 
-    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+    int cframe16 = getThisFrameNumber(sensor_port);
+
+    dev_dbg(g_dev_ptr,"{%d} w_c cframe=0x%08x frame16=%d\n",sensor_port,cframe16,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 
     //pr_info("mt9f002_pgm_window_common: %d\n",thispars->pars[P_EXPOS]);
@@ -1160,7 +1169,9 @@ int mt9f002_pgm_limitfps   (int sensor_port,               ///< sensor port numb
 
     unsigned long trig_period;
 
-    dev_dbg(g_dev_ptr,"{%d} pgm_limit_fps frame16=%d\n",sensor_port,frame16);
+    int cframe16 = getThisFrameNumber(sensor_port);
+
+    dev_dbg(g_dev_ptr,"{%d} l_f cframe16=0x%08x frame16=%d\n",sensor_port,cframe16,frame16);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 
     //pr_info("mt9f002_pgm_limitfps: %d\n",thispars->pars[P_EXPOS]);
@@ -1409,7 +1420,9 @@ int mt9f002_pgm_exposure (int sensor_port,               ///< sensor port number
     int row_time_in_pixels=thispars->pars[P_VIRT_WIDTH];
     int pix_period;
 
-    dev_dbg(g_dev_ptr,"{%d} pgm_exposure frame16=%d\n",sensor_port,frame16);
+    int cframe16 = getThisFrameNumber(sensor_port);
+
+    dev_dbg(g_dev_ptr,"{%d} exp cframe=0x%08x frame16=%d\n",sensor_port,cframe16,frame16);
     // wrong frame
     if (frame16 >= PARS_FRAMES) return -1;
 

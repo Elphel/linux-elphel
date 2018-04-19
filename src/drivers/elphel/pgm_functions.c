@@ -1503,6 +1503,7 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     // Writing WOI width for internally generated HACT
     if (thispars->pars[P_FRAMESYNC_DLY] & 0x10000) { /// set enforced HACT length, if 0 - use HACT from sensor
         sensio_width.sensor_width = thispars->pars[P_ACTUAL_WIDTH]+(2 * margins);
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_width, sensio_width);
     }
 
     /*
@@ -1511,8 +1512,6 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     	sensio_width.sensor_width = MT9F002_VACT_DELAY;
     }
     */
-
-    X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_width, sensio_width);
 
     dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_width,  0x%x)\n",
             sensor_port, sensor_port, frame16, sensio_width.d32);
@@ -2919,6 +2918,15 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
                                frame16);
 
+    /*
+    // OLEG: temporary test to restart sensor
+    control_sensor_memory (sensor_port,
+    					   thispars->pars[P_SENSOR_RUN] & 3,
+						   reset_frame,
+						   (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+						   frame16);
+    */
+
     // turn comressor on after memory
     if (thispars->pars[P_COMPRESSOR_RUN] != COMPRESSOR_RUN_STOP) {
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
@@ -2995,6 +3003,15 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
                                frame16);
+
+    /*
+    // OLEG: temporary test to stop sensor
+    control_sensor_memory (sensor_port,
+            			   SENSOR_RUN_STOP,
+						   0, // reset_frame
+						   (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
+						   frame16);
+	*/
 
     dev_dbg(g_dev_ptr,"{%d}@0x%lx: X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",sensor_port, getThisFrameNumber(sensor_port), sensor_port, frame16, cmprs_mode.d32);
     MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n", sensor_port, frame16, cmprs_mode.d32)
