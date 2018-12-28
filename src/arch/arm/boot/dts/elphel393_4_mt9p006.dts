@@ -108,11 +108,13 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 				phy3: phy@3 {
-                                        /* Atheros 8035 */
-                                        compatible = "ethernet-phy-id004d.d072";
+					/* Atheros 8035 */
+					compatible = "ethernet-phy-id004d.d072";
 					/* compatible = "ethernet-phy-ieee802.3-c22";*/
 					device_type = "ethernet-phy";
-					reg = <0x3>;
+					/* rev0 - revB: reg = <0x3> */
+					/* revC:        reg = <0x0> */
+					reg = <0x0>;
 				};
 			};
 		};
