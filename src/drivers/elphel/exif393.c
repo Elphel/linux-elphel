@@ -823,7 +823,7 @@ size_t exif_get_data(int sensor_port, unsigned short meta_index, void *buff, siz
 	memcpy(buff, &exif_tmp_buff[page_p], count);
 	return count;
 }
-EXPORT_SYMBOL_GPL(exif_get_data);
+EXPORT_SYMBOL_GPL(exif_get_data); // @suppress("Unused function declaration") as it is still needed
 
 //!++++++++++++++++++++++++++++++++++++ _init() ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -875,8 +875,8 @@ static void __exit exif_exit(void)
     dev_dbg(NULL, "unregistering driver");
 }
 
-module_exit(exif_exit);
-module_init(exif_init);
+module_exit(exif_exit); // @suppress("Unused variable declaration in file scope")
+module_init(exif_init); // @suppress("Unused variable declaration in file scope")
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");

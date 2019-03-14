@@ -202,7 +202,7 @@ ssize_t circbuf_get_ptr(int sensor_port, size_t offset, size_t len, struct fvec 
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(circbuf_get_ptr);
+EXPORT_SYMBOL_GPL(circbuf_get_ptr); // @suppress("Unused function declaration") it is still needed
 
 /**
  * @brief Process circular buffer file opening and define further action in accordance
@@ -1025,7 +1025,7 @@ static struct platform_driver elphel393_circbuf = {
 		},
 };
 
-module_platform_driver(elphel393_circbuf);
+module_platform_driver(elphel393_circbuf); // @suppress("Unused variable declaration in file scope") because
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrey Filippov <andrey@elphel.com>.");
