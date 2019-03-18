@@ -26,6 +26,9 @@
 #define DEV393_EXIF_METADIR   ("exif_metadir",      "exif_elphel",   125,  3, "0666", "c")  ///< write metadata to Exif header translation (dir_table[MAX_EXIF_FIELDS])
 #define DEV393_EXIF_TIME      ("exif_time",         "exif_elphel",   125,  4, "0666", "c")  ///< write today/tomorrow date (YYYY:MM:DD) and number of seconds at today/tomorrow
                                                                              ///< midnight (00:00:00) in seconds from epoch (long, starting from LSB)
+#define DEV393_TIFF_TEMPLATE  ("tiff_template",     "exif_elphel",   125,  5, "0666", "c")  ///< write Tiff template
+//#define DEV393_TIFF_METADIR   ("tiff_metadir",      "exif_elphel",   125,  6, "0666", "c")  ///< write metadata to Tiff header translation (dir_table[MAX_EXIF_FIELDS])
+
 
 #define DEV393_EXIF0          ("exif_exif0",        "exif_elphel",   125, 16, "0666", "c")  ///< sensor port 0: read encoded Exif data (SEEK_END)
 #define DEV393_EXIF1          ("exif_exif1",        "exif_elphel",   125, 17, "0666", "c")  ///< sensor port 1: read encoded Exif data (SEEK_END)
@@ -36,6 +39,18 @@
 #define DEV393_EXIF_META1     ("exif_meta1",        "exif_elphel",   125, 33, "0666", "c")  ///< sensor port 1: write metadata, concurrently opened files. All writes are atomic
 #define DEV393_EXIF_META2     ("exif_meta2",        "exif_elphel",   125, 34, "0666", "c")  ///< sensor port 2: write metadata, concurrently opened files. All writes are atomic
 #define DEV393_EXIF_META3     ("exif_meta3",        "exif_elphel",   125, 35, "0666", "c")  ///< sensor port 3: write metadata, concurrently opened files. All writes are atomic
+
+#define DEV393_TIFF0          ("tiff_tiff0",        "exif_elphel",   125, 24, "0666", "c")  ///< sensor port 0: read encoded Tiff data (SEEK_END)
+#define DEV393_TIFF1          ("tiff_tiff1",        "exif_elphel",   125, 25, "0666", "c")  ///< sensor port 1: read encoded Tiff data (SEEK_END)
+#define DEV393_TIFF2          ("tiff_tiff2",        "exif_elphel",   125, 26, "0666", "c")  ///< sensor port 2: read encoded Tiff data (SEEK_END)
+#define DEV393_TIFF3          ("tiff_tiff3",        "exif_elphel",   125, 27, "0666", "c")  ///< sensor port 3: read encoded Tiff data (SEEK_END)
+
+// Meta data common for Exif and Tiff
+//#define DEV393_TIFF_META0     ("tiff_meta0",        "exif_elphel",   125, 40, "0666", "c")  ///< sensor port 0: write metadata, concurrently opened files. All writes are atomic
+//#define DEV393_TIFF_META1     ("tiff_meta1",        "exif_elphel",   125, 41, "0666", "c")  ///< sensor port 1: write metadata, concurrently opened files. All writes are atomic
+//#define DEV393_TIFF_META2     ("tiff_meta2",        "exif_elphel",   125, 42, "0666", "c")  ///< sensor port 2: write metadata, concurrently opened files. All writes are atomic
+//#define DEV393_TIFF_META3     ("tiff_meta3",        "exif_elphel",   125, 43, "0666", "c")  ///< sensor port 3: write metadata, concurrently opened files. All writes are atomic
+
 
 #define DEV393_FRAMEPARS0     ("frameparsall0","framepars_operations",130,80, "0666", "c")  ///< Access frame parameters for channel 0 (schedule modification, read with mmap)
 #define DEV393_FRAMEPARS1     ("frameparsall1","framepars_operations",130,81, "0666", "c")  ///< Access frame parameters for channel 1 (schedule modification, read with mmap)

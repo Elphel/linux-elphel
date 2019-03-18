@@ -1354,14 +1354,14 @@ int multisensor_pgm_multisens (int sensor_port,               ///< sensor port n
 //  int old_sensor=prev_selected-1; // may be <0
 //  int new_sensor=selected-1;     // >=0
   if (multi_unitialized[sensor_port] && (!prev_composite) && (old_sensor>=0)) { // was single-sensor mode, copy P_WOI_* to individual sensor WOI and FLIPS
-    dev_dbg(g_dev_ptr,"multi_unitialized=%d  old_sensor=%x, multi_fliph=%x multi_flipv=%x\n", multi_unitialized,  old_sensor, multi_fliph,multi_flipv);
+    dev_dbg(g_dev_ptr,"multi_unitialized=%d  old_sensor=%x, multi_fliph=%x multi_flipv=%x\n", multi_unitialized[old_sensor],  old_sensor, multi_fliph,multi_flipv);
     wois[(P_MULTI_WIDTH1- P_MULTI_WOI)+old_sensor]= prevpars->pars[P_WOI_WIDTH];
     wois[(P_MULTI_HEIGHT1-P_MULTI_WOI)+old_sensor]= prevpars->pars[P_WOI_HEIGHT];
     wois[(P_MULTI_LEFT1-  P_MULTI_WOI)+old_sensor]= prevpars->pars[P_WOI_LEFT];
     wois[(P_MULTI_TOP1-   P_MULTI_WOI)+old_sensor]= prevpars->pars[P_WOI_TOP];
     multi_fliph=    (multi_fliph & (~(1<<old_sensor)))  | ((prevpars->pars[P_FLIPH] & 1) << old_sensor);
     multi_flipv=    (multi_flipv & (~(1<<old_sensor)))  | ((prevpars->pars[P_FLIPV] & 1) << old_sensor);
-    dev_dbg(g_dev_ptr,"multi_unitialized=%d old_sensor=%x, multi_fliph=%x multi_flipv=%x\n", multi_unitialized,  old_sensor, multi_fliph,multi_flipv);
+    dev_dbg(g_dev_ptr,"multi_unitialized=%d old_sensor=%x, multi_fliph=%x multi_flipv=%x\n", multi_unitialized[old_sensor],  old_sensor, multi_fliph,multi_flipv);
   }
   if (multi_unitialized[sensor_port] && (!composite) && (prev_composite || ((new_sensor>=0) && (old_sensor!=new_sensor)))) { // now single-sensor mode, set P_WOI* from saved parameters
     if ((wois[(P_MULTI_WIDTH1-  P_MULTI_WOI)+new_sensor]==0) || (wois[(P_MULTI_HEIGHT1-  P_MULTI_WOI)+new_sensor]==0)) {
@@ -2181,9 +2181,11 @@ int multisensor_memphase_debug (int sensor_port, ///< Sesnor port number (0..3)
 #endif
 
     }
-    for (i=0; i<8;i++)    printk (" %02x  ",i); printk("\n");
+    for (i=0; i<8;i++)    printk (" %02x  ",i);
+    printk("\n");
     for (n=0;n<64;n+=8) {
-        for (i=0; i<8;i++)  printk ("%04lx ", data[n+i]); printk("\n");
+        for (i=0; i<8;i++)  printk ("%04lx ", data[n+i]);
+        printk("\n");
     }
     for (i=0;i<8;i++) setbits[i]=0;
     for (n=0;n<64;n++) {
@@ -2198,7 +2200,8 @@ int multisensor_memphase_debug (int sensor_port, ///< Sesnor port number (0..3)
         }
     }
     OK=(setbits[0]==0) && (setbits[1]==0) && (setbits[2]==0) && (setbits[3]==0x80) && (setbits[4]==0x80) && (setbits[5]==0x80) && (setbits[6]==0) && (setbits[7]==0);
-    for (i=0; i<8;i++)    printk (" %03x ",setbits[i]); printk("\n");
+    for (i=0; i<8;i++) printk (" %03x ",setbits[i]);
+    printk("\n");
     n=(0x10000*sx)/s;
     printk ("Centroid - 0x%x, sx=0x%x, s=0x%x. OK=%d\n",n, sx,s,OK);
     return n;
