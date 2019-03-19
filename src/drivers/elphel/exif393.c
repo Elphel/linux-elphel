@@ -74,12 +74,17 @@
 
 static const char * const exif393_devs[]={
 	DEV393_DEVNAME(DEV393_EXIF_TEMPLATE),
+	DEV393_DEVNAME(DEV393_TIFF_TEMPLATE),
 	DEV393_DEVNAME(DEV393_EXIF_METADIR),
 	DEV393_DEVNAME(DEV393_EXIF_TIME),
 	DEV393_DEVNAME(DEV393_EXIF0),
 	DEV393_DEVNAME(DEV393_EXIF1),
 	DEV393_DEVNAME(DEV393_EXIF2),
 	DEV393_DEVNAME(DEV393_EXIF3),
+	DEV393_DEVNAME(DEV393_TIFF0),
+	DEV393_DEVNAME(DEV393_TIFF1),
+	DEV393_DEVNAME(DEV393_TIFF2),
+	DEV393_DEVNAME(DEV393_TIFF3),
 	DEV393_DEVNAME(DEV393_EXIF_META0),
 	DEV393_DEVNAME(DEV393_EXIF_META1),
 	DEV393_DEVNAME(DEV393_EXIF_META2),
@@ -90,12 +95,17 @@ static const int exif393_major = DEV393_MAJOR(DEV393_EXIF_TEMPLATE);
 
 static const int exif393_minor[]={
 	DEV393_MINOR(DEV393_EXIF_TEMPLATE),
+	DEV393_MINOR(DEV393_TIFF_TEMPLATE),
 	DEV393_MINOR(DEV393_EXIF_METADIR),
 	DEV393_MINOR(DEV393_EXIF_TIME),
 	DEV393_MINOR(DEV393_EXIF0),
 	DEV393_MINOR(DEV393_EXIF1),
 	DEV393_MINOR(DEV393_EXIF2),
 	DEV393_MINOR(DEV393_EXIF3),
+	DEV393_MINOR(DEV393_TIFF0),
+	DEV393_MINOR(DEV393_TIFF1),
+	DEV393_MINOR(DEV393_TIFF2),
+	DEV393_MINOR(DEV393_TIFF3),
 	DEV393_MINOR(DEV393_EXIF_META0),
 	DEV393_MINOR(DEV393_EXIF_META1),
 	DEV393_MINOR(DEV393_EXIF_META2),
@@ -201,6 +211,8 @@ ssize_t minor_file_size(int minor) { //return current file size for different mi
 ssize_t minor_max_size(int minor) { //return max file size for different minors
 	switch (minor) {
 	case DEV393_MINOR(DEV393_EXIF_TEMPLATE):
+		return MAX_EXIF_SIZE;
+	case DEV393_MINOR(DEV393_TIFF_TEMPLATE):
 		return MAX_EXIF_SIZE;
 	case DEV393_MINOR(DEV393_EXIF0):
 	case DEV393_MINOR(DEV393_EXIF1):
@@ -609,7 +621,7 @@ loff_t exif_lseek  (struct file * file, loff_t offset, int orig) {
 
 			switch (p) {
 			case DEV393_MINOR(DEV393_EXIF_TEMPLATE): // enable/disable
-			case DEV393_MINOR(DEV393_TIFF_TEMPLATE): // both files offer the same lseek commands
+//			case DEV393_MINOR(DEV393_TIFF_TEMPLATE): // both files offer the same lseek commands
 				switch (offset) {
 				case EXIF_LSEEK_DISABLE:
 					exif_enable(0);
@@ -709,7 +721,7 @@ ssize_t    exif_write  (struct file * file, const char * buf, size_t count, loff
 	int disabled_err=0;
     dev_dbg(g_devfp_ptr,"minor=0x%x\n", p);
 
-	if ((*off+count)>maxsize) {
+	if ((*off+count) > maxsize) {
 //	    dev_warn(g_devfp_ptr,"%s:%d: Data (0x%x) does not fit into 0x%x bytes\n",__FILE__,__LINE__, (int) (*off+count), maxsize);
         dev_dbg(g_devfp_ptr,"Data (0x%x) does not fit into 0x%x bytes, minor = 0x%x\n",(int) (*off+count), maxsize, p);
 		return -EOVERFLOW;
