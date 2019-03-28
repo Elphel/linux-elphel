@@ -32,7 +32,7 @@ int  control_sensor_memory (int num_sensor, int cmd, int reset_frame, x393cmd_t 
 int setup_compressor_memory (int num_sensor, int window_width,   int window_height, int window_left,
                             int window_top,  int tile_width,     int tile_height,   int tile_vstep,
                             x393cmd_t x393cmd, int frame16);
-int control_compressor_memory  (int num_sensor, int cmd, int reset_frame, int extra_pages, int disable_need, x393cmd_t x393cmd, int frame16);
+int control_compressor_memory  (int num_sensor, int cmd, int reset_frame, int linear, int extra_pages, int disable_need, x393cmd_t x393cmd, int frame16);
 int frames_in_buffer_minus_one (int num_sensor);
 
 void memchan_enable            (int chn, int enable);

@@ -2073,6 +2073,9 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
         break;
     }
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+    if ((thispars->pars[P_COLOR] == COLORMODE_RAW) && (thispars->pars[P_BITS] > 8)){
+    	width_bursts *= 2;
+    }
 
     dev_dbg(g_dev_ptr,"PGM_MEMSENSOR: sport=%d  width_burts=%d  width_marg=%d  height_marg=%d  left_margin=%d  top_margin=%d\n",
     		sensor_port,
@@ -2218,6 +2221,9 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     }
 
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+    if ((thispars->pars[P_COLOR] == COLORMODE_RAW) && (thispars->pars[P_BITS] > 8)){
+    	width_bursts *= 2;
+    }
     // Adjusting for tile width. TODO: probably not needed, handled in FPGA - verify (and remove 2 next lines)
     if (width_bursts & 1)                     width_bursts++;
     if ((tile_width>2) && (width_bursts & 2)) width_bursts += 2;
@@ -2314,7 +2320,7 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
     if (!jpeg_htable_is_programmed(sensor_port)) jpeg_htable_fpga_pgm (sensor_port);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 //    x393cmd = (frame16<0)? ASAP: ABSOLUTE;
-    if (FRAMEPAR_MODIFIED(P_COLOR)) {
+    if (FRAMEPAR_MODIFIED(P_COLOR) || FRAMEPAR_MODIFIED(P_BITS)) {
         switch (thispars->pars[P_COLOR] & 0x0f){
         case COLORMODE_MONO6:    cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_MONO6;          break;
         case COLORMODE_COLOR:    cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JPEG18;         break;
@@ -2328,6 +2334,10 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
         case COLORMODE_JP4DIFF2: cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP4DIFFDIV2;    break;
         case COLORMODE_JP4HDR2:  cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP4DIFFHDRDIV2; break;
         case COLORMODE_MONO4:    cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_MONO4;          break;
+        case COLORMODE_RAW:      cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_RAW;
+       	   cmprs_mode.raw_be16 =     (thispars->pars[P_BITS] > 8);
+       	   cmprs_mode.raw_be16_set = 1;
+           break;
         }
         cmprs_mode.cmode_set = 1;
         // TODO: Modify left margin by 1 for COLORMODE_COLOR !
@@ -2871,6 +2881,7 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     int extra_pages;
     int disable_need =  1; // TODO: Use some G_* parameter
     int reset_frame;
+    int raw_mode;
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
@@ -2887,9 +2898,15 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     case COLORMODE_COLOR:
     case COLORMODE_COLOR20:
         extra_pages = 1;
+        raw_mode =    0;
+        break;
+    case COLORMODE_RAW:
+        extra_pages = 0;
+        raw_mode =    1;
         break;
     default:
-        extra_pages = 0;
+        extra_pages = 0; // including raw mode
+        raw_mode =    0;
     }
     // Compressor memory can be stopped, run single (next frame) or run continuously
     // Compressor itself can run in standalone mode 2 (when sensor is stopped/single) or normal mode "3" (X393_CMPRS_CBIT_RUN_ENABLE)
@@ -2913,6 +2930,7 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     control_compressor_memory (sensor_port,
                                thispars->pars[P_COMPRESSOR_RUN] & 3, // stop/single/run(/reset)
                                reset_frame,
+							   raw_mode,
                                extra_pages,
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
@@ -2976,6 +2994,7 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
 {
 #ifndef NC353
     int extra_pages;
+    int raw_mode;
     int disable_need =  1; // TODO: Use some G_* parameter
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
@@ -2985,9 +3004,15 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
     case COLORMODE_COLOR:
     case COLORMODE_COLOR20:
         extra_pages = 1;
+        raw_mode =    0;
+        break;
+    case COLORMODE_RAW:
+        extra_pages = 0;
+        raw_mode =    1;
         break;
     default:
         extra_pages = 0;
+        raw_mode =    0;
     }
     // Stop compressor (do not propagate frame sync late, finish current frame)
     cmprs_mode.run = X393_CMPRS_CBIT_RUN_DISABLE;
@@ -2999,6 +3024,7 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
     control_compressor_memory (sensor_port, // compressor memory off
                                COMPRESSOR_RUN_STOP,
                                0, // reset_frame
+							   raw_mode,
                                extra_pages,
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
@@ -3042,6 +3068,7 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     int disable_need =  1; // TODO: Use some G_* parameter
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     int reset_frame = 0;
+    int raw_mode;
 //    int just_started = 0;
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",
             sensor_port,frame16, (int) prevpars->pars[P_COMPRESSOR_RUN], (int) thispars->pars[P_COMPRESSOR_RUN]);
@@ -3054,9 +3081,15 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     case COLORMODE_COLOR:
     case COLORMODE_COLOR20:
         extra_pages = 1;
+        raw_mode =    0;
+        break;
+    case COLORMODE_RAW:
+        extra_pages = 0;
+        raw_mode =    1;
         break;
     default:
         extra_pages = 0;
+        raw_mode =    0;
     }
 // Compressor memory can be stopped, run single (next frame) or run continuously
 // Compressor itself can run in standalone mode 2 (when sensor is stopped/single) or normal mode "3" (X393_CMPRS_CBIT_RUN_ENABLE)
@@ -3079,6 +3112,7 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     control_compressor_memory (sensor_port,
                                thispars->pars[P_COMPRESSOR_RUN] & 3, // stop/single/run(/reset)
                                reset_frame,
+							   raw_mode,
                                extra_pages,
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer

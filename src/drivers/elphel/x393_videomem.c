@@ -572,6 +572,7 @@ int control_compressor_memory (int num_sensor,       ///< sensor port number (0.
                                int cmd,              ///< command: 0 stop, 1 - single, 2 - repetitive, 3 - reset
                                int reset_frame,      ///< reset addresses to the start of frame, reset buffer (1 of 4) pointer.
                                                      ///< Should only be used if the channel controller was stopped before
+                               int linear,           ///< 0  tiled, 1 - linescan (for raw images)
                                int extra_pages,      ///< extra pages needed (1) - number of previous pages to keep in a 4-page buffer
                                int disable_need,     ///< disable "need" (yield to sensor channels - they can not wait)
                                x393cmd_t x393cmd,    ///< how to apply commands - directly or through channel sequencer
@@ -584,6 +585,7 @@ int control_compressor_memory (int num_sensor,       ///< sensor port number (0.
                                           .extra_pages =   1, // [ 4: 3] (0) 2-bit number of extra pages that need to stay (not to be overwritten) in the buffer
                                           .keep_open =     0, // [    5] (0) (NA in linescan) for 8 or less rows - do not close page between accesses (not used in scanline mode)
                                           .byte32 =        1, // [    6] (1) (NA in linescan) 32-byte columns (0 - 16-byte), not used in scanline mode
+				                          .linear =   linear, // [    7] (1) Use linear mode instead of tiled (for raw image files): extra_pages=0, keep_open=x, byte32=x
                                           .reset_frame =   1, // [    8] (0) reset frame number
                                           .single =        0, // [    9] (0) run single frame
                                           .repetitive =    1, // [   10] (1) run repetitive frames

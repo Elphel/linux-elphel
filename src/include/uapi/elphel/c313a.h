@@ -509,6 +509,7 @@
   #define COLORMODE_JP4DIFF2  9 ///< jp4, 4 blocks, differential, divide differences by 2: red := (R-G1)/2, blue:=(B-G1)/2, green=G1, green2 (G2-G1)/2
   #define COLORMODE_JP4HDR2  10 ///< jp4, 4 blocks, differential HDR: red := (R-G1)/2, blue:=(B-G1)/2, green=G1, green2 (high gain)=G2),
   #define COLORMODE_MONO4    14 ///< monochrome, 4 blocks (but still with 2x2 macroblocks)
+  #define COLORMODE_RAW      15 ///< raw 8/16-bit data in scanline order, bypassing compressor
 // the following 8 values should go in the same sequence as fields in the histogram page
 // 393: per sub-channel
 //// Will need to have them per-subchannel (4x)
