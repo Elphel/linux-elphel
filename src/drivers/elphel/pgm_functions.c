@@ -2195,7 +2195,14 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     width_marg = thispars->pars[P_ACTUAL_WIDTH];
     height_marg = thispars->pars[P_ACTUAL_HEIGHT];
     // NC393: maybe add later monochrome mode with small tiles?
-    cmprs_frame_format.num_macro_cols_m1 = (width_marg>> 4) - 1; // before adding margins
+
+    if ((thispars->pars[P_COLOR] == COLORMODE_RAW) && (thispars->pars[P_BITS] > 8)){
+        cmprs_frame_format.num_macro_cols_m1 = ((width_marg>> 4) << 1) - 1; // before adding margins
+    } else {
+        cmprs_frame_format.num_macro_cols_m1 = (width_marg>> 4) - 1; // before adding margins
+    }
+
+//    cmprs_frame_format.num_macro_cols_m1 = (width_marg>> 4) - 1; // before adding margins
     cmprs_frame_format.num_macro_rows_m1 = (height_marg>> 4) - 1; // before adding margins;
 
     switch(thispars->pars[P_COLOR]){
