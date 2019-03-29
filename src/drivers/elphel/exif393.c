@@ -863,13 +863,18 @@ ssize_t    exif_read   (struct file * file, char * buf, size_t count, loff_t *of
 		//arch/cris/arch-v32/drivers/elphel/exif353.c:591:count= 0x2000, pos= 0x410, start_p=0x10810, page_p=0xfffefc00, i=0x82, exif_template_size=0x208
 		metap= &ameta_buffer[sensor_port][i*aexif_meta_size[sensor_port]]; // pointer to the start of the selected page in frame meta_buffer
 		if ((page_p+count) > exif_template_size) count=exif_template_size-page_p;
-		memcpy(tmp,exif_template, exif_template_size);
-		 dev_dbg(g_devfp_ptr,"count= 0x%x, pos= 0x%x, start_p=0x%x, page_p=0x%x\n", (int) count, (int) *off, (int)start_p, (int)page_p);
-		if (is_tiff) for (i=0;i<exif_fields;i++) {
-			if (dir_table[i].dst_tiff > 0) memcpy(&tmp[dir_table[i].dst_tiff],&metap[dir_table[i].src], dir_table[i].len);
-		}
-		else         for (i=0;i<exif_fields;i++) {
-			if (dir_table[i].dst_exif > 0) memcpy(&tmp[dir_table[i].dst_exif],&metap[dir_table[i].src], dir_table[i].len);
+//		memcpy(tmp,exif_template, exif_template_size);
+//		 dev_dbg(g_devfp_ptr,"count= 0x%x, pos= 0x%x, start_p=0x%x, page_p=0x%x\n", (int) count, (int) *off, (int)start_p, (int)page_p);
+		if (is_tiff) {
+			memcpy(tmp,tiff_template, tiff_template_size);
+			for (i=0;i<exif_fields;i++) {
+				if (dir_table[i].dst_tiff > 0) memcpy(&tmp[dir_table[i].dst_tiff],&metap[dir_table[i].src], dir_table[i].len);
+			}
+		} else  {
+			memcpy(tmp,exif_template, exif_template_size);
+			for (i=0;i<exif_fields;i++) {
+				if (dir_table[i].dst_exif > 0) memcpy(&tmp[dir_table[i].dst_exif],&metap[dir_table[i].src], dir_table[i].len);
+			}
 		}
 		if (copy_to_user(buf,  &tmp[page_p], count)) return -EFAULT;
 		break;
