@@ -1482,7 +1482,7 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     }
 
     if (FRAMEPAR_MODIFIED(P_BITS)){
-        sens_mode.bit16 = thispars->pars[P_BITS];
+        sens_mode.bit16 = (thispars->pars[P_BITS] > 8);
         sens_mode.bit16_set = 1;
         X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_mode, sens_mode);
         dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",
