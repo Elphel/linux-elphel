@@ -518,8 +518,6 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     	setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
     }
 
-
-
     if (thispars->pars[P_SENSOR] == SENSOR_DETECT) {
         sensor->sensorType=SENSOR_NONE;                 // to prevent from initializing again
         dev_dbg(g_dev_ptr,"No image sensor found\n");
