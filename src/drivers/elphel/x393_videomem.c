@@ -88,7 +88,7 @@ static struct class *videomem_dev_class;
 // About frame full width:
 // https://blog.elphel.com/2015/05/nc393-development-progress-multichannel-memory-controller-for-the-multi-sensor-camera/#Memory_mapping_and_access_types
 static struct elphel_video_buf_t buffer_settings = { ///< some default settings, same as in DT
-        .frame_start =      {0x00000000, 0x08000000, 0x10000000, 0x08000000}, /* Frame starts (in bytes) */
+        .frame_start =      {0x00000000, 0x08000000, 0x10000000, 0x18000000}, /* Frame starts (in bytes) */
         .frame_full_width = {      8192,       8192,       8192,       8192}, /* Frame full widths (in bytes). 1 memory page is 2048 bytes (128 bursts) */
         .frame_height =     {      8192,       8192,       8192,       8192}, /* Channel 3 maximal frame height in pixel lines */
         .frames_in_buffer = {         2,          2,          2,          2}  /* Number of frames in channel 3 buffer */
