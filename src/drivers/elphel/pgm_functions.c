@@ -979,7 +979,7 @@ return 0;
 
 /** Program sensor WOI and mirroring
  *
- * As different sensors may produce "bad frames" for differnt WOI changes (i.e. MT9P001 seems to do fine with FLIP, but not WOI_WIDTH)
+ * As different sensors may produce "bad frames" for different WOI changes (i.e. MT9P001 seems to do fine with FLIP, but not WOI_WIDTH)
  * pgm_window and pgm_window_safe will do the same - they will just be called with different latencies and with compressor stopped) */
 int pgm_window     (int sensor_port,               ///< sensor port number (0..3)
 					struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
@@ -1032,6 +1032,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     sensor_width= thispars->pars[P_SENSOR_WIDTH];
     sensor_height=thispars->pars[P_SENSOR_HEIGHT];
     oversize=thispars->pars[P_OVERSIZE];
+    // default is good for JP4x, raw
     is_color=1;
     margins = 0;
     switch (thispars->pars[P_COLOR] & 0x0f){
@@ -2917,7 +2918,7 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     // Compressor itself can run in standalone mode 2 (when sensor is stopped/single) or normal mode "3" (X393_CMPRS_CBIT_RUN_ENABLE)
     // program compressor mode - normal run (3) or standalone(2)
     switch (thispars->pars[P_COMPRESSOR_RUN]) {
-    case COMPRESSOR_RUN_STOP:
+    case COMPRESSOR_RUN_STOP: // will never get here after if (thispars->pars[P_COMPRESSOR_RUN]==0) {... return 0;} ?
         cmprs_mode.run = X393_CMPRS_CBIT_RUN_DISABLE;
         break;
     case COMPRESSOR_RUN_SINGLE:
@@ -2928,7 +2929,7 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     cmprs_mode.run_set = 1;
 
     // turn comressor off first
-    if (thispars->pars[P_COMPRESSOR_RUN] == COMPRESSOR_RUN_STOP) {
+    if (thispars->pars[P_COMPRESSOR_RUN] == COMPRESSOR_RUN_STOP) { // will never get here after if (thispars->pars[P_COMPRESSOR_RUN]==0) {... return 0;} ?
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
     }
     // enable memory after the compressor, same latency
