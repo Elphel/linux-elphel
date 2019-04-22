@@ -27,6 +27,7 @@
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
+#include <linux/delay.h>
 #include <linux/string.h>
 #include <linux/init.h>
 //#include <linux/platform_device.h>
@@ -64,61 +65,61 @@ LUT to map SENSOR_REGSxxx to internal sensor register addresses
   * (for MT9X001 it's a 1-to-1 mapping)
 */
 const unsigned short mt9f002_par2addr[] = {
-		P_MT9F002_MODEL_ID,     P_REG_MT9F002_MODEL_ID,
-		P_MT9F002_RESET,        P_REG_MT9F002_RESET_REGISTER,
-		P_MT9F002_EXPOS,        P_REG_MT9F002_COARSE_INTEGRATION_TIME,
-		P_MT9F002_TEST_PATTERN, P_REG_MT9F002_TEST_PATTERN_MODE,
-		P_MT9F002_GAIN,         P_REG_MT9F002_GLOBAL_GAIN,
-		P_MT9F002_GAINGR,       P_REG_MT9F002_GREEN1_GAIN,
-		P_MT9F002_GAINR,        P_REG_MT9F002_RED_GAIN,
-		P_MT9F002_GAINB,        P_REG_MT9F002_BLUE_GAIN,
-		P_MT9F002_GAINGB,       P_REG_MT9F002_GREEN2_GAIN,
-		P_MT9F002_HISPI_TIMING,             P_REG_MT9F002_HISPI_TIMING,
-		P_MT9F002_SMIA_PLL_MULTIPLIER,      P_REG_MT9F002_SMIA_PLL_MULTIPLIER,
-		P_MT9F002_HISPI_CONTROL_STATUS,     P_REG_MT9F002_HISPI_CONTROL_STATUS,
-		P_MT9F002_DATAPATH_SELECT,          P_REG_MT9F002_DATAPATH_SELECT,
-		P_MT9F002_RESET_REGISTER,           P_REG_MT9F002_RESET_REGISTER,
-		P_MT9F002_COARSE_INTEGRATION_TIME,  P_REG_MT9F002_COARSE_INTEGRATION_TIME,
-		P_MT9F002_FINE_INTEGRATION_TIME,    P_REG_MT9F002_FINE_INTEGRATION_TIME,
-		P_MT9F002_Y_ADDR_START,             P_REG_MT9F002_Y_ADDR_START,
-		P_MT9F002_Y_ADDR_END,               P_REG_MT9F002_Y_ADDR_END,
-		P_MT9F002_X_ADDR_START,             P_REG_MT9F002_X_ADDR_START,
-		P_MT9F002_X_ADDR_END,               P_REG_MT9F002_X_ADDR_END,
-		P_MT9F002_Y_OUTPUT_SIZE,            P_REG_MT9F002_SMIA_Y_OUTPUT_SIZE,
-		P_MT9F002_X_OUTPUT_SIZE,            P_REG_MT9F002_SMIA_X_OUTPUT_SIZE,
-		P_MT9F002_LINE_LENGTH_PCK,          P_REG_MT9F002_LINE_LENGTH_PCK,
+        P_MT9F002_MODEL_ID,     P_REG_MT9F002_MODEL_ID,
+        P_MT9F002_RESET,        P_REG_MT9F002_RESET_REGISTER,
+        P_MT9F002_EXPOS,        P_REG_MT9F002_COARSE_INTEGRATION_TIME,
+        P_MT9F002_TEST_PATTERN, P_REG_MT9F002_TEST_PATTERN_MODE,
+        P_MT9F002_GAIN,         P_REG_MT9F002_GLOBAL_GAIN,
+        P_MT9F002_GAINGR,       P_REG_MT9F002_GREEN1_GAIN,
+        P_MT9F002_GAINR,        P_REG_MT9F002_RED_GAIN,
+        P_MT9F002_GAINB,        P_REG_MT9F002_BLUE_GAIN,
+        P_MT9F002_GAINGB,       P_REG_MT9F002_GREEN2_GAIN,
+        P_MT9F002_HISPI_TIMING,             P_REG_MT9F002_HISPI_TIMING,
+        P_MT9F002_SMIA_PLL_MULTIPLIER,      P_REG_MT9F002_SMIA_PLL_MULTIPLIER,
+        P_MT9F002_HISPI_CONTROL_STATUS,     P_REG_MT9F002_HISPI_CONTROL_STATUS,
+        P_MT9F002_DATAPATH_SELECT,          P_REG_MT9F002_DATAPATH_SELECT,
+        P_MT9F002_RESET_REGISTER,           P_REG_MT9F002_RESET_REGISTER,
+        P_MT9F002_COARSE_INTEGRATION_TIME,  P_REG_MT9F002_COARSE_INTEGRATION_TIME,
+        P_MT9F002_FINE_INTEGRATION_TIME,    P_REG_MT9F002_FINE_INTEGRATION_TIME,
+        P_MT9F002_Y_ADDR_START,             P_REG_MT9F002_Y_ADDR_START,
+        P_MT9F002_Y_ADDR_END,               P_REG_MT9F002_Y_ADDR_END,
+        P_MT9F002_X_ADDR_START,             P_REG_MT9F002_X_ADDR_START,
+        P_MT9F002_X_ADDR_END,               P_REG_MT9F002_X_ADDR_END,
+        P_MT9F002_Y_OUTPUT_SIZE,            P_REG_MT9F002_SMIA_Y_OUTPUT_SIZE,
+        P_MT9F002_X_OUTPUT_SIZE,            P_REG_MT9F002_SMIA_X_OUTPUT_SIZE,
+        P_MT9F002_LINE_LENGTH_PCK,          P_REG_MT9F002_LINE_LENGTH_PCK,
         P_MT9F002_X_ODD_INC,                P_REG_MT9F002_SMIA_X_ODD_INC,
         P_MT9F002_MIN_LINE_BLANKING_PCK,    P_REG_MT9F002_SMIA_MIN_LINE_BLANKING_PCK,
         P_MT9F002_MIN_LINE_LENGTH_PCK,      P_REG_MT9F002_SMIA_MIN_LINE_LENGTH_PCK,
-		P_MT9F002_FRAME_LENGTH_LINES,       P_REG_MT9F002_FRAME_LENGTH_LINES,
-		P_MT9F002_MIN_FRAME_BLANKING_LINES, P_REG_MT9F002_SMIA_MIN_FRAME_BLANKING_LINES,
-		P_MT9F002_READ_MODE,                P_REG_MT9F002_READ_MODE,
-		P_MT9F002_SLAVE_MODE,               P_REG_MT9F002_SLAVE_MODE,
-		0xffff // END indicator
+        P_MT9F002_FRAME_LENGTH_LINES,       P_REG_MT9F002_FRAME_LENGTH_LINES,
+        P_MT9F002_MIN_FRAME_BLANKING_LINES, P_REG_MT9F002_SMIA_MIN_FRAME_BLANKING_LINES,
+        P_MT9F002_READ_MODE,                P_REG_MT9F002_READ_MODE,
+        P_MT9F002_SLAVE_MODE,               P_REG_MT9F002_SLAVE_MODE,
+        0xffff // END indicator
 };
 
 /**
  * get at least one parameter for a page
  */
 const unsigned short mt9f002_pages[] = {
-		P_REG_MT9F002_SMIA_MODEL_ID,                    // page 0x00
-		P_REG_MT9F002_SMIA_MODE_SELECT,                 // page 0x01
-		P_REG_MT9F002_SMIA_FINE_INTEGRATION_TIME,       // page 0x02
-		P_REG_MT9F002_SMIA_VT_PIX_CLK_DIV,              // page 0x03
-		P_REG_MT9F002_SMIA_SCALING_MODE,                // page 0x04
-		P_REG_MT9F002_SMIA_COMPRESSION_MODE,            // page 0x05
-		P_REG_MT9F002_SMIA_TEST_PATTERN_MODE,           // page 0x06
-		P_REG_MT9F002_SMIA_INTEGRATION_TIME_CAPABILITY, // page 0x10
-		P_REG_MT9F002_SMIA_MIN_EXT_CLK_FREQ_MHZ,        // page 0x11
-		P_REG_MT9F002_SMIA_SCALING_CAPABILITY,          // page 0x12
-		P_REG_MT9F002_SMIA_COMPRESSION_CAPABILITY,      // page 0x13
-		P_REG_MT9F002_SMIA_MATRIX_ELEMENT_REDINRED,     // page 0x14
-		P_REG_MT9F002_MODEL_ID,                         // page 0x30
-		P_REG_MT9F002_OTPM_CFG,                         // page 0x31
-		P_REG_MT9F002_P_GR_P0Q0,                        // page 0x36
-		P_REG_MT9F002_P_GR_P4Q0,                        // page 0x37
-		P_REG_MT9F002_DAC_LD_FBIAS,                     // page 0x3E
-		0xffff // END indicator
+        P_REG_MT9F002_SMIA_MODEL_ID,                    // page 0x00
+        P_REG_MT9F002_SMIA_MODE_SELECT,                 // page 0x01
+        P_REG_MT9F002_SMIA_FINE_INTEGRATION_TIME,       // page 0x02
+        P_REG_MT9F002_SMIA_VT_PIX_CLK_DIV,              // page 0x03
+        P_REG_MT9F002_SMIA_SCALING_MODE,                // page 0x04
+        P_REG_MT9F002_SMIA_COMPRESSION_MODE,            // page 0x05
+        P_REG_MT9F002_SMIA_TEST_PATTERN_MODE,           // page 0x06
+        P_REG_MT9F002_SMIA_INTEGRATION_TIME_CAPABILITY, // page 0x10
+        P_REG_MT9F002_SMIA_MIN_EXT_CLK_FREQ_MHZ,        // page 0x11
+        P_REG_MT9F002_SMIA_SCALING_CAPABILITY,          // page 0x12
+        P_REG_MT9F002_SMIA_COMPRESSION_CAPABILITY,      // page 0x13
+        P_REG_MT9F002_SMIA_MATRIX_ELEMENT_REDINRED,     // page 0x14
+        P_REG_MT9F002_MODEL_ID,                         // page 0x30
+        P_REG_MT9F002_OTPM_CFG,                         // page 0x31
+        P_REG_MT9F002_P_GR_P0Q0,                        // page 0x36
+        P_REG_MT9F002_P_GR_P4Q0,                        // page 0x37
+        P_REG_MT9F002_DAC_LD_FBIAS,                     // page 0x3E
+        0xffff // END indicator
 };
 
 /**
@@ -139,7 +140,7 @@ const unsigned short mt9f002_ahead_tab[] =
 	onchange_i2c,           0,    0,    0,    0,    0,   0, /// program i2c
 	onchange_initsensor,    1,    0,    0,    0,    0,   0, /// resets sensor, reads sensor registers, schedules "secret" manufacturer's corrections to the registers (stops/re-enables hardware i2c)
 	onchange_afterinit,     0,    0,    0,    0,    0,   0, /// restore image size, decimation,... after sensor reset or set them according to sensor capabilities if none were specified
-	onchange_multisens,     0,    2,    1,    1,    1,   0, /// chnages related to multiplexed sensors
+	onchange_multisens,     0,    2,    1,    1,    1,   0, /// changes related to multiplexed sensors
 	onchange_window,        0,    2,    1,    2,    1,   0, /// program sensor WOI and mirroring (flipping) - NOTE: 1 bad frame to skip
 	onchange_window_safe,   0,    1,    1,    1,    1,   0, /// program sensor WOI and mirroring (flipping) - NOTE: no bad frames
 	onchange_exposure,      0,    2,    1,    2,    1,   0, /// program exposure
@@ -280,6 +281,8 @@ int mt9f002_pgm_gains        (int sensor_port, struct sensor_t * sensor,  struct
 int mt9f002_pgm_triggermode  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9f002_pgm_sensorregs   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 
+int mt9f002_phases_adjust_port(int sensor_port);
+
 /**
  * Detect and initialize sensor and related data structures
  */
@@ -292,6 +295,13 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
                                                                ///< @return 0 - OK, negative - error
 
 {
+	int i,n;
+	int regaddr,regval,regnum;
+	int nupdate=0;
+	int colamp_gain, a2_gain, gain, a2_inc;
+	u32 i2c_read_data_dw[256];
+	int color;
+	struct frameparspair_t pars_to_update[262+(MAX_SENSORS * P_MULTI_NUMREGS )]; // for all the sensor registers. Other P_* values will reuse the same ones
 
     u32  i2c_read_dataw;
 
@@ -331,8 +341,11 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     	psensor->i2c_addr = dc->slave7;
     }
 
+    // don't need to disable and enable SOF since phase adjustment has been moved here
+    /*
     dis_sof.dis_sof = 1;
     x393_sens_sync_mult(dis_sof,sensor_port);
+    */
 
     // set control lines
     sensio_ctl.mrst = 1;
@@ -352,6 +365,31 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
 
     // delay until sensor gets responsive to i2c commands
     // 100us - was not enough
+
+    /* See MT9F002_DS_B.pdf p.35: Power-On Reset Sequence (and Soft Reset Sequence?):
+     *
+     *   When power is applied - the sensor enters a low-power standby. Exit from which is
+     *   controlled by the later of 2 events:
+     *     - negation of the RESET_BAR
+     *     - a timeout of the internal power-on reset circuit
+     *
+     *   There's no need to assert/deassert RESET_BAR but we hold it asserted then deassert.
+     *
+     *   The sensor is supposed to leave the hardware standby state and perform some initialization
+     *   sequence that takes T_is = 2700 EXTCLK (MT9F002_EXT_CLK):
+     *     - for 1.6MHz    T_is = 1.6 ms
+     *     - for 24.444MHz T_is = 110 us
+     *
+     *	 While doing initialization sensor is unresponsive to i2c.
+     *
+     *	 After init it enters a low-power software standby and enables Voltage-Controlled Oscillator (VCO).
+     *	 And internal delay will keep PLL disconneced for up to 1ms so that PLL can lock.
+     *	 VCO lock time is 200 us (typical) - 1000 us (max)
+     *
+     *	 Soft Reset via R0x0103 is pretty much the same as Power-on reset.
+     *
+     *   So:
+    */
     udelay(200);
 
     X3X3_I2C_RCV2(sensor_port, psensor->i2c_addr, P_REG_MT9F002_MODEL_ID, &i2c_read_dataw);
@@ -381,8 +419,6 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     add_sensor_proc(sensor_port,onchange_triggermode, &mt9f002_pgm_triggermode);  // program sensor trigger mode
     add_sensor_proc(sensor_port,onchange_sensorregs,  &mt9f002_pgm_sensorregs);   // write sensor registers (only changed from outside the driver as they may have different latencies)?
 
-    setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType); // should cause other actions
-
     common_pars->sensors[sensor_port] =  sensor->sensorType;
     //  setFramePar(thispars, P_SENSOR  | FRAMEPAIR_FORCE_NEWPROC,  sensor->sensorType); // force actions
     //  MDD1(dev_dbg(g_dev_ptr,"\n"));
@@ -399,6 +435,103 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     sensio_ctl.gp1 = 0x3; // inverted iaro - 'active high'
     x393_sensio_ctrl(sensio_ctl,sensor_port);
 
+    // The code below was moved from mt9f002_pgm_detectsensor
+    // BEGIN:
+
+	// Init values including PLL multiplier and other default
+	n = sizeof(mt9f002_inits)/4; // 4 bytes per pair
+	for(i=0;i<n;i++){
+		// sa7 is not used
+		// use broadcast address - which should be 0 for a single sensor?
+		X3X3_I2C_SEND2_LUT_ASAP(sensor_port,0,mt9f002_inits[2*i],mt9f002_inits[2*i+1]);
+	}
+
+	// soft reset
+	// sa7 is not used
+	X3X3_I2C_SEND2_LUT_ASAP(sensor_port,0,P_REG_MT9F002_RESET_REGISTER,MT9F002_RESET_REGISTER_VALUE);
+	// delay is not needed, however if bit[0]=1 then it is needed
+	//udelay(100);
+
+	// sensor is supposed to be streaming by now
+	mt9f002_phases_adjust_port(sensor_port);
+
+	// used for debugging
+	//mdelay(30);
+
+	// init register shadows here
+	// regaddr will be 0xffffffff for not used par
+    for (i=0; i<256; i++) { // read all registers, one at a time (slower than in 353)
+    	regaddr = pSensorPortConfig[sensor_port].par2addr[0][i];
+    	if (!(regaddr&0xffff0000)){
+    		// TODO: get rid of i2c_addr
+    		X3X3_I2C_RCV2(sensor_port, sensor->i2c_addr, regaddr, &i2c_read_data_dw[i]);
+    	}else{
+    		i2c_read_data_dw[i] = 0;
+    	}
+    }
+
+    dev_dbg(g_dev_ptr,"Read 256 registers (port=%d) ID=0x%x:\n",sensor_port,i2c_read_data_dw[0]);
+
+    for (i=0; i<256; i++) { // possible to modify register range to save (that is why nupdate is separate from i)
+    	regval=i2c_read_data_dw[i];
+        regnum=P_SENSOR_REGS+i;
+        SETFRAMEPARS_SET(regnum,regval);
+    }
+
+    for (i=0;i<256;i++) {
+        sensor_reg_copy[sensor_port][i] = i2c_read_data_dw[i];
+    }
+
+    // in mt9x00x there's setFrameParsStatic-call ?!!! Parameters that never change?
+    if (nupdate)  setFrameParsStatic(sensor_port,nupdate,pars_to_update);  // save changes to sensor register shadows for all frames
+    //if (nupdate) setFramePars(sensor_port,thispars,nupdate,pars_to_update);  // save changes to sensor register shadows
+
+    // next are global pars?
+
+    // set gains ranges
+    SETFRAMEPARS_SET(P_GAIN_MIN, (sensor->minGain256)<<8); // less than that may not saturate sensor and confuse autoexposure/white balancing
+    SETFRAMEPARS_SET(P_GAIN_MAX, (sensor->maxGain256)<<8);
+    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
+
+    // G_* parameters - can write directly
+    // fill out the gain tables
+    for (color=0;color<4;color++){
+    	// 175 =
+    	// 48 (for colamp=1) +
+    	// 48 (for colamp=2) +
+    	// 79 (for colamp=3)
+
+    	colamp_gain = 2;
+    	a2_gain = 0x30;
+    	a2_inc = 0;
+
+        for (i=0;i<176;i++) {
+        	// for mt9x00x
+            //GLOBALPARS(sensor_port, G_SENSOR_CALIB+(color<<8)+i)= (i>32)? ((i-16)<<14) : (i<<13); // one extra
+        	// for mt9f002
+        	if ((i==48)||(i==96)){
+        		colamp_gain *= 2;
+        		a2_inc = 0;
+        	}
+        	// actual formula
+        	//gain = ((colamp_gain*(a2_gain+a2_inc))<<16)/64;
+        	gain = (colamp_gain*(a2_gain+a2_inc))<<10;
+        	GLOBALPARS(sensor_port, G_SENSOR_CALIB+(color<<8)+i)= gain; // one extra
+        	a2_inc += 1;
+        }
+    }
+
+    // don't need to disable and enable SOF since phase adjustment has been moved here
+	// restore SOF (disabled in mt9f002_pgm_detectsensor)
+    /*
+	dis_sof.dis_sof = 0;
+	x393_sens_sync_mult(dis_sof,sensor_port);
+	*/
+
+	// END
+
+    setFramePar(sensor_port, thispars, P_SENSOR,  sensor->sensorType); // should cause other actions
+
     return sensor->sensorType;
     //NOTE 353:  hardware i2c is turned off (not needed in 393)
 }
@@ -407,7 +540,7 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
 // write to sensor's i2c register, test read
 int mt9f002_phases_program_phase(int sensor_port, int phase){
 
-	int read_phase = 0;
+	int read_phase = 0xdead;
 	struct sensor_port_config_t *pcfg;
 	const char *name;
 
@@ -582,6 +715,8 @@ int mt9f002_phases_adjust_port(int sensor_port){
 
 	// 4 data lanes - prior knowledge
 	for(i=0;i<4;i++){
+		// this was for debugging
+		//mdelay(10);
 		phase = mt9f002_phases_adjust_lane(sensor_port,phase,i);
 	}
 
@@ -624,16 +759,25 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 	u32 i2c_read_data_dw[256];
 
 	//dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+
 	// sensor is silent before init - this check is redundant
 	//if (frame16 >= 0) return -1; // should be ASAP
 
 	if (!init_done[sensor_port]){
 		init_done[sensor_port] = true;
 	}else{
-		dev_dbg(g_dev_ptr,"{%d} Was going to try to init sensor twice. Exiting\n",sensor_port);
+		dev_dbg(g_dev_ptr,"{%d} Already initialized. Exit.",sensor_port);
 		return 0;
 	}
 
+	/* Moved to mt9f002_pgm_detectsensor
+	 *   The procedure was supposedly interfered by other functions
+	 *   executed on P_SENSOR change
+	 */
+
+	/*
+
+	// Init values including PLL multiplier and other default
 	n = sizeof(mt9f002_inits)/4; // 4 bytes per pair
 	for(i=0;i<n;i++){
 		// sa7 is not used
@@ -650,9 +794,7 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
 	// sensor is supposed to be streaming by now
 	mt9f002_phases_adjust_port(sensor_port);
 
-	// restore SOF (disabled in mt9f002_pgm_detectsensor)
-	dis_sof.dis_sof = 0;
-	x393_sens_sync_mult(dis_sof,sensor_port);
+	mdelay(30);
 
 	// init register shadows here
 	// regaddr will be 0xffffffff for not used par
@@ -665,10 +807,11 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
     		i2c_read_data_dw[i] = 0;
     	}
     }
+
     dev_dbg(g_dev_ptr,"Read 256 registers (port=%d) ID=0x%x:\n",sensor_port,i2c_read_data_dw[0]);
 
     for (i=0; i<256; i++) { // possible to modify register range to save (that is why nupdate is separate from i)
-        regval=i2c_read_data_dw[i];
+    	regval=i2c_read_data_dw[i];
         regnum=P_SENSOR_REGS+i;
         SETFRAMEPARS_SET(regnum,regval);
     }
@@ -715,6 +858,11 @@ int mt9f002_pgm_initsensor     (int sensor_port,               ///< sensor port 
         	a2_inc += 1;
         }
     }
+
+	// restore SOF (disabled in mt9f002_pgm_detectsensor)
+	dis_sof.dis_sof = 0;
+	x393_sens_sync_mult(dis_sof,sensor_port);
+	*/
 
     return 0;
 }
@@ -857,16 +1005,27 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
 
     //pr_info("mt9f002_pgm_window_common: %d\n",thispars->pars[P_EXPOS]);
 
+    /*
     dh=  thispars->pars[P_DCM_HOR];
     dv=  thispars->pars[P_DCM_VERT];
     bh=  thispars->pars[P_BIN_HOR];
     bv=  thispars->pars[P_BIN_VERT];
+    */
+
+    /* avoid division by 0 */
+    dh = thispars->pars[P_DCM_HOR]?thispars->pars[P_DCM_HOR]:1;
+    dv = thispars->pars[P_DCM_VERT]?thispars->pars[P_DCM_VERT]:1;
+    bh = thispars->pars[P_BIN_HOR]?thispars->pars[P_BIN_HOR]:1;
+    bv = thispars->pars[P_BIN_VERT]?thispars->pars[P_BIN_VERT]:1;
+
     //wws = sensor->clearLeft;
     ww  = thispars->pars[P_SENSOR_PIXH] * dh;
     //wwe = ww + wws - 1;
     //whs = sensor->clearTop;
     wh  = thispars->pars[P_SENSOR_PIXV] * dv;
     //whe = whs + wh + MT9F002_VACT_DELAY * dv - 1;
+
+    dev_dbg(g_dev_ptr,"{%d} CHECK1 P_SENSOR_PIXH = 0x%04x    P_SENSOR_PIXV = 0x%04x\n",sensor_port,ww,wh);
 
     // assuming same for horizontal(H) and vertical(V), margins are from both sides
     compressor_margin = (thispars->pars[P_SENSOR_PIXH] - thispars->pars[P_WOI_WIDTH]) >> 1;
@@ -895,6 +1054,8 @@ int mt9f002_pgm_window_common  (int sensor_port,               ///< sensor port 
         wh = d;
         //whe = whs + wh + MT9F002_VACT_DELAY * dv - 1;
     }
+
+    dev_dbg(g_dev_ptr,"{%d} CHECK2 P_SENSOR_PIXH = 0x%04x    P_SENSOR_PIXV = 0x%04x\n",sensor_port,ww,wh);
 
     // Margins
     wl = thispars->pars[P_WOI_LEFT] - compressor_margin;

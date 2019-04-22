@@ -23,7 +23,7 @@
 // bit 9 should have set masking for broken frames
 // cleared bit 3 allows writing to some RO registers
 //#define MT9F002_RESET_REGISTER_VALUE 0x001c
-#define MT9F002_RESET_REGISTER_VALUE 0x0011c
+#define MT9F002_RESET_REGISTER_VALUE 0x011c
 //#define MT9F002_RESET_REGISTER_VALUE 0x0014
 // number of lines to sacrifice before generating Frame Valid
 #define MT9F002_VACT_DELAY 2

@@ -88,7 +88,7 @@ static struct class *videomem_dev_class;
 // About frame full width:
 // https://blog.elphel.com/2015/05/nc393-development-progress-multichannel-memory-controller-for-the-multi-sensor-camera/#Memory_mapping_and_access_types
 static struct elphel_video_buf_t buffer_settings = { ///< some default settings, same as in DT
-        .frame_start =      {0x00000000, 0x08000000, 0x10000000, 0x08000000}, /* Frame starts (in bytes) */
+        .frame_start =      {0x00000000, 0x08000000, 0x10000000, 0x18000000}, /* Frame starts (in bytes) */
         .frame_full_width = {      8192,       8192,       8192,       8192}, /* Frame full widths (in bytes). 1 memory page is 2048 bytes (128 bursts) */
         .frame_height =     {      8192,       8192,       8192,       8192}, /* Channel 3 maximal frame height in pixel lines */
         .frames_in_buffer = {         2,          2,          2,          2}  /* Number of frames in channel 3 buffer */
@@ -446,15 +446,15 @@ int  control_sensor_memory (int num_sensor,       ///< sensor port number (0..3)
    }
 
    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, cmd=%d, x393cms=%d\n",num_sensor,frame16, cmd, (int) x393cmd);
-   dev_dbg(g_dev_ptr,"mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, reset_frame=%d, single=%d,repetitive=%d, disable_need=%d,skip_too_late=%d )\n",
-           mcntrl_mode.d32, mcntrl_mode.enable, mcntrl_mode.chn_nreset, mcntrl_mode.write_mem, mcntrl_mode.extra_pages,
-           mcntrl_mode.keep_open, mcntrl_mode.byte32, mcntrl_mode.reset_frame, mcntrl_mode.single, mcntrl_mode.repetitive,
-           mcntrl_mode.disable_need, mcntrl_mode.skip_too_late);
+   dev_dbg(g_dev_ptr,"control_sensor_memory mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, reset_frame=%d, single=%d,repetitive=%d, disable_need=%d,skip_too_late=%d )\n",
+           mcntrl_mode.d32,         mcntrl_mode.enable,     mcntrl_mode.chn_nreset,   mcntrl_mode.write_mem,
+		   mcntrl_mode.extra_pages, mcntrl_mode.keep_open,  mcntrl_mode.byte32,       mcntrl_mode.reset_frame,
+		   mcntrl_mode.single,      mcntrl_mode.repetitive, mcntrl_mode.disable_need, mcntrl_mode.skip_too_late);
    MDP(DBGB_VM,num_sensor,"frame16=%d, cmd=%d, x393cms=%d\n",frame16, cmd, (int) x393cmd)
-   MDP(DBGB_VM,num_sensor,"mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, reset_frame=%d, single=%d,repetitive=%d, disable_need=%d,skip_too_late=%d )\n",
-           mcntrl_mode.d32, mcntrl_mode.enable, mcntrl_mode.chn_nreset, mcntrl_mode.write_mem, mcntrl_mode.extra_pages,
-           mcntrl_mode.keep_open, mcntrl_mode.byte32, mcntrl_mode.reset_frame, mcntrl_mode.single, mcntrl_mode.repetitive,
-           mcntrl_mode.disable_need, mcntrl_mode.skip_too_late)
+   MDP(DBGB_VM,num_sensor,"control_sensor_memory mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, reset_frame=%d, single=%d,repetitive=%d, disable_need=%d,skip_too_late=%d )\n",
+           mcntrl_mode.d32,         mcntrl_mode.enable,    mcntrl_mode.chn_nreset,   mcntrl_mode.write_mem,
+		   mcntrl_mode.extra_pages, mcntrl_mode.keep_open, mcntrl_mode.byte32,       mcntrl_mode.reset_frame,
+		   mcntrl_mode.single,      mcntrl_mode.repetitive,mcntrl_mode.disable_need, mcntrl_mode.skip_too_late)
 
 
    switch (x393cmd){
@@ -585,7 +585,7 @@ int control_compressor_memory (int num_sensor,       ///< sensor port number (0.
                                           .extra_pages =   1, // [ 4: 3] (0) 2-bit number of extra pages that need to stay (not to be overwritten) in the buffer
                                           .keep_open =     0, // [    5] (0) (NA in linescan) for 8 or less rows - do not close page between accesses (not used in scanline mode)
                                           .byte32 =        1, // [    6] (1) (NA in linescan) 32-byte columns (0 - 16-byte), not used in scanline mode
-				                          .linear =   linear, // [    7] (1) Use linear mode instead of tiled (for raw image files): extra_pages=0, keep_open=x, byte32=x
+                                          .linear =   linear, // [    7] (1) Use linear mode instead of tiled (for raw image files): extra_pages=0, keep_open=x, byte32=x
                                           .reset_frame =   1, // [    8] (0) reset frame number
                                           .single =        0, // [    9] (0) run single frame
                                           .repetitive =    1, // [   10] (1) run repetitive frames
@@ -614,15 +614,17 @@ int control_compressor_memory (int num_sensor,       ///< sensor port number (0.
        return -EINVAL;
    }
    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, cmd=%d, x393cms=%d\n",num_sensor,frame16, cmd, (int) x393cmd);
-   dev_dbg(g_dev_ptr,"mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, reset_frame=%d, single=%d,repetitive=%d, disable_need=%d,skip_too_late=%d )\n",
-           mcntrl_mode.d32, mcntrl_mode.enable, mcntrl_mode.chn_nreset, mcntrl_mode.write_mem, mcntrl_mode.extra_pages,
-           mcntrl_mode.keep_open, mcntrl_mode.byte32, mcntrl_mode.reset_frame, mcntrl_mode.single, mcntrl_mode.repetitive,
-           mcntrl_mode.disable_need, mcntrl_mode.skip_too_late);
+   dev_dbg(g_dev_ptr,"control_compressor_memory mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, linear=%d, reset_frame=%d, single=%d, repetitive=%d, disable_need=%d, skip_too_late=%d, copy_frame=%d, abort_late=%d)\n",
+           mcntrl_mode.d32,           mcntrl_mode.enable,     mcntrl_mode.chn_nreset, mcntrl_mode.write_mem,
+		   mcntrl_mode.extra_pages,   mcntrl_mode.keep_open,  mcntrl_mode.byte32,     mcntrl_mode.linear,
+		   mcntrl_mode.reset_frame,   mcntrl_mode.single,     mcntrl_mode.repetitive, mcntrl_mode.disable_need,
+		   mcntrl_mode.skip_too_late, mcntrl_mode.copy_frame, mcntrl_mode.abort_late);
    MDP(DBGB_VM,num_sensor,"frame16=%d, cmd=%d, x393cms=%d\n",frame16, cmd, (int) x393cmd)
-   MDP(DBGB_VM,num_sensor,"mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, reset_frame=%d, single=%d,repetitive=%d, disable_need=%d,skip_too_late=%d )\n",
-           mcntrl_mode.d32, mcntrl_mode.enable, mcntrl_mode.chn_nreset, mcntrl_mode.write_mem, mcntrl_mode.extra_pages,
-           mcntrl_mode.keep_open, mcntrl_mode.byte32, mcntrl_mode.reset_frame, mcntrl_mode.single, mcntrl_mode.repetitive,
-           mcntrl_mode.disable_need, mcntrl_mode.skip_too_late)
+   MDP(DBGB_VM,num_sensor,"control_compressor_memory mode=0x%x (enable=%d, chn_nreset=%d, write_mem=%d, extra_pages=%d, keep_open=%d, byte32=%d, linear=%d, reset_frame=%d, single=%d, repetitive=%d, disable_need=%d, skip_too_late=%d, copy_frame=%d, abort_late=%d)\n",
+           mcntrl_mode.d32,           mcntrl_mode.enable,     mcntrl_mode.chn_nreset, mcntrl_mode.write_mem,
+		   mcntrl_mode.extra_pages,   mcntrl_mode.keep_open,  mcntrl_mode.byte32,     mcntrl_mode.linear,
+		   mcntrl_mode.reset_frame,   mcntrl_mode.single,     mcntrl_mode.repetitive, mcntrl_mode.disable_need,
+		   mcntrl_mode.skip_too_late, mcntrl_mode.copy_frame, mcntrl_mode.abort_late)
 
    switch (x393cmd){
    case ASAP:
