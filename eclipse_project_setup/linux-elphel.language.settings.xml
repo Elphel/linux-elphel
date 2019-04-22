@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- copy this file to %{WORKSPACE}/.metadata/.plugins/org.eclipse.cdt.core/-->
+<project>
+	<configuration id="cdt.managedbuild.toolchain.gnu.base.1636449201" name="Default">
+		<extension point="org.eclipse.cdt.core.LanguageSettingsProvider">
+			<provider id="org.eclipse.cdt.ui.UserLanguageSettingsProvider">
+				<language id="org.eclipse.cdt.core.gcc">
+					<resource project-relative-path="">
+						<entry kind="includeFile" name="/${ProjName}/linux/include/generated/autoconf.h">
+							<flag value="LOCAL|VALUE_WORKSPACE_PATH"/>
+						</entry>
+					</resource>
+				</language>
+			</provider>
+		</extension>
+	</configuration>
+</project>
