@@ -2188,7 +2188,9 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     int cmprs_top = 0; // 1 for JPEG18 only, 0 for others (also is used for compressor left)
     int tile_width; // in bursts, 2 for those with overlap (height>16), 4 with heigh==16
     int tile_height; // 16/18 (20 not yet implemented)
-    x393_cmprs_frame_format_t cmprs_frame_format ={.d32=0};
+    int compressor_memory_height;
+    x393_cmprs_frame_format_t cmprs_frame_format = {.d32=0};
+    x393_cmprs_mode_t        cmprs_mode =          {.d32=0}; // setting just height 4 LSBs
 
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d, pars[P_COLOR]=0x%x\n",sensor_port,frame16, (int)thispars->pars[P_COLOR]);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
@@ -2203,8 +2205,22 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
         cmprs_frame_format.num_macro_cols_m1 = (width_marg>> 4) - 1; // before adding margins
     }
 
-//    cmprs_frame_format.num_macro_cols_m1 = (width_marg>> 4) - 1; // before adding margins
-    cmprs_frame_format.num_macro_rows_m1 = (height_marg>> 4) - 1; // before adding margins;
+    if (thispars->pars[P_COLOR] == COLORMODE_RAW){
+    	compressor_memory_height = height_marg;
+        cmprs_frame_format.num_macro_rows_m1 = (height_marg -1) >> 4; // before adding margins;
+        cmprs_mode.rows_lsb =  (height_marg -1) & 0xf;
+        cmprs_mode.rows_lsb_set =  1;
+        // 4 LSBs of the window height are in compressor mode register
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+        dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",
+                sensor_port, sensor_port, frame16, cmprs_mode.d32);
+        MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",
+                sensor_port, frame16, cmprs_mode.d32)
+
+    } else {
+    	cmprs_frame_format.num_macro_rows_m1 = (height_marg>> 4) - 1; // before adding margins;
+    	compressor_memory_height = (cmprs_frame_format.num_macro_rows_m1 + 1) << 4;
+    }
 
     switch(thispars->pars[P_COLOR]){
     case COLORMODE_COLOR:
@@ -2253,7 +2269,7 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
 
     setup_compressor_memory (sensor_port,       // sensor port number (0..3)
                              width_bursts,      // 13-bit - in 8*16=128 bit bursts
-                             (cmprs_frame_format.num_macro_rows_m1 + 1) << 4,
+							 compressor_memory_height, // (cmprs_frame_format.num_macro_rows_m1 + 1) << 4,
 //                             height_marg,       // 16-bit window height (in scan lines)
                              0,                 // 13-bit window left margin in 8-bursts (16 bytes)
                              cmprs_top,         // 16-bit window top margin (in scan lines
