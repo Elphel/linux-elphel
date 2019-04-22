@@ -78,6 +78,7 @@ const struct sensor_name_t sensor_names[] ={
         {.name="mt9f002",    .type=1, .iface=HISPI4,     .code = SENSOR_MT9F002},   // MT9F002
         {.name="ibis51300",  .type=1, .iface=PARALLEL12, .code = SENSOR_IBIS51300}, // FillFactory IBIS51300
         {.name="kai11002",   .type=1, .iface=PARALLEL12, .code = SENSOR_KAI11000},  // Kodak KAI11002
+        {.name="lepton3.5",  .type=1, .iface=VOSPI,      .code = SENSOR_LEPTON35},  // Kodak KAI11002
         {.name=NULL,         .type=0, .iface=NONE,       .code = 0} // end of list
 };
 static sens_iface_t port_iface[SENSOR_PORTS];

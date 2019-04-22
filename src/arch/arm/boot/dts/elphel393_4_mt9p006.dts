@@ -284,7 +284,8 @@
                                                    "pca9500_eeprom 0x50 1 1 100",
                                                    "sensor_eeprom  0x50 1 1 100",
                                                    "sensor_temp    0x18 1 2 100",
-                                                   "cy22393        0x69 1 1 100";
+                                                   "cy22393        0x69 1 1 100",
+                                                   "lepton35       0x2a 2 2 500";
     } ;
 
     framepars_operations: elphel393-framepars@0 {

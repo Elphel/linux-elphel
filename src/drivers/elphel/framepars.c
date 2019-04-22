@@ -2032,8 +2032,10 @@ static ssize_t show_fpga_sensor_interface(struct device *dev, struct device_attr
         return sprintf(buf,"PAR12\n");
     case 1:
         return sprintf(buf,"HISPI\n");
+    case 2:
+        return sprintf(buf,"VOSPI\n");
     default:
-        return sprintf(buf,"0x%08%lx\n", x393_sensor_interface());
+        return sprintf(buf,"0x%08x\n", (int) x393_sensor_interface());
     }
 }
 
