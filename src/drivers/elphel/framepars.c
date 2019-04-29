@@ -2028,11 +2028,11 @@ static ssize_t show_fpga_sensor_interface(struct device *dev, struct device_attr
     if (!hardware_initialized)
         return -EBUSY;
     switch (x393_sensor_interface()){
-    case 0:
+    case FPGA_PAR12:
         return sprintf(buf,"PAR12\n");
-    case 1:
+    case FPGA_HISPI:
         return sprintf(buf,"HISPI\n");
-    case 2:
+    case FPGA_VOSPI:
         return sprintf(buf,"VOSPI\n");
     default:
         return sprintf(buf,"0x%08x\n", (int) x393_sensor_interface());

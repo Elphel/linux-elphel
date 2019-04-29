@@ -254,7 +254,7 @@
 #define SENSOR_MT9F002   0x38 ///< MT9F002
 //#define SENSOR_MT9Y001   0x34 ///< Micron/Aptina/Onsemi MT9P001 - 34
 #define SENSOR_IBIS51300 0x40 ///< FillFactory IBIS51300
-#define SENSOR_LEPTON35  0x41 ///< FLIR Lepton3 sensor
+#define SENSOR_LEPTON35  0x44 ///< FLIR Lepton3 sensor
 #define SENSOR_KAI11000  0x80 ///< Kodak KAI11002
 #define SENSOR_MUX_10359 0xe0 ///< Sensor multiplexer 10359
 #define SENSOR_NONE      0xfc ///< No sensor present
@@ -1733,6 +1733,13 @@ struct __attribute__((__packed__)) sensor_t {
 };
 #define SENSOR_NEED_RESET_CLK   1
 #define SENSOR_NEED_RESET_PHASE 2
+
+typedef enum FPGA_INTERFACES {
+	FPGA_PAR12 = 0,
+	FPGA_HISPI = 1,
+	FPGA_VOSPI = 2
+} fpga_interfaces_t;
+
 
 struct sensorproc_t {
      struct sensor_t sensor;

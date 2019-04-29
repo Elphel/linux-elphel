@@ -1259,7 +1259,8 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 	bool mux;
 	bool broadcast_set = false;
 
-	dev_dbg(g_dev_ptr,"register_i2c_sensor()\n");
+//	dev_dbg(g_dev_ptr,"register_i2c_sensor()\n");
+	dev_info(g_dev_ptr,"register_i2c_sensor()\n");
 
 	for(port=0;port<SENSOR_PORTS;port++) if ((1<<port)&ports_mask) {
 
@@ -1351,6 +1352,7 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 		memcpy(&dev_sensor, class_sensor, sizeof(x393_i2c_device_t));
 		i2c_page_register(port, LEGACY_READ_PAGE2);
 		set_xi2c_rdc(&dev_sensor, port, LEGACY_READ_PAGE2);
+		dev_info(g_dev_ptr,"register_i2c_sensor(): port=%d, page = 0x%x\n", port, LEGACY_READ_PAGE2);
 
 		if (mux){
 			// 'read' recs for 10359
@@ -1401,7 +1403,8 @@ int legacy_i2c(int ports) ///< bitmask of the sensor ports to use
         i2c_page_register(sensor_port, LEGACY_READ_PAGE4);
         dev_sensor.data_bytes=4; // for reading 10359 in 32-bit mode
         set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE4);
-        dev_dbg(g_dev_ptr, "Initialized sensor i2c for legacy commands, sensor_port= 0x%x\n",sensor_port);
+//        dev_dbg(g_dev_ptr, "Initialized sensor i2c for legacy commands, sensor_port= 0x%x\n",sensor_port);
+        dev_info(g_dev_ptr, "Initialized sensor i2c for legacy commands, sensor_port= 0x%x\n",sensor_port);
     }
     return 0;
 /*
