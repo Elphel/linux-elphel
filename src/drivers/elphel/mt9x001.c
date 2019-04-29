@@ -1004,6 +1004,9 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     if (frame16 >= 0) return -1; // should be ASAP
     // reset sensor by applying MRST (low):
 //    CCAM_MRST_ON;
+
+//FIXME:  No master reset here? Should it be here regardless of debug? ****
+
     if (debug_delays & 0xff) {
         dev_dbg(g_dev_ptr,"Resetting MT9X001 sensor, port=%d\n",sensor_port);
         sensio_ctl.mrst = 0;

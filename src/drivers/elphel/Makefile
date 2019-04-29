@@ -27,6 +27,7 @@ obj-$(CONFIG_ELPHEL393)           += histograms.o
 obj-$(CONFIG_ELPHEL393)           += pgm_functions.o
 obj-$(CONFIG_ELPHEL393)           += mt9x001.o
 obj-$(CONFIG_ELPHEL393)           += mt9f002.o
+obj-$(CONFIG_ELPHEL393)           += lepton.o
 obj-$(CONFIG_ELPHEL393)           += multi10359.o
 obj-$(CONFIG_ELPHEL393)           += imu_log393.o
 

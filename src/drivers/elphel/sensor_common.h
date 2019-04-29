@@ -92,10 +92,12 @@ long long get_frame_pos(unsigned int chn, unsigned int pos);
 
 #define LEGACY_READ_PAGE2 0xff
 #define LEGACY_READ_PAGE4 0xfe
-#define  name_10359   "el10359" // Get name from DT (together with port mask)
-#define  name_sensor  "mt9p006" // Get name from DT (together with port mask)
-#define  name_mt9p006 "mt9p006" // Get name from DT (together with port mask)
-#define  name_mt9f002 "mt9f002" // Get name from DT (together with port mask)
+// never used?
+#define  name_10359    "el10359"  // Get name from DT (together with port mask)
+#define  name_sensor   "mt9p006"  // Get name from DT (together with port mask)
+#define  name_mt9p006  "mt9p006"  // Get name from DT (together with port mask)
+#define  name_mt9f002  "mt9f002"  // Get name from DT (together with port mask)
+#define  name_lepton35 "lepton35" // Get name from DT (together with port mask)
 
 #define I2C359_INC                    2   ///< slave address increment between sensors in 10359A board (broadcast, 1,2,3) (7 bits SA)
 

@@ -208,6 +208,7 @@
 #include "multi10359.h"
 #include "mt9x001.h"
 #include "mt9f002.h"
+#include "lepton.h"
 #include "gamma_tables.h"
 #include "quantization_tables.h"
 //#include "latency.h"
@@ -378,6 +379,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     int qperiod;
     int i2cbytes;
     int mux,sens;
+    int fpga_interface = x393_sensor_interface();
 
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
@@ -413,14 +415,15 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     if ((mux == SENSOR_NONE) && (sens == SENSOR_NONE))
         return 0; // no sensor/mux enabled on this port
 
-    //TODO NC393: turn on both sequencers why MRST is active, then i2c frame will definitely match ? Or is it already done in FPGA?
+    //TODO NC393: turn on both sequencers while MRST is active, then i2c frame will definitely match ? Or is it already done in FPGA?
     dev_dbg(g_dev_ptr,"Restarting both command and i2c sequencers for port %d\n",sensor_port);
 
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RESET);
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RUN);  // also programs status update
     i2c_stop_run_reset      (sensor_port, I2C_CMD_RESET);
 
-    dev_dbg(g_dev_ptr,"Setting i2c drive mode for port %d\n",sensor_port);
+//    dev_dbg(g_dev_ptr,"Setting i2c drive mode for port %d\n",sensor_port);
+    dev_info(g_dev_ptr,"Setting i2c drive mode for port %d\n",sensor_port);
 
     i2c_drive_mode          (sensor_port, SDA_DRIVE_HIGH, SDA_RELEASE);
     i2c_stop_run_reset      (sensor_port, I2C_CMD_RUN); // also programs status update
@@ -453,6 +456,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     //mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
 
     if (mux != SENSOR_NONE) {
+    	if (fpga_interface == FPGA_PAR12) {
         dev_dbg(g_dev_ptr,"Mux mode for port %d is %d, tryng 10359\n",sensor_port, mux);
         MDP(DBGB_PADD, sensor_port,"Mux mode for port %d is %d, tryng 10359\n",sensor_port, mux)
         // try multisensor here (before removing MRST)
@@ -465,6 +469,9 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         // ************************************************************************************************
         // ************************************************************************************************
         // ************************************************************************************************
+    	} else {
+            dev_dbg(g_dev_ptr,"Incompatible FPGA interface for 10359 on port %d\n",sensor_port);
+    	}
 
     } else {
         dev_dbg(g_dev_ptr,"Mux mode for port %d SENSOR_NONE, skipping 10359 detection\n",sensor_port);
@@ -473,7 +480,8 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 
     //if ((thispars->pars[P_SENSOR]==0) ||  // multisensor not detected
     //   ((thispars->pars[P_SENSOR] & SENSOR_MASK) == SENSOR_MT9X001)) { // or is (from DT) SENSOR_MT9X001
-    if ((thispars->pars[P_SENSOR]==0) &&                // multisensor not detected
+    if ((fpga_interface == FPGA_PAR12) &&
+    	(thispars->pars[P_SENSOR]==0) &&                // multisensor not detected
         (((sens & SENSOR_MASK) == SENSOR_MT9X001) ||    // and from DT it is some SENSOR_MT9*001
          ((sens & SENSOR_MASK) == SENSOR_MT9P006) )) {  // or SENSOR_MT9P006 or friends
 
@@ -491,20 +499,25 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 
     }
 
-    if ((thispars->pars[P_SENSOR]==0) &&
+    if (    (fpga_interface == FPGA_HISPI) &&
+    		(thispars->pars[P_SENSOR]==0) &&
             ((sens & SENSOR_MASK) == SENSOR_MT9F002)){
 
     	dev_dbg(g_dev_ptr,"trying MT9F002, port=%d\n",sensor_port);
     	MDP(DBGB_PADD, sensor_port,"trying MT9F002, port=%d\n",sensor_port)
-        // TODO: move to sensor driver
-        // ************************************************************************************************
-        // ********************************* MT9x00x SENSOR (5MP) *****************************************
-        // ************************************************************************************************
         mt9f002_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);
-        // ************************************************************************************************
-        // ************************************************************************************************
-        // ************************************************************************************************
     }
+
+    if (    (fpga_interface == FPGA_VOSPI) &&
+    		(thispars->pars[P_SENSOR]==0) &&
+            ((sens & SENSOR_MASK) == SENSOR_LEPTON35)){
+
+    	dev_dbg(g_dev_ptr,"trying Lepton 3.5, port=%d\n",sensor_port);
+    	dev_info(g_dev_ptr,"trying Lepton 3.5, port=%d\n",sensor_port);
+    	MDP(DBGB_PADD, sensor_port,"trying Lepton 3.5, port=%d\n",sensor_port)
+        lepton_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);
+    }
+
 
     //setFramePar(sensor_port, thispars, P_CLK_FPGA,  200000000); //  FIXME: NC393
     setFramePar(sensor_port, thispars, P_CLK_FPGA,  240000000);
@@ -1025,6 +1038,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     struct frameparspair_t pars_to_update[18]; // 15 needed, increase if more entries will be added
     int nupdate=0;
     int clearHeight;
+    int tile_vert = X393_TILEVERT;
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",            sensor_port,frame16);
     dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_WOI_HEIGHT]=%lx thispars->pars[P_WOI_WIDTH]=%lx\n", sensor_port,thispars->pars[P_WOI_HEIGHT], thispars->pars[P_WOI_WIDTH]);
     //  if (GLOBALPARS(G_SENS_AVAIL) ) multisensor_pgm_window_common0 (sensor, thispars, prevpars, frame16);
@@ -1043,6 +1057,9 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     case COLORMODE_COLOR:
     case COLORMODE_COLOR20:
         margins = COLOR_MARGINS;
+        break;
+    case COLORMODE_RAW:
+    	tile_vert = 1;
     }
     // flips changed?
     if (FRAMEPAR_MODIFIED(P_FLIPH)) {
@@ -1125,9 +1142,9 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
         }
     } else {
         if ((!oversize ) && (height > sensor_height)) height=sensor_height;
-        height= ((height/dv)/X393_TILEVERT) * X393_TILEVERT; // divided by dv (before multisensor options)
+        height= ((height/dv)/tile_vert) * tile_vert; // divided by dv (before multisensor options)
         // suppose minimal height refers to decimated output
-        while (height < sensor->minHeight) height+=X393_TILEVERT;
+        while (height < sensor->minHeight) height+=tile_vert;
         if (unlikely(thispars->pars[P_SENSOR_PIXV] != height+(2 * margins)))
             SETFRAMEPARS_SET(P_SENSOR_PIXV,  height+(2 * margins)); ///full height for the sensor (after decimation), including margins
         height*=dv;
