@@ -379,7 +379,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     int qperiod;
     int i2cbytes;
     int mux,sens;
-    int fpga_interface = x393_sensor_interface();
+    int fpga_interface = x393_sensor_interface() + 1;
 
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
