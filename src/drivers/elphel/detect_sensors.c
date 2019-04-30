@@ -184,7 +184,8 @@ void update_port_iface(int port)  ///< Sensor port number (0..3)
         port_iface[port] = iface;
         return;
     }
-    port_iface[port] = get_iface_by_code(get_detected_sensor_code(port,-1), DETECT_MUX); // '-1' - any subchannel
+    //TODO: Check with 10359. was  port_iface[port] = get_iface_by_code(get_detected_sensor_code(port,-1), DETECT_MUX);
+    port_iface[port] = get_iface_by_code(get_detected_sensor_code(port,-1), DETECT_SENSOR); // '-1' - any subchannel
 }
 
 /** Get per-port interface type */
