@@ -45,14 +45,25 @@
 
 // Data model for Lepton does not match 393 convention (1 page for "important" registers,
 // so just 1 register of each of the 256-words is registered
-#define P_LEPTON_DATAF8  0xf8  ///< 0xf800 to 0xf8ff
-#define P_LEPTON_DATAF9  0xf9  ///< 0xf900 to 0xf9ff
-#define P_LEPTON_DATAFA  0xfa  ///< 0xfa00 to 0xfaff
-#define P_LEPTON_DATAFB  0xfb  ///< 0xfb00 to 0xfbff
-#define P_LEPTON_DATAFC  0xfc  ///< 0xfc00 to 0xfcff
-#define P_LEPTON_DATAFD  0xfd  ///< 0xfd00 to 0xfdff
-#define P_LEPTON_DATAFE  0xfe  ///< 0xfe00 to 0xfeff
-#define P_LEPTON_DATAFF  0xff  ///< 0xff00 to 0xffff
+#define P_LEPTON_DATAF8      0x28  ///< 0xf800 to 0xf8ff
+#define P_LEPTON_DATAF9      0x29  ///< 0xf900 to 0xf9ff
+#define P_LEPTON_DATAFA      0x2a  ///< 0xfa00 to 0xfaff
+#define P_LEPTON_DATAFB      0x2b  ///< 0xfb00 to 0xfbff
+#define P_LEPTON_DATAFC      0x2c  ///< 0xfc00 to 0xfcff
+#define P_LEPTON_DATAFD      0x2d  ///< 0xfd00 to 0xfdff
+#define P_LEPTON_DATAFE      0x2e  ///< 0xfe00 to 0xfeff
+#define P_LEPTON_DATAFF      0x2f  ///< 0xff00 to 0xffff
+
+// Registers 0x40.. 0xff will be used for non-i2c Lepton internal registers, such as VSYNC, telemetry
+#define P_LEPTON_GP3VSYNC       0x40
+#define P_LEPTON_TELEN          0x41
+#define P_LEPTON_TELLOC         0x42
+
+// actual values for registers (when reading)
+#define P_REG_LEPTON_GP3VSYNC     0x0854
+#define P_REG_LEPTON_GP3VSYNC_VAL 0x0005
+#define P_REG_LEPTON_TELEN        0x0218
+#define P_REG_LEPTON_TELLOC       0x021c
 
 // Actual register address ranges (probably, only even are used too?)
 #define P_REG_LEPTON_DATAF8  0xf800  ///< 0xf800 to 0xf8ff
@@ -63,6 +74,54 @@
 #define P_REG_LEPTON_DATAFD  0xfd00  ///< 0xfd00 to 0xfdff
 #define P_REG_LEPTON_DATAFE  0xfe00  ///< 0xfe00 to 0xfeff
 #define P_REG_LEPTON_DATAFF  0xff00  ///< 0xff00 to 0xffff
+
+
+/**
+ * Just set parameter for the Lepton related register, do not write to sensor
+ * @param port  sensor port number
+ * @param reg   relative register to fit 256 values page
+ * @param data  value to set (16 bits)
+ */
+#define SET_LEPTON_PAR_DRY(port,reg,data) {\
+	pars_to_update[nupdate  ].num= P_SENSOR_REGS+(reg);\
+    pars_to_update[nupdate++].val=(data);\
+}
+
+
+/**
+ * Set parameter for the Lepton related register and send related commands to hardware i2c sequencer in immediate mode
+ * Only immediate mode allows waiting
+ * @param port  sensor port number
+ * @param sa7   7-bit i2c slave address
+ * @param reg   relative register to fit 256 values page
+ * @param data  value to set (16 bits)
+ * @param wait_ms - maximal numer of milliseconds to wait Lepton ready
+ */
+#define SET_LEPTON_PAR_IMMED(port,sa7,reg,data,wait_ms) {\
+	int _LEPTONREG = pSensorPortConfig[(port)].par2addr[0][(reg)];\
+	pars_to_update[nupdate  ].num= P_SENSOR_REGS+(reg);\
+    pars_to_update[nupdate++].val=(data);\
+    if (!(_LEPTONREG&0xffff0000)) {\
+    	lepton_set_reg((port), (sa7), _LEPTONREG, (wait_ms), (data));\
+    }\
+}
+// .pare2addr[0] - 256 of32-bit register addresses, or 0xffffffff for missing ones
+/**
+ * Set parameter for the sensor register and send to hardware i2c sequencer
+ * @param port  sensor port number
+ * @param frame frame number to apply, <0 - ASAP
+ * @param reg   relative register to fit 256 values page
+ * @param data  value to set (16 bits)
+ */
+#define SET_LEPTON_PAR_NOWAIT(port, frame, reg, data) {\
+	int _LEPTONREG = pSensorPortConfig[(port)].par2addr[0][(reg)];\
+	pars_to_update[nupdate  ].num= P_SENSOR_REGS+(reg);\
+    pars_to_update[nupdate++].val=(data);\
+    if (!(_LEPTONREG&0xffff0000)) {\
+    	lepton_set_reg_nowait ((port), (frame), _LEPTONREG, (data));\
+    }\
+}
+
 
 typedef union {
     struct {
@@ -90,6 +149,9 @@ typedef union {
           u32             d32:16; // [15: 0] (0) cast to u32
     };
 } lepton_command_t;
+
+#define LEPTON_MODULE(x) (((x) >> 8) & 0x3f)
+
 
 typedef enum LEPTON_MODULES {
 	LEPTON_AGC = 1,
@@ -130,16 +192,10 @@ int lepton_pgm_detectsensor    (int sensor_port,               ///< sensor port 
 ;
 void lepton_set_device(struct device *dev);
 
-int lepton_wait_ready    (int sensor_port,       ///< sensor port number (0..3)
-                          int sa7,               ///< I2C slave address
-                          int    num_retries );  ///< number of retries, 0 - forever
-                                             ///< @return > 0 number of retries0 - OK, negative - error
-
-void lepton_set_reg_nowait(int               sensor_port,    ///< sensor port number (0..3)
-                           int               frame,          ///< frame number to apply, <0 - ASAP
-						   lepton_modules_t  cmd_module,     ///< Lepton command module
-                           int               cmd_id,         ///< Lepton command id
-                           int               data         ); ///< data to write
+int  lepton_wait_ready     (int sensor_port, int sa7, int num_retries);
+int  lepton_get_reg        (int sensor_port, int sa7, int cmd, int wait_ms);
+int  lepton_set_reg        (int sensor_port, int sa7,   int cmd, int wait_ms, int data);
+void lepton_set_reg_nowait (int sensor_port, int frame, int cmd, int data);
 
 
 

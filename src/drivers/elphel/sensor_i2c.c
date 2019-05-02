@@ -698,8 +698,10 @@ void  write_xi2c_reg16_abs_asap (int chn,  ///< sensor port
         int addr, ///< low byte of the register address (high is in the table), 8 bits
         u32 data) ///< 16 or 8-bit data (LSB aligned), 16 address only for 16 bit data
 {
-//    u32 dw = ((page & 0xff) << 24) | ((addr & 0xff) << 16) | (data & 0xffff);
-    u32 dw = i2c_combine_page_addr_data8_16(chn, page, addr, data);
+	u32 dw = i2c_combine_page_addr_data8_16(chn, page, addr, data);
+	// TODO: change to dev_dbg
+	dev_dbg(sdev, "write_xi2c_reg16_abs_asap(chn=%d, page=0x%x, frame=0x%x addr=0x%x data=0x%x)\n",chn,page,frame,addr,data);
+
     if (frame<0) x393_sensi2c_rel (dw, chn, 0);
     else x393_sensi2c_abs (dw, chn, frame & PARS_FRAMES_MASK);
 }
