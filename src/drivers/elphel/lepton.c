@@ -446,8 +446,7 @@ int lepton_pgm_detectsensor   (int sensor_port,               ///< sensor port n
 
 // **** Was no setting MRST active? Will work just once after loading bitsream ***?
     // turn off power down, set clock, activate reset
-    sensio_ctl.mrst =         0;  sensio_ctl.mrst_set =      1;
-    sensio_ctl.pwdn =         1;  sensio_ctl.pwdn_set =      1;
+    sensio_ctl.reset =        2; // no power down, reset active
     sensio_ctl.mclk =         1;  sensio_ctl.mclk_set =      1;
     sensio_ctl.spi_en =       1; // reset
     sensio_ctl.out_en =       0;  sensio_ctl.out_en_set =    1;
@@ -468,8 +467,7 @@ int lepton_pgm_detectsensor   (int sensor_port,               ///< sensor port n
     // reset mode bits to keep bit field values
     sensio_ctl.d32 = 0;
     // deassert MRST to enable i2c (or is it active always?)
-    sensio_ctl.mrst = 1;
-    sensio_ctl.mrst_set = 1;
+    sensio_ctl.reset =        3; // no power down, no reset
     x393_sensio_ctrl(sensio_ctl,sensor_port);
 
     // wait for sensor to boot and verify it is alive
@@ -546,8 +544,7 @@ int lepton_pgm_initsensor     (int sensor_port,               ///< sensor port n
     if (frame16 >= 0) return -1; // should be ASAP
 
     // turn off power down, set clock, activate reset
-    sensio_ctl.mrst =         0;  sensio_ctl.mrst_set =      1;
-    sensio_ctl.pwdn =         1;  sensio_ctl.pwdn_set =      1;
+    sensio_ctl.reset =        2; // no power down, reset active
     sensio_ctl.mclk =         1;  sensio_ctl.mclk_set =      1;
     sensio_ctl.spi_en =       1; // reset
     sensio_ctl.out_en =       0;  sensio_ctl.out_en_set =    1;
@@ -568,8 +565,7 @@ int lepton_pgm_initsensor     (int sensor_port,               ///< sensor port n
     // reset mode bits to keep bit field values
     sensio_ctl.d32 = 0;
     // deassert MRST to enable i2c (or is it active always?)
-    sensio_ctl.mrst = 1;
-    sensio_ctl.mrst_set = 1;
+    sensio_ctl.reset =        3; // no power down, no reset
     x393_sensio_ctrl(sensio_ctl,sensor_port);
     // wait for sensor to boot and verify it is alive
 //    i = lepton_wait_ready(sensor_port, sensor->i2c_addr, 1000 );
