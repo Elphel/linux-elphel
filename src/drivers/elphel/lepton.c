@@ -262,7 +262,11 @@ static unsigned short sensor_reg_copy[SENSOR_PORTS][256]; ///< Read all 256 sens
 /** Register initial writes for MT9M001 */
 static  unsigned short lepton35_inits[]=
 {
-		P_LEPTON_GP3VSYNC, P_REG_LEPTON_GP3VSYNC_VAL // Enable VSYNC to GPIO3
+		P_LEPTON_GP3VSYNC, P_REG_LEPTON_GP3VSYNC_VAL, // Enable VSYNC to GPIO3
+		P_LEPTON_TELEN,    0,
+		P_LEPTON_TELLOC,   0 // default is 1, 0 - to check that no wait is needed
+		// TODO: if needed - add dummy writes?
+
 };
 
 
@@ -410,12 +414,11 @@ int lepton_pgm_detectsensor   (int sensor_port,               ///< sensor port n
                                                                ///< @return 0 - OK, negative - error
 
 {
-//    u32  i2c_read_dataw;
-    int i;
-    int i2c_data,i2c_rslt;
-//    int sensor_multi_regs_number;
+//    int i;
+//    int i2c_data,i2c_rslt;
     struct sensor_t * psensor; // current sensor
-    x393_sensio_ctl_t sensio_ctl = {.d32=0};
+//    x393_sensio_ctl_t sensio_ctl = {.d32=0};
+    x393_status_sens_io_t status; // check board exists
 //    unsigned short * sensor_multi_regs;
 
     // temporary
@@ -444,6 +447,7 @@ int lepton_pgm_detectsensor   (int sensor_port,               ///< sensor port n
         psensor->i2c_addr = dc->slave7;
     }
 
+#if 0
 // **** Was no setting MRST active? Will work just once after loading bitsream ***?
     // turn off power down, set clock, activate reset
     sensio_ctl.reset =        2; // no power down, reset active
@@ -482,11 +486,20 @@ int lepton_pgm_detectsensor   (int sensor_port,               ///< sensor port n
 			&i2c_data); //int *        datap)    ///< pointer to a data receiver (read data width is defined by class)
 	dev_info(g_dev_ptr,"rslt = %d, d = 0x%x\n",i2c_rslt, i2c_data);
 	dev_info(g_dev_ptr,"Waited for Lepton on port = %d for %d tries\n",sensor_port, i);
-
     if (i <0) {
         dev_info(g_dev_ptr,"No Lepton sensors on port = %d\n",sensor_port);
     	return 0;  // no sensor found
     }
+#else
+//assume Lepton sesnors if there is some sesnor board attached
+    status = x393_sensio_status(sensor_port);
+    if (!status.senspgmin){
+        dev_info(g_dev_ptr,"Some sensor board is attached to port %d, assumimg Lepton 3.5 as FPGA is programmed for it\n",sensor_port);
+    } else {
+        dev_info(g_dev_ptr,"No sesnor board is attached to port %d\n",sensor_port);
+    	return 0;  // no sensor found
+    }
+#endif
 
     // Sensor recognized, go on
     //  memcpy(&sensor, psensor, sizeof(mt9p001)); // copy sensor definitions
@@ -528,26 +541,23 @@ int lepton_pgm_initsensor     (int sensor_port,               ///< sensor port n
 {
     struct frameparspair_t pars_to_update[10];  // for all the sensor registers. Other P_* values will reuse the same ones
     int nupdate=0;
-//    int first_sensor_i2c;
-//    unsigned short * sensor_register_overwrites;
-	int wait_ms= 1;
+//	int wait_ms= 1;
     x393_sensio_ctl_t sensio_ctl = {.d32=0};
-//    u32 i2c_read_data_dw[256];
-//    struct frameparspair_t  pars_to_update[8];
-//    int nupdate=0;
     int i; // ,color;
-//    int regval, regnum, mreg, j;
-//    int sensor_register_overwrites_number;
-//    int sensor_subtype;
+    int first_frame = 1;
+
+    // Will simultaneously reset all sensors (positive signal is OR-ed from all sensors, master channel is sufficient, but all channels is OK too)
+    // FPGA will automatically generate stray start-of-frame, so all parameters will be set then in frame 1 (no reading Lepton registers)
 
     dev_dbg(g_dev_ptr,"lepton_pgm_initsensor(): {%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= 0) return -1; // should be ASAP
 
     // turn off power down, set clock, activate reset
-    sensio_ctl.reset =        2; // no power down, reset active
+    sensio_ctl.reset =        2; // no power down, reset active. During automatic reset cycle reset will be reset
+    sensio_ctl.rst_seq =      1; // initiate selt-timed reset cycle that will generate SOF when done
     sensio_ctl.mclk =         1;  sensio_ctl.mclk_set =      1;
-    sensio_ctl.spi_en =       1; // reset
-    sensio_ctl.out_en =       0;  sensio_ctl.out_en_set =    1;
+    sensio_ctl.spi_en =       3; // enable (after5 reset over) // 1; // reset
+    sensio_ctl.out_en =       1;  sensio_ctl.out_en_set =    1; // so it will generate next SOFsw without any additional intervention
     sensio_ctl.reset_err =    1;
     sensio_ctl.spi_clk =      0;  sensio_ctl.spi_clk_set =   1;
     sensio_ctl.segm_zero =    0;  sensio_ctl.segm_zero_set = 1;
@@ -558,8 +568,9 @@ int lepton_pgm_initsensor     (int sensor_port,               ///< sensor port n
     sensio_ctl.gpio1 =        3; // input
     sensio_ctl.gpio2 =        3; // input
     // Hardware debug source:0-running,1-will_sync,2-vsync_rdy[1],3-discard_segment,4-in_busy,5-out_busy,6-hact,7-sof
-    sensio_ctl.dbg_src =      0;  sensio_ctl.dbg_src_set =  1;
+    sensio_ctl.dbg_src =      6;  sensio_ctl.dbg_src_set =  1; // show HACT
     x393_sensio_ctrl(sensio_ctl,sensor_port);
+#if 0
     // Wait 50000 MASTER_CLK (flir-lepton-engineering-datasheet.pdf, page 18) - 2ms
     udelay1000(3);
     // reset mode bits to keep bit field values
@@ -592,10 +603,32 @@ int lepton_pgm_initsensor     (int sensor_port,               ///< sensor port n
         dev_dbg(g_dev_ptr,"{%d}   SET_LEPTON_PAR_IMMED(0x%x,0x%x)\n",sensor_port,P_SENSOR_REGS+lepton35_inits[2*i],lepton35_inits[2*i+1]);
         sensor_reg_copy[sensor_port][lepton35_inits[2*i]] = lepton35_inits[2*i + 1];
     }
+#else
 
+  #if 0
+    // reset both sequencers to frame 0
+    sequencer_stop_run_reset(sensor_port, SEQ_CMD_RESET);
+    sequencer_stop_run_reset(sensor_port, SEQ_CMD_RUN);  // also programs status update
+    i2c_stop_run_reset      (sensor_port, I2C_CMD_RUN); // also programs status update
 
+    // Can not read shadows in the future, so write only. If needed more registers - manually read defaults
+    // consider only updating shadows (no actual i2c commands) if the defaults are OK
+    dev_dbg(g_dev_ptr,"{%d} Programming Lepton registers to take effect during next frame (frame 1), now\n",sensor_port);
 
-    // Setup VOSPI to generate frame sync  for teh sequencers
+    for (i=0; i< sizeof(lepton35_inits)/ 4;i++ ) { // unconditionally set those registers NOTE: Should be < 63 of them!
+    	// set in immediate mode (with waits), update shadows
+//    	SET_LEPTON_PAR_IMMED(sensor_port, sensor->i2c_addr, lepton35_inits[2*i], lepton35_inits[2*i + 1],wait_ms);
+    	// first wtritten, 3rd - not. ANd no images - trying 1 command/frame
+   	    SET_LEPTON_PAR_NOWAIT(sensor_port, first_frame, lepton35_inits[2*i], lepton35_inits[2*i + 1]); // assuming frame reset, so next frame == 1
+        dev_dbg(g_dev_ptr,"{%d}   ****SET_LEPTON_PAR_NOWAIT(0x%x,0x%x,0x%x,0x%x)\n",sensor_port,sensor_port, first_frame, P_SENSOR_REGS+lepton35_inits[2*i],lepton35_inits[2*i+1]);
+        sensor_reg_copy[sensor_port][lepton35_inits[2*i]] = lepton35_inits[2*i + 1];
+    }
+  #endif
+
+#endif
+
+#if 0
+    // Setup VOSPI to generate frame sync  for the sequencers
     sensio_ctl.d32 = 0;
     sensio_ctl.spi_en =       3; // not reset, enabled
     sensio_ctl.out_en =       1;  sensio_ctl.out_en_set =    1;
@@ -610,6 +643,7 @@ int lepton_pgm_initsensor     (int sensor_port,               ///< sensor port n
     sensio_ctl.gpio2 =        3; // input
     // Hardware debug source:0-running,1-will_sync,2-vsync_rdy[1],3-discard_segment,4-in_busy,5-out_busy,6-hact,7-sof
     sensio_ctl.dbg_src =      0;  sensio_ctl.dbg_src_set =  1;
+#endif
 
     if (sensor_reg_copy[sensor_port][P_LEPTON_GP3VSYNC] == P_REG_LEPTON_GP3VSYNC_VAL) {
     	sensio_ctl.vsync_use =    0;
@@ -618,7 +652,6 @@ int lepton_pgm_initsensor     (int sensor_port,               ///< sensor port n
     	sensio_ctl.vsync_use =    0;
         dev_dbg(g_dev_ptr,"Not using VSYNC on port=%d\n",sensor_port);
     }
-
 	pars_to_update[nupdate  ].num= P_OVERSIZE; // does not work? - comes form autocampars
     pars_to_update[nupdate++].val= 1;
 	pars_to_update[nupdate  ].num= P_WOI_HEIGHT;
@@ -634,7 +667,6 @@ int lepton_pgm_initsensor     (int sensor_port,               ///< sensor port n
         sensio_ctl.telemetry =    0;
     }
     x393_sensio_ctrl(sensio_ctl,sensor_port);
-
 
 
 
