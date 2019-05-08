@@ -885,6 +885,10 @@ int lepton_pgm_limitfps   (int sensor_port,               ///< sensor port numbe
                                                            ///< @return 0 - OK, negative - error
 {
 	// nothing to do here?
+    struct frameparspair_t pars_to_update[2]; // maximum 7 registers updated (need to recount)
+    int nupdate=0;
+    SETFRAMEPARS_SET(P_FP1000S, 8700);
+    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to gains and sensor register shadows
     return 0;
 }
 
