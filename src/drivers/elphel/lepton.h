@@ -58,12 +58,15 @@
 #define P_LEPTON_GP3VSYNC       0x40
 #define P_LEPTON_TELEN          0x41
 #define P_LEPTON_TELLOC         0x42
+#define P_LEPTON_FFC_RUN        0x43
+
 
 // actual values for registers (when reading)
 #define P_REG_LEPTON_GP3VSYNC     0x0854
 #define P_REG_LEPTON_GP3VSYNC_VAL 0x0005
 #define P_REG_LEPTON_TELEN        0x0218
 #define P_REG_LEPTON_TELLOC       0x021c
+#define P_REG_LEPTON_FFC_RUN      0x0242 // "2" in 2 lower bits mean that it is just run, no parameters set
 
 // Actual register address ranges (probably, only even are used too?)
 #define P_REG_LEPTON_DATAF8  0xf800  ///< 0xf800 to 0xf8ff
@@ -196,6 +199,9 @@ int  lepton_wait_ready     (int sensor_port, int sa7, int num_retries);
 int  lepton_get_reg        (int sensor_port, int sa7, int cmd, int wait_ms);
 int  lepton_set_reg        (int sensor_port, int sa7,   int cmd, int wait_ms, int data);
 void lepton_set_reg_nowait (int sensor_port, int frame, int cmd, int data);
+// Maybe not needed?
+int  lepton_run_cmd        (int sensor_port, int sa7, int cmd, int wait_ms);
+void lepton_run_cmd_nowait (int sensor_port, int sa7, int cmd);
 
 
 

@@ -123,14 +123,14 @@ const unsigned short lepton_par2addr[] = {
 		P_LEPTON_DATAFE,      P_REG_LEPTON_DATAFE,
 		P_LEPTON_DATAFF,      P_REG_LEPTON_DATAFF,
 // Registers that are not i2c (see if it will register pages)
-
+//Next (P_LEPTON_GP3VSYNC) is the first non-i2c register
         P_LEPTON_GP3VSYNC,    P_REG_LEPTON_GP3VSYNC, //  0x0854
         P_LEPTON_TELEN,       P_REG_LEPTON_TELEN,    //  0x0218
         P_LEPTON_TELLOC,      P_REG_LEPTON_TELLOC,   //  0x021c
-
+		P_LEPTON_FFC_RUN,     P_REG_LEPTON_FFC_RUN,
 		0xffff // END indicator
 };
-
+#define FIRST_LEPTON_INT P_LEPTON_GP3VSYNC
 
 
 /**
@@ -364,6 +364,8 @@ int lepton_set_reg       (int               sensor_port,      ///< sensor port n
  	 return 0;
 }
 
+
+
 /**
  * Set single internal Lepton register (data length = 1). No wait for not busy,or boot
  */
@@ -372,22 +374,64 @@ void lepton_set_reg_nowait(int              sensor_port,    ///< sensor port num
                           int               frame,          ///< frame number to apply, <0 - ASAP
                           int               cmd,         ///< Lepton command id
                           int               data         ){ ///< data to write
+     int is_cmd = (cmd & 3) == LEPTON_RUN;
 	 cmd |= ((LEPTON_MODULE(cmd) == LEPTON_OEM) || (LEPTON_MODULE(cmd) == LEPTON_RAD)) ? 0x4000: 0;
-	 cmd &= 0xfffc;    // remove possible stray bits
-	 cmd |= LEPTON_SET;
-	 dev_dbg(g_dev_ptr,"lepton_set_reg_nowait(%d, 0x%x, 0x%x, 0x%x)\n", sensor_port, frame, cmd, data);
-	 dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2_LUT(%d, 0x%x, 0x%x, 0x%x\n", sensor_port, frame, P_LEPTON_DATA00, (int) data);
-
-	 X3X3_I2C_SEND2_LUT(sensor_port,frame, 0, P_LEPTON_DATA00,      data);
-
-	 dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2_LUT(%d, 0x%x, 0x%x, 0x%x\n", sensor_port, frame, P_LEPTON_DATA_LENGTH, 1);
-
-	 X3X3_I2C_SEND2_LUT(sensor_port,frame, 0, P_LEPTON_DATA_LENGTH, 1);
+//	 cmd &= 0xfffc;    // remove possible stray bits
+//	 cmd |= LEPTON_SET;
+	 if (is_cmd) {
+		 dev_dbg(g_dev_ptr,"lepton_set_reg_nowait(%d, 0x%x, 0x%x, 0x%x) - just run data ignored\n", sensor_port, frame, cmd, data);
+	 } else {
+		 dev_dbg(g_dev_ptr,"lepton_set_reg_nowait(%d, 0x%x, 0x%x, 0x%x)\n", sensor_port, frame, cmd, data);
+		 dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2_LUT(%d, 0x%x, 0x%x, 0x%x\n", sensor_port, frame, P_LEPTON_DATA00, (int) data);
+		 X3X3_I2C_SEND2_LUT(sensor_port,frame, 0, P_LEPTON_DATA00,      data);
+		 dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2_LUT(%d, 0x%x, 0x%x, 0x%x\n", sensor_port, frame, P_LEPTON_DATA_LENGTH, 1);
+		 X3X3_I2C_SEND2_LUT(sensor_port,frame, 0, P_LEPTON_DATA_LENGTH, 1);
+	 }
 
 	 dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2_LUT(%d, 0x%x, 0x%x, 0x%x\n", sensor_port, frame, P_LEPTON_COMMAND_ID, (int) cmd);
 
 	 X3X3_I2C_SEND2_LUT(sensor_port,frame, 0, P_LEPTON_COMMAND_ID,  cmd);
 }
+
+
+/**
+ * Run Lepton command w/o parameters in immediate mode, wait no longer than specified (in ms)
+ */
+
+int lepton_run_cmd       (int               sensor_port,      ///< sensor port number (0..3)
+						  int               sa7,              ///< I2C slave address
+                          int               cmd,              ///< Lepton command id
+                          int               wait_ms){          ///< milliseconds to wait for ready (if >0)
+     int ierr = 0;
+	 dev_dbg(g_dev_ptr,"lepton_run_cmd(%d, 0x%x, 0x%x, %d)\n", sensor_port, sa7, cmd, wait_ms);
+
+	 if (wait_ms > 0){
+		 ierr = lepton_wait_ready(sensor_port,  sa7, wait_ms );
+		 if (ierr <0) return ierr;
+	 }
+	 lepton_run_cmd_nowait(sensor_port, -1, cmd);
+ 	 return 0;
+}
+
+/**
+ * Run Lepton command w/o parameters. No wait for not busy,or boot
+ */
+
+void lepton_run_cmd_nowait(int              sensor_port,    ///< sensor port number (0..3)
+                          int               frame,          ///< frame number to apply, <0 - ASAP
+                          int               cmd){         ///< Lepton command id
+	 cmd |= ((LEPTON_MODULE(cmd) == LEPTON_OEM) || (LEPTON_MODULE(cmd) == LEPTON_RAD)) ? 0x4000: 0;
+	 cmd &= 0xfffc;    // remove possible stray bits
+	 cmd |= LEPTON_RUN;
+	 dev_dbg(g_dev_ptr,"lepton_run_cmd_nowait(%d, 0x%x, 0x%x)\n", sensor_port, frame, cmd);
+
+	 dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2_LUT(%d, 0x%x, 0x%x, 0x%x\n", sensor_port, frame, P_LEPTON_COMMAND_ID, (int) cmd);
+
+	 X3X3_I2C_SEND2_LUT(sensor_port,frame, 0, P_LEPTON_COMMAND_ID,  cmd);
+}
+
+
+
 
 
 /**
@@ -605,7 +649,8 @@ int lepton_pgm_initsensor     (int sensor_port,               ///< sensor port n
     }
 #else
 
-  #if 0
+    // Was disabled
+  #if 1
     // reset both sequencers to frame 0
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RESET);
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RUN);  // also programs status update
@@ -652,7 +697,7 @@ int lepton_pgm_initsensor     (int sensor_port,               ///< sensor port n
     	sensio_ctl.vsync_use =    0;
         dev_dbg(g_dev_ptr,"Not using VSYNC on port=%d\n",sensor_port);
     }
-	pars_to_update[nupdate  ].num= P_OVERSIZE; // does not work? - comes form autocampars
+	pars_to_update[nupdate  ].num= P_OVERSIZE; // does not work? - comes from autocampars
     pars_to_update[nupdate++].val= 1;
 	pars_to_update[nupdate  ].num= P_WOI_HEIGHT;
 
@@ -963,6 +1008,41 @@ int lepton_pgm_sensorregs     (int sensor_port,               ///< sensor port n
                                                                ///< @return 0 - OK, negative - error
 
 {
+    unsigned long bmask32= ((thispars->mod32) >> (P_SENSOR_REGS>>5)) & (( 1 << (P_SENSOR_NUMREGS >> 5))-1) ;
+    unsigned long mask;
+    int index,index32, reg_index;
+    struct frameparspair_t pars_to_update[sizeof(lepton_par2addr)/sizeof(short)/2]; ///
+    int nupdate=0;
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
+    if (frame16 >= PARS_FRAMES) return -1; // wrong frame
+    dev_dbg(g_dev_ptr,"{%d}  bmask32=0x%lx, thispars->mod32=0x%lx, P_SENSOR_REGS=0x%x, P_SENSOR_NUMREGS=0x%x\n",sensor_port,bmask32,thispars->mod32,P_SENSOR_REGS,P_SENSOR_NUMREGS);
+
+	if (bmask32) {
+		for (index32=(P_SENSOR_REGS>>5); bmask32; index32++, bmask32 >>= 1) {
+			dev_dbg(g_dev_ptr,"{%d}  index32=0x%x, bmask32=0x%lx\n",sensor_port,index32,bmask32);
+			if (bmask32 & 1) {
+				mask=thispars->mod[index32];
+				dev_dbg(g_dev_ptr,"{%d}  mask=0x%lx\n",sensor_port,mask);
+				for (index=(index32<<5); mask; index++, mask >>= 1) {
+					reg_index = (index-P_SENSOR_REGS);
+					if (mask & 1) {
+						if (reg_index >= FIRST_LEPTON_INT) {
+//								X3X3_I2C_SEND2(sensor_port, frame16, sensor->i2c_addr,reg_index,thispars->pars[index]);
+							SET_LEPTON_PAR_NOWAIT(sensor_port, frame16, reg_index, thispars->pars[index]);
+							dev_dbg(g_dev_ptr,"{%d} SET_LEPTON_PAR_NOWAIT(0x%x, 0x%x, 0x%lx,0x%x,0x%lx)\n",sensor_port,sensor_port, frame16,reg_index,thispars->pars[index]);
+						}else {
+							X3X3_I2C_SEND2(sensor_port, frame16, sensor->i2c_addr,reg_index,thispars->pars[index]);
+							dev_dbg(g_dev_ptr,"{%d} X3X3_I2C_SEND2(0x%x, 0x%x, 0x%lx,0x%x,0x%lx)\n",sensor_port,sensor_port, frame16,sensor->i2c_addr,reg_index,thispars->pars[index]);
+						}
+					}
+				}
+				thispars->mod[index32]=0;
+			}
+		}
+		thispars->mod32=0;
+	}
+    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
+
     //  send all parameters marked as "needed to be processed" to the sensor, clear those flags
     // mask out all non sensor pars
     //  unsigned long bmask32= ((thispars->mod32) >> (P_SENSOR_REGS>>5)) & (P_SENSOR_NUMREGS-1) ;
