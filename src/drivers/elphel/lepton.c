@@ -259,12 +259,12 @@ static unsigned short sensor_reg_copy[SENSOR_PORTS][256]; ///< Read all 256 sens
 
 // a place to add some general purpose register writes to sensors during init
 
-/** Register initial writes for MT9M001 */
+/** Register initial writes for LEPTON35 */
 static  unsigned short lepton35_inits[]=
 {
 		P_LEPTON_GP3VSYNC, P_REG_LEPTON_GP3VSYNC_VAL, // Enable VSYNC to GPIO3
 		P_LEPTON_TELEN,    0,
-		P_LEPTON_TELLOC,   0 // default is 1, 0 - to check that no wait is needed
+		P_LEPTON_TELLOC,   1 // 0 // default is 1, 0 - to check that no wait is needed
 		// TODO: if needed - add dummy writes?
 
 };
@@ -381,6 +381,8 @@ void lepton_set_reg_nowait(int              sensor_port,    ///< sensor port num
 	 if (is_cmd) {
 		 dev_dbg(g_dev_ptr,"lepton_set_reg_nowait(%d, 0x%x, 0x%x, 0x%x) - just run data ignored\n", sensor_port, frame, cmd, data);
 	 } else {
+		 cmd &= 0xfffc;    // remove possible stray bits
+		 cmd |= LEPTON_SET;
 		 dev_dbg(g_dev_ptr,"lepton_set_reg_nowait(%d, 0x%x, 0x%x, 0x%x)\n", sensor_port, frame, cmd, data);
 		 dev_dbg(g_dev_ptr,"X3X3_I2C_SEND2_LUT(%d, 0x%x, 0x%x, 0x%x\n", sensor_port, frame, P_LEPTON_DATA00, (int) data);
 		 X3X3_I2C_SEND2_LUT(sensor_port,frame, 0, P_LEPTON_DATA00,      data);
@@ -658,8 +660,10 @@ int lepton_pgm_initsensor     (int sensor_port,               ///< sensor port n
 
     // Can not read shadows in the future, so write only. If needed more registers - manually read defaults
     // consider only updating shadows (no actual i2c commands) if the defaults are OK
-    dev_dbg(g_dev_ptr,"{%d} Programming Lepton registers to take effect during next frame (frame 1), now\n",sensor_port);
-
+    dev_dbg(g_dev_ptr,"{%d} Programming Lepton registers to take effect during next frame (frame 1 = 0x%x), now 0x%x, frame16=0x%x\n",
+    		sensor_port, first_frame,  GLOBALPARS(sensor_port,G_THIS_FRAME), frame16  );
+// GLOBALPARS(p,G_THIS_FRAME)
+// thisFrameNumber(sensor_port)
     for (i=0; i< sizeof(lepton35_inits)/ 4;i++ ) { // unconditionally set those registers NOTE: Should be < 63 of them!
     	// set in immediate mode (with waits), update shadows
 //    	SET_LEPTON_PAR_IMMED(sensor_port, sensor->i2c_addr, lepton35_inits[2*i], lepton35_inits[2*i + 1],wait_ms);
@@ -1029,7 +1033,8 @@ int lepton_pgm_sensorregs     (int sensor_port,               ///< sensor port n
 						if (reg_index >= FIRST_LEPTON_INT) {
 //								X3X3_I2C_SEND2(sensor_port, frame16, sensor->i2c_addr,reg_index,thispars->pars[index]);
 							SET_LEPTON_PAR_NOWAIT(sensor_port, frame16, reg_index, thispars->pars[index]);
-							dev_dbg(g_dev_ptr,"{%d} SET_LEPTON_PAR_NOWAIT(0x%x, 0x%x, 0x%lx,0x%x,0x%lx)\n",sensor_port,sensor_port, frame16,reg_index,thispars->pars[index]);
+							dev_dbg(g_dev_ptr,"{%d} SET_LEPTON_PAR_NOWAIT(0x%x, 0x%x, 0x%lx,0x%lx)\n",
+									sensor_port,sensor_port, frame16,reg_index,thispars->pars[index]);
 						}else {
 							X3X3_I2C_SEND2(sensor_port, frame16, sensor->i2c_addr,reg_index,thispars->pars[index]);
 							dev_dbg(g_dev_ptr,"{%d} X3X3_I2C_SEND2(0x%x, 0x%x, 0x%lx,0x%x,0x%lx)\n",sensor_port,sensor_port, frame16,sensor->i2c_addr,reg_index,thispars->pars[index]);
