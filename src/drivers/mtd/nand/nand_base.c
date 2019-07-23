@@ -1388,6 +1388,138 @@ int nand_check_erased_ecc_chunk(void *data, int datalen,
 EXPORT_SYMBOL(nand_check_erased_ecc_chunk);
 
 /**
+ * nand_unlock - [REPLACEABLE] unlocks specified locked blocks
+ * @mtd: mtd info
+ * @ofs: offset to start unlock from
+ * @len: length to unlock
+ *
+ * Returns unlock status.
+ */
+int nand_unlock(struct mtd_info *mtd, loff_t ofs, uint64_t len)
+{
+	int ret = 0;
+	int chipnr;
+	struct nand_chip *chip = mtd->priv;
+
+	pr_debug("%s: start = 0x%012llx, len = %llu\n",
+			__func__, (unsigned long long)ofs, len);
+
+	if (check_offs_len(mtd, ofs, len))
+		ret = -EINVAL;
+
+	/* Align to last block address if size addresses end of the device */
+	if (ofs + len == mtd->size)
+		len -= mtd->erasesize;
+
+	nand_get_device(mtd, FL_UNLOCKING);
+
+	/* Shift to get chip number */
+	chipnr = ofs >> chip->chip_shift;
+
+	chip->select_chip(mtd, chipnr);
+
+	/*
+	 * Reset the chip.
+	 * If we want to check the WP through READ STATUS and check the bit 7
+	 * we must reset the chip
+	 * some operation can also clear the bit 7 of status register
+	 * eg. erase/program a locked block
+	 */
+	chip->cmdfunc(mtd, NAND_CMD_RESET, -1, -1);
+
+	/* Check, if it is write protected */
+	if (nand_check_wp(mtd)) {
+		pr_debug("%s: device is write protected!\n",
+					__func__);
+		ret = -EIO;
+		goto out;
+	}
+
+	ret = __nand_unlock(mtd, ofs, len, 0);
+
+out:
+	chip->select_chip(mtd, -1);
+	nand_release_device(mtd);
+
+	return ret;
+}
+EXPORT_SYMBOL(nand_unlock);
+
+/**
+ * nand_lock - [REPLACEABLE] locks all blocks present in the device
+ * @mtd: mtd info
+ * @ofs: offset to start unlock from
+ * @len: length to unlock
+ *
+ * This feature is not supported in many NAND parts. 'Micron' NAND parts do
+ * have this feature, but it allows only to lock all blocks, not for specified
+ * range for block. Implementing 'lock' feature by making use of 'unlock', for
+ * now.
+ *
+ * Returns lock status.
+ */
+int nand_lock(struct mtd_info *mtd, loff_t ofs, uint64_t len)
+{
+	int ret = 0;
+	int chipnr, status, page;
+	struct nand_chip *chip = mtd->priv;
+
+	pr_debug("%s: start = 0x%012llx, len = %llu\n",
+			__func__, (unsigned long long)ofs, len);
+
+	if (check_offs_len(mtd, ofs, len))
+		ret = -EINVAL;
+
+	nand_get_device(mtd, FL_LOCKING);
+
+	/* Shift to get chip number */
+	chipnr = ofs >> chip->chip_shift;
+
+	chip->select_chip(mtd, chipnr);
+
+	/*
+	 * Reset the chip.
+	 * If we want to check the WP through READ STATUS and check the bit 7
+	 * we must reset the chip
+	 * some operation can also clear the bit 7 of status register
+	 * eg. erase/program a locked block
+	 */
+	chip->cmdfunc(mtd, NAND_CMD_RESET, -1, -1);
+
+	/* Check, if it is write protected */
+	if (nand_check_wp(mtd)) {
+		pr_debug("%s: device is write protected!\n",
+					__func__);
+		status = MTD_ERASE_FAILED;
+		ret = -EIO;
+		goto out;
+	}
+
+	/* Submit address of first page to lock */
+	page = ofs >> chip->page_shift;
+	chip->cmdfunc(mtd, NAND_CMD_LOCK, -1, page & chip->pagemask);
+
+	/* Call wait ready function */
+	status = chip->waitfunc(mtd, chip);
+	/* See if device thinks it succeeded */
+	if (status & NAND_STATUS_FAIL) {
+		pr_debug("%s: error status = 0x%08x\n",
+					__func__, status);
+		ret = -EIO;
+		goto out;
+	}
+
+	ret = __nand_unlock(mtd, ofs, len, 0x1);
+
+out:
+	chip->select_chip(mtd, -1);
+	nand_release_device(mtd);
+
+	return ret;
+}
+EXPORT_SYMBOL(nand_lock);
+
+/**
  * nand_read_page_raw - [INTERN] read raw page data without ecc
  * @mtd: mtd info structure
  * @chip: nand chip info structure
