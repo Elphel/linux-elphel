@@ -21,7 +21,7 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/mtd/mtd.h>
-#include <linux/mtd/nand.h>
+#include <linux/mtd/rawnand.h>
 #include <linux/mtd/nand_ecc.h>
 #include <linux/mtd/partitions.h>
 #include <linux/of_address.h>
@@ -171,7 +171,7 @@ static int pl35x_ecc_ooblayout64_ecc(struct mtd_info *mtd, int section,
 	if (section >= chip->ecc.steps)
 		return -ERANGE;
 
-	oobregion->offset = (section * 16) + 52;
+	oobregion->offset = (section * chip->ecc.bytes) + 52;
 	oobregion->length = chip->ecc.bytes;
 
 	return 0;
@@ -182,10 +182,12 @@ static int pl35x_ecc_ooblayout64_free(struct mtd_info *mtd, int section,
 {
 	struct nand_chip *chip = mtd_to_nand(mtd);
 
+	if (section)
+		return -ERANGE;
 	if (section >= chip->ecc.steps)
 		return -ERANGE;
 
-	oobregion->offset = (section * 16) + 2;
+	oobregion->offset = (section * chip->ecc.bytes) + 2;
 
 	oobregion->length = 50;
 
@@ -296,7 +298,7 @@ static int pl35x_nand_calculate_hwecc(struct mtd_info *mtd,
 		if (ecc_status & 0x40) {
 			for (ecc_byte = 0; ecc_byte < 3; ecc_byte++) {
 				/* Copy ECC bytes to MTD buffer */
-				*ecc_code = ecc_value & 0xFF;
+				*ecc_code = ~ecc_value & 0xFF;
 				ecc_value = ecc_value >> 8;
 				ecc_code++;
 			}
@@ -386,6 +388,10 @@ static int pl35x_nand_read_oob(struct mtd_info *mtd, struct nand_chip *chip,
 	unsigned long data_phase_addr;
 	uint8_t *p;
 
+	struct pl35x_nand_info *xnand =
+		container_of(chip, struct pl35x_nand_info, chip);
+	unsigned long nand_offset = (unsigned long __force)xnand->nand_base;
+
 	chip->cmdfunc(mtd, NAND_CMD_READOOB, 0, page);
 
 	p = chip->oob_poi;
@@ -394,7 +400,9 @@ static int pl35x_nand_read_oob(struct mtd_info *mtd, struct nand_chip *chip,
 	p += (mtd->oobsize - PL35X_NAND_LAST_TRANSFER_LENGTH);
 
 	data_phase_addr = (unsigned long __force)chip->IO_ADDR_R;
+	data_phase_addr -= nand_offset;
 	data_phase_addr |= PL35X_NAND_CLEAR_CS;
+	data_phase_addr += nand_offset;
 	chip->IO_ADDR_R = (void __iomem * __force)data_phase_addr;
 	chip->read_buf(mtd, p, PL35X_NAND_LAST_TRANSFER_LENGTH);
 
@@ -415,6 +423,9 @@ static int pl35x_nand_write_oob(struct mtd_info *mtd, struct nand_chip *chip,
 	int status = 0;
 	const uint8_t *buf = chip->oob_poi;
 	unsigned long data_phase_addr;
+	struct pl35x_nand_info *xnand =
+		container_of(chip, struct pl35x_nand_info, chip);
+	unsigned long nand_offset = (unsigned long __force)xnand->nand_base;
 
 	chip->cmdfunc(mtd, NAND_CMD_SEQIN, mtd->writesize, page);
 
@@ -423,8 +434,10 @@ static int pl35x_nand_write_oob(struct mtd_info *mtd, struct nand_chip *chip,
 	buf += (mtd->oobsize - PL35X_NAND_LAST_TRANSFER_LENGTH);
 
 	data_phase_addr = (unsigned long __force)chip->IO_ADDR_W;
+	data_phase_addr -= nand_offset;
 	data_phase_addr |= PL35X_NAND_CLEAR_CS;
 	data_phase_addr |= (1 << END_CMD_VALID_SHIFT);
+	data_phase_addr += nand_offset;
 	chip->IO_ADDR_W = (void __iomem * __force)data_phase_addr;
 	chip->write_buf(mtd, buf, PL35X_NAND_LAST_TRANSFER_LENGTH);
 
@@ -433,6 +446,79 @@ static int pl35x_nand_write_oob(struct mtd_info *mtd, struct nand_chip *chip,
 	status = chip->waitfunc(mtd, chip);
 
 	return (status & NAND_STATUS_FAIL) ? -EIO : 0;
+}
+
+/**
+ * pl35x_nand_read_page_ondie - [Intern] read page data with ondie ecc
+ * @mtd:		Pointer to the mtd info structure
+ * @chip:		Pointer to the NAND chip info structure
+ * @buf:		Pointer to the data buffer
+ * @oob_required:	Caller requires OOB data read to chip->oob_poi
+ * @page:		Page number to read
+ *
+ * Return:	Always return zero
+ */
+static int pl35x_nand_read_page_ondie(struct mtd_info *mtd,
+				      struct nand_chip *chip,
+				      u8 *buf, int oob_required, int page)
+{
+	unsigned long data_phase_addr;
+	u8 *p;
+	struct pl35x_nand_info *xnand =
+		container_of(chip, struct pl35x_nand_info, chip);
+	unsigned long nand_offset = (unsigned long __force)xnand->nand_base;
+	int status;
+
+	chip->read_buf(mtd, buf, mtd->writesize);
+
+	p = chip->oob_poi;
+	chip->read_buf(mtd, p,
+			(mtd->oobsize - PL35X_NAND_LAST_TRANSFER_LENGTH));
+	p += (mtd->oobsize - PL35X_NAND_LAST_TRANSFER_LENGTH);
+
+	data_phase_addr = (unsigned long __force)chip->IO_ADDR_R;
+	data_phase_addr -= nand_offset;
+	data_phase_addr |= PL35X_NAND_CLEAR_CS;
+	data_phase_addr += nand_offset;
+	chip->IO_ADDR_R = (void __iomem * __force)data_phase_addr;
+
+	chip->read_buf(mtd, p, PL35X_NAND_LAST_TRANSFER_LENGTH);
+
+	/* Check ECC info */
+	chip->cmdfunc(mtd, NAND_CMD_STATUS, -1, -1);
+	status = (int)chip->read_byte(mtd);
+	if (!(status & NAND_STATUS_READY)) {
+		pr_err("%s: page %d status=%#x - transfer not finished!\n",
+		       __func__, page, status);
+		ndelay(100);
+		if (!(status & NAND_STATUS_READY))
+			return -EIO;
+	}
+/* UnCorrectable Error bitflips. 5+ on our chip */
+#define NAND_UCE_BITS   5
+	if (status & NAND_STATUS_FAIL) {
+		pr_warn("%s: page %d status=%#x - ECC Uncorrectable Error\n",
+			__func__, page, status);
+		/*
+		 * Note: don't return -EIO which means no data and is fatal
+		 * during a filesystem mount.
+		 * Instead return NAND_UCE_BITS bitflips and increment
+		 * the uncorrectable error count. This allows the layer above
+		 * (such as UBI) to know data is present but corrupt and to
+		 * be safely manage if its only a EC or VI page.
+		 */
+		mtd->ecc_stats.failed++;
+		return NAND_UCE_BITS;
+	}
+#define NAND_STATUS_ECC_COR BIT(3) /* Correctable error */
+	if (status & NAND_STATUS_ECC_COR) {
+		pr_info("%s: page %d status=%#x - ECC Correctable error\n",
+			__func__, page, status);
+		mtd->ecc_stats.corrected++;
+		return 1;
+	}
+
+	return 0;
 }
 
 /**
@@ -451,6 +537,9 @@ static int pl35x_nand_read_page_raw(struct mtd_info *mtd,
 {
 	unsigned long data_phase_addr;
 	uint8_t *p;
+	struct pl35x_nand_info *xnand =
+		container_of(chip, struct pl35x_nand_info, chip);
+	unsigned long nand_offset = (unsigned long __force)xnand->nand_base;
 
 	chip->read_buf(mtd, buf, mtd->writesize);
 
@@ -460,7 +549,9 @@ static int pl35x_nand_read_page_raw(struct mtd_info *mtd,
 	p += (mtd->oobsize - PL35X_NAND_LAST_TRANSFER_LENGTH);
 
 	data_phase_addr = (unsigned long __force)chip->IO_ADDR_R;
+	data_phase_addr -= nand_offset;
 	data_phase_addr |= PL35X_NAND_CLEAR_CS;
+	data_phase_addr += nand_offset;
 	chip->IO_ADDR_R = (void __iomem * __force)data_phase_addr;
 
 	chip->read_buf(mtd, p, PL35X_NAND_LAST_TRANSFER_LENGTH);
@@ -473,6 +564,7 @@ static int pl35x_nand_read_page_raw(struct mtd_info *mtd,
  * @chip:		Pointer to the NAND chip info structure
  * @buf:		Pointer to the data buffer
  * @oob_required:	Caller requires OOB data read to chip->oob_poi
+ * @page:		Page number to write
  *
  * Return:	Always return zero
  */
@@ -483,6 +575,9 @@ static int pl35x_nand_write_page_raw(struct mtd_info *mtd,
 {
 	unsigned long data_phase_addr;
 	uint8_t *p;
+	struct pl35x_nand_info *xnand =
+		container_of(chip, struct pl35x_nand_info, chip);
+	unsigned long nand_offset = (unsigned long __force)xnand->nand_base;
 
 	chip->write_buf(mtd, buf, mtd->writesize);
 
@@ -492,8 +587,10 @@ static int pl35x_nand_write_page_raw(struct mtd_info *mtd,
 	p += (mtd->oobsize - PL35X_NAND_LAST_TRANSFER_LENGTH);
 
 	data_phase_addr = (unsigned long __force)chip->IO_ADDR_W;
+	data_phase_addr -= nand_offset;
 	data_phase_addr |= PL35X_NAND_CLEAR_CS;
 	data_phase_addr |= (1 << END_CMD_VALID_SHIFT);
+	data_phase_addr += nand_offset;
 	chip->IO_ADDR_W = (void __iomem * __force)data_phase_addr;
 
 	chip->write_buf(mtd, p, PL35X_NAND_LAST_TRANSFER_LENGTH);
@@ -507,6 +604,7 @@ static int pl35x_nand_write_page_raw(struct mtd_info *mtd,
  * @chip:		Pointer to the NAND chip info structure
  * @buf:		Pointer to the data buffer
  * @oob_required:	Caller requires OOB data read to chip->oob_poi
+ * @page:		Page number to write
  *
  * This functions writes data and hardware generated ECC values in to the page.
  *
@@ -523,6 +621,9 @@ static int pl35x_nand_write_page_hwecc(struct mtd_info *mtd,
 	unsigned long data_phase_addr;
 	uint8_t *oob_ptr;
 	u32 ret;
+	struct pl35x_nand_info *xnand =
+		container_of(chip, struct pl35x_nand_info, chip);
+	unsigned long nand_offset = (unsigned long __force)xnand->nand_base;
 
 	for ( ; (eccsteps - 1); eccsteps--) {
 		chip->write_buf(mtd, p, eccsize);
@@ -533,7 +634,9 @@ static int pl35x_nand_write_page_hwecc(struct mtd_info *mtd,
 
 	/* Set ECC Last bit to 1 */
 	data_phase_addr = (unsigned long __force)chip->IO_ADDR_W;
+	data_phase_addr -= nand_offset;
 	data_phase_addr |= PL35X_NAND_ECC_LAST;
+	data_phase_addr += nand_offset;
 	chip->IO_ADDR_W = (void __iomem * __force)data_phase_addr;
 	chip->write_buf(mtd, p, PL35X_NAND_LAST_TRANSFER_LENGTH);
 
@@ -547,7 +650,9 @@ static int pl35x_nand_write_page_hwecc(struct mtd_info *mtd,
 		return ret;
 	/* Clear ECC last bit */
 	data_phase_addr = (unsigned long __force)chip->IO_ADDR_W;
+	data_phase_addr -= nand_offset;
 	data_phase_addr &= ~PL35X_NAND_ECC_LAST;
+	data_phase_addr += nand_offset;
 	chip->IO_ADDR_W = (void __iomem * __force)data_phase_addr;
 
 	/* Write the spare area with ECC bytes */
@@ -556,8 +661,10 @@ static int pl35x_nand_write_page_hwecc(struct mtd_info *mtd,
 			(mtd->oobsize - PL35X_NAND_LAST_TRANSFER_LENGTH));
 
 	data_phase_addr = (unsigned long __force)chip->IO_ADDR_W;
+	data_phase_addr -= nand_offset;
 	data_phase_addr |= PL35X_NAND_CLEAR_CS;
 	data_phase_addr |= (1 << END_CMD_VALID_SHIFT);
+	data_phase_addr += nand_offset;
 	chip->IO_ADDR_W = (void __iomem * __force)data_phase_addr;
 	oob_ptr += (mtd->oobsize - PL35X_NAND_LAST_TRANSFER_LENGTH);
 	chip->write_buf(mtd, oob_ptr, PL35X_NAND_LAST_TRANSFER_LENGTH);
@@ -571,6 +678,7 @@ static int pl35x_nand_write_page_hwecc(struct mtd_info *mtd,
  * @chip:		Pointer to the NAND chip info structure
  * @buf:		Pointer to the data buffer
  * @oob_required:	Caller requires OOB data read to chip->oob_poi
+ * @page:		Page number to write
  *
  * Return:	Always return zero
  */
@@ -623,6 +731,9 @@ static int pl35x_nand_read_page_hwecc(struct mtd_info *mtd,
 	unsigned long data_phase_addr;
 	uint8_t *oob_ptr;
 	u32 ret;
+	struct pl35x_nand_info *xnand =
+		container_of(chip, struct pl35x_nand_info, chip);
+	unsigned long nand_offset = (unsigned long __force)xnand->nand_base;
 
 	for ( ; (eccsteps - 1); eccsteps--) {
 		chip->read_buf(mtd, p, eccsize);
@@ -633,7 +744,9 @@ static int pl35x_nand_read_page_hwecc(struct mtd_info *mtd,
 
 	/* Set ECC Last bit to 1 */
 	data_phase_addr = (unsigned long __force)chip->IO_ADDR_R;
+	data_phase_addr -= nand_offset;
 	data_phase_addr |= PL35X_NAND_ECC_LAST;
+	data_phase_addr += nand_offset;
 	chip->IO_ADDR_R = (void __iomem * __force)data_phase_addr;
 	chip->read_buf(mtd, p, PL35X_NAND_LAST_TRANSFER_LENGTH);
 
@@ -643,7 +756,9 @@ static int pl35x_nand_read_page_hwecc(struct mtd_info *mtd,
 
 	/* Clear ECC last bit */
 	data_phase_addr = (unsigned long __force)chip->IO_ADDR_R;
+	data_phase_addr -= nand_offset;
 	data_phase_addr &= ~PL35X_NAND_ECC_LAST;
+	data_phase_addr += nand_offset;
 	chip->IO_ADDR_R = (void __iomem * __force)data_phase_addr;
 
 	/* Read the stored ECC value */
@@ -653,7 +768,9 @@ static int pl35x_nand_read_page_hwecc(struct mtd_info *mtd,
 
 	/* de-assert chip select */
 	data_phase_addr = (unsigned long __force)chip->IO_ADDR_R;
+	data_phase_addr -= nand_offset;
 	data_phase_addr |= PL35X_NAND_CLEAR_CS;
+	data_phase_addr += nand_offset;
 	chip->IO_ADDR_R = (void __iomem * __force)data_phase_addr;
 
 	oob_ptr += (mtd->oobsize - PL35X_NAND_LAST_TRANSFER_LENGTH);
@@ -707,6 +824,8 @@ static int pl35x_nand_read_page_swecc(struct mtd_info *mtd,
 
 	ret = mtd_ooblayout_get_eccbytes(mtd, ecc_calc, chip->oob_poi,
 						0, chip->ecc.total);
+	if (ret)
+		return ret;
 
 	eccsteps = chip->ecc.steps;
 	p = buf;
@@ -726,14 +845,34 @@ static int pl35x_nand_read_page_swecc(struct mtd_info *mtd,
 /**
  * pl35x_nand_select_chip - Select the flash device
  * @mtd:	Pointer to the mtd info structure
- * @chip:	Pointer to the NAND chip info structure
+ * @chipnr:	chipnumber to select, -1 for deselect
  *
  * This function is empty as the NAND controller handles chip select line
  * internally based on the chip address passed in command and data phase.
  */
-static void pl35x_nand_select_chip(struct mtd_info *mtd, int chip)
+static void pl35x_nand_select_chip(struct mtd_info *mtd, int chipnr)
 {
-	return;
+	unsigned long data_phase_addr;
+	struct pl35x_nand_info *xnand;
+	unsigned long nand_offset;
+	struct nand_chip *chip;
+
+	/*
+	 * Chip selection will happen in command/data operation
+	 */
+	if (chipnr >= 0)
+		return;
+
+	/* de-assert chip select */
+	chip = mtd_to_nand(mtd);
+	data_phase_addr = (unsigned long __force)chip->IO_ADDR_R;
+	xnand = container_of(chip, struct pl35x_nand_info, chip);
+	nand_offset = (unsigned long __force)xnand->nand_base;
+	data_phase_addr -= nand_offset;
+	data_phase_addr |= PL35X_NAND_CLEAR_CS;
+	data_phase_addr += nand_offset;
+	chip->IO_ADDR_R = (void __iomem * __force)data_phase_addr;
+	chip->read_byte(mtd);
 }
 
 /**
@@ -746,11 +885,6 @@ static void pl35x_nand_select_chip(struct mtd_info *mtd, int chip)
 static void pl35x_nand_cmd_function(struct mtd_info *mtd, unsigned int command,
 				 int column, int page_addr)
 {
-
-	if (command == NAND_CMD_READ0) pr_debug("NAND READ\n");
-	if (command == NAND_CMD_UNLOCK1) pr_debug("NAND UNLOCK1\n");
-	if (command == NAND_CMD_SET_FEATURES) pr_debug("NAND NAND_CMD_SET_FEATURES\n");
-
 	struct nand_chip *chip = mtd_to_nand(mtd);
 	const struct pl35x_nand_command_format *curr_cmd = NULL;
 	struct pl35x_nand_info *xnand =
@@ -808,24 +942,24 @@ static void pl35x_nand_cmd_function(struct mtd_info *mtd, unsigned int command,
 	else
 		addrcycles = curr_cmd->addr_cycles;
 
-	cmd_phase_addr = (unsigned long __force)xnand->nand_base        |
-			 (addrcycles << ADDR_CYCLES_SHIFT)    |
-			 (end_cmd_valid << END_CMD_VALID_SHIFT)          |
-			 (COMMAND_PHASE)                                 |
-			 (end_cmd << END_CMD_SHIFT)                      |
-			 (curr_cmd->start_cmd << START_CMD_SHIFT);
+	cmd_phase_addr = (unsigned long __force)xnand->nand_base + (
+			 (addrcycles << ADDR_CYCLES_SHIFT)		|
+			 (end_cmd_valid << END_CMD_VALID_SHIFT)		|
+			 (COMMAND_PHASE)				|
+			 (end_cmd << END_CMD_SHIFT)			|
+			 (curr_cmd->start_cmd << START_CMD_SHIFT));
 
 	cmd_addr = (void __iomem * __force)cmd_phase_addr;
 
 	/* Get the data phase address */
 	end_cmd_valid = 0;
 
-	data_phase_addr = (unsigned long __force)xnand->nand_base       |
-			  (0x0 << CLEAR_CS_SHIFT)                         |
-			  (end_cmd_valid << END_CMD_VALID_SHIFT)          |
-			  (DATA_PHASE)                                    |
-			  (end_cmd << END_CMD_SHIFT)                      |
-			  (0x0 << ECC_LAST_SHIFT);
+	data_phase_addr = (unsigned long __force)xnand->nand_base + (
+			  (0x0 << CLEAR_CS_SHIFT)			|
+			  (end_cmd_valid << END_CMD_VALID_SHIFT)	|
+			  (DATA_PHASE)					|
+			  (end_cmd << END_CMD_SHIFT)			|
+			  (0x0 << ECC_LAST_SHIFT));
 
 	chip->IO_ADDR_R = (void __iomem * __force)data_phase_addr;
 	chip->IO_ADDR_W = chip->IO_ADDR_R;
@@ -922,8 +1056,6 @@ static void pl35x_nand_write_buf(struct mtd_info *mtd, const uint8_t *buf,
 	struct nand_chip *chip = mtd_to_nand(mtd);
 	unsigned long *ptr = (unsigned long *)buf;
 
-	pr_debug("pl35x_nand_write_buf: datasize=%d len=%d len>>2=%d\n",sizeof(ptr[0]),len,len>>2);
-
 	len >>= 2;
 
 	for (i = 0; i < len; i++)
@@ -954,33 +1086,33 @@ static int pl35x_nand_device_ready(struct mtd_info *mtd)
  * @subfeature_param: the subfeature parameters, a four bytes array.
  */
 static int pl35x_nand_onfi_set_features(struct mtd_info *mtd, struct nand_chip *chip,
-			int addr, uint8_t *subfeature_param)
+                       int addr, uint8_t *subfeature_param)
 {
-	int status;
-	int i;
-	uint8_t ondie_ecc_feature;
+       int status;
+       int i;
+       uint8_t ondie_ecc_feature;
 
-	if (!chip->onfi_version ||
-	    !(le16_to_cpu(chip->onfi_params.opt_cmd)
-	      & ONFI_OPT_CMD_SET_GET_FEATURES))
-		return -EINVAL;
+       if (!chip->onfi_version ||
+           !(le16_to_cpu(chip->onfi_params.opt_cmd)
+             & ONFI_OPT_CMD_SET_GET_FEATURES))
+               return -EINVAL;
 
-	if (addr==ONDIE_ECC_FEATURE_ADDR){
-		//keep ondie ecc on;
-		chip->cmdfunc(mtd, NAND_CMD_GET_FEATURES, addr, -1);
-		ondie_ecc_feature = readb(chip->IO_ADDR_R);
-		subfeature_param[0] |= (ondie_ecc_feature&0x08);
-	}
+       if (addr==ONDIE_ECC_FEATURE_ADDR){
+               //keep ondie ecc on;
+               chip->cmdfunc(mtd, NAND_CMD_GET_FEATURES, addr, -1);
+               ondie_ecc_feature = readb(chip->IO_ADDR_R);
+               subfeature_param[0] |= (ondie_ecc_feature&0x08);
+       }
 
-	chip->cmdfunc(mtd, NAND_CMD_SET_FEATURES, addr, -1);
-	for (i = 0; i < ONFI_SUBFEATURE_PARAM_LEN; ++i)
-		writeb(subfeature_param[i], chip->IO_ADDR_W);
-		//chip->write_byte(mtd, subfeature_param[i]);
+       chip->cmdfunc(mtd, NAND_CMD_SET_FEATURES, addr, -1);
+       for (i = 0; i < ONFI_SUBFEATURE_PARAM_LEN; ++i)
+               writeb(subfeature_param[i], chip->IO_ADDR_W);
+               //chip->write_byte(mtd, subfeature_param[i]);
 
-	status = chip->waitfunc(mtd, chip);
-	if (status & NAND_STATUS_FAIL)
-		return -EIO;
-	return 0;
+       status = chip->waitfunc(mtd, chip);
+       if (status & NAND_STATUS_FAIL)
+               return -EIO;
+       return 0;
 }
 
 // Elphel: whole function
@@ -992,22 +1124,22 @@ static int pl35x_nand_onfi_set_features(struct mtd_info *mtd, struct nand_chip *
  * @subfeature_param: the subfeature parameters, a four bytes array.
  */
 static int pl35x_nand_onfi_get_features(struct mtd_info *mtd, struct nand_chip *chip,
-			int addr, uint8_t *subfeature_param)
+                       int addr, uint8_t *subfeature_param)
 {
-	int i;
+       int i;
 
-	if (!chip->onfi_version ||
-	    !(le16_to_cpu(chip->onfi_params.opt_cmd)
-	      & ONFI_OPT_CMD_SET_GET_FEATURES))
-		return -EINVAL;
+       if (!chip->onfi_version ||
+           !(le16_to_cpu(chip->onfi_params.opt_cmd)
+             & ONFI_OPT_CMD_SET_GET_FEATURES))
+               return -EINVAL;
 
-	/* clear the sub feature parameters */
-	memset(subfeature_param, 0, ONFI_SUBFEATURE_PARAM_LEN);
+       /* clear the sub feature parameters */
+       memset(subfeature_param, 0, ONFI_SUBFEATURE_PARAM_LEN);
 
-	chip->cmdfunc(mtd, NAND_CMD_GET_FEATURES, addr, -1);
-	for (i = 0; i < ONFI_SUBFEATURE_PARAM_LEN; ++i)
-		*subfeature_param++ = chip->read_byte(mtd);
-	return 0;
+       chip->cmdfunc(mtd, NAND_CMD_GET_FEATURES, addr, -1);
+       for (i = 0; i < ONFI_SUBFEATURE_PARAM_LEN; ++i)
+               *subfeature_param++ = chip->read_byte(mtd);
+       return 0;
 }
 
 /**
@@ -1072,6 +1204,7 @@ static int pl35x_nand_detect_ondie_ecc(struct mtd_info *mtd)
 /**
  * pl35x_nand_ecc_init - Initialize the ecc information as per the ecc mode
  * @mtd:	Pointer to the mtd_info structure
+ * @ecc:	Pointer to ECC control structure
  * @ondie_ecc_state:	ondie ecc status
  *
  * This function initializes the ecc block and functional pointers as per the
@@ -1099,7 +1232,7 @@ static void pl35x_nand_ecc_init(struct mtd_info *mtd, struct nand_ecc_ctrl *ecc,
 		 */
 		ecc->bytes = 0;
 		mtd_set_ooblayout(mtd, &fsmc_ecc_ooblayout_ondie64_ops);
-		ecc->read_page = pl35x_nand_read_page_raw;
+		ecc->read_page = pl35x_nand_read_page_ondie;
 		ecc->write_page = pl35x_nand_write_page_raw;
 		ecc->size = mtd->writesize;
 		/*
@@ -1188,9 +1321,10 @@ static int pl35x_nand_probe(struct platform_device *pdev)
 	nand_chip->cmdfunc = pl35x_nand_cmd_function;
 	nand_chip->dev_ready = pl35x_nand_device_ready;
 	nand_chip->select_chip = pl35x_nand_select_chip;
-
 	nand_chip->onfi_set_features = pl35x_nand_onfi_set_features;
 	nand_chip->onfi_get_features = pl35x_nand_onfi_get_features;
+	//nand_chip->onfi_set_features = nand_onfi_get_set_features_notsupp;
+	//nand_chip->onfi_get_features = nand_onfi_get_set_features_notsupp;
 
 	/* If we don't set this delay driver sets 20us by default */
 	nand_chip->chip_delay = 30;
@@ -1228,8 +1362,8 @@ static int pl35x_nand_probe(struct platform_device *pdev)
 		//return -ENXIO;
 	}
 
-	//elphel393 modification for Micron NAND chips
-	//TODO: add Micron chip ID checking
+       //elphel393 modification for Micron NAND chips
+       //TODO: add Micron chip ID checking
 	mtd->_unlock = nand_unlock;
 	mtd->_lock = nand_lock;
 
@@ -1273,7 +1407,6 @@ static struct platform_driver pl35x_nand_driver = {
 	.remove		= pl35x_nand_remove,
 	.driver		= {
 		.name	= PL35X_NAND_DRIVER_NAME,
-		.owner	= THIS_MODULE,
 		.of_match_table = pl35x_nand_of_match,
 	},
 };
