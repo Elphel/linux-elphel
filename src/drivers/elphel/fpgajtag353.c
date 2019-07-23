@@ -47,6 +47,7 @@
 
 //#include <asm/delay.h>
 #include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 //#include "fpgactrl.h" // extern fpga_state, defines port_csp0_addr, port_csp4_addr
 //#include "x3x3.h"     // FPGA registers and macros
