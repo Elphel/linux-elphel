@@ -47,6 +47,8 @@
 #include <linux/errno.h>
 #include <linux/fs.h>
 #include <linux/string.h>
+#include <linux/uaccess.h>
+
 #include <asm/delay.h>
 #include <asm/uaccess.h> // copy_*_user
 #include <uapi/elphel/c313a.h>
