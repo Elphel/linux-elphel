@@ -26,6 +26,7 @@
 #include <linux/errno.h>
 #include <linux/fs.h>
 //#include <linux/spinlock.h>
+#include <linux/uaccess.h>
 
 #include <asm/uaccess.h>
 

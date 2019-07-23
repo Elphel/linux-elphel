@@ -51,6 +51,7 @@
 
 //#include <asm/delay.h>
 #include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <uapi/elphel/c313a.h>
 //#include "fpga_io.h"//fpga_table_write_nice
 #include "jpeghead.h"

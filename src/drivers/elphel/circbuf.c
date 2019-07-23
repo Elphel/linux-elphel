@@ -36,6 +36,7 @@
 #include <linux/of_device.h>
 #include <linux/uio.h>
 #include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <uapi/elphel/x393_devices.h>
 #include <uapi/elphel/c313a.h>
 #include <elphel/elphel393-mem.h>
