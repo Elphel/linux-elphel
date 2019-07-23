@@ -1,6 +1,6 @@
 #include <linux/types.h>
 #include <linux/delay.h>
-#include <linux/mtd/nand.h>
+#include <linux/mtd/rawnand.h>
 #include <linux/mtd/flashchip.h>
 #include <linux/io.h>
 
