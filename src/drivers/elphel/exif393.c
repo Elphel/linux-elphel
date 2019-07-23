@@ -39,6 +39,7 @@
 
 #include <asm/delay.h>
 #include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include <uapi/elphel/c313a.h>
 #include <uapi/elphel/exifa.h>
