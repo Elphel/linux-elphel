@@ -1388,6 +1388,46 @@ int nand_check_erased_ecc_chunk(void *data, int datalen,
 EXPORT_SYMBOL(nand_check_erased_ecc_chunk);
 
 /**
+ * __nand_unlock - [REPLACEABLE] unlocks specified locked blocks
+ * @mtd: mtd info
+ * @ofs: offset to start unlock from
+ * @len: length to unlock
+ * @invert: when = 0, unlock the range of blocks within the lower and
+ *                    upper boundary address
+ *          when = 1, unlock the range of blocks outside the boundaries
+ *                    of the lower and upper boundary address
+ *
+ * Returs unlock status.
+ */
+static int __nand_unlock(struct mtd_info *mtd, loff_t ofs,
+					uint64_t len, int invert)
+{
+	int ret = 0;
+	int status, page;
+	struct nand_chip *chip = mtd->priv;
+
+	/* Submit address of first page to unlock */
+	page = ofs >> chip->page_shift;
+	chip->cmdfunc(mtd, NAND_CMD_UNLOCK1, -1, page & chip->pagemask);
+
+	/* Submit address of last page to unlock */
+	page = (ofs + len) >> chip->page_shift;
+	chip->cmdfunc(mtd, NAND_CMD_UNLOCK2, -1,
+				(page | invert) & chip->pagemask);
+
+	/* Call wait ready function */
+	status = chip->waitfunc(mtd, chip);
+	/* See if device thinks it succeeded */
+	if (status & NAND_STATUS_FAIL) {
+		pr_debug("%s: error status = 0x%08x\n",
+					__func__, status);
+		ret = -EIO;
+	}
+
+	return ret;
+}
+
+/**
  * nand_unlock - [REPLACEABLE] unlocks specified locked blocks
  * @mtd: mtd info
  * @ofs: offset to start unlock from
