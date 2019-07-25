@@ -49,6 +49,7 @@
 #include <linux/string.h>
 #include <asm/delay.h>
 #include <asm/uaccess.h> // copy_*_user
+#include <linux/uaccess.h>
 #include <uapi/elphel/c313a.h>
 #include <elphel/elphel393-mem.h>
 #include "imu_log393.h"
