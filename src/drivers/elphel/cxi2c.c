@@ -100,7 +100,6 @@
 //#include <linux/of_fdt.h>
 //#include <linux/of_net.h>
 #include <linux/sysfs.h>
-#include <linux/uaccess.h>
 
 #include <asm/delay.h>
 #include <asm/uaccess.h>

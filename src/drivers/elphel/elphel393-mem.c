@@ -294,46 +294,46 @@ static int __init elphelmem_init(void)
     	pr_err("ERROR allocating Bidirectional DMA memory buffer\n");
     }
 
-    pr_info("Coherent buffer vaddr:              0x%08X\n",(u32) pElphel_buf -> vaddr);
-    pr_info("Coherent buffer paddr:              0x%08X\n",(u32) pElphel_buf -> paddr);
-    pr_info("Coherent buffer length:             0x%08X\n",(u32) pElphel_buf -> size * PAGE_SIZE);
+    pr_info("Coherent buffer vaddr:              0x%08x\n",(u32) pElphel_buf -> vaddr);
+    pr_info("Coherent buffer paddr:              0x%08x\n",(u32) pElphel_buf -> paddr);
+    pr_info("Coherent buffer length:             0x%08lx\n",(u32) pElphel_buf -> size * PAGE_SIZE);
 
-    pr_info("    circbuf channel 0 vaddr: 0x%08X paddr: 0x%08X length 0x%08X\n",
+    pr_info("    circbuf channel 0 vaddr: 0x%08x paddr: 0x%08x length 0x%08lx\n",
 			(u32) pElphel_buf -> circbuf_chn0_vaddr,
 			(u32) pElphel_buf -> circbuf_chn0_paddr,
 			(u32) pElphel_buf-> circbuf_chn0_size * PAGE_SIZE);
 
-    pr_info("    circbuf channel 1 vaddr: 0x%08X paddr: 0x%08X length 0x%08X\n",
+    pr_info("    circbuf channel 1 vaddr: 0x%08x paddr: 0x%08x length 0x%08lx\n",
 			(u32) pElphel_buf -> circbuf_chn1_vaddr,
 			(u32) pElphel_buf -> circbuf_chn1_paddr,
 			(u32) pElphel_buf-> circbuf_chn1_size * PAGE_SIZE);
 
-    pr_info("    circbuf channel 2 vaddr: 0x%08X paddr: 0x%08X length 0x%08X\n",
+    pr_info("    circbuf channel 2 vaddr: 0x%08x paddr: 0x%08x length 0x%08lx\n",
 			(u32) pElphel_buf -> circbuf_chn2_vaddr,
 			(u32) pElphel_buf -> circbuf_chn2_paddr,
 			(u32) pElphel_buf-> circbuf_chn2_size * PAGE_SIZE);
 
-    pr_info("    circbuf channel 3 vaddr: 0x%08X paddr: 0x%08X length 0x%08X\n",
+    pr_info("    circbuf channel 3 vaddr: 0x%08x paddr: 0x%08x length 0x%08lx\n",
 			(u32) pElphel_buf -> circbuf_chn3_vaddr,
 			(u32) pElphel_buf -> circbuf_chn3_paddr,
 			(u32) pElphel_buf-> circbuf_chn3_size * PAGE_SIZE);
 
-    pr_info("        raw channel 0 vaddr: 0x%08X paddr: 0x%08X length 0x%08X\n",
+    pr_info("        raw channel 0 vaddr: 0x%08x paddr: 0x%08x length 0x%08lx\n",
 			(u32) pElphel_buf -> raw_chn0_vaddr,
 			(u32) pElphel_buf -> raw_chn0_paddr,
 			(u32) pElphel_buf-> raw_chn0_size * PAGE_SIZE);
 
-    pr_info("        raw channel 1 vaddr: 0x%08X paddr: 0x%08X length 0x%08X\n",
+    pr_info("        raw channel 1 vaddr: 0x%08x paddr: 0x%08x length 0x%08lx\n",
 			(u32) pElphel_buf -> raw_chn1_vaddr,
 			(u32) pElphel_buf -> raw_chn1_paddr,
 			(u32) pElphel_buf-> raw_chn1_size * PAGE_SIZE);
 
-    pr_info("        raw channel 2 vaddr: 0x%08X paddr: 0x%08X length 0x%08X\n",
+    pr_info("        raw channel 2 vaddr: 0x%08x paddr: 0x%08x length 0x%08lx\n",
 			(u32) pElphel_buf -> raw_chn2_vaddr,
 			(u32) pElphel_buf -> raw_chn2_paddr,
 			(u32) pElphel_buf-> raw_chn2_size * PAGE_SIZE);
 
-    pr_info("        raw channel 3 vaddr: 0x%08X paddr: 0x%08X length 0x%08X\n",
+    pr_info("        raw channel 3 vaddr: 0x%08x paddr: 0x%08x length 0x%08lx\n",
 			(u32) pElphel_buf -> raw_chn3_vaddr,
 			(u32) pElphel_buf -> raw_chn3_paddr,
 			(u32) pElphel_buf-> raw_chn3_size * PAGE_SIZE);

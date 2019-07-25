@@ -208,6 +208,7 @@
 #include "multi10359.h"
 #include "mt9x001.h"
 #include "mt9f002.h"
+#include "lepton.h"
 #include "gamma_tables.h"
 #include "quantization_tables.h"
 //#include "latency.h"
@@ -378,6 +379,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     int qperiod;
     int i2cbytes;
     int mux,sens;
+    int fpga_interface = x393_sensor_interface();
 
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
@@ -413,14 +415,15 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     if ((mux == SENSOR_NONE) && (sens == SENSOR_NONE))
         return 0; // no sensor/mux enabled on this port
 
-    //TODO NC393: turn on both sequencers why MRST is active, then i2c frame will definitely match ? Or is it already done in FPGA?
+    //TODO NC393: turn on both sequencers while MRST is active, then i2c frame will definitely match ? Or is it already done in FPGA?
     dev_dbg(g_dev_ptr,"Restarting both command and i2c sequencers for port %d\n",sensor_port);
 
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RESET);
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RUN);  // also programs status update
     i2c_stop_run_reset      (sensor_port, I2C_CMD_RESET);
 
-    dev_dbg(g_dev_ptr,"Setting i2c drive mode for port %d\n",sensor_port);
+//    dev_dbg(g_dev_ptr,"Setting i2c drive mode for port %d\n",sensor_port);
+    dev_info(g_dev_ptr,"Setting i2c drive mode for port %d\n",sensor_port);
 
     i2c_drive_mode          (sensor_port, SDA_DRIVE_HIGH, SDA_RELEASE);
     i2c_stop_run_reset      (sensor_port, I2C_CMD_RUN); // also programs status update
@@ -453,6 +456,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     //mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);  // try Micron 5.0 Mpixel - should return sensor type
 
     if (mux != SENSOR_NONE) {
+    	if (fpga_interface == FPGA_PAR12) {
         dev_dbg(g_dev_ptr,"Mux mode for port %d is %d, tryng 10359\n",sensor_port, mux);
         MDP(DBGB_PADD, sensor_port,"Mux mode for port %d is %d, tryng 10359\n",sensor_port, mux)
         // try multisensor here (before removing MRST)
@@ -465,6 +469,9 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         // ************************************************************************************************
         // ************************************************************************************************
         // ************************************************************************************************
+    	} else {
+            dev_dbg(g_dev_ptr,"Incompatible FPGA interface for 10359 on port %d\n",sensor_port);
+    	}
 
     } else {
         dev_dbg(g_dev_ptr,"Mux mode for port %d SENSOR_NONE, skipping 10359 detection\n",sensor_port);
@@ -473,7 +480,8 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 
     //if ((thispars->pars[P_SENSOR]==0) ||  // multisensor not detected
     //   ((thispars->pars[P_SENSOR] & SENSOR_MASK) == SENSOR_MT9X001)) { // or is (from DT) SENSOR_MT9X001
-    if ((thispars->pars[P_SENSOR]==0) &&                // multisensor not detected
+    if ((fpga_interface == FPGA_PAR12) &&
+    	(thispars->pars[P_SENSOR]==0) &&                // multisensor not detected
         (((sens & SENSOR_MASK) == SENSOR_MT9X001) ||    // and from DT it is some SENSOR_MT9*001
          ((sens & SENSOR_MASK) == SENSOR_MT9P006) )) {  // or SENSOR_MT9P006 or friends
 
@@ -491,20 +499,25 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
 
     }
 
-    if ((thispars->pars[P_SENSOR]==0) &&
+    if (    (fpga_interface == FPGA_HISPI) &&
+    		(thispars->pars[P_SENSOR]==0) &&
             ((sens & SENSOR_MASK) == SENSOR_MT9F002)){
 
     	dev_dbg(g_dev_ptr,"trying MT9F002, port=%d\n",sensor_port);
     	MDP(DBGB_PADD, sensor_port,"trying MT9F002, port=%d\n",sensor_port)
-        // TODO: move to sensor driver
-        // ************************************************************************************************
-        // ********************************* MT9x00x SENSOR (5MP) *****************************************
-        // ************************************************************************************************
         mt9f002_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);
-        // ************************************************************************************************
-        // ************************************************************************************************
-        // ************************************************************************************************
     }
+
+    if (    (fpga_interface == FPGA_VOSPI) &&
+    		(thispars->pars[P_SENSOR]==0) &&
+            ((sens & SENSOR_MASK) == SENSOR_LEPTON35)){
+
+    	dev_dbg(g_dev_ptr,"trying Lepton 3.5, port=%d\n",sensor_port);
+    	dev_info(g_dev_ptr,"trying Lepton 3.5, port=%d\n",sensor_port);
+    	MDP(DBGB_PADD, sensor_port,"trying Lepton 3.5, port=%d\n",sensor_port)
+        lepton_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);
+    }
+
 
     //setFramePar(sensor_port, thispars, P_CLK_FPGA,  200000000); //  FIXME: NC393
     setFramePar(sensor_port, thispars, P_CLK_FPGA,  240000000);
@@ -517,8 +530,6 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     	// this handles MT9x001 & MUX
     	setFramePar(sensor_port, thispars, P_CLK_SENSOR,  48000000);
     }
-
-
 
     if (thispars->pars[P_SENSOR] == SENSOR_DETECT) {
         sensor->sensorType=SENSOR_NONE;                 // to prevent from initializing again
@@ -981,7 +992,7 @@ return 0;
 
 /** Program sensor WOI and mirroring
  *
- * As different sensors may produce "bad frames" for differnt WOI changes (i.e. MT9P001 seems to do fine with FLIP, but not WOI_WIDTH)
+ * As different sensors may produce "bad frames" for different WOI changes (i.e. MT9P001 seems to do fine with FLIP, but not WOI_WIDTH)
  * pgm_window and pgm_window_safe will do the same - they will just be called with different latencies and with compressor stopped) */
 int pgm_window     (int sensor_port,               ///< sensor port number (0..3)
 					struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
@@ -1027,6 +1038,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     struct frameparspair_t pars_to_update[18]; // 15 needed, increase if more entries will be added
     int nupdate=0;
     int clearHeight;
+    int tile_vert = X393_TILEVERT;
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",            sensor_port,frame16);
     dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_WOI_HEIGHT]=%lx thispars->pars[P_WOI_WIDTH]=%lx\n", sensor_port,thispars->pars[P_WOI_HEIGHT], thispars->pars[P_WOI_WIDTH]);
     //  if (GLOBALPARS(G_SENS_AVAIL) ) multisensor_pgm_window_common0 (sensor, thispars, prevpars, frame16);
@@ -1034,6 +1046,7 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     sensor_width= thispars->pars[P_SENSOR_WIDTH];
     sensor_height=thispars->pars[P_SENSOR_HEIGHT];
     oversize=thispars->pars[P_OVERSIZE];
+    // default is good for JP4x, raw
     is_color=1;
     margins = 0;
     switch (thispars->pars[P_COLOR] & 0x0f){
@@ -1044,6 +1057,9 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
     case COLORMODE_COLOR:
     case COLORMODE_COLOR20:
         margins = COLOR_MARGINS;
+        break;
+    case COLORMODE_RAW:
+    	tile_vert = 1;
     }
     // flips changed?
     if (FRAMEPAR_MODIFIED(P_FLIPH)) {
@@ -1126,9 +1142,9 @@ int pgm_window_common  (int sensor_port,               ///< sensor port number (
         }
     } else {
         if ((!oversize ) && (height > sensor_height)) height=sensor_height;
-        height= ((height/dv)/X393_TILEVERT) * X393_TILEVERT; // divided by dv (before multisensor options)
+        height= ((height/dv)/tile_vert) * tile_vert; // divided by dv (before multisensor options)
         // suppose minimal height refers to decimated output
-        while (height < sensor->minHeight) height+=X393_TILEVERT;
+        while (height < sensor->minHeight) height+=tile_vert;
         if (unlikely(thispars->pars[P_SENSOR_PIXV] != height+(2 * margins)))
             SETFRAMEPARS_SET(P_SENSOR_PIXV,  height+(2 * margins)); ///full height for the sensor (after decimation), including margins
         height*=dv;
@@ -1482,7 +1498,7 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
     }
 
     if (FRAMEPAR_MODIFIED(P_BITS)){
-        sens_mode.bit16 = thispars->pars[P_BITS];
+        sens_mode.bit16 = (thispars->pars[P_BITS] > 8);
         sens_mode.bit16_set = 1;
         X393_SEQ_SEND1 (sensor_port, frame16, x393_sens_mode, sens_mode);
         dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sens_mode,  0x%x)\n",
@@ -2073,6 +2089,9 @@ int pgm_memsensor      (int sensor_port,               ///< sensor port number (
         break;
     }
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+    if ((thispars->pars[P_COLOR] == COLORMODE_RAW) && (thispars->pars[P_BITS] > 8)){
+    	width_bursts *= 2;
+    }
 
     dev_dbg(g_dev_ptr,"PGM_MEMSENSOR: sport=%d  width_burts=%d  width_marg=%d  height_marg=%d  left_margin=%d  top_margin=%d\n",
     		sensor_port,
@@ -2184,7 +2203,9 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     int cmprs_top = 0; // 1 for JPEG18 only, 0 for others (also is used for compressor left)
     int tile_width; // in bursts, 2 for those with overlap (height>16), 4 with heigh==16
     int tile_height; // 16/18 (20 not yet implemented)
-    x393_cmprs_frame_format_t cmprs_frame_format ={.d32=0};
+    int compressor_memory_height;
+    x393_cmprs_frame_format_t cmprs_frame_format = {.d32=0};
+    x393_cmprs_mode_t        cmprs_mode =          {.d32=0}; // setting just height 4 LSBs
 
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d, pars[P_COLOR]=0x%x\n",sensor_port,frame16, (int)thispars->pars[P_COLOR]);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
@@ -2192,8 +2213,29 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     width_marg = thispars->pars[P_ACTUAL_WIDTH];
     height_marg = thispars->pars[P_ACTUAL_HEIGHT];
     // NC393: maybe add later monochrome mode with small tiles?
-    cmprs_frame_format.num_macro_cols_m1 = (width_marg>> 4) - 1; // before adding margins
-    cmprs_frame_format.num_macro_rows_m1 = (height_marg>> 4) - 1; // before adding margins;
+
+    if ((thispars->pars[P_COLOR] == COLORMODE_RAW) && (thispars->pars[P_BITS] > 8)){
+        cmprs_frame_format.num_macro_cols_m1 = ((width_marg>> 4) << 1) - 1; // before adding margins
+    } else {
+        cmprs_frame_format.num_macro_cols_m1 = (width_marg>> 4) - 1; // before adding margins
+    }
+
+    if (thispars->pars[P_COLOR] == COLORMODE_RAW){
+    	compressor_memory_height = height_marg;
+        cmprs_frame_format.num_macro_rows_m1 = (height_marg -1) >> 4; // before adding margins;
+        cmprs_mode.rows_lsb =  (height_marg -1) & 0xf;
+        cmprs_mode.rows_lsb_set =  1;
+        // 4 LSBs of the window height are in compressor mode register
+        X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
+        dev_dbg(g_dev_ptr,"{%d}   X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",
+                sensor_port, sensor_port, frame16, cmprs_mode.d32);
+        MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x, 0x%x, x393_cmprs_control_reg, 0x%x)\n",
+                sensor_port, frame16, cmprs_mode.d32)
+
+    } else {
+    	cmprs_frame_format.num_macro_rows_m1 = (height_marg>> 4) - 1; // before adding margins;
+    	compressor_memory_height = (cmprs_frame_format.num_macro_rows_m1 + 1) << 4;
+    }
 
     switch(thispars->pars[P_COLOR]){
     case COLORMODE_COLOR:
@@ -2218,6 +2260,9 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
     }
 
     width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
+    if ((thispars->pars[P_COLOR] == COLORMODE_RAW) && (thispars->pars[P_BITS] > 8)){
+    	width_bursts *= 2;
+    }
     // Adjusting for tile width. TODO: probably not needed, handled in FPGA - verify (and remove 2 next lines)
     if (width_bursts & 1)                     width_bursts++;
     if ((tile_width>2) && (width_bursts & 2)) width_bursts += 2;
@@ -2239,7 +2284,7 @@ int pgm_memcompressor  (int sensor_port,               ///< sensor port number (
 
     setup_compressor_memory (sensor_port,       // sensor port number (0..3)
                              width_bursts,      // 13-bit - in 8*16=128 bit bursts
-                             (cmprs_frame_format.num_macro_rows_m1 + 1) << 4,
+							 compressor_memory_height, // (cmprs_frame_format.num_macro_rows_m1 + 1) << 4,
 //                             height_marg,       // 16-bit window height (in scan lines)
                              0,                 // 13-bit window left margin in 8-bursts (16 bytes)
                              cmprs_top,         // 16-bit window top margin (in scan lines
@@ -2314,7 +2359,7 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
     if (!jpeg_htable_is_programmed(sensor_port)) jpeg_htable_fpga_pgm (sensor_port);
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
 //    x393cmd = (frame16<0)? ASAP: ABSOLUTE;
-    if (FRAMEPAR_MODIFIED(P_COLOR)) {
+    if (FRAMEPAR_MODIFIED(P_COLOR) || FRAMEPAR_MODIFIED(P_BITS)) {
         switch (thispars->pars[P_COLOR] & 0x0f){
         case COLORMODE_MONO6:    cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_MONO6;          break;
         case COLORMODE_COLOR:    cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JPEG18;         break;
@@ -2328,6 +2373,10 @@ int pgm_compmode   (int sensor_port,               ///< sensor port number (0..3
         case COLORMODE_JP4DIFF2: cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP4DIFFDIV2;    break;
         case COLORMODE_JP4HDR2:  cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_JP4DIFFHDRDIV2; break;
         case COLORMODE_MONO4:    cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_MONO4;          break;
+        case COLORMODE_RAW:      cmprs_mode.cmode = X393_CMPRS_CBIT_CMODE_RAW;
+       	   cmprs_mode.raw_be16 =     (thispars->pars[P_BITS] > 8);
+       	   cmprs_mode.raw_be16_set = 1;
+           break;
         }
         cmprs_mode.cmode_set = 1;
         // TODO: Modify left margin by 1 for COLORMODE_COLOR !
@@ -2871,6 +2920,7 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     int extra_pages;
     int disable_need =  1; // TODO: Use some G_* parameter
     int reset_frame;
+    int raw_mode;
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
@@ -2887,15 +2937,21 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     case COLORMODE_COLOR:
     case COLORMODE_COLOR20:
         extra_pages = 1;
+        raw_mode =    0;
+        break;
+    case COLORMODE_RAW:
+        extra_pages = 0;
+        raw_mode =    1;
         break;
     default:
-        extra_pages = 0;
+        extra_pages = 0; // including raw mode
+        raw_mode =    0;
     }
     // Compressor memory can be stopped, run single (next frame) or run continuously
     // Compressor itself can run in standalone mode 2 (when sensor is stopped/single) or normal mode "3" (X393_CMPRS_CBIT_RUN_ENABLE)
     // program compressor mode - normal run (3) or standalone(2)
     switch (thispars->pars[P_COMPRESSOR_RUN]) {
-    case COMPRESSOR_RUN_STOP:
+    case COMPRESSOR_RUN_STOP: // will never get here after if (thispars->pars[P_COMPRESSOR_RUN]==0) {... return 0;} ?
         cmprs_mode.run = X393_CMPRS_CBIT_RUN_DISABLE;
         break;
     case COMPRESSOR_RUN_SINGLE:
@@ -2906,13 +2962,14 @@ int pgm_comprestart(int sensor_port,               ///< sensor port number (0..3
     cmprs_mode.run_set = 1;
 
     // turn comressor off first
-    if (thispars->pars[P_COMPRESSOR_RUN] == COMPRESSOR_RUN_STOP) {
+    if (thispars->pars[P_COMPRESSOR_RUN] == COMPRESSOR_RUN_STOP) { // will never get here after if (thispars->pars[P_COMPRESSOR_RUN]==0) {... return 0;} ?
         X393_SEQ_SEND1 (sensor_port, frame16, x393_cmprs_control_reg, cmprs_mode);
     }
     // enable memory after the compressor, same latency
     control_compressor_memory (sensor_port,
                                thispars->pars[P_COMPRESSOR_RUN] & 3, // stop/single/run(/reset)
                                reset_frame,
+							   raw_mode,
                                extra_pages,
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
@@ -2976,6 +3033,7 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
 {
 #ifndef NC353
     int extra_pages;
+    int raw_mode;
     int disable_need =  1; // TODO: Use some G_* parameter
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
@@ -2985,9 +3043,15 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
     case COLORMODE_COLOR:
     case COLORMODE_COLOR20:
         extra_pages = 1;
+        raw_mode =    0;
+        break;
+    case COLORMODE_RAW:
+        extra_pages = 0;
+        raw_mode =    1;
         break;
     default:
         extra_pages = 0;
+        raw_mode =    0;
     }
     // Stop compressor (do not propagate frame sync late, finish current frame)
     cmprs_mode.run = X393_CMPRS_CBIT_RUN_DISABLE;
@@ -2999,6 +3063,7 @@ int pgm_compstop   (int sensor_port,               ///< sensor port number (0..3
     control_compressor_memory (sensor_port, // compressor memory off
                                COMPRESSOR_RUN_STOP,
                                0, // reset_frame
+							   raw_mode,
                                extra_pages,
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer
@@ -3042,6 +3107,7 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     int disable_need =  1; // TODO: Use some G_* parameter
     x393_cmprs_mode_t        cmprs_mode =        {.d32=0};
     int reset_frame = 0;
+    int raw_mode;
 //    int just_started = 0;
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d, prevpars->pars[P_COMPRESSOR_RUN]=%d, thispars->pars[P_COMPRESSOR_RUN]=%d \n",
             sensor_port,frame16, (int) prevpars->pars[P_COMPRESSOR_RUN], (int) thispars->pars[P_COMPRESSOR_RUN]);
@@ -3054,9 +3120,15 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     case COLORMODE_COLOR:
     case COLORMODE_COLOR20:
         extra_pages = 1;
+        raw_mode =    0;
+        break;
+    case COLORMODE_RAW:
+        extra_pages = 0;
+        raw_mode =    1;
         break;
     default:
         extra_pages = 0;
+        raw_mode =    0;
     }
 // Compressor memory can be stopped, run single (next frame) or run continuously
 // Compressor itself can run in standalone mode 2 (when sensor is stopped/single) or normal mode "3" (X393_CMPRS_CBIT_RUN_ENABLE)
@@ -3079,6 +3151,7 @@ int pgm_compctl    (int sensor_port,               ///< sensor port number (0..3
     control_compressor_memory (sensor_port,
                                thispars->pars[P_COMPRESSOR_RUN] & 3, // stop/single/run(/reset)
                                reset_frame,
+							   raw_mode,
                                extra_pages,
                                disable_need,
                                (frame16<0)? ASAP: ABSOLUTE,  // how to apply commands - directly or through channel sequencer

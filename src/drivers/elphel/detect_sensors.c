@@ -37,6 +37,7 @@
 #include "mt9x001.h"
 #include "mt9f002.h"
 #include "multi10359.h"
+#include "lepton.h"
 #include "detect_sensors.h"
 
 #define DETECT_SENSORS_MODULE_DESCRIPTION "Detect sensor type(s) attached to each of the ports"
@@ -78,6 +79,7 @@ const struct sensor_name_t sensor_names[] ={
         {.name="mt9f002",    .type=1, .iface=HISPI4,     .code = SENSOR_MT9F002},   // MT9F002
         {.name="ibis51300",  .type=1, .iface=PARALLEL12, .code = SENSOR_IBIS51300}, // FillFactory IBIS51300
         {.name="kai11002",   .type=1, .iface=PARALLEL12, .code = SENSOR_KAI11000},  // Kodak KAI11002
+        {.name="lepton35",   .type=1, .iface=VOSPI,      .code = SENSOR_LEPTON35},  // Kodak KAI11002
         {.name=NULL,         .type=0, .iface=NONE,       .code = 0} // end of list
 };
 static sens_iface_t port_iface[SENSOR_PORTS];
@@ -182,7 +184,8 @@ void update_port_iface(int port)  ///< Sensor port number (0..3)
         port_iface[port] = iface;
         return;
     }
-    port_iface[port] = get_iface_by_code(get_detected_sensor_code(port,-1), DETECT_MUX); // '-1' - any subchannel
+    //TODO: Check with 10359. was  port_iface[port] = get_iface_by_code(get_detected_sensor_code(port,-1), DETECT_MUX);
+    port_iface[port] = get_iface_by_code(get_detected_sensor_code(port,-1), DETECT_SENSOR); // '-1' - any subchannel
 }
 
 /** Get per-port interface type */
@@ -369,6 +372,7 @@ static int elphel393_detect_sensors_sysfs_register(struct platform_device *pdev)
      char names[4][80];
      struct device_node *node = pdev->dev.of_node;
      int num_ports, port, num_sub, sub_chn;
+     int scode;
      if (node) {
          config_string = of_get_property(node,  OF_PREFIX_NAME",port-mux", NULL); // &len);
          pr_info ("Mux config_string = %s (was looking for '%s')\n",config_string, OF_PREFIX_NAME",port-mux");
@@ -396,6 +400,10 @@ static int elphel393_detect_sensors_sysfs_register(struct platform_device *pdev)
                  num_sub = sscanf(config_string,"%79s %79s %79s %79s", names[0],  names[1],  names[2],  names[3]);
                  pr_info ("port %d : %d subchannels\n",port, num_sub);
                  for (sub_chn = 0; sub_chn < num_sub; sub_chn++){
+                	 scode = get_code_by_name(names[sub_chn], DETECT_SENSOR);
+                	 if (scode < 0){
+                		 pr_err("Invalid sensor/mux name found in device tree: %s\n",names[sub_chn]);
+                	 }
                      pr_info ("Setting sensor %d:%d '%s' (0x%x)\n",port, sub_chn, names[sub_chn], get_code_by_name(names[sub_chn], DETECT_SENSOR));
                      set_detected_sensor_code(port, sub_chn,  get_code_by_name(names[sub_chn], DETECT_SENSOR));
                      init_port_ahead_table(port,sub_chn);
@@ -458,7 +466,7 @@ int detect_sensors_par2addr_init(int port,int sub_chn){
 	    u16  haddr2rec[MAX_SENSORS][MAX_FPGA_RECS];  ///< Big LUT (but almost empty). Sensor's page address (haddr of reg addr) to fpga i2c record number (fpga line#)
 	};
 	*/
-
+	dev_info(g_dev_ptr,"detect_sensors_par2addr_init(): sensorPortConfig[%d].sensor[%d] = 0x%x\n",port, sub_chn, sensorPortConfig[port].sensor[sub_chn]);
 	switch (sensorPortConfig[port].sensor[sub_chn]) {
 		case SENSOR_MT9P006:
 			// get sensor table
@@ -472,6 +480,11 @@ int detect_sensors_par2addr_init(int port,int sub_chn){
 			pages     = mt9f002_pages;
 			atab      = mt9f002_ahead_tab;
 			break;
+		case SENSOR_LEPTON35:
+			par2addr  = lepton_par2addr;
+			pages     = lepton_pages;
+			atab      = lepton_ahead_tab;
+			break;
 	}
 	if (par2addr){
 		// convert to key-value
@@ -483,44 +496,6 @@ int detect_sensors_par2addr_init(int port,int sub_chn){
 		sensorPortConfig[port].ahead_tab[sub_chn] = atab;
 	}
 
-	/*
-	// all .mux and .sensor are already filled out
-	for (portx = 0; portx < SENSOR_PORTS; portx++){
-
-		// that's from device tree, fpga is not programmed yet
-		dev_dbg(g_dev_ptr,"port: %d mux: %d sensors: %d %d %d %d\n",
-				portx,
-				sensorPortConfig[portx].mux,
-				sensorPortConfig[portx].sensor[0],
-				sensorPortConfig[portx].sensor[1],
-				sensorPortConfig[portx].sensor[2],
-				sensorPortConfig[portx].sensor[3]
-				);
-
-		// sub_chn = 3 is never used
-		for (sub_chn = 0; sub_chn < 4; sub_chn++){
-			//sensorPortConfig[port].sensor[sub_chn];
-			switch (sensorPortConfig[portx].sensor[sub_chn]) {
-				case SENSOR_MT9P006:
-					// get sensor table
-					par2addr = mt9x001_par2addr;
-					pages    = mt9x001_pages;
-					break;
-				case SENSOR_MT9F002:
-					// get sensor table
-					par2addr = mt9f002_par2addr;
-					pages    = mt9f002_pages;
-					break;
-			}
-			if (par2addr){
-				// convert to key-value
-				par2addr_fill(par2addr,sensorPortConfig[portx].par2addr[sub_chn]);
-				// save pointer to static LUT
-				sensorPortConfig[portx].pages_ptr[sub_chn] = pages;
-			}
-		}
-	}
-	*/
 
 	return 0;
 }

@@ -27,7 +27,7 @@
 #include <linux/fs.h>
 #include <asm/uaccess.h> // copy_*_user
 #include <linux/of.h>  // Device Tree
-#include <linux/uaccess.h>
+
 
 
 #include <uapi/elphel/c313a.h> // PARS_FRAMES_MASK

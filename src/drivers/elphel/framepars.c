@@ -1499,6 +1499,8 @@ int setFramePars(int sensor_port,                     ///< sensor port number (0
 	unsigned long      *funcs2call =afuncs2call[sensor_port];
 
 	dev_dbg(g_devfp_ptr, "port= %d, this_framepars=0x%x numPars=%d\n", sensor_port, (int)this_framepars, numPars);
+//	dev_info(g_devfp_ptr, "port= %d, this_framepars=0x%x numPars=%d\n", sensor_port, (int)this_framepars, numPars);
+
     MDP(DBGB_FSFP,sensor_port,"this_framepars=0x%x numPars=%d\n", (int)this_framepars, numPars)
 
 	for (npar = 0; npar < numPars; npar++) {
@@ -1506,6 +1508,9 @@ int setFramePars(int sensor_port,                     ///< sensor port number (0
 		val = pars[npar].val;
 		index = pars[npar].num & 0xffff;
 		dev_dbg(g_devfp_ptr, ":    ---   frame16=%d index=%d (0x%x) val=0x%x, findex_future = 0x%x\n", frame16, index, (int)pars[npar].num, (int)val, findex_future);
+
+//		dev_info(g_devfp_ptr, ":    ---   frame16=%d index=%d (0x%x) val=0x%x, findex_future = 0x%x\n", frame16, index, (int)pars[npar].num, (int)val, findex_future);
+
 	    MDP(DBGB_FSFV,sensor_port,"  ---   frame16=%d index=%d (0x%x) val=0x%x\n", frame16, index, (int)pars[npar].num, (int)val)
 		// remark: code below looks similar to setFramePar function, call it instead
 		if (index > ((index >= FRAMEPAR_GLOBALS) ? (P_MAX_GPAR + FRAMEPAR_GLOBALS) : P_MAX_PAR)) {
@@ -2028,12 +2033,14 @@ static ssize_t show_fpga_sensor_interface(struct device *dev, struct device_attr
     if (!hardware_initialized)
         return -EBUSY;
     switch (x393_sensor_interface()){
-    case 0:
+    case FPGA_PAR12:
         return sprintf(buf,"PAR12\n");
-    case 1:
+    case FPGA_HISPI:
         return sprintf(buf,"HISPI\n");
+    case FPGA_VOSPI:
+        return sprintf(buf,"VOSPI\n");
     default:
-        return sprintf(buf,"0x%08%lx\n", x393_sensor_interface());
+        return sprintf(buf,"0x%08x\n", (int) x393_sensor_interface());
     }
 }
 

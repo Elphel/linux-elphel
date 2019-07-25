@@ -160,14 +160,21 @@ u32 get_compressor_frame(unsigned int chn) ///< Sensor port number (0..3)
  *  will have offset of the Exif_Image_DateTime data in meta page (Exif_Photo_SubSecTime should go immediately after in meta page)
  */
 static struct meta_offsets_t { //
-	int Image_DateTime;           ///< EXIF Date/Time offset
-	                              ///< Has offset of the Exif_Image_DateTime data in meta page (Exif_Photo_SubSecTime should go immediately after in meta page)
-	int Photo_DateTimeOriginal;   ///< EXIF Date/Time Original offset
-	int Photo_ExposureTime;       ///< EXIF exposure offset
-	int Image_ImageNumber;        ///< EXIF image number offset
-	int Image_Orientation;        ///< EXIF image orientation offset
-	int Photo_MakerNote;          ///< EXIF maker note (custom data for multi-frame composite images) offset
-	int PageNumber;               ///< EXIF subchannel (0..3) number offset
+	int Image_DateTime;              ///< EXIF Date/Time offset
+	                                 ///< Has offset of the Exif_Image_DateTime data in meta page (Exif_Photo_SubSecTime should go immediately after in meta page)
+	int Photo_DateTimeOriginal;      ///< EXIF Date/Time Original offset
+	int Photo_ExposureTime;          ///< EXIF exposure offset
+	int Image_ImageNumber;           ///< EXIF image number offset
+	int Image_Orientation;           ///< EXIF image orientation offset
+	int Photo_MakerNote;             ///< EXIF maker note (custom data for multi-frame composite images) offset
+	int PageNumber;                  ///< EXIF subchannel (0..3) number offset
+	int ImageWidth;                  ///< TIFF image width (long, 1)
+	int ImageLength;                 ///< TIFF image height (long,1)
+	int Image_BitsPerSample;         ///< TIFF bits per sample, now 8 or 16 (short, 1)
+	int Image_SamplesPerPixel;       ///< TIFF samples per pixel, now always 1 (short, 1)
+	int RowsPerStrip;                ///< TIFF now image height (short, 1)
+	int StripByteCounts ;            ///< TIFF with single strip - byte size of the image (W*H*Image_SamplesPerPixel*ceil(Image_BitsPerSample/8)
+
 } meta_offsets;
 
 #ifdef TEST_DISABLE_CODE
@@ -498,11 +505,12 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr,                ///< pointer 
 	int  index_time = jptr->jpeg_wp - 11;
     char time_buff[27];
     char * exif_meta_time_string;
-    // calcualte bayer without flips - extra xor
+    // calculate bayer without flips - extra xor
     int global_flips, extra_flips, bayer;
     unsigned char orientations[]="1638274545273816";
     unsigned char orientation_short[2];
     int maker_offset;
+    unsigned long width, height, bits;
     u32 frame =  jptr->frame;
 //    int frame_index = frame & PASTPARS_SAVE_ENTRIES_MASK;
     // NC393: current parameters are valid at compressor done interrupt (after frame sync interrupts latest valid is new frame number - 2
@@ -523,7 +531,7 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr,                ///< pointer 
 		global_flips=extra_flips & 3;
 	}
 
-	// calculate bayer without flips
+	// calculate Bayer without flips
 	bayer  = get_imageParamsFrame(sensor_port, P_COMP_BAYER, frame);
 	bayer ^= get_imageParamsFrame(sensor_port, P_COMPMOD_BYRSH, frame);
 	// subtract flips
@@ -577,6 +585,22 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr,                ///< pointer 
 		//get_globalParam(G_TASKLET_CTL)
 		// left 1 long spare (+44)
 	}
+	// Tiff-related data:
+	width =  get_imageParamsFrame(sensor_port, P_WOI_WIDTH,  frame);
+	height = get_imageParamsFrame(sensor_port, P_WOI_HEIGHT, frame);
+	bits =   get_imageParamsFrame(sensor_port, P_BITS, frame);
+    putlong_meta_irq(sensor_port, width, &meta_offsets.ImageWidth,  Exif_Image_ImageWidth);
+    putlong_meta_irq(sensor_port, height, &meta_offsets.ImageLength, Exif_Image_ImageLength);
+	short_buff[0] = 0;
+	short_buff[1] = bits; // assuming non 8/16 (10, 12) are OK?
+	write_meta_irq(sensor_port, short_buff, &meta_offsets.Image_BitsPerSample, Exif_Image_BitsPerSample, 2);
+	short_buff[1] = 1;
+	write_meta_irq(sensor_port, short_buff, &meta_offsets.Image_SamplesPerPixel, Exif_Image_SamplesPerPixel, 2);
+	short_buff[0] = height >> 8;
+	short_buff[1] = height & 0xff;
+	write_meta_irq(sensor_port, short_buff, &meta_offsets.RowsPerStrip, Exif_Image_RowsPerStrip, 2);
+    putlong_meta_irq(sensor_port, height * width * ((bits + 7) >> 3), &meta_offsets.StripByteCounts, Exif_Image_StripByteCounts);
+
 	interframe->meta_index=store_meta(sensor_port);
 }
 
@@ -1235,7 +1259,8 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 	bool mux;
 	bool broadcast_set = false;
 
-	dev_dbg(g_dev_ptr,"register_i2c_sensor()\n");
+//	dev_dbg(g_dev_ptr,"register_i2c_sensor()\n");
+	dev_info(g_dev_ptr,"register_i2c_sensor()\n");
 
 	for(port=0;port<SENSOR_PORTS;port++) if ((1<<port)&ports_mask) {
 
@@ -1327,6 +1352,7 @@ int register_i2c_sensor(int ports_mask) ///< bitmask of the sensor ports to use
 		memcpy(&dev_sensor, class_sensor, sizeof(x393_i2c_device_t));
 		i2c_page_register(port, LEGACY_READ_PAGE2);
 		set_xi2c_rdc(&dev_sensor, port, LEGACY_READ_PAGE2);
+		dev_info(g_dev_ptr,"register_i2c_sensor(): port=%d, page = 0x%x\n", port, LEGACY_READ_PAGE2);
 
 		if (mux){
 			// 'read' recs for 10359
@@ -1377,7 +1403,8 @@ int legacy_i2c(int ports) ///< bitmask of the sensor ports to use
         i2c_page_register(sensor_port, LEGACY_READ_PAGE4);
         dev_sensor.data_bytes=4; // for reading 10359 in 32-bit mode
         set_xi2c_rdc(&dev_sensor, sensor_port, LEGACY_READ_PAGE4);
-        dev_dbg(g_dev_ptr, "Initialized sensor i2c for legacy commands, sensor_port= 0x%x\n",sensor_port);
+//        dev_dbg(g_dev_ptr, "Initialized sensor i2c for legacy commands, sensor_port= 0x%x\n",sensor_port);
+        dev_info(g_dev_ptr, "Initialized sensor i2c for legacy commands, sensor_port= 0x%x\n",sensor_port);
     }
     return 0;
 /*

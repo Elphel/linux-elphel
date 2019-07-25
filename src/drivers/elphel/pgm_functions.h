@@ -450,6 +450,7 @@ extern struct sensor_port_config_t *pSensorPortConfig;
 #define SET_SENSOR_MIBPAR_COND_LUT(p,f,i,r,v) {\
     int _MINDEX= MULTIREG(p,P_SENSOR_REGS+(r),(i));\
     int _I = (i);\
+    int _ADDR;\
     if (_MINDEX) { \
     	if ((v) != thispars->pars[_MINDEX]) { \
     		pars_to_update[nupdate  ].num= _MINDEX ;\
@@ -462,7 +463,7 @@ extern struct sensor_port_config_t *pSensorPortConfig;
             _I = pSensorPortConfig[(p)].broadcast_addr;\
         } \
     } \
-    int _ADDR = pSensorPortConfig[(p)].par2addr[_I][(r)];\
+    _ADDR = pSensorPortConfig[(p)].par2addr[_I][(r)];\
     if (!(_ADDR&0xffff0000)) {\
     	X3X3_I2C_SEND2_LUT((p), (f), _I, _ADDR, (v));\
     }\
