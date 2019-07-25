@@ -20,12 +20,14 @@
 #define <DEVICE_RFEFERENCE>   ("<dev path>",    "<driver_name>",  major, minor,"<permissions>","<b/c>") [optional comment]
  * Access to individual fields is provide with the macros defined below, for example:
  * DEV393_PATH(DEV393_EXIF_TEMPLATE) returns "/dev/exif_template,
- * DEV393_MAJOR(DEV393_EXIF_TEMPLATE) returns 2 */
+ * DEV393_MAJOR(DEV393_EXIF_TEMPLATE) returns 2
+ * DO NOT COMMET OUT defines with // ! */
 
 #define DEV393_EXIF_TEMPLATE  ("exif_template",     "exif_elphel",   125,  2, "0666", "c")  ///< write Exif template
 #define DEV393_EXIF_METADIR   ("exif_metadir",      "exif_elphel",   125,  3, "0666", "c")  ///< write metadata to Exif header translation (dir_table[MAX_EXIF_FIELDS])
 #define DEV393_EXIF_TIME      ("exif_time",         "exif_elphel",   125,  4, "0666", "c")  ///< write today/tomorrow date (YYYY:MM:DD) and number of seconds at today/tomorrow
                                                                              ///< midnight (00:00:00) in seconds from epoch (long, starting from LSB)
+#define DEV393_TIFF_TEMPLATE  ("tiff_template",     "exif_elphel",   125,  5, "0666", "c")  ///< write Tiff template
 
 #define DEV393_EXIF0          ("exif_exif0",        "exif_elphel",   125, 16, "0666", "c")  ///< sensor port 0: read encoded Exif data (SEEK_END)
 #define DEV393_EXIF1          ("exif_exif1",        "exif_elphel",   125, 17, "0666", "c")  ///< sensor port 1: read encoded Exif data (SEEK_END)
@@ -36,6 +38,13 @@
 #define DEV393_EXIF_META1     ("exif_meta1",        "exif_elphel",   125, 33, "0666", "c")  ///< sensor port 1: write metadata, concurrently opened files. All writes are atomic
 #define DEV393_EXIF_META2     ("exif_meta2",        "exif_elphel",   125, 34, "0666", "c")  ///< sensor port 2: write metadata, concurrently opened files. All writes are atomic
 #define DEV393_EXIF_META3     ("exif_meta3",        "exif_elphel",   125, 35, "0666", "c")  ///< sensor port 3: write metadata, concurrently opened files. All writes are atomic
+
+#define DEV393_TIFF0          ("tiff_tiff0",        "exif_elphel",   125, 24, "0666", "c")  ///< sensor port 0: read encoded Tiff data (SEEK_END)
+#define DEV393_TIFF1          ("tiff_tiff1",        "exif_elphel",   125, 25, "0666", "c")  ///< sensor port 1: read encoded Tiff data (SEEK_END)
+#define DEV393_TIFF2          ("tiff_tiff2",        "exif_elphel",   125, 26, "0666", "c")  ///< sensor port 2: read encoded Tiff data (SEEK_END)
+#define DEV393_TIFF3          ("tiff_tiff3",        "exif_elphel",   125, 27, "0666", "c")  ///< sensor port 3: read encoded Tiff data (SEEK_END)
+
+// Meta data common for Exif and Tiff
 
 #define DEV393_FRAMEPARS0     ("frameparsall0","framepars_operations",130,80, "0666", "c")  ///< Access frame parameters for channel 0 (schedule modification, read with mmap)
 #define DEV393_FRAMEPARS1     ("frameparsall1","framepars_operations",130,81, "0666", "c")  ///< Access frame parameters for channel 1 (schedule modification, read with mmap)
@@ -113,10 +122,11 @@
 #define DEV393_IMAGE_RAW3     ("image_raw3",        "video_mem",     142, 83, "0666", "c")  ///< Channel 3. Access to raw (uncompressed) data in video memory, frame-organized
 
 #define DEV393_DETECT_SENSORS ("detect_sensors",    "detect_sensors",143,  1, "0666", "c")  ///< Probably not needed, only sysfs is used
-#define DEV393_I2C_SENSORS    ("",            "elphel393-sensor-i2c",-1,  -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
-#define DEV393_MT9X001        ("",            "elphel393-mt9x001",   -1,  -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
-#define DEV393_MT9F002        ("",            "elphel393-mt9f002",   -1,  -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
-#define DEV393_KLOGGER        ("klogger_393",      "klogger_393",    144,  1, "0666", "c")  ///< kernel event logger to memory (no i/o)
+#define DEV393_I2C_SENSORS    ("",            "elphel393-sensor-i2c", -1, -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
+#define DEV393_MT9X001        ("",               "elphel393-mt9x001", -1, -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
+#define DEV393_MT9F002        ("",               "elphel393-mt9f002", -1, -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
+#define DEV393_LEPTON         ("",                "elphel393-lepton", -1, -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
+#define DEV393_KLOGGER        ("klogger_393",          "klogger_393",144,  1, "0666", "c")  ///< kernel event logger to memory (no i/o)
 
 #define _DEV393_DEVNAME(n, ...) n
 #define _DEV393_PATH(n, ...) "/dev/"n

@@ -51,9 +51,11 @@ struct __attribute__((__packed__)) exif_dir_table_t {
             unsigned short tag;       // Exif tag as defined in the standard
           };
         };
-        unsigned long len; // Number of bytes to be copied from metadata to Exif
-        unsigned long src; // offset in meta data page
-        unsigned long dst; // offset in output Exif page
+        unsigned long len;       // Number of bytes to be copied from metadata to Exif
+        unsigned long src;       // offset in meta data page
+//        unsigned long dst;     // offset in output Exif page
+        unsigned short dst_exif; // offset in output Exif page, 0 - not in file
+        unsigned short dst_tiff; // offset in output Tiff page, 0 - not in file
 };
 #define MAX_EXIF_FIELDS  256 // number of Exif tags in the header
 #define MAX_EXIF_SIZE   4096 // Exif data size 
@@ -77,8 +79,20 @@ struct __attribute__((__packed__)) exif_dir_table_t {
 #define  Exif_Image_ExifTag            0x08769
 #define  Exif_Image_GPSTag             0x08825
 
+// used for Tiff
+#define  Exif_Image_NewSubfileType     0x000fe // static: long, count = 1, value = 0 (not reduced, not multipage, not mask)
+#define  Exif_Image_ImageWidth         0x00100 // long, count = 1
+#define  Exif_Image_ImageLength        0x00101 // long, count = 1
+#define  Exif_Image_BitsPerSample      0x00102 // short, count = 1 (8/16)
+#define  Exif_Image_PhotometricInterpretation   0x00106 // static,  short, count = 1, value = 1 (black is zero)
+#define  Exif_Image_StripOffsets       0x00111 // static long, count = 1 for a single strip (otherwise 1 long for each strip
+#define  Exif_Image_SamplesPerPixel    0x00115 // short, count = 1. Value = 1 for mono (static?)
+#define  Exif_Image_RowsPerStrip       0x00116 // short, count = 1. Same as height for a single strip
+#define  Exif_Image_StripByteCounts    0x00117 // long, count = 1 for a single strip (otherwise 1 long for each strip) = width*height*components*(bits/8)
+
+
 //Sub IFD
-#define  Exif_Photo_ExposureTime       0x1829a
+#define  Exif_Photo_ExposureTime       0x1829a // rational, fixed denominator=1,000,000
 #define  Exif_Photo_DateTimeOriginal   0x19003
 #define  Exif_Photo_MakerNote          0x1927c
 #define  Exif_Photo_SubSecTime         0x19290
@@ -164,8 +178,8 @@ struct __attribute__((__packed__)) meta_CompassInfo_t {
 #define EXIF_COMPASS_ROLL_ASCII   "EW" // use for roll +/-
 
 /// Exif data (variable, stored with each frame) used for KML (not only)
-#define  Exif_Image_ImageDescription_Index      0x00
-#define  Exif_Photo_DateTimeOriginal_Index      0x01
+#define  Exif_Image_ImageDescription_Index      0x00 // -
+#define  Exif_Photo_DateTimeOriginal_Index      0x01 //
 #define  Exif_Photo_SubSecTimeOriginal_Index    0x02
 #define  Exif_Photo_ExposureTime_Index          0x03
 #define  Exif_GPSInfo_GPSLatitudeRef_Index      0x04
@@ -185,32 +199,24 @@ struct __attribute__((__packed__)) meta_CompassInfo_t {
 #define  Exif_GPSInfo_CompassRoll_Index         0x12
 #define  Exif_Image_ImageNumber_Index           0x13
 #define  Exif_Image_Orientation_Index           0x14
-#define  Exif_Image_PageNumber_Index            0x15
+#define  Exif_Image_PageNumber_Index            0x15 // -
 #define  Exif_Photo_MakerNote_Index             0x16
+
+#define  Exif_Image_ImageWidth_Index            0x17 // long, count = 1
+#define  Exif_Image_ImageLength_Index           0x18 // long, count = 1
+#define  Exif_Image_BitsPerSample_Index         0x19 // short, count = 1 (8/16)
+#define  Exif_Image_SamplesPerPixel_Index       0x1a // short, count = 1. Value = 1 for mono (static?) keep for future, don't change from 1
+#define  Exif_Image_RowsPerStrip_Index          0x1b // short, count = 1. Same as height for a single strip
+#define  Exif_Image_StripByteCounts_Index       0x1c // long, count = 1 for a single strip (otherwise 1 long for each strip) = width*height*components*(bits/8)
+
+
+
 /// update ExifKmlNumber to be total number of *_Index entries
-#define  ExifKmlNumber                          Exif_Photo_MakerNote_Index+1
+//#define  ExifKmlNumber                          Exif_Photo_MakerNote_Index+1
+#define  ExifKmlNumber                          Exif_Image_StripByteCounts_Index+1
 
 //#define EXIF_DEV_NAME "/dev/exif_exif"
 #define EXIFDIR_DEV_NAME "/dev/exif_metadir"
 //#define EXIFMETA_DEV_NAME "/dev/exif_meta"
-
-/**
- * @brief This macro is used to construct file names in user space applications. Example
- * of usage: <e>const char *exif_file_names[SENSOR_PORTS] = { EXIF_DEV_NAMES };</e>. Then the
- * sensor port number can be used to access file name.
- */
-#define EXIF_DEV_NAMES		"/dev/exif_exif0", \
-							"/dev/exif_exif1", \
-							"/dev/exif_exif2", \
-							"/dev/exif_exif3"
-/**
- * @brief This macro is used to construct file names in user space applications. Example
- * of usage: <e>const char *exifmeta_file_names[SENSOR_PORTS] = { EXIFMETA_DEV_NAMES };</e>. Then
- * the sensor port number can be used to access file name.
- */
-#define EXIFMETA_DEV_NAMES	"/dev/exif_meta0", \
-							"/dev/exif_meta1", \
-							"/dev/exif_meta2", \
-							"/dev/exif_meta3"
 
 #endif /* _ASM_EXIF_H */
