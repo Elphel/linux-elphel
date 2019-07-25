@@ -26,6 +26,7 @@
 
 #include <linux/fs.h>
 #include <asm/uaccess.h> // copy_*_user
+#include <linux/uaccess.h>
 #include <linux/of.h>  // Device Tree
 
 

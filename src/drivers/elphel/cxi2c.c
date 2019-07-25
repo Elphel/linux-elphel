@@ -103,6 +103,7 @@
 
 #include <asm/delay.h>
 #include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <uapi/elphel/x393_devices.h>
 #include <uapi/elphel/c313a.h>
 #include "x393.h"
