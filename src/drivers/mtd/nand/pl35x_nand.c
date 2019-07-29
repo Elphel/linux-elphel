@@ -1362,8 +1362,8 @@ static int pl35x_nand_probe(struct platform_device *pdev)
 		//return -ENXIO;
 	}
 
-       //elphel393 modification for Micron NAND chips
-       //TODO: add Micron chip ID checking
+    //elphel393 modification for Micron NAND chips
+    //TODO: add Micron chip ID checking
 	mtd->_unlock = nand_unlock;
 	mtd->_lock = nand_lock;
 
