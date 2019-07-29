@@ -579,4 +579,9 @@ config MTD_NAND_MTK
 	  Enables support for NAND controller on MTK SoCs.
 	  This controller is found on mt27xx, mt81xx, mt65xx SoCs.
 
+# Elphel (comes from elphel393.cfg)
+config MTD_NAND_OTP
+	tristate "NAND OTP area r/w support for Micron devices"
+	default n
+
 endif # MTD_NAND
