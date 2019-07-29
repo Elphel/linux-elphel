@@ -4208,6 +4208,8 @@ ident_done:
 	if (mtd->writesize > 512 && chip->cmdfunc == nand_command)
 		chip->cmdfunc = nand_command_lp;
 
+	if (maf_id == NAND_MFR_MICRON) nandchip_micron_init(mtd, dev_id);
+
 	pr_info("device found, Manufacturer ID: 0x%02x, Chip ID: 0x%02x\n",
 		maf_id, dev_id);
 
@@ -4881,8 +4883,12 @@ int nand_scan_tail(struct mtd_info *mtd)
 	chip->select_chip(mtd, 0);
 	ret = nand_manufacturer_init(chip);
 	chip->select_chip(mtd, -1);
+	// Elphel: Ignore this error - nand_manufacturer_init() (which is micron_nand_init())
+	// will exit with MICRON_ON_DIE_MANDATORY.
+	/*
 	if (ret)
 		goto err_free_nbuf;
+	*/
 
 	/* Set the internal oob buffer location, just after the page data */
 	chip->oob_poi = chip->buffers->databuf + mtd->writesize;
