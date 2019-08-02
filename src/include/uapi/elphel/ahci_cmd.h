@@ -55,7 +55,7 @@
 /** This file shows avarage write speed */
 #define SYSFS_AHCI_WR_SPEED       SYSFS_AHCI_ENTRY_NAME_TO_STR(SYSFS_AHCI_FNAME_WRSPEED)
 /** Command execution timeout */
-#define SYSFS_AHCI_CMD_TIMEOUT    SYSFS_AHCI_ENTRY_NAME_TO_STR(SUSFS_AHCI_FNAME_TIMEOUT)
+#define SYSFS_AHCI_CMD_TIMEOUT    SYSFS_AHCI_ENTRY_NAME_TO_STR(SYSFS_AHCI_FNAME_TIMEOUT)
 
 struct frame_data {
        unsigned int sensor_port;
