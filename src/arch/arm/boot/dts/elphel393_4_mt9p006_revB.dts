@@ -114,7 +114,7 @@
 					device_type = "ethernet-phy";
 					/* rev0 - revB: reg = <0x3> */
 					/* revC:        reg = <0x0> */
-					reg = <0x0>;
+					reg = <0x3>;
 				};
 			};
 		};
