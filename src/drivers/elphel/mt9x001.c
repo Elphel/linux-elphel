@@ -993,7 +993,11 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     int first_sensor_i2c;
     unsigned short * sensor_register_overwrites;
     x393_sensio_ctl_t sensio_ctl = {.d32=0};
-    u32 i2c_read_data_dw[256];
+
+    // 09/05/2019: commented out, made regs read directly to sensor_reg_copy, otherwise get various kernel panics
+    //             because of i2c_read_data_dw[256] array?
+    //u32 i2c_read_data_dw[256];
+
     int nupdate=0;
     int i,color;
     int regval, regnum, mreg, j;
@@ -1030,20 +1034,24 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     dev_dbg(g_dev_ptr,"Reading sensor (port=%d) registers to the shadows, sa7=0x%x:\n",sensor_port,first_sensor_i2c);
     first_sensor_sa7[sensor_port] = first_sensor_i2c;
     for (i=0; i<256; i++) { // read all registers, one at a time (slower than in 353)
-        X3X3_I2C_RCV2(sensor_port, first_sensor_i2c, i, &(i2c_read_data_dw[i]));
+        X3X3_I2C_RCV2(sensor_port, first_sensor_i2c, i, &(sensor_reg_copy[sensor_port][i]));
     }
-    dev_dbg(g_dev_ptr,"Read 256 registers (port=%d) ID=0x%x:\n",sensor_port,i2c_read_data_dw[0]);
+    dev_dbg(g_dev_ptr,"Read 256 registers (port=%d) ID=0x%x:\n",sensor_port,sensor_reg_copy[sensor_port][0]);
     for (i=0; i<256; i++) { // possible to modify register range to save (that is why nupdate is separate from i)
-        regval=i2c_read_data_dw[i];
-        regnum=P_SENSOR_REGS+i;
+        regval = sensor_reg_copy[sensor_port][i];
+        regnum = P_SENSOR_REGS+i;
         SETFRAMEPARS_SET(regnum,regval);
         if ((mreg=MULTIREG(sensor_port,regnum,0))) for (j=0;j<MAX_SENSORS; j++) {
             SETFRAMEPARS_SET(mreg+j,regval);
         }
     }
+    // 09/05/2019: commented out, made regs read directly to sensor_reg_copy, otherwise get various kernel panics
+    //             because of i2c_read_data_dw[256] array?
+    /*
     for (i=0;i<256;i++) {
         sensor_reg_copy[sensor_port][i] = i2c_read_data_dw[i];
     }
+    */
 
 
 //    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
