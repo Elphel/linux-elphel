@@ -299,7 +299,9 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
 	int regaddr,regval,regnum;
 	int nupdate=0;
 	int colamp_gain, a2_gain, gain, a2_inc;
-	u32 i2c_read_data_dw[256];
+    // 09/05/2019: commented out, made regs read directly to sensor_reg_copy, otherwise get various kernel panics
+    //             because of i2c_read_data_dw[256] array - huge variable in stack
+	//u32 i2c_read_data_dw[256];
 	int color;
 	struct frameparspair_t pars_to_update[262+(MAX_SENSORS * P_MULTI_NUMREGS )]; // for all the sensor registers. Other P_* values will reuse the same ones
 
@@ -464,23 +466,27 @@ int mt9f002_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     	regaddr = pSensorPortConfig[sensor_port].par2addr[0][i];
     	if (!(regaddr&0xffff0000)){
     		// TODO: get rid of i2c_addr
-    		X3X3_I2C_RCV2(sensor_port, sensor->i2c_addr, regaddr, &i2c_read_data_dw[i]);
+    		X3X3_I2C_RCV2(sensor_port, sensor->i2c_addr, regaddr, &(sensor_reg_copy[sensor_port][i]));
     	}else{
-    		i2c_read_data_dw[i] = 0;
+    		sensor_reg_copy[sensor_port][i] = 0;
     	}
     }
 
-    dev_dbg(g_dev_ptr,"Read 256 registers (port=%d) ID=0x%x:\n",sensor_port,i2c_read_data_dw[0]);
+    dev_dbg(g_dev_ptr,"Read 256 registers (port=%d) ID=0x%x:\n",sensor_port,sensor_reg_copy[sensor_port][0]);
 
     for (i=0; i<256; i++) { // possible to modify register range to save (that is why nupdate is separate from i)
-    	regval=i2c_read_data_dw[i];
+    	regval=sensor_reg_copy[sensor_port][i];
         regnum=P_SENSOR_REGS+i;
         SETFRAMEPARS_SET(regnum,regval);
     }
 
+    // 09/05/2019: commented out, made regs read directly to sensor_reg_copy, otherwise get various kernel panics
+    //             because of i2c_read_data_dw[256] array - huge variable in stack
+    /*
     for (i=0;i<256;i++) {
         sensor_reg_copy[sensor_port][i] = i2c_read_data_dw[i];
     }
+    */
 
     // in mt9x00x there's setFrameParsStatic-call ?!!! Parameters that never change?
     if (nupdate)  setFrameParsStatic(sensor_port,nupdate,pars_to_update);  // save changes to sensor register shadows for all frames

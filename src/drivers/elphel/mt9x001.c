@@ -995,7 +995,7 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     x393_sensio_ctl_t sensio_ctl = {.d32=0};
 
     // 09/05/2019: commented out, made regs read directly to sensor_reg_copy, otherwise get various kernel panics
-    //             because of i2c_read_data_dw[256] array?
+    //             because of i2c_read_data_dw[256] array - huge variable in stack
     //u32 i2c_read_data_dw[256];
 
     int nupdate=0;
@@ -1046,7 +1046,7 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
         }
     }
     // 09/05/2019: commented out, made regs read directly to sensor_reg_copy, otherwise get various kernel panics
-    //             because of i2c_read_data_dw[256] array?
+    //             because of i2c_read_data_dw[256] array - huge variable in stack
     /*
     for (i=0;i<256;i++) {
         sensor_reg_copy[sensor_port][i] = i2c_read_data_dw[i];
