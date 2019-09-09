@@ -987,16 +987,20 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
                                                                ///< be applied to,  negative - ASAP
                                                                ///< @return 0 - OK, negative - error
 {
-//    unsigned long flags; // this function uses software i2c operations - they need to have interrupts (and hardware i2c off)
-//    struct frameparspair_t pars_to_update[258+(MAX_SENSORS * P_MULTI_NUMREGS )]; // for all the sensor registers. Other P_* values will reuse the same ones
+
+    // unsigned long flags; // this function uses software i2c operations - they need to have interrupts (and hardware i2c off)
+
+	// NOTE: pars_to_update - is allocated in the stack, is it too huge?
+    // struct frameparspair_t pars_to_update[258+(MAX_SENSORS * P_MULTI_NUMREGS )]; // for all the sensor registers. Other P_* values will reuse the same ones
     struct frameparspair_t pars_to_update[262+(MAX_SENSORS * P_MULTI_NUMREGS )]; // for all the sensor registers. Other P_* values will reuse the same ones
     int first_sensor_i2c;
     unsigned short * sensor_register_overwrites;
     x393_sensio_ctl_t sensio_ctl = {.d32=0};
 
-    // 09/05/2019: commented out, made regs read directly to sensor_reg_copy, otherwise get various kernel panics
-    //             because of i2c_read_data_dw[256] array - huge variable in stack
+    // 09/09/2019: [256] - will create the variable in the stack,
+    //                     going heap with kmalloc
     //u32 i2c_read_data_dw[256];
+    u32 *i2c_read_data_dw;
 
     int nupdate=0;
     int i,color;
@@ -1033,26 +1037,31 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     }
     dev_dbg(g_dev_ptr,"Reading sensor (port=%d) registers to the shadows, sa7=0x%x:\n",sensor_port,first_sensor_i2c);
     first_sensor_sa7[sensor_port] = first_sensor_i2c;
+
+    // memory for regs
+    i2c_read_data_dw = kmalloc(256*sizeof(u32),GFP_KERNEL);
+	if (!i2c_read_data_dw)
+		return -ENOMEM;
+
     for (i=0; i<256; i++) { // read all registers, one at a time (slower than in 353)
-        X3X3_I2C_RCV2(sensor_port, first_sensor_i2c, i, &(sensor_reg_copy[sensor_port][i]));
+    	X3X3_I2C_RCV2(sensor_port, first_sensor_i2c, i, &i2c_read_data_dw[i]);
     }
-    dev_dbg(g_dev_ptr,"Read 256 registers (port=%d) ID=0x%x:\n",sensor_port,sensor_reg_copy[sensor_port][0]);
+    dev_dbg(g_dev_ptr,"Read 256 registers (port=%d) ID=0x%x:\n",sensor_port,i2c_read_data_dw[0]);
     for (i=0; i<256; i++) { // possible to modify register range to save (that is why nupdate is separate from i)
-        regval = sensor_reg_copy[sensor_port][i];
+        //regval = sensor_reg_copy[sensor_port][i];
+    	regval = i2c_read_data_dw[i];
         regnum = P_SENSOR_REGS+i;
         SETFRAMEPARS_SET(regnum,regval);
         if ((mreg=MULTIREG(sensor_port,regnum,0))) for (j=0;j<MAX_SENSORS; j++) {
             SETFRAMEPARS_SET(mreg+j,regval);
         }
     }
-    // 09/05/2019: commented out, made regs read directly to sensor_reg_copy, otherwise get various kernel panics
-    //             because of i2c_read_data_dw[256] array - huge variable in stack
-    /*
+
     for (i=0;i<256;i++) {
         sensor_reg_copy[sensor_port][i] = i2c_read_data_dw[i];
     }
-    */
 
+    kfree(i2c_read_data_dw);
 
 //    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
     if (nupdate)  setFrameParsStatic(sensor_port, nupdate, pars_to_update);  // save changes to sensor register shadows for all frames
