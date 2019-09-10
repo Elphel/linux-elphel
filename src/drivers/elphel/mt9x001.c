@@ -691,6 +691,7 @@ static  unsigned short mt9d001_inits[]=
         P_MT9X001_CALCTRL,    0x8498
 };
 
+
 /** Register initial writes for MT9T031 */
 static  unsigned short mt9t001_inits[]=
 {
@@ -795,6 +796,9 @@ int mt9x001_pgm_exposure     (int sensor_port, struct sensor_t * sensor,  struct
 int mt9x001_pgm_gains        (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9x001_pgm_triggermode  (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int mt9x001_pgm_sensorregs   (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
+
+//int mt9x001_debug_recursion(int sensor_port, int i);
+
 // @brief read 2 bytes from i2c
 #ifdef NC353
 #define I2C_READ_DATA16(x) ((i2c_read_data[(x)<<1]<<8)+i2c_read_data[((x)<<1)+1])
@@ -1007,6 +1011,7 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     int regval, regnum, mreg, j;
     int sensor_register_overwrites_number;
     int sensor_subtype;
+    int stack_debug_variable;
 
     dev_dbg(g_dev_ptr,"{%d}  frame16=%d\n",sensor_port,frame16);
     if (frame16 >= 0) return -1; // should be ASAP
@@ -1115,8 +1120,34 @@ int mt9x001_pgm_initsensor     (int sensor_port,               ///< sensor port 
     }
     MDF4(for (i=0; i<1023; i++) {if ((i & 0x1f)==0) dev_dbg(g_dev_ptr,"\n"); dev_dbg(g_dev_ptr," 0x%06lx",GLOBALPARS (sensor_port, G_SENSOR_CALIB+i));});
 
+    // for debugging - find stack pointer
+    /*
+    set_globalParam(sensor_port, G_DLY359_C1, &stack_debug_variable);
+
+    stack_debug_variable = get_globalParam(sensor_port, G_DLY359_C2);
+    mt9x001_debug_recursion(sensor_port, stack_debug_variable);
+
+    // store pid
+    set_globalParam(sensor_port, G_DLY359_P3, current->pid);
+    // end of stack debugging
+    */
+
     return 0;
 }
+
+// debug to see how much stack is left
+/*
+int mt9x001_debug_recursion(int sensor_port, int i)
+{
+	int j=i-1;
+	if (j<=0){
+		set_globalParam(sensor_port, G_DLY359_C3, &j);
+	}else{
+		mt9x001_debug_recursion(sensor_port,j);
+	}
+	return 0;
+}
+*/
 
 /**
  * Program sensor input in FPGA (Bayer, 8/16 bits, FPN, test mode, number of lines).
