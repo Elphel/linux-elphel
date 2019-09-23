@@ -1,0 +1,15 @@
+diff --git a/drivers/rtc/rtc-m41t80.c b/drivers/rtc/rtc-m41t80.c
+index ad03e2f..04ed764 100644
+--- a/drivers/rtc/rtc-m41t80.c
++++ b/drivers/rtc/rtc-m41t80.c
+@@ -209,8 +209,8 @@ static int m41t80_rtc_read_time(struct device *dev, struct rtc_time *tm)
+ 		return flags;
+ 
+ 	if (flags & M41T80_FLAGS_OF) {
+-		dev_err(&client->dev, "Oscillator failure, data is invalid.\n");
+-		return -EINVAL;
++		dev_err(&client->dev, "Oscillator failure, data is invalid. Elphel: not true, proceed anyway.\n");
++		//return -EINVAL;
+ 	}
+ 
+ 	err = i2c_smbus_read_i2c_block_data(client, M41T80_REG_SSEC,
