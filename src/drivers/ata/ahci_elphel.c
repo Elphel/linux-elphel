@@ -175,11 +175,12 @@ static void reset_all_commands(struct elphel_ahci_priv *dpriv)
 }
 
 /** Command execution timer has expired, set flag indicating that recording should be restarted */
-static void process_timeout(unsigned long data)
+//static void process_timeout(unsigned long data)
+static void process_timeout(struct timer_list *t)
 {
 	int report = 0;
 	unsigned long irq_flags;
-	struct elphel_ahci_priv *dpriv = (struct elphel_ahci_priv *)data;
+	struct elphel_ahci_priv *dpriv = from_timer(dpriv,t,cmd_timer);
 
 	/* we are racing with interrupt here, IRQ handler sets IRQ_PROCESSED flag to prevent timer from
 	 * triggering error handler before this timer is removed
@@ -449,7 +450,9 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	dpriv->dev = dev;
 	spin_lock_init(&dpriv->flags_lock);
 	tasklet_init(&dpriv->bh, process_queue, (unsigned long)dpriv);
-	setup_timer(&dpriv->cmd_timer, process_timeout, (unsigned long)dpriv);
+	// function has been changed
+	//setup_timer(&dpriv->cmd_timer, process_timeout, (unsigned long)dpriv);
+	timer_setup(&dpriv->cmd_timer, process_timeout, 0);
 	dpriv->cmd_timeout = DEFAULT_CMD_TIMEOUT;
 	init_waitqueue_head(&dpriv->eh.wait);
 
@@ -468,7 +471,7 @@ static int elphel_drv_probe(struct platform_device *pdev)
 	if (ret != 0)
 		return ret;
 
-	hpriv = ahci_platform_get_resources(pdev);
+	hpriv = ahci_platform_get_resources(pdev,0);
 	if (IS_ERR(hpriv))
 		return PTR_ERR(hpriv);
 
