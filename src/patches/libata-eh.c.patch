@@ -1,0 +1,48 @@
+diff --git a/drivers/ata/libata-eh.c b/drivers/ata/libata-eh.c
+index 01306c0..d7e47ae 100644
+--- a/drivers/ata/libata-eh.c
++++ b/drivers/ata/libata-eh.c
+@@ -919,7 +919,7 @@ static void ata_eh_set_pending(struct ata_port *ap, int fastdrain)
+ void ata_qc_schedule_eh(struct ata_queued_cmd *qc)
+ {
+ 	struct ata_port *ap = qc->ap;
+-	struct request_queue *q = qc->scsicmd->device->request_queue;
++	struct request_queue *q;
+ 	unsigned long flags;
+ 
+ 	WARN_ON(!ap->ops->error_handler);
+@@ -932,9 +932,12 @@ void ata_qc_schedule_eh(struct ata_queued_cmd *qc)
+ 	 * Note that ATA_QCFLAG_FAILED is unconditionally set after
+ 	 * this function completes.
+ 	 */
+-	spin_lock_irqsave(q->queue_lock, flags);
+-	blk_abort_request(qc->scsicmd->request);
+-	spin_unlock_irqrestore(q->queue_lock, flags);
++	if (qc->scsicmd != NULL) {
++		q = qc->scsicmd->device->request_queue;
++		spin_lock_irqsave(q->queue_lock, flags);
++		blk_abort_request(qc->scsicmd->request);
++		spin_unlock_irqrestore(q->queue_lock, flags);
++	}
+ }
+ 
+ /**
+@@ -2426,6 +2429,8 @@ EXPORT_SYMBOL_GPL(ata_get_cmd_descript);
+  *	LOCKING:
+  *	None.
+  */
++int enable_panic = 0;
++EXPORT_SYMBOL_GPL(enable_panic);
+ static void ata_eh_link_report(struct ata_link *link)
+ {
+ 	struct ata_port *ap = link->ap;
+@@ -2481,6 +2486,9 @@ static void ata_eh_link_report(struct ata_link *link)
+ 			ata_link_err(link, "%s\n", desc);
+ 	}
+ 
++        if (enable_panic)
++		BUG();
++
+ #ifdef CONFIG_ATA_VERBOSE_ERROR
+ 	if (ehc->i.serror)
+ 		ata_link_err(link,
