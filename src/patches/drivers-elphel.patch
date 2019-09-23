@@ -1,34 +1,34 @@
 diff --git a/drivers/Kconfig b/drivers/Kconfig
-index e1e2066..0970aa0 100644
+index ab4d439..f0d8bfc 100644
 --- a/drivers/Kconfig
 +++ b/drivers/Kconfig
-@@ -202,4 +202,6 @@ source "drivers/hwtracing/intel_th/Kconfig"
+@@ -219,4 +219,6 @@ source "drivers/siox/Kconfig"
  
- source "drivers/fpga/Kconfig"
+ source "drivers/slimbus/Kconfig"
  
 +source "drivers/elphel/Kconfig"
 +
  endmenu
 diff --git a/drivers/Makefile b/drivers/Makefile
-index 194d20b..caad273 100644
+index 578f469..8e73166 100644
 --- a/drivers/Makefile
 +++ b/drivers/Makefile
-@@ -81,7 +81,7 @@ obj-$(CONFIG_MTD)		+= mtd/
- obj-$(CONFIG_SPI)		+= spi/
+@@ -85,7 +85,7 @@ obj-$(CONFIG_SPI)		+= spi/
  obj-$(CONFIG_SPMI)		+= spmi/
  obj-$(CONFIG_HSI)		+= hsi/
+ obj-$(CONFIG_SLIMBUS)		+= slimbus/
 -obj-y				+= net/
 +
  obj-$(CONFIG_ATM)		+= atm/
  obj-$(CONFIG_FUSION)		+= message/
  obj-y				+= firewire/
-@@ -173,3 +173,9 @@ obj-$(CONFIG_STM)		+= hwtracing/stm/
- obj-$(CONFIG_ANDROID)		+= android/
- obj-$(CONFIG_NVMEM)		+= nvmem/
- obj-$(CONFIG_FPGA)		+= fpga/
+@@ -186,3 +186,9 @@ obj-$(CONFIG_MULTIPLEXER)	+= mux/
+ obj-$(CONFIG_UNISYS_VISORBUS)	+= visorbus/
+ obj-$(CONFIG_SIOX)		+= siox/
+ obj-$(CONFIG_GNSS)		+= gnss/
 +
 +obj-$(CONFIG_ELPHEL393)		+= elphel/
 +obj-$(CONFIG_ELPHELDRVONMICROZED)	+= elphel/
-+obj-$(CONFIG_ELPHEL393_EXTERNAL)       += elphel/
++obj-$(CONFIG_ELPHEL393_EXTERNAL)	+= elphel/
 +
 +obj-y				+= net/
