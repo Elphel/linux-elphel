@@ -93,6 +93,7 @@
 
 //#include <linux/autoconf.h>
 #include <linux/vmalloc.h>
+#include <linux/of.h>
 
 //#include <asm/system.h>
 #include <asm/byteorder.h> // endians

@@ -105,6 +105,7 @@
 #include <linux/vmalloc.h>
 #include <linux/platform_device.h>
 #include <linux/spinlock.h>
+#include <linux/of.h>
 
 //#include <asm/system.h>
 #include <asm/byteorder.h> // endians

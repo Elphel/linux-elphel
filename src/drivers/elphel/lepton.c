@@ -40,6 +40,7 @@
 #include <uapi/elphel/x393_devices.h> // For sysfs
 #include <linux/platform_device.h> // For sysfs
 #include <linux/errno.h> //ETIMEDOUT
+#include <linux/of.h>
 
 //#include "fpgactrl.h"  // defines port_csp0_addr, port_csp4_addr
 //#include "x3x3.h" // detect sensor

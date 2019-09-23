@@ -31,6 +31,7 @@
 #include <linux/interrupt.h>
 #include <linux/time.h>
 #include <linux/platform_device.h>
+#include <linux/of.h>
 
 #include <linux/string.h>
 #include <linux/spinlock.h>

@@ -32,6 +32,7 @@
 //#include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
+#include <linux/of.h>
 #include <linux/string.h>
 #include <linux/init.h>
 //#include <linux/autoconf.h>
