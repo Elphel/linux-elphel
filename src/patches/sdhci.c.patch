@@ -1,0 +1,69 @@
+diff --git a/drivers/mmc/host/sdhci.c b/drivers/mmc/host/sdhci.c
+index c8458e3..d1cddda 100644
+--- a/drivers/mmc/host/sdhci.c
++++ b/drivers/mmc/host/sdhci.c
+@@ -138,7 +138,9 @@ static void sdhci_set_card_detection(struct sdhci_host *host, bool enable)
+ 
+ 	if (enable) {
+ 		present = sdhci_readl(host, SDHCI_PRESENT_STATE) &
+-				      SDHCI_CARD_PRESENT;
++				      // Elphel
++				      //SDHCI_CARD_PRESENT;
++				      SDHCI_ANY_PRESENT;
+ 
+ 		host->ier |= present ? SDHCI_INT_CARD_REMOVE :
+ 				       SDHCI_INT_CARD_INSERT;
+@@ -1656,6 +1658,16 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
+ 		}
+ 	}
+ 
++	// Elphel: returned old code - investigate and remove later
++	if (present < 0) {
++		/* If polling, assume that the card is always present. */
++		if (host->quirks & SDHCI_QUIRK_BROKEN_CARD_DETECTION)
++			present = 1;
++		else
++			present = sdhci_readl(host, SDHCI_PRESENT_STATE) &
++			SDHCI_ANY_PRESENT;
++	}
++
+ 	if (!present || host->flags & SDHCI_DEVICE_DEAD) {
+ 		mrq->cmd->error = -ENOMEDIUM;
+ 		sdhci_finish_mrq(host, mrq);
+@@ -1897,7 +1909,9 @@ static int sdhci_get_cd(struct mmc_host *mmc)
+ 		return 1;
+ 
+ 	/* Host native card detect */
+-	return !!(sdhci_readl(host, SDHCI_PRESENT_STATE) & SDHCI_CARD_PRESENT);
++	// Elphel
++	//return !!(sdhci_readl(host, SDHCI_PRESENT_STATE) & SDHCI_CARD_PRESENT);
++	return !!(sdhci_readl(host, SDHCI_PRESENT_STATE) & SDHCI_ANY_PRESENT);
+ }
+ 
+ static int sdhci_check_ro(struct sdhci_host *host)
+@@ -2869,7 +2883,9 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
+ 
+ 		if (intmask & (SDHCI_INT_CARD_INSERT | SDHCI_INT_CARD_REMOVE)) {
+ 			u32 present = sdhci_readl(host, SDHCI_PRESENT_STATE) &
+-				      SDHCI_CARD_PRESENT;
++				      // Elphel
++				      //SDHCI_CARD_PRESENT;
++				      SDHCI_ANY_PRESENT;
+ 
+ 			/*
+ 			 * There is a observation on i.mx esdhc.  INSERT
+diff --git a/drivers/mmc/host/sdhci.h b/drivers/mmc/host/sdhci.h
+index f35a9a2..dafb1fb 100644
+--- a/drivers/mmc/host/sdhci.h
++++ b/drivers/mmc/host/sdhci.h
+@@ -71,6 +71,10 @@
+ #define  SDHCI_SPACE_AVAILABLE	0x00000400
+ #define  SDHCI_DATA_AVAILABLE	0x00000800
+ #define  SDHCI_CARD_PRESENT	0x00010000
++// Elphel: For 10393 rev.B unreliable D3 detection
++#define  SDHCI_DAT3_PRESENT	0x00800000
++// Elphel
++#define  SDHCI_ANY_PRESENT	(SDHCI_CARD_PRESENT | SDHCI_DAT3_PRESENT)
+ #define  SDHCI_WRITE_PROTECT	0x00080000
+ #define  SDHCI_DATA_LVL_MASK	0x00F00000
+ #define   SDHCI_DATA_LVL_SHIFT	20
