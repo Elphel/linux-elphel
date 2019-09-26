@@ -744,10 +744,7 @@ static int micron_nand_init(struct nand_chip *chip)
 					  &micron_nand_on_die_8_ooblayout_ops);
 
 		chip->ecc.bytes = chip->ecc_strength_ds * 2;
-		// this is already read from the device tree
-		if (!chip->ecc.size){
-			chip->ecc.size = 512;
-		}
+		chip->ecc.size = 512;
 		chip->ecc.strength = chip->ecc_strength_ds;
 		chip->ecc.algo = NAND_ECC_BCH;
 		chip->ecc.read_page = micron_nand_read_page_on_die_ecc;

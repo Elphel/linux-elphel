@@ -313,7 +313,6 @@
 				compatible = "arm,pl353-nand-r2p1";
 				reg = <0 0 0x1000000>;
                                 nand-ecc-mode = "on-die";
-                                nand-ecc-step-size = <2048>;
 				/*arm,nand-clk-freq-hz = <0x5f5e100>;*/
 				arm,nand-width = <0x8>;
 				arm,nand-cycle-t0 = <0x4>;
