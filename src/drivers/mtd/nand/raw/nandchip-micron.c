@@ -69,9 +69,17 @@ static int mt29f_read_user_prot_reg(struct mtd_info *mtd, loff_t from,
 	ops.len = len;
 	ops.datbuf = buf;
 	ops.oobbuf = NULL;
-	// old, triggers chip->ecc.read_page() which enables/disables ondie ECC at each call
+
+	/* OLD: will trigger chip->ecc.read_page
+	 *      depending on the implementation it might not work.
+	 *      E.g., the default hook function in nand_micron.c will set/reset
+	 *      ondie ecc feature for each nand_do_read call,
+	 *      see, micron_nand_read_page_on_die_ecc()
+	 *      So, setting the mode to raw is a safer bet.
+	 */
 	//ops.mode = 0;
-	// new, triggers chip->ecc.read_page_raw()
+
+	// NEW: will trigger chip->ecc.read_page_raw
 	ops.mode = MTD_OPS_RAW;
 
 	/*
@@ -120,9 +128,16 @@ static int mt29f_write_user_prot_reg(struct mtd_info *mtd, loff_t to,
 	ops.datbuf = buf;
 	ops.oobbuf = NULL;
 
-	// old
+	/* OLD: will trigger chip->ecc.write_page
+	 *      depending on the implementation it might not work.
+	 *      E.g., the default hook function in nand_micron.c will set/reset
+	 *      ondie ecc feature for each nand_do_write call,
+	 *      see, micron_nand_write_page_on_die_ecc()
+	 *      So, setting the mode to raw is a safer bet.
+	 */
 	//ops.mode = 0;
-	// need raw mode
+
+	// NEW: will trigger chip->ecc.write_page_raw
 	ops.mode = MTD_OPS_RAW;
 
 	/*
