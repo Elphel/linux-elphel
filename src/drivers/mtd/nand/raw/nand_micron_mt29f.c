@@ -48,7 +48,6 @@ static int mt29f_read_user_prot_reg(struct mtd_info *mtd, loff_t from,
 	struct nand_chip *chip = mtd->priv;
 	struct mtd_oob_ops ops;
 	int ret;
-	u8 get_feature;
 
 	/* Valid pages in otp are 02h-1Fh. */
 	if (from > MICRON_NUM_OTP_PAGES << chip->page_shift)
@@ -63,19 +62,18 @@ static int mt29f_read_user_prot_reg(struct mtd_info *mtd, loff_t from,
 	nand_get_device(mtd, FL_READING);
 	chip->select_chip(mtd, 0);
 
-	ret = chip->onfi_set_features(mtd, chip, MICRON_SETFEATURE_ARRAYOP,MICRON_SETFEATURE_ARRAYOP_OTP);
-	ndelay(1000);
-	chip->cmdfunc(mtd, NAND_CMD_GET_FEATURES, MICRON_SETFEATURE_ARRAYOP, -1);
-	get_feature = readb(chip->IO_ADDR_R);
-	pr_debug("Feature on: 0x%02x\n",get_feature);
-
+	ret = nand_set_features(chip, MICRON_SETFEATURE_ARRAYOP, MICRON_SETFEATURE_ARRAYOP_OTP);
 	if (ret)
 		goto out;
 
 	ops.len = len;
 	ops.datbuf = buf;
 	ops.oobbuf = NULL;
-	ops.mode = 0;
+	// old, triggers chip->ecc.read_page() which enables/disables ondie ECC at each call
+	//ops.mode = 0;
+	// new, triggers chip->ecc.read_page_raw()
+	ops.mode = MTD_OPS_RAW;
+
 	/*
 	 * XXX: some things in nand_do_read_ops might be wrong for OTP. e.g.
 	 * chip->pagemask, chip->pagebuf handling, caching
@@ -86,11 +84,7 @@ static int mt29f_read_user_prot_reg(struct mtd_info *mtd, loff_t from,
 	/* nand_do_read_ops deselects the chip so reselect here */
 	chip->select_chip(mtd, 0);
 
-	chip->onfi_set_features(mtd, chip, MICRON_SETFEATURE_ARRAYOP,MICRON_SETFEATURE_ARRAYOP_NORMAL);
-	ndelay(1000);
-	chip->cmdfunc(mtd, NAND_CMD_GET_FEATURES, MICRON_SETFEATURE_ARRAYOP, -1);
-	get_feature = readb(chip->IO_ADDR_R);
-	pr_debug("Feature off: 0x%02x\n",get_feature);
+	ret = nand_set_features(chip, MICRON_SETFEATURE_ARRAYOP, MICRON_SETFEATURE_ARRAYOP_NORMAL);
 
 out:
 	nand_release_device(mtd);
@@ -118,17 +112,19 @@ static int mt29f_write_user_prot_reg(struct mtd_info *mtd, loff_t to,
 	nand_get_device(mtd, FL_WRITING);
 
 	chip->select_chip(mtd, 0);
-
-	ret = chip->onfi_set_features(mtd, chip, MICRON_SETFEATURE_ARRAYOP,
-			MICRON_SETFEATURE_ARRAYOP_OTP);
-
+	ret = nand_set_features(chip, MICRON_SETFEATURE_ARRAYOP, MICRON_SETFEATURE_ARRAYOP_OTP);
 	if (ret)
 		goto out;
 
 	ops.len = len;
 	ops.datbuf = buf;
 	ops.oobbuf = NULL;
-	ops.mode = 0;
+
+	// old
+	//ops.mode = 0;
+	// need raw mode
+	ops.mode = MTD_OPS_RAW;
+
 	/*
 	 * some things in nand_do_write_ops might be wrong for OTP. e.g.
 	 * chip->pagemask, chip->pagebuf handling
@@ -138,9 +134,7 @@ static int mt29f_write_user_prot_reg(struct mtd_info *mtd, loff_t to,
 
 	/* nand_do_write_ops deselects the chip so reselect here */
 	chip->select_chip(mtd, 0);
-
-	chip->onfi_set_features(mtd, chip, MICRON_SETFEATURE_ARRAYOP,
-			MICRON_SETFEATURE_ARRAYOP_NORMAL);
+	ret = nand_set_features(chip, MICRON_SETFEATURE_ARRAYOP, MICRON_SETFEATURE_ARRAYOP_NORMAL);
 
 out:
 	nand_release_device(mtd);
@@ -153,6 +147,7 @@ static int mt29f_lock_user_prot_reg(struct mtd_info *mtd, loff_t from,
 	struct nand_chip *chip = mtd->priv;
 	int ret;
 	int i;
+	uint8_t zerobuf = 0;
 
 	/* assert from and len are aligned */
 	if (NOTALIGNED(from) || NOTALIGNED(len)) {
@@ -175,29 +170,36 @@ static int mt29f_lock_user_prot_reg(struct mtd_info *mtd, loff_t from,
 	nand_get_device(mtd, FL_WRITING);
 
 	chip->select_chip(mtd, 0);
-
-	ret = chip->onfi_set_features(mtd, chip, MICRON_SETFEATURE_ARRAYOP,
+	ret = chip->set_features(mtd, chip, MICRON_SETFEATURE_ARRAYOP,
 			MICRON_SETFEATURE_ARRAYOP_OTPPROTECT);
 	if (ret)
 		goto out;
 
+	// old
+	/*
 	for (i = 0; i < len << chip->page_shift; ++i) {
 		chip->cmdfunc(mtd, NAND_CMD_SEQIN, 0,
 				(from << chip->page_shift) + i);
-
 		chip->write_byte(mtd, 0);
-
 		chip->cmdfunc(mtd, NAND_CMD_PAGEPROG, -1, -1);
 	}
+	*/
 
-	chip->onfi_set_features(mtd, chip, MICRON_SETFEATURE_ARRAYOP,
+	// new
+	// TODO: Test this? Not critical. It's doubtful locking OTP will ever be needed.
+	for (i = 0; i < len << chip->page_shift; ++i) {
+		nand_prog_page_op(chip,(from << chip->page_shift)+i, 0, &zerobuf, 1);
+	}
+
+	chip->set_features(mtd, chip, MICRON_SETFEATURE_ARRAYOP,
 			MICRON_SETFEATURE_ARRAYOP_NORMAL);
+
 out:
 	nand_release_device(mtd);
 	return ret;
 }
 
-void nandchip_micron_init(struct mtd_info *mtd, int dev_id)
+void nand_micron_mt29f_init(struct mtd_info *mtd, int dev_id)
 {
 	/*
 	 * OTP is available on (at least) Micron's MT29F2G{08,16}AB[AB]EA,
@@ -209,9 +211,9 @@ void nandchip_micron_init(struct mtd_info *mtd, int dev_id)
 	if (IS_ENABLED(CONFIG_MTD_NAND_OTP) &&
 			((dev_id + 0x20) & 0xc0) == 0xc0 &&
 			((dev_id & 0x09) == 8 || (dev_id & 0x0f) == 3)) {
-		mtd->_get_user_prot_info = mt29f_get_user_prot_info;
-		mtd->_read_user_prot_reg = mt29f_read_user_prot_reg;
+		mtd->_get_user_prot_info  = mt29f_get_user_prot_info;
+		mtd->_read_user_prot_reg  = mt29f_read_user_prot_reg;
 		mtd->_write_user_prot_reg = mt29f_write_user_prot_reg;
-		mtd->_lock_user_prot_reg = mt29f_lock_user_prot_reg;
+		mtd->_lock_user_prot_reg  = mt29f_lock_user_prot_reg;
 	}
 } 
