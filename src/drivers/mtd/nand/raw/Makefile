@@ -64,6 +64,6 @@ nand-objs := nand_base.o nand_bbt.o nand_timings.o nand_ids.o
 nand-objs += nand_amd.o
 nand-objs += nand_hynix.o
 nand-objs += nand_macronix.o
-nand-objs += nand_micron.o nand_micron_mt29f.o
+nand-objs += nand_micron.o nandchip-micron.o
 nand-objs += nand_samsung.o
 nand-objs += nand_toshiba.o
