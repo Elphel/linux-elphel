@@ -1341,11 +1341,7 @@ static int pl353_nand_probe(struct platform_device *pdev)
 	xnfc->buswidth = val;
 	chip->chip_delay = 30;
 	/* Set the device option and flash width */
-	// old:
-	//chip->options = NAND_BUSWIDTH_AUTO;
-	// new: MT29F8G08ADBDAH4 does not support subpage write,
-	//      setting here, will change later
-	chip->options = NAND_BUSWIDTH_AUTO | NAND_NO_SUBPAGE_WRITE;
+	chip->options = NAND_BUSWIDTH_AUTO;
 	chip->bbt_options = NAND_BBT_USE_FLASH;
 	platform_set_drvdata(pdev, xnfc);
 	chip->setup_data_interface = pl353_setup_data_interface;
