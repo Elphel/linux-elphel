@@ -763,10 +763,6 @@ static int micron_nand_init(struct nand_chip *chip)
 	// chip->id.data[1] is dev_id (0xa3 in Elphel 10393)
 	nand_micron_mt29f_init(mtd, chip->id.data[1]);
 
-	// MT29F8G08ADBDAH4, no subpage write support
-	if (chip->id.data[1]==0xa3)
-		chip->options |= NAND_NO_SUBPAGE_WRITE;
-
 	// Elphel: modification for Micron NAND chips
 	//TODO: add Micron chip ID checking
 	mtd->_unlock = micron_nand_unlock;
