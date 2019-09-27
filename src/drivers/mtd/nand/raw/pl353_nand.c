@@ -1133,8 +1133,8 @@ static int pl353_nand_ecc_init(struct mtd_info *mtd, struct nand_ecc_ctrl *ecc,
 		 * They enable/disable ondie ecc feature each call which
 		 * is not optimal.
 		 */
-		ecc->read_page = pl353_nand_read_page_raw;
-		ecc->write_page = pl353_nand_write_page_raw;
+		//ecc->read_page = pl353_nand_read_page_raw;
+		//ecc->write_page = pl353_nand_write_page_raw;
 
 		pl353_smc_set_ecc_mode(PL353_SMC_ECCMODE_BYPASS);
 		/*
