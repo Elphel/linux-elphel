@@ -1,0 +1,18 @@
+/* elphel393 device tree */
+/include/ "elphel393-zynq-base.dtsi"
+/include/ "elphel393-bootargs.dtsi"
+/include/ "elphel393-common.dtsi"
+/include/ "elphel393-revision.dtsi"
+
+/ {
+
+    elphel393_detect_sensors: elphel393-detect_sensors@0 {
+        compatible = "elphel,elphel393-detect_sensors-1.00";
+        elphel393-detect_sensors,port-mux = "none none none none"; /* "none", "detect" or "mux10359" */
+        elphel393-detect_sensors,sensors =  "mt9f002", // Line per port, may contain up to 4 sensors (3 with 10359)
+                                            "mt9f002",
+                                            "mt9f002",
+                                            "mt9f002";
+    };
+
+};
