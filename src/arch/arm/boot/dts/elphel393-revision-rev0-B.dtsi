@@ -1,0 +1,23 @@
+/ {
+    ps7_axi_interconnect_0: amba@0 {
+        ps7_ethernet_0: ps7-ethernet@e000b000 {
+            local-mac-address = [00 0e 64 10 00 00];
+            phy-handle = <&phy3>;
+            phy-mode = "rgmii-id";
+            mdio {
+                #address-cells = <1>;
+                #size-cells = <0>;
+                phy3: phy@3 {
+                        /* Atheros 8035 */
+                        compatible = "ethernet-phy-id004d.d072";
+                        /* compatible = "ethernet-phy-ieee802.3-c22";*/
+                        device_type = "ethernet-phy";
+                        /* rev0 - revB: reg = <0x3> */
+                        /* revC:        reg = <0x0> */
+                        reg = <0x3>;
+                };
+            };
+        };
+    };
+
+};

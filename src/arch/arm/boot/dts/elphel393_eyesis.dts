@@ -117,36 +117,43 @@
 			};
 		};
 
-		smcc: memory-controller@e000e000 {
-			nand0: flash@e1000000 {
-				partitions {
-					compatible = "fixed-partitions";
-					#address-cells = <1>;
-					#size-cells = <1>;
-					partition@0 {
-						label = "u-boot-spl";
-						reg = <0x0 0x100000>;/*1MB for backup spl image(s)*/
-					};
-					partition@1 {
-						label = "u-boot";
-						reg = <0x100000 0x400000>;/*4MB*/
-					};
-					partition@2 {
-						label = "device-tree";
-						reg = <0x500000 0x100000>;/*1MB*/
-					};
-					partition@3 {
-						label = "kernel";
-						reg = <0x600000 0x1000000>;/*16MB*/
-					};
-					partition@4 {
-						label = "rootfs";
-						/*reg = <0x1600000 0x10000000>;*/ /*256MB*/
-						reg = <0x1600000 0x14000000>; /*320MB*/
-					};
+		ps7_smcc_0: ps7-smcc@e000e000 {
+			ps7_nand_0: ps7-nand@e1000000 {
+				compatible = "arm,pl353-nand-r2p1";
+				reg = < 0xe1000000 0x1000000 >;
+				/*arm,nand-clk-freq-hz = <0x5f5e100>;*/
+				arm,nand-width = <0x8>;
+				arm,nand-cycle-t0 = <0x4>;
+				arm,nand-cycle-t1 = <0x4>;
+				arm,nand-cycle-t2 = <0x1>;
+				arm,nand-cycle-t3 = <0x2>;
+				arm,nand-cycle-t4 = <0x2>;
+				arm,nand-cycle-t5 = <0x2>;
+				arm,nand-cycle-t6 = <0x4>;
+				#address-cells = <0x1>;
+				#size-cells = <0x1>;
+				partition@0 {
+					label = "u-boot-spl";
+					reg = <0x0 0x100000>;/*1MB for backup spl image(s)*/
 				};
-			};
-		};
+				partition@1 {
+					label = "u-boot";
+					reg = <0x100000 0x400000>;/*4MB*/
+				};
+				partition@2 {
+					label = "device-tree";
+					reg = <0x500000 0x100000>;/*1MB*/
+				};
+				partition@3 {
+					label = "kernel";
+					reg = <0x600000 0x1000000>;/*16MB*/
+				};
+				partition@4 {
+					label = "rootfs";
+					reg = <0x1600000 0x10000000>;/*256MB*/
+				};
+			} ;
+		} ;
 
 		elphel_ahci: elphel-ahci@80000000 {
 			compatible = "elphel,elphel-ahci";
