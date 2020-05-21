@@ -373,6 +373,14 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     x393_camsync_io_t   camsync_src  = {.d32=0x00000}; // all disabled (use internal)
     x393_camsync_io_t   camsync_dst  = {.d32=0x00000}; // all disable - nothing to output
 
+    // Need to check a certain pin state, which is
+    // senspgmin (bit 24 of x393_status_sens_io_t)
+    // senspgmin = 0 - some sensor board is attached to port
+    // senspgmin = 1 - mux board or nothing
+    x393_status_ctrl_t    status_ctrl = {.d32 = 0};
+    x393_status_sens_io_t status;
+    int i;
+
     // Setting trigger input, output and preriod to off
 
     int was_sensor_freq = 0; // 90000000; // getClockFreq(1);
@@ -476,6 +484,23 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
     } else {
         dev_dbg(g_dev_ptr,"Mux mode for port %d SENSOR_NONE, skipping 10359 detection\n",sensor_port);
         MDP(DBGB_PADD, sensor_port,"Mux mode for port %d SENSOR_NONE, skipping 10359 detection\n",sensor_port)
+    }
+
+    // check senspgmin (bit 24 of x393_status_sens_io_t)
+    status = x393_sensio_status(sensor_port);
+    status_ctrl.seq_num = status.seq_num + 1;
+    status_ctrl.mode = 1;
+    set_x393_sensio_status_cntrl(status_ctrl, sensor_port);
+    for(i=0;i<10;i++){
+    	status = x393_sensio_status(sensor_port);
+    	if(status.seq_num==status_ctrl.seq_num){
+    		break;
+    	}
+    }
+    // '1' - means empty port (pull up) or mux board
+    if (status.senspgmin==1){
+    	dev_info(g_dev_ptr,"No sensors connected to port %d \n",sensor_port);
+    	return 0;
     }
 
     //if ((thispars->pars[P_SENSOR]==0) ||  // multisensor not detected
