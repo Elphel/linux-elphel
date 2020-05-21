@@ -465,7 +465,7 @@ int lepton_pgm_detectsensor   (int sensor_port,               ///< sensor port n
 //    int i2c_data,i2c_rslt;
     struct sensor_t * psensor; // current sensor
 //    x393_sensio_ctl_t sensio_ctl = {.d32=0};
-    x393_status_sens_io_t status; // check board exists
+    //x393_status_sens_io_t status; // check board exists
 //    unsigned short * sensor_multi_regs;
 
     // temporary
@@ -538,14 +538,17 @@ int lepton_pgm_detectsensor   (int sensor_port,               ///< sensor port n
     	return 0;  // no sensor found
     }
 #else
-//assume Lepton sesnors if there is some sesnor board attached
+    // this check is moved to pgm_functions.c, see check_senspgmin_state()
+    /*
+    //assume Lepton sensors if there is some sensor board attached
     status = x393_sensio_status(sensor_port);
     if (!status.senspgmin){
-        dev_info(g_dev_ptr,"Some sensor board is attached to port %d, assumimg Lepton 3.5 as FPGA is programmed for it\n",sensor_port);
+        dev_info(g_dev_ptr,"Some sensor board is attached to port %d, assuming Lepton 3.5 as FPGA is programmed for it\n",sensor_port);
     } else {
-        dev_info(g_dev_ptr,"No sesnor board is attached to port %d\n",sensor_port);
+        dev_info(g_dev_ptr,"No sensor board is attached to port %d\n",sensor_port);
     	return 0;  // no sensor found
     }
+    */
 #endif
 
     // Sensor recognized, go on
