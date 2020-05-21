@@ -508,7 +508,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         dev_dbg(g_dev_ptr,"Mux mode for port %d SENSOR_NONE, skipping 10359 detection\n",sensor_port);
         MDP(DBGB_PADD, sensor_port,"Mux mode for port %d SENSOR_NONE, skipping 10359 detection\n",sensor_port)
 
-        if (check_senspgmin_state()==1){
+        if (check_senspgmin_state(sensor_port)==1){
         	dev_info(g_dev_ptr,"No sensors connected to port %d \n",sensor_port);
         	return 0;
         }
