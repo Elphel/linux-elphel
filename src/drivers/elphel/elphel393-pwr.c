@@ -28,6 +28,9 @@
 #include <linux/i2c/ltc3589.h>
 #include <linux/math64.h>
 
+// for waiting until power good
+#include <linux/delay.h>
+
 #define DRIVER_DESCRIPTION	"Elphel 10393 power supply control"
 #define DRIVER_VERSION		"1.00"
 
@@ -59,6 +62,8 @@
 #define REF_VAR_0_TENTH_MV    3625
 #define REF_VAR_STEP_TENTH_MV  125
 #define DEAFULT_TIMEOUT        300 /* number of retries testing pgood before giving up */
+
+#define PGOOD_DELAY 100
 
 static DEFINE_MUTEX(gpio_10389_lock);
 
@@ -290,6 +295,11 @@ static int set_volt_mv(struct device *dev, int chn, int v_mv);
 static int get_enable(struct device *dev, int chn);
 static int set_enable(struct device *dev, int chn, int enable);
 static int get_pgood(struct device *dev, int chn);
+
+// 07/29/2020, bug fix - RTC likely interferes with power_good when setting voltages
+static void wait_for_unmasked_pgood(void){
+	mdelay(PGOOD_DELAY);
+}
 
 int gpio_10389_ctrl(struct device *dev, int value);
 
@@ -610,7 +620,10 @@ static ssize_t enable_por_store(struct device *dev, struct device_attribute *att
 {
 	int en_por,rc;
     sscanf(buf, "%du", &en_por);
-    if (en_por)	rc=reenable_por(dev); /* will wait pgood, then enable POR */
+    if (en_por)	{
+    	wait_for_unmasked_pgood();
+    	rc=reenable_por(dev); /* will wait pgood, then enable POR */
+    }
     else        rc=por_ctrl(dev, 1); /* disable POR */
 	if (rc<0) return rc;
 	return count;
@@ -771,6 +784,7 @@ static int set_enabled_by_mask(struct device *dev, int chn_bits, int enable)
 	/* consolidate writes */
 	/* assuming all enable bits in LTC3589 to be in a single register (LTC3589_AWE_OVEN) */
 	int chn, awe=0, oven;
+	int rc;
 	struct i2c_client *ltc3589_client;
 	struct elphel393_pwr_data_t *clientdata=platform_get_drvdata(to_platform_device(dev));
 	dev_dbg(dev,"set_enabled_by_mask(dev,0x%x,%d)\n",chn_bits,enable);
@@ -790,7 +804,9 @@ static int set_enabled_by_mask(struct device *dev, int chn_bits, int enable)
 		if (oven<0) return oven;
 		if (enable) oven |= awe;
 		else oven &= ~awe;
-		return ltc3589_write_field (ltc3589_client, oven, LTC3589_AWE_OVEN);
+		rc = ltc3589_write_field (ltc3589_client, oven, LTC3589_AWE_OVEN);
+		wait_for_unmasked_pgood();
+		return rc;
 	}
 	return 0;
 }
@@ -947,6 +963,7 @@ static int set_volt_mv(struct device *dev, int chn, int v_mv)
 			rc= get_gpio_pwr_mgx_indices(-1-voltage_reg[chn].awe_ref,pwr_mg_indices); /* chn = 0 (VP10) or 1 (VP18) */
 			if (rc<0) return rc;
 			rc = gpio_conf_by_index(dev,pwr_mg_indices[0], 0, 0); /* disable margining */
+			wait_for_unmasked_pgood();
 			if (rc < 0)return rc;
 			if (index !=20){
 				/* set margining absolute value */
@@ -964,6 +981,7 @@ static int set_volt_mv(struct device *dev, int chn, int v_mv)
 					rc = gpio_conf_by_index(dev,pwr_mg_indices[1], 1, 0); /* out 0:  +/- 5% */
 					break;
 				}
+		    	wait_for_unmasked_pgood();
 				if (rc < 0)return rc;
 				/* set margining sign */
 				if (index >20) rc = gpio_conf_by_index(dev,pwr_mg_indices[0], 1, 1); /* out 1:  positive margining */
@@ -1001,6 +1019,7 @@ static int set_volt_mv(struct device *dev, int chn, int v_mv)
 	    }
 		dev_dbg(dev,"ltc3589_client->name= %s\n", ltc3589_client->name);
 	    rc=ltc3589_write_field(ltc3589_client, index,voltage_reg[chn].awe_ref);
+	    wait_for_unmasked_pgood();
 		if (rc<0) return rc;
 	}
 	return 0;
