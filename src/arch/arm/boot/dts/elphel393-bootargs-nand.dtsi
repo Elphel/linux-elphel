@@ -1,7 +1,7 @@
 /**/
 / {
 	chosen {
-		bootargs = "earlycon cma=336M root=ubi0:elphel393-rootfs rootwait rootfstype=ubifs ubi.mtd=4,2048";
+		bootargs = "earlycon cma=336M root=ubi0:elphel393-rootfs rootwait rootfstype=ubifs ubi.mtd=4,512";
 		stdout-path = "serial0:115200n8";
 	};
 };
