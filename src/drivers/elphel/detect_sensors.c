@@ -64,8 +64,8 @@ struct sensor_name_t {
 //typedef enum {NONE,PARALLEL12,HISPI} sens_iface_t; ///< Sensor port interface type
 
 const struct sensor_name_t sensor_names[] ={
-        {.name="detect",     .type=3, .iface=NONE,       .code = 0},                // to be automatically detected
-        {.name="none",       .type=3, .iface=NONE,       .code = SENSOR_NONE},      // no device attached
+        {.name="detect",     .type=3, .iface=IFACE_NONE,       .code = 0},                // to be automatically detected
+        {.name="none",       .type=3, .iface=IFACE_NONE,       .code = SENSOR_NONE},      // no device attached
         {.name="mux10359",   .type=2, .iface=PARALLEL12, .code = SENSOR_MUX_10359}, // no device attached
         {.name="zr32112",    .type=1, .iface=PARALLEL12, .code = SENSOR_ZR32112},   // Zoran ZR32112
         {.name="zr32212",    .type=1, .iface=PARALLEL12, .code = SENSOR_ZR32212},   // Zoran ZR32212
@@ -80,7 +80,7 @@ const struct sensor_name_t sensor_names[] ={
         {.name="ibis51300",  .type=1, .iface=PARALLEL12, .code = SENSOR_IBIS51300}, // FillFactory IBIS51300
         {.name="kai11002",   .type=1, .iface=PARALLEL12, .code = SENSOR_KAI11000},  // Kodak KAI11002
         {.name="lepton35",   .type=1, .iface=VOSPI,      .code = SENSOR_LEPTON35},  // Kodak KAI11002
-        {.name=NULL,         .type=0, .iface=NONE,       .code = 0} // end of list
+        {.name=NULL,         .type=0, .iface=IFACE_NONE,       .code = 0} // end of list
 };
 static sens_iface_t port_iface[SENSOR_PORTS];
 //#define DETECT_SENSOR 1 ///< Include sensors, May be OR-ed when looking for sensor/multiplexer code/name
@@ -126,7 +126,7 @@ sens_iface_t get_iface_by_code(int code, ///< sensor code
             return sensor_names[i].iface;
         }
     }
-    return NONE;
+    return IFACE_NONE;
 }
 
 /** Get sensor port multiplexer type */
@@ -180,7 +180,7 @@ int get_subchannels(int port) ///< Sensor port
 void update_port_iface(int port)  ///< Sensor port number (0..3)
 {
     sens_iface_t iface = get_iface_by_code(get_detected_mux_code(port), DETECT_MUX);
-    if (iface != NONE) {
+    if (iface != IFACE_NONE) {
         port_iface[port] = iface;
         return;
     }
