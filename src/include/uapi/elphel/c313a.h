@@ -255,6 +255,7 @@
 //#define SENSOR_MT9Y001   0x34 ///< Micron/Aptina/Onsemi MT9P001 - 34
 #define SENSOR_IBIS51300 0x40 ///< FillFactory IBIS51300
 #define SENSOR_LEPTON35  0x44 ///< FLIR Lepton3 sensor
+#define SENSOR_BOSON640  0x48 ///< FLIR Boson640 sensor
 #define SENSOR_KAI11000  0x80 ///< Kodak KAI11002
 #define SENSOR_MUX_10359 0xe0 ///< Sensor multiplexer 10359
 #define SENSOR_NONE      0xfc ///< No sensor present

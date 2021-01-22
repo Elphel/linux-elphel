@@ -277,9 +277,10 @@
                                                    "sensor_eeprom  0x50 1 1 100",
                                                    "sensor_temp    0x18 1 2 100",
                                                    "cy22393        0x69 1 1 100",
-                                                   "lepton35       0x2a 2 2 500";
+                                                   "lepton35       0x2a 2 2 500",
+/*Update elphel393-sensor-i2c to support uart instead of the i2c */                
+                                                   "boson640       0x2a 2 2 500";
     } ;
-
     framepars_operations: elphel393-framepars@0 {
         compatible = "elphel,elphel393-framepars-1.00";
     };
@@ -302,6 +303,10 @@
 
     elphel393_lepton: elphel393-lepton@0 {
         compatible = "elphel,elphel393-lepton-1.00";
+    };
+
+    elphel393_boson640: elphel393-boson640@0 {
+        compatible = "elphel,elphel393-boson640-1.00";
     };
 
     elphel393_clock10359:elphel393-clock10359@0{

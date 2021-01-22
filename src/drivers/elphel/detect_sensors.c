@@ -38,6 +38,7 @@
 #include "mt9f002.h"
 #include "multi10359.h"
 #include "lepton.h"
+#include "boson640.h"
 #include "detect_sensors.h"
 
 #define DETECT_SENSORS_MODULE_DESCRIPTION "Detect sensor type(s) attached to each of the ports"
@@ -79,7 +80,8 @@ const struct sensor_name_t sensor_names[] ={
         {.name="mt9f002",    .type=1, .iface=HISPI4,     .code = SENSOR_MT9F002},   // MT9F002
         {.name="ibis51300",  .type=1, .iface=PARALLEL12, .code = SENSOR_IBIS51300}, // FillFactory IBIS51300
         {.name="kai11002",   .type=1, .iface=PARALLEL12, .code = SENSOR_KAI11000},  // Kodak KAI11002
-        {.name="lepton35",   .type=1, .iface=VOSPI,      .code = SENSOR_LEPTON35},  // Kodak KAI11002
+        {.name="lepton35",   .type=1, .iface=VOSPI,      .code = SENSOR_LEPTON35},  // Lepton35 (160x120)LWIR
+        {.name="boson640",   .type=1, .iface=BOSON640,   .code = SENSOR_BOSON640},  // Boson640 (640x512) LWIR
         {.name=NULL,         .type=0, .iface=IFACE_NONE,       .code = 0} // end of list
 };
 static sens_iface_t port_iface[SENSOR_PORTS];
@@ -481,6 +483,12 @@ int detect_sensors_par2addr_init(int port,int sub_chn){
 			atab      = mt9f002_ahead_tab;
 			break;
 		case SENSOR_LEPTON35:
+			par2addr  = lepton_par2addr;
+			pages     = lepton_pages;
+			atab      = lepton_ahead_tab;
+			break;
+		case SENSOR_BOSON640: // temporary, set later to actual one
+			dev_warn(g_dev_ptr,"FIX temporary data in detect_sensors for Boson640\n");
 			par2addr  = lepton_par2addr;
 			pages     = lepton_pages;
 			atab      = lepton_ahead_tab;

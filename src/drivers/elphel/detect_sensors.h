@@ -45,7 +45,7 @@ struct sensor_port_config_t {
 
 extern struct sensor_port_config_t *pSensorPortConfig;
 
-typedef enum {IFACE_NONE,PARALLEL12,HISPI4,VOSPI} sens_iface_t; ///< Sensor port interface type
+typedef enum {IFACE_NONE,PARALLEL12,HISPI4,VOSPI,BOSON640} sens_iface_t; ///< Sensor port interface type
 
 int          get_code_by_name(const char * name, int type);
 const char * get_name_by_code(int code, int type);
