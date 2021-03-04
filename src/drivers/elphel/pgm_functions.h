@@ -62,7 +62,7 @@ unsigned long sensor_to_camsync(unsigned long pixel_time, unsigned long sensor_c
  * @param p parameter index (all high bits/attributes will be removed, only 12 LSBs preserved)
  * @param v parameter value(32 bits) */
 #define SETFRAMEPARS_UPDATE_SET(p,v) { pars_to_update[nupdate  ].num= (p) ;  pars_to_update[nupdate++].val=thispars->pars[(p) & 0xffff]?thispars->pars[(p) & 0xffff]:(v);}
-/** Adds new parameter/value pair to the modification queue only if it is different from tghe current
+/** Adds new parameter/value pair to the modification queue only if it is different from the current
  * @param p parameter index (all high bits/attributes will be removed, only 12 LSBs preserved)
  * @param v parameter value(32 bits) */
 #define SETFRAMEPARS_COND(p,v)       { if (unlikely((v)!=thispars->pars[(p) & 0xffff])) { pars_to_update[nupdate  ].num= (p) ;  pars_to_update[nupdate++].val=(v);} }
@@ -99,6 +99,7 @@ extern struct sensor_port_config_t *pSensorPortConfig;
  * @param reg   sensor register address (8-bit)
  * @param data  value to set (16 bits)
  */
+// is _ADDR&0xffff0000 for Lepton?
 #define SET_SENSOR_PAR_LUT(port,frame,reg,data) {\
 	int _I = pSensorPortConfig[(port)].broadcast_addr;\
 	int _ADDR = pSensorPortConfig[(port)].par2addr[_I][(reg)];\

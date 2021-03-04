@@ -278,8 +278,8 @@
                                                    "sensor_temp    0x18 1 2 100",
                                                    "cy22393        0x69 1 1 100",
                                                    "lepton35       0x2a 2 2 500",
-/*Update elphel393-sensor-i2c to support uart instead of the i2c */                
-                                                   "boson640       0x2a 2 2 500";
+/*Update elphel393-sensor-i2c to support uart instead of the i2c. 0x81 - 80 - extif/!i2c, 1 - extif mode,rah:2lsbs - bytes  */                
+                                                   "boson640       0x81 2 2 500";
     } ;
     framepars_operations: elphel393-framepars@0 {
         compatible = "elphel,elphel393-framepars-1.00";

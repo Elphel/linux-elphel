@@ -814,7 +814,7 @@ int membridge_start(int sensor_port, unsigned long target_frame){
 
      width_bursts = (width_marg >> 4) + ((width_marg & 0xf) ? 1 : 0);
 
-     pr_debug("VIDEOMEM: frame_num=%d width_marg=%d  height_marg=%d width_burts=%d", frame_num, width_marg, height_marg, width_bursts);
+     pr_debug("VIDEOMEM: frame_num=%ld width_marg=%d  height_marg=%d width_burts=%d", frame_num, width_marg, height_marg, width_bursts);
 
      setup_membridge_memory(sensor_port, ///< sensor port number (0..3)
      					   0,                     ///< 0 - from fpga mem to system mem, 1 - otherwise
@@ -1165,7 +1165,7 @@ static ssize_t show_frames_in_buffer(struct device *dev, struct device_attribute
 static ssize_t get_membridge_status(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	x393_status_membridge_t status = x393_membridge_status();
-    return sprintf(buf,"0x%08x\n", status);
+    return sprintf(buf,"0x%08x\n", status.d32);
 }
 
 static ssize_t get_video_frame_num(struct device *dev, struct device_attribute *attr, char *buf)
@@ -1194,7 +1194,7 @@ static ssize_t get_raw_frame_info(struct device *dev, struct device_attribute *a
     buf += sprintf(buf,"width = %d\n" ,raw_info.width[sensor_port]);
     buf += sprintf(buf,"height = %d\n" ,raw_info.height[sensor_port]);
     buf += sprintf(buf,"bits per pixel = %d\n" ,raw_info.bpp[sensor_port]);
-    buf += sprintf(buf,"buffer offset = 0x%08x\n" ,raw_info.offset[sensor_port]);
+    buf += sprintf(buf,"buffer offset = 0x%08llx\n" ,raw_info.offset[sensor_port]);
 
 	return buf-buf0;
 }
@@ -1212,13 +1212,13 @@ static ssize_t get_mctrl_status_chn(struct device *dev, struct device_attribute 
 		case 4: status = x393_mcntrl_chn4_status(); break;
 	}
 
-    return sprintf(buf,"0x%08x\n", status);
+    return sprintf(buf,"0x%08x\n", status.d32);
 }
 
 static ssize_t get_cmprs_status(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	x393_cmprs_status_t status = x393_cmprs_status(get_channel_from_name(attr));
-    return sprintf(buf,"0x%08x\n", status);
+    return sprintf(buf,"0x%08x\n", status.d32);
 }
 
 static ssize_t store_frame_start(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -1250,8 +1250,7 @@ static ssize_t set_membridge_status_reg(struct device *dev, struct device_attrib
     d.d32 = in;
     set_x393_membridge_status_cntrl(d);
     d = get_x393_membridge_status_cntrl();
-    pr_info("Set membridge status register to 0x%08x, status: 0x%08x\n",in,d);
-
+    pr_info("Set membridge status register to 0x%08x, status: 0x%08x\n",in,d.d32);
     return count;
 }
 

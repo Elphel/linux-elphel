@@ -4,6 +4,7 @@
 
 #ifndef _JPEGHEAD
 #define _JPEGHEAD
+#include <linux/platform_device.h>
 
 struct huffman_fpga_code_t {
   unsigned short value;       /// code value

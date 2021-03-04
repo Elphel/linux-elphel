@@ -1,7 +1,7 @@
 /// @file quantization_tables.h
 #ifndef _QUANTIZATION_TABLES_H
 #define _QUANTIZATION_TABLES_H
-
+#include <linux/platform_device.h>
 /** @brief Quantization tables cache usage policy */
 enum {
 	// @brief Use common cache for all compressors

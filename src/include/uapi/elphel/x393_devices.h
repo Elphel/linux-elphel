@@ -126,6 +126,7 @@
 #define DEV393_MT9X001        ("",               "elphel393-mt9x001", -1, -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
 #define DEV393_MT9F002        ("",               "elphel393-mt9f002", -1, -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
 #define DEV393_LEPTON         ("",                "elphel393-lepton", -1, -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
+#define DEV393_BOSON640       ("",              "elphel393-boson640", -1, -1, "0666", "c")  ///< Used only in sysfs, no character device (yet?)
 #define DEV393_KLOGGER        ("klogger_393",          "klogger_393",144,  1, "0666", "c")  ///< kernel event logger to memory (no i/o)
 
 #define _DEV393_DEVNAME(n, ...) n

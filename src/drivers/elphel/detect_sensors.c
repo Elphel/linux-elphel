@@ -489,9 +489,9 @@ int detect_sensors_par2addr_init(int port,int sub_chn){
 			break;
 		case SENSOR_BOSON640: // temporary, set later to actual one
 			dev_warn(g_dev_ptr,"FIX temporary data in detect_sensors for Boson640\n");
-			par2addr  = lepton_par2addr;
-			pages     = lepton_pages;
-			atab      = lepton_ahead_tab;
+			par2addr  = boson640_par2addr;
+			pages     = boson640_pages;
+			atab      = boson640_ahead_tab;
 			break;
 	}
 	if (par2addr){

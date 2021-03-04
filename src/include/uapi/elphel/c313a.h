@@ -282,7 +282,7 @@
 #define SENSORWIDTH_IBIS51300  1280 ///< FillFactory IBIS51300 width
 #define SENSORHEIGHT_IBIS51300 1024 ///< FillFactory IBIS51300 height
 
-#define P_TRIG_MASTER    3          ///< Master channel for setting trigger para,eters
+#define P_TRIG_MASTER    3          ///< Master channel for setting trigger parameters
 #define P_SENSOR_RUN     4          ///< Sensor acquisition mode 0 - stop, 1 - single, 2 - run
   #define SENSOR_RUN_STOP   0       ///< Sensor acquisition mode: STOP
   #define SENSOR_RUN_SINGLE 1       ///< Sensor acquisition mode: SINGLE FRAME
@@ -296,7 +296,8 @@
   #define COMPRESSOR_RUN_RESET  3   ///< Compressor mode: RESET
 
 #define P_BAYER          6 ///< filter number at (0,0) 0-R, 1-G(R), 2-G(B), 3 - B. Write enabled at first, move to WindowSize later
-#define P_TRIGGERED	     7 ///< when trigger occured - 4 LSBs - pixel in DMA word, higher bits - number of DMA word OBSOLETE
+//#define P_TRIGGERED	     7 ///< when trigger occurred - 4 LSBs - pixel in DMA word, higher bits - number of DMA word OBSOLETE
+#define P_BOOTED         7 ///< sensor is fully booted (for Boson640) and ready to accept commands
 #define P_PERIOD         8 ///< Frame period in pixel clocks (read only)
 #define P_FP1000SLIM     9 ///< FPS limit, frames per 1000 sec
 #define P_FPSFLAGS      10 //v FPS limit mode - bit 0 - limit fps (not higher than), bit 1 - maintain fps (not lower than)
@@ -1115,6 +1116,7 @@ struct p_names_t {
           P_NAME_ENTRY(ACTUAL_WIDTH), \
           P_NAME_ENTRY(ACTUAL_HEIGHT), \
           P_NAME_ENTRY(BAYER), \
+          P_NAME_ENTRY(BOOTED), \
           P_NAME_ENTRY(PERIOD), \
           P_NAME_ENTRY(FP1000SLIM), \
           P_NAME_ENTRY(FRAME), \
@@ -1736,9 +1738,10 @@ struct __attribute__((__packed__)) sensor_t {
 #define SENSOR_NEED_RESET_PHASE 2
 
 typedef enum FPGA_INTERFACES {
-	FPGA_PAR12 = 0,
-	FPGA_HISPI = 1,
-	FPGA_VOSPI = 2
+	FPGA_PAR12 =    0,
+	FPGA_HISPI =    1,
+	FPGA_VOSPI =    2,
+	FPGA_BOSON640 = 3
 } fpga_interfaces_t;
 
 

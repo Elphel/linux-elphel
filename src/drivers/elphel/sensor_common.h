@@ -6,6 +6,7 @@
 #define _SENSOR_COMMON_H
 
 #include "detect_sensors.h"
+#include <linux/platform_device.h>
 
 //extern struct sensor_t sensor; // current sensor (will be copied to by sensor driver), made external for the cc353.c to read/write i2c
 extern struct sensorproc_t * asensorproc;
@@ -98,6 +99,7 @@ long long get_frame_pos(unsigned int chn, unsigned int pos);
 #define  name_mt9p006  "mt9p006"  // Get name from DT (together with port mask)
 #define  name_mt9f002  "mt9f002"  // Get name from DT (together with port mask)
 #define  name_lepton35 "lepton35" // Get name from DT (together with port mask)
+#define  name_boson640 "boson640" // Get name from DT (together with port mask)
 
 #define I2C359_INC                    2   ///< slave address increment between sensors in 10359A board (broadcast, 1,2,3) (7 bits SA)
 
@@ -115,15 +117,15 @@ long long get_frame_pos(unsigned int chn, unsigned int pos);
 													write_xi2c_reg16_abs_asap((port),(sa7),(frame),(reg),(data));\
 												}
 
-/** Perform I2C write (8  bits address, 16 bits data in "legacy" mode,
- * pages matching slave address should be registered.
+/** Perform I2C write (8/16  bits address, 16 bits data in LUT mode,
+ * pages matching MSB(reg) should be registered.
  *
  * TODO: Add registering single sensors as in multi10359. Registering twice is OK.
  * Slave address is now 7-bit,old was 8-bit, change (10359 already done)
  * @param port - sensor port
  * @param frame Frame number to apply, <0 - ASAP
  * @param si - slave device index (for mux board)
- * @param reg sensor register address (16-bit)
+ * @param reg sensor register address (16-bit, high byte uses tables)
  * @param data value to set (16 bits) */
 
 //int _ADDR = pSensorPortConfig[(port)].par2addr[si][(reg)];
@@ -139,7 +141,7 @@ long long get_frame_pos(unsigned int chn, unsigned int pos);
  *
  * Slave address is now 7-bit,old was 8-bit, change (10359 already done)
  * @param port - sensor port
- * @param sa7 I2C slave address, 7 bit
+ * @param sa7 I2C slave address, 7 bit:  NOT used
  * @param reg sensor register address (8-bit)
  * @param data value to set (16 bits) */
 #define X3X3_I2C_SEND2_ASAP(port,sa7,reg,data) {\
@@ -149,13 +151,13 @@ long long get_frame_pos(unsigned int chn, unsigned int pos);
 											   }
 
 
-/** Perform I2C write in immediate mode (8  bits address, 16 bits data in "legacy" mode,
- * pages matching slave address should be registered.
+/** Perform I2C write in immediate mode (16  bits address, 16 bits data in LUT mode,
+ * pages matching MSB of the address should be registered.
  *
  * Slave address is now 7-bit,old was 8-bit, change (10359 already done)
  * @param port - sensor port
- * @param si - slave device index (for mux board)
- * @param reg sensor register address (8-bit)
+ * @param si - slave device index (for mux board, otherwise 0)
+ * @param reg sensor register address (16-bit)
  * @param data value to set (16 bits) */
 #define X3X3_I2C_SEND2_LUT_ASAP(port,si,reg,data) {\
 												   int _PAGE = pSensorPortConfig[(port)].haddr2rec[(si)][((reg)>>8)&0xff];\
