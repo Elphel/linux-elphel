@@ -295,7 +295,7 @@ struct sensor_t boson640={
 };
 
 // Sysfs Interface for debugging the driver
-static int first_sensor_sa7 [SENSOR_PORTS] = {0,0,0,0};
+//static int first_sensor_sa7 [SENSOR_PORTS] = {0,0,0,0};
 /*
 static unsigned int debug_delays = 0x0; // 0x6464; // udelay() values for mrst (low 8 - mrst on), [15:8] - after mrst
 static unsigned int debug_modes =  3;
@@ -835,7 +835,7 @@ int  boson640_is_booted   ( int sensor_port,
 	cframe = getThisFrameNumber(sensor_port); // was cframe16?
 	if (cframe < BOSON640_BOOT_FRAME){
 //        dev_warn(g_dev_ptr,"boson640_is_booted(): Not yet fully booted{%d}, frame %d < %d\n",sensor_port, cframe, BOSON640_BOOT_FRAME);
-        dev_warn(g_dev_ptr,"boson640_is_booted(): Not yet fully booted{%d}, frame %d < %d, P_COLOR =%ld\n",sensor_port, cframe, BOSON640_BOOT_FRAME,thispars->pars[P_COLOR]);
+        dev_dbg(g_dev_ptr,"boson640_is_booted(): Not yet fully booted{%d}, frame %d < %d, P_COLOR =%ld\n",sensor_port, cframe, BOSON640_BOOT_FRAME,thispars->pars[P_COLOR]);
 		return 0; // too early
 	}
     setFramePar(sensor_port, thispars, P_BOOTED,  1); // should initiate pgm_initsensor and others?
@@ -962,8 +962,13 @@ int boson640_pgm_initsensor     (int sensor_port,               ///< sensor port
     // reset both sequencers to frame 0
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RESET);
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RUN);  // also programs status update
-    i2c_stop_run_reset      (sensor_port, I2C_CMD_RUN); // also programs status update
+    i2c_stop_run_reset      (sensor_port, I2C_CMD_RUN);  // also programs status update
   #endif
+
+    // Enable extif (Boson UART CCI from the sequencer)
+    uart_extif_en[sensor_port] = 1;
+	set_sensor_uart_ctl_boson (sensor_port, uart_extif_en[sensor_port], -1, -1, 0, 0);
+    dev_info(g_dev_ptr,"boson640_pgm_initsensor(): {%d}  frame16=%d frame=%ld: Enable EXTIF (Boson UART control from the sequencer)\n",sensor_port,frame16,getThisFrameNumber(sensor_port));
 
 //    boson640_par2addr
 
@@ -1854,11 +1859,10 @@ int boson640_init(struct platform_device *pdev)
 //    int res;
     struct device *dev = &pdev->dev;
 //    const struct of_device_id *match;
-    int sensor_port;
-
-    for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
-        first_sensor_sa7[sensor_port] = 0;
-    }
+///    int sensor_port;
+///    for (sensor_port = 0; sensor_port < SENSOR_PORTS; sensor_port++) {
+///        first_sensor_sa7[sensor_port] = 0;
+///    }
     elphel393_boson640_sysfs_register(pdev);
     dev_info(dev, DEV393_NAME(DEV393_BOSON640)": registered sysfs\n");
     g_dev_ptr = dev;

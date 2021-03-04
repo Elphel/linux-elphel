@@ -388,17 +388,17 @@ void set_xi2c_wrc( x393_i2c_device_t * dc,   ///< device class
     tb_data.d32 =      0;
     tb_data.rah =      rah;
     tb_data.rnw =      0;
-    tb_data.sa =       dc -> slave7;
+    tb_data.sa =       dc -> slave7; // verify 0x81 - no, 7 bits!
     tb_data.nbwr =     dc -> address_bytes + dc -> data_bytes;
     tb_data.dly =      get_bit_delay(dc -> scl_khz);
     tb_data.tbl_mode = 2;
     tb_data.extif_mode = 0;
-    if (tb_data.sa & 0x80){ // using external interface (currently Boson640 UART)
+    if (dc -> slave7 & 0x80){ // using external interface (currently Boson640 UART)
     	tb_data.extif_mode = tb_data.sa & 3;
     	tb_data.sa = (tb_data.rah >> 6) & 3; // number of bytes in uart command (later use (rah >> 8) after changing sensor_port_config_t.pages_ptr to 32 bits)
     	tb_data.rah &= 0x3f; // later &= 0xff
     }
-    dev_dbg(sdev, "device name %s : port= %d, page = 0x%x, rah = 0x%x, sa = 0x%x, extif_mode=0x%x\n",dc->name, chn, page, tb_data.rah, tb_data.sa, tb_data.extif_mode);
+    dev_dbg(sdev, "set_xi2c_wrc(): device name %s : port= %d, page = 0x%x, rah = 0x%x, sa = 0x%x, extif_mode=0x%x\n",dc->name, chn, page, tb_data.rah, tb_data.sa, tb_data.extif_mode);
     /* Table address and data should not interleave with others */
 #ifdef LOCK_BH_SENSORI2C
     spin_lock_bh(sensori2c_locks[chn]);
@@ -414,7 +414,7 @@ void set_xi2c_wrc( x393_i2c_device_t * dc,   ///< device class
 #endif
 //    i2c_pages_shadow[(chn << 8) + page] =tb_data.d32;
     i2c_pages_shadow[chn][page] =tb_data.d32;
-    dev_dbg(sdev, "DONE: device name %s : port= %d, page = 0x%x, rah = 0x%x, sa = 0x%x, extif_mode=0x%x\n",dc->name, chn, page, tb_data.rah, tb_data.sa, tb_data.extif_mode);
+    dev_dbg(sdev, "x393_sensi2c_ctrl() twice, device name %s : port= %d, page = 0x%x, tb_addr=0x%x, tb_data=0x%x\n",dc->name, chn, page, tb_addr.d32, tb_data.d32);
 }
 EXPORT_SYMBOL_GPL(set_xi2c_wrc);
 /** Set i2c table entry for read operation using known devices
@@ -722,11 +722,12 @@ void  read_xi2c (x393_i2c_device_t * dc, ///< device class
         int page,               ///< Table index (8 bits)
         int addr)               ///< 8/16 bit register address
 {
+    u32 dw;
 	if ((dc -> slave7) & 0x80){
 	    dev_warn(sdev, "Read not implemented for extif");
 		return;
 	}
-    u32 dw = ((page & 0xff) << 24)  | (dc -> slave7 << 17) | (addr & 0xffff);
+    dw = ((page & 0xff) << 24)  | (dc -> slave7 << 17) | (addr & 0xffff);
     x393_sensi2c_rel (dw, chn, 0);
     dev_dbg(sdev, "chn=%d, page = %d, addr = %d\n",chn,page, addr);
 
@@ -742,11 +743,12 @@ void  read_xi2c_sa7 (int chn,   ///< sensor port
         int sa7,   ///< 7-bit i2c slave address
         int addr)  ///< 8/16 bit register address
 {
+	u32 dw;
 	if (sa7 & 0x80){
 	    dev_warn(sdev, "Read not implemented for extif 2");
 		return;
 	}
-    u32 dw = ((page & 0xff) << 24)  | (sa7 << 17) | (addr & 0xffff);
+    dw = ((page & 0xff) << 24)  | (sa7 << 17) | (addr & 0xffff);
     dev_dbg(sdev, "read_xi2c_sa7(%d,0x%x,0x%x,0x%x): 0x%08x\n",chn,page,sa7,addr,(int) dw);
     x393_sensi2c_rel (dw, chn, 0);
 }

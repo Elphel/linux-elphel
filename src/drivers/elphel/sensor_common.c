@@ -1209,7 +1209,8 @@ int fpga_register_i2c_pages(int port, int sub_chn, x393_i2c_device_t i2c_dev){
 
 		haddr = (table[i]>>8)&0xff;
 
-		dev_dbg(g_dev_ptr,"Registering page %d for haddr= 0x%02x, sa7= 0x%02x\n",line_num, haddr, i2c_dev.slave7);
+//		dev_dbg(g_dev_ptr,"Registering page %d for haddr= 0x%02x, sa7= 0x%02x\n",line_num, haddr, i2c_dev.slave7);
+//		dev_info(g_dev_ptr,"Registering page %d for haddr= 0x%02x, sa7= 0x%02x\n",line_num, haddr, i2c_dev.slave7);
 
 		if ((table[i]==0xffff)||(i>255)){
 			dev_dbg(g_dev_ptr,"haddr2rec (entries: %d)\n",i);
@@ -1224,6 +1225,7 @@ int fpga_register_i2c_pages(int port, int sub_chn, x393_i2c_device_t i2c_dev){
 				pr_err("{%d} Error registering page %d (haddr = 0x%02x)\n",port,line_num,haddr);
 				return line_num;
 			}
+			dev_dbg(g_dev_ptr,"Registering page %d for haddr= 0x%02x, sa7= 0x%02x\n",line_num, haddr, i2c_dev.slave7);
 
 			//line_num = i2c_dev.slave7;
 			//haddr = 0;
