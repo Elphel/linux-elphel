@@ -300,7 +300,7 @@ struct sensor_t boson640={
 static unsigned int debug_delays = 0x0; // 0x6464; // udelay() values for mrst (low 8 - mrst on), [15:8] - after mrst
 static unsigned int debug_modes =  3;
 */
-static unsigned short sensor_reg_copy[SENSOR_PORTS][256]; ///< Read all 256 sensor registers here - during initialization and on demand
+///static unsigned short sensor_reg_copy[SENSOR_PORTS][256]; ///< Read all 256 sensor registers here - during initialization and on demand
                                                  ///< Later may increase to include multiple subchannels on 10359
 
 // a place to add some general purpose register writes to sensors during init
@@ -838,8 +838,8 @@ int  boson640_is_booted   ( int sensor_port,
         dev_dbg(g_dev_ptr,"boson640_is_booted(): Not yet fully booted{%d}, frame %d < %d, P_COLOR =%ld\n",sensor_port, cframe, BOSON640_BOOT_FRAME,thispars->pars[P_COLOR]);
 		return 0; // too early
 	}
-//    setFramePar(sensor_port, thispars, P_BOOTED | FRAMEPAIR_FORCE_PROC,  1); // should initiate pgm_initsensor and others?
-    setFramePar(sensor_port, thispars, P_BOOTED,  1); // should initiate pgm_initsensor and others?
+    setFramePar(sensor_port, thispars, P_BOOTED | FRAMEPAIR_FORCE_PROC,  1); // should initiate pgm_initsensor and others?
+//    setFramePar(sensor_port, thispars, P_BOOTED,  1); // should initiate pgm_initsensor and others?
 //    dev_warn(g_dev_ptr,"boson640_is_booted(): Just fully booted{%d}\n",sensor_port);
     dev_warn(g_dev_ptr,"boson640_is_booted(): Just fully booted{%d}, P_COLOR =%ld\n",sensor_port,thispars->pars[P_COLOR]);
     return 1; // first time
@@ -944,15 +944,18 @@ int boson640_pgm_initsensor     (int sensor_port,               ///< sensor port
                                                                ///< @return 0 - OK, negative - error
 {
     struct frameparspair_t pars_to_update[10];  // for all the sensor registers. Other P_* values will reuse the same ones
+#if 0
     int reg;
-    int nupdate=0;
     ///x393_sensio_ctl_t  sensio_ctl = {.d32=0};
     ///x393_sensio_tim1_t uart_ctl =   {.d32=0};
     u32                data32;
-    int i, rslt; // ,color;
+    int i; // ,color;
+    int rslt; // ,color;
+#endif
+    int nupdate=0;
+
     dev_info(g_dev_ptr,"boson640_pgm_initsensor(): {%d}  frame16=%d frame=%ld\n",sensor_port,frame16,getThisFrameNumber(sensor_port));
     if (frame16 >= 0) return -1; // should be ASAP
-
     // Was disabled
   #if 0
     // reset both sequencers to frame 0
@@ -974,7 +977,8 @@ int boson640_pgm_initsensor     (int sensor_port,               ///< sensor port
 
 //    boson640_par2addr
 
-// read shadows from the sensor, ignore errors
+// read shadows from the sensor, ignore errors - kernel panic in boson640_read_reg()
+#if 0
     for (reg = 0; reg < (sizeof(boson640_par2addr)-1)/2; reg++) { // unsigned short data!
     	data32=0;
     	rslt = boson640_read_reg(sensor_port, i, &data32); // ignore errors
@@ -982,7 +986,10 @@ int boson640_pgm_initsensor     (int sensor_port,               ///< sensor port
         		sensor_port, reg, data32, rslt);
         sensor_reg_copy[sensor_port][reg] = data32; // discarding bits above u16
     }
+#endif
+
     // apply required register overwrites
+
   #if 0
     // Can not read shadows in the future, so write only. If needed more registers - manually read defaults
     // consider only updating shadows (no actual i2c commands) if the defaults are OK
@@ -1392,9 +1399,10 @@ int boson640_pgm_triggermode        (int sensor_port,               ///< sensor 
     	return -1; // Not yet fully booted.
     }
     if (thispars->pars[P_TRIG] & 4) { // turn external
-    	if (thispars->pars[P_SENSOR_REGS + P_BOSON_DVO_DISPLAY_MODE] != 1){
+    	// always apply P_BOSON_DVO_DISPLAY_MODE
+//    	if (thispars->pars[P_SENSOR_REGS + P_BOSON_DVO_DISPLAY_MODE] != 1){
     		SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_BOSON_DVO_DISPLAY_MODE, 1);
-    	}
+//    	}
     	if (thispars->pars[P_SENSOR_REGS + P_BOSON_BOSON_EXT_SYNC_MODE] != 2){
     		SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_BOSON_BOSON_EXT_SYNC_MODE, 2);
     	}
