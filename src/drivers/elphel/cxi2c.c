@@ -870,14 +870,14 @@ ssize_t xi2c_read(struct file * file, char * buf, size_t count, loff_t *off) {
     unsigned long p;
     int error;
     char * bbitdelays= (char*) bitdelays;
-    p = *off;
+    int slave_adr;
+    int thissize=sizes[(int)file->private_data];
+    int en_mask=0;
+    int en_bits=0;
     int bus=0;
     unsigned char * i2cbuf=&i2cbuf_all[0]; // initialize to keep compiler happy
     unsigned char * userbuf=&i2cbuf[1];
-    int thissize=sizes[(int)file->private_data];
-    int slave_adr;
-    int en_mask=0;
-    int en_bits=0;
+    p = *off;
 
     //  switch (((int *)file->private_data)[0]) {
     switch ((int)file->private_data) {

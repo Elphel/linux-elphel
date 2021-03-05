@@ -838,6 +838,7 @@ int  boson640_is_booted   ( int sensor_port,
         dev_dbg(g_dev_ptr,"boson640_is_booted(): Not yet fully booted{%d}, frame %d < %d, P_COLOR =%ld\n",sensor_port, cframe, BOSON640_BOOT_FRAME,thispars->pars[P_COLOR]);
 		return 0; // too early
 	}
+//    setFramePar(sensor_port, thispars, P_BOOTED | FRAMEPAIR_FORCE_PROC,  1); // should initiate pgm_initsensor and others?
     setFramePar(sensor_port, thispars, P_BOOTED,  1); // should initiate pgm_initsensor and others?
 //    dev_warn(g_dev_ptr,"boson640_is_booted(): Just fully booted{%d}\n",sensor_port);
     dev_warn(g_dev_ptr,"boson640_is_booted(): Just fully booted{%d}, P_COLOR =%ld\n",sensor_port,thispars->pars[P_COLOR]);
@@ -949,16 +950,11 @@ int boson640_pgm_initsensor     (int sensor_port,               ///< sensor port
     ///x393_sensio_tim1_t uart_ctl =   {.d32=0};
     u32                data32;
     int i, rslt; // ,color;
-    dev_dbg(g_dev_ptr,"boson640_pgm_initsensor(): {%d}  frame16=%d frame=%ld\n",sensor_port,frame16,getThisFrameNumber(sensor_port));
+    dev_info(g_dev_ptr,"boson640_pgm_initsensor(): {%d}  frame16=%d frame=%ld\n",sensor_port,frame16,getThisFrameNumber(sensor_port));
     if (frame16 >= 0) return -1; // should be ASAP
 
-    if (boson640_is_booted (sensor_port, thispars) < 2){ // not yet booted
-    	return -1; // Not yet fully booted.
-    }
-
-
     // Was disabled
-  #if 1
+  #if 0
     // reset both sequencers to frame 0
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RESET);
     sequencer_stop_run_reset(sensor_port, SEQ_CMD_RUN);  // also programs status update
@@ -969,6 +965,12 @@ int boson640_pgm_initsensor     (int sensor_port,               ///< sensor port
     uart_extif_en[sensor_port] = 1;
 	set_sensor_uart_ctl_boson (sensor_port, uart_extif_en[sensor_port], -1, -1, 0, 0);
     dev_info(g_dev_ptr,"boson640_pgm_initsensor(): {%d}  frame16=%d frame=%ld: Enable EXTIF (Boson UART control from the sequencer)\n",sensor_port,frame16,getThisFrameNumber(sensor_port));
+
+    if (boson640_is_booted (sensor_port, thispars) < 2){ // not yet booted
+        dev_info(g_dev_ptr,"boson640_pgm_initsensor(): {%d}  frame16=%d frame=%ld ABORTED as Boson not yet booted\n",sensor_port,frame16,getThisFrameNumber(sensor_port));
+    	return -1; // Not yet fully booted.
+    }
+
 
 //    boson640_par2addr
 
