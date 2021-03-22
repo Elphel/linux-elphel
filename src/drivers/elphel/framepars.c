@@ -2026,7 +2026,7 @@ static ssize_t show_fpga_version(struct device *dev, struct device_attribute *at
 {
     if (!hardware_initialized)
         return -EBUSY;
-    return sprintf(buf,"0x%08lx\n", x393_fpga_version());
+    return sprintf(buf,"0x%08x\n", x393_fpga_version());
 }
 
 static ssize_t show_fpga_sensor_interface(struct device *dev, struct device_attribute *attr, char *buf)

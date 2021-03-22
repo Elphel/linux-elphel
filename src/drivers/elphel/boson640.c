@@ -845,8 +845,44 @@ int  boson640_is_booted   ( int sensor_port,
     return 1; // first time
 }
 
+/**
+ * Set initial clock and lanes delays needed for 103993 rev 0 that requires precise settings. Will be removed for rev A
+ * @param sensor_port
+ * @return
+ */
 
+int set_initial_phase(int sensor_port,
+        struct sensor_t * sensor,      ///< sensor static parameters (capabilities)
+        struct framepars_t * thispars, ///< sensor current parameters
+        struct framepars_t * prevpars, ///< sensor previous parameters (not used here)
+        int frame16)                   ///< 4-bit (hardware) frame number parameters should
+                                       ///< be applied to,  negative - ASAP
+                                       ///< @return 0 - OK, negative - error
+{
+    // just setting clock and 3 lanes delays (5 MSBs 3 LSB are not used)
+	x393_sensio_tim2_t tim2 ={.d32=0};
+	x393_sensio_tim3_t tim3 ={.d32=0};
+    x393_sensio_ctl_t  sensio_ctl = {.d32=0};
+    u8 initial_delays[] = {0x10, 0x00, 0x00, 0x00,  // clock, lane0, lanel, lane2
+                           0xe0, 0x00, 0x00, 0x00,
+                           0x00, 0x30, 0x30, 0x30,
+	                       0xf8, 0x40, 0x38, 0xd0};
+    tim2.dly_lane0 = initial_delays[4*sensor_port + 1];
+    tim2.dly_lane1 = initial_delays[4*sensor_port + 2];
+    tim2.dly_lane2 = initial_delays[4*sensor_port + 3];
+    tim3.phase_h =   initial_delays[4*sensor_port + 0];
 
+    set_x393_sensio_tim2(tim2, sensor_port);
+    set_x393_sensio_tim3(tim3, sensor_port);
+    sensio_ctl.set_dly = 1;
+    x393_sensio_ctrl(sensio_ctl,sensor_port);
+    dev_info(g_dev_ptr,"**set_initial_phase**: {%d}  setting delays tim2 = 0x%x tim3 = 0x%x \n",sensor_port, tim2.d32, tim3.d32);
+
+//P_SENSOR_IFACE_TIM2
+    setFramePar(sensor_port, thispars, P_SENSOR_IFACE_TIM2,  tim2.d32);
+    setFramePar(sensor_port, thispars, P_SENSOR_IFACE_TIM3,  tim3.d32);
+	return 0;
+}
 
 /**
  * Detect and initialize sensor and related data structures
@@ -899,9 +935,12 @@ int boson640_pgm_detectsensor  (int sensor_port,               ///< sensor port 
         psensor->i2c_addr = dc->slave7;
     }
 
+    // temporarily - setting exact delays for clock and phases
+    set_initial_phase(sensor_port, sensor, thispars, prevpars, frame16);
     // activate + deactivate resets, Boson starts to boot (some 12 seconds). Should be no "i2c" sequencer commands
     // or register reads until fully booted
     boson640_reset_release      (sensor_port);
+    // temporarily - set delays
 
     // Sensor recognized, go on
     //  memcpy(&sensor, psensor, sizeof(mt9p001)); // copy sensor definitions
