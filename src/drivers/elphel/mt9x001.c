@@ -1369,14 +1369,17 @@ int compare_to_trig_period(int sensor_port,               ///< sensor port - onl
 
 	int trig_period;
 
-    dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_TRIG] = %d, thispars->pars[P_TRIG_PERIOD] =%d(0x%x)\n",
+    dev_dbg(g_dev_ptr,"{%d} thispars->pars[P_TRIG] = %d, thispars->pars[P_TRIG_PERIOD] =%d(0x%x), thispars->pars[P_TRIG_DECIMATE] =%d(0x%x)\n",
             sensor_port,
 			(int)thispars->pars[P_TRIG],
 			(int)thispars->pars[P_TRIG_PERIOD],
-			(int)thispars->pars[P_TRIG_PERIOD]);
+			(int)thispars->pars[P_TRIG_PERIOD],
+			(int)thispars->pars[P_TRIG_DECIMATE],
+			(int)thispars->pars[P_TRIG_DECIMATE]);
 
 	if (thispars->pars[P_TRIG]!=0){
-		trig_period = camsync_to_sensor(thispars->pars[P_TRIG_PERIOD], thispars->pars[P_CLK_SENSOR]);
+		trig_period = camsync_to_sensor((thispars->pars[P_TRIG_PERIOD] * (thispars->pars[P_TRIG_DECIMATE] + 1)),
+				                         thispars->pars[P_CLK_SENSOR]);
 		if (trig_period > pix_period) {
 			pix_period=trig_period;
 		}

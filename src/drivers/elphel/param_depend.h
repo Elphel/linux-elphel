@@ -255,6 +255,7 @@ const unsigned long param_depend_tab[]=
      P_TRIG_DELAY,            ONCHANGE_TRIGSEQ ,
      P_TRIG_OUT,              ONCHANGE_TRIGSEQ ,
      P_TRIG_PERIOD,           ONCHANGE_TRIGSEQ | ONCHANGE_LIMITFPS,
+	 P_TRIG_DECIMATE,         ONCHANGE_TRIGSEQ | ONCHANGE_LIMITFPS,
      P_SKIP_FRAMES,           ONCHANGE_RECALCSEQ ,
      P_I2C_QPERIOD,           ONCHANGE_I2C ,
      P_I2C_BYTES,             ONCHANGE_I2C ,

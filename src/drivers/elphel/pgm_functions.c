@@ -1148,7 +1148,7 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     int period=0;
     int pfh;
     int n_stripes;
-    int min_period_camsync, period_camsync;
+    int min_period_camsync, period_camsync, trig_decimate, decim_period, new_period;
     //#define CAMSYNC_FREQ 100000000 ///< 100MHz - frequency used for external trigger periods and delays
     u32 clk_sensor = thispars->pars[P_CLK_SENSOR];
     u32 clk_fpga = thispars->pars[P_CLK_FPGA];
@@ -1263,23 +1263,34 @@ int pgm_limitfps   (int sensor_port,               ///< sensor port number (0..3
     // set it (and propagate to the later frames)
     if (period != thispars->pars[P_PERIOD_MAX]) SETFRAMEPARS_SET(P_PERIOD_MAX, period);
     // Now see if the sequencer period needs to be adjusted
-    //  if (async && (thispars->pars[P_TRIG_PERIOD] >=256)) { // <256 - single trig
-    //  if (async && (thispars->pars[P_TRIG_PERIOD] !=1)) { // <256 - single trig, here only ==1 is for single
     // Update period to comply even if it is not in async mode
     if (!thispars->pars[P_CLK_SENSOR]){ // not initialized
         dev_dbg(g_dev_ptr,"{%d}  P_CLK_SENSOR == 0, abort command\n",sensor_port);
         return -1;
     }
     if (thispars->pars[P_TRIG_PERIOD] >1 ) { // <256 - single trig, here only ==1 is for single
+    	trig_decimate = thispars->pars[P_TRIG_DECIMATE] + 1;
+    	decim_period = thispars->pars[P_TRIG_PERIOD] * trig_decimate;
         min_period_camsync = sensor_to_camsync(min_period, thispars->pars[P_CLK_SENSOR]);
-        if (thispars->pars[P_TRIG_PERIOD] < min_period_camsync) SETFRAMEPARS_SET(P_TRIG_PERIOD, min_period_camsync);  // set it (and propagate to the later frames)
-        //        if (async &&  (thispars->pars[P_FPSFLAGS] & 2) && (thispars->pars[P_TRIG_PERIOD] > period)) {
+///        if (thispars->pars[P_TRIG_PERIOD] < min_period_camsync){
+        if (decim_period < min_period_camsync){
+        	// change decimation, keep period
+        	trig_decimate = min_period_camsync / thispars->pars[P_TRIG_PERIOD];
+        	if ((thispars->pars[P_TRIG_PERIOD] * trig_decimate) < min_period_camsync){
+        		trig_decimate ++;
+        	}
+///        	SETFRAMEPARS_SET(P_TRIG_PERIOD, min_period_camsync);  // set it (and propagate to the later frames)
+        	SETFRAMEPARS_SET(P_TRIG_DECIMATE, trig_decimate - 1);  // set it (and propagate to the later frames)
+        }
         if (async && (fps_flags & 2)) {
             period_camsync = sensor_to_camsync(period, thispars->pars[P_CLK_SENSOR]);
-            if (thispars->pars[P_TRIG_PERIOD] > period_camsync) {
-                SETFRAMEPARS_SET(P_TRIG_PERIOD, period_camsync);  // set it (and propagate to the later frames)
-                MDP(DBGB_PADD, sensor_port,"SETFRAMEPARS_SET(P_TRIG_PERIOD, 0x%x)\n", period_camsync)
-                dev_dbg(g_dev_ptr,"{%d} SETFRAMEPARS_SET(P_TRIG_PERIOD, 0x%x) - was too low\n", sensor_port, period_camsync);
+///TODO: Update P_TRIG_PERIOD, keep decimation here
+//            if (thispars->pars[P_TRIG_PERIOD] > period_camsync) {
+              if (decim_period > period_camsync) {
+            	new_period = period_camsync / trig_decimate;
+                SETFRAMEPARS_SET(P_TRIG_PERIOD, new_period);  // set it (and propagate to the later frames)
+                MDP(DBGB_PADD, sensor_port,"SETFRAMEPARS_SET(P_TRIG_PERIOD, 0x%x)\n", new_period)
+                dev_dbg(g_dev_ptr,"{%d} SETFRAMEPARS_SET(P_TRIG_PERIOD, 0x%x) - was too low\n", sensor_port, new_period);
             }
         }
     }
@@ -1492,52 +1503,6 @@ int pgm_sensorin   (int sensor_port,               ///< sensor port number (0..3
         MDP(DBGB_PADD, sensor_port,"Setting sensor-to-memory frame sync delay  to %d (0x%x)\n", start_dly.start_dly,start_dly.start_dly)
     }
 
-#if 0
-
-    typedef union {
-        struct {
-              u32             run: 2; // [ 1: 0] (0) Run mode
-              u32         run_set: 1; // [    2] (0) Set 'run'
-              u32           qbank: 3; // [ 5: 3] (0) Quantization table bank
-              u32       qbank_set: 1; // [    6] (0) Set 'qbank'
-              u32           dcsub: 1; // [    7] (0) Subtract DC enable
-              u32       dcsub_set: 1; // [    8] (0) Set 'qbank'
-              u32           cmode: 4; // [12: 9] (0) Color format
-              u32       cmode_set: 1; // [   13] (0) Set 'cmode'
-              u32      multiframe: 1; // [   14] (0) Multi/single frame mode
-              u32  multiframe_set: 1; // [   15] (0) Set 'multiframe'
-              u32                : 2;
-              u32           bayer: 2; // [19:18] (0) Bayer shift
-              u32       bayer_set: 1; // [   20] (0) Set 'bayer'
-              u32           focus: 2; // [22:21] (0) Focus mode
-              u32       focus_set: 1; // [   23] (0) Set 'focus'
-              u32                : 8;
-        };
-        struct {
-              u32             d32:32; // [31: 0] (0) cast to u32
-        };
-    } x393_cmprs_mode_t;
-
-    // Control for the gamma-conversion module
-
-    typedef union {
-        struct {
-              u32           bayer: 2; // [ 1: 0] (0) Bayer color shift (pixel to gamma table)
-              u32       bayer_set: 1; // [    2] (0) Set 'bayer' field
-              u32            page: 1; // [    3] (0) Table page (only available if SENS_GAMMA_BUFFER in Verilog)
-              u32        page_set: 1; // [    4] (0) Set 'page' field
-              u32              en: 1; // [    5] (1) Enable module
-              u32          en_set: 1; // [    6] (1) Set 'en' field
-              u32           repet: 1; // [    7] (1) Repetitive (normal) mode. Set 0 for testing of the single-frame mode
-              u32       repet_set: 1; // [    8] (1) Set 'repet' field
-              u32            trig: 1; // [    9] (0) Single trigger used when repetitive mode is off (self clearing bit)
-              u32                :22;
-        };
-        struct {
-              u32             d32:32; // [31: 0] (0) cast to u32
-        };
-    } x393_gamma_ctl_t;
-#endif
 
     return 0;
 #else
@@ -2654,6 +2619,20 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
                     sensor_port, sensor_port, frame16, (int) thispars->pars[P_TRIG_PERIOD]);
         }
     }
+    if (FRAMEPAR_MODIFIED(P_TRIG_DECIMATE)) {
+        if (unlikely(thispars->pars[P_TRIG_DECIMATE] > 65535)) { // Wrong value, restore old one
+            SETFRAMEPARS_SET(P_TRIG_DECIMATE,prevpars->pars[P_TRIG_DECIMATE]);
+        } else {
+///            set_x393_camsync_trig_period(thispars->pars[P_TRIG_DECIMATE]);
+///            dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%lx)\n",sensor_port, thispars->pars[P_TRIG_DECIMATE]);
+///            MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_decimation(0x%lx)\n", thispars->pars[P_TRIG_DECIMATE])
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_trig_decimation, thispars->pars[P_TRIG_DECIMATE]);
+            dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_camsync_trig_decimation,  0x%x)\n",
+                    sensor_port, sensor_port, frame16, (int) thispars->pars[P_TRIG_DECIMATE]);
+        }
+    }
+
+
     // P_EXTERN_TIMESTAMP changed? (0 - internal sequencer)
     if (FRAMEPAR_MODIFIED(P_EXTERN_TIMESTAMP)) {
         camsync_mode.ext = thispars->pars[P_EXTERN_TIMESTAMP]?1:0;

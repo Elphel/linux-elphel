@@ -472,6 +472,9 @@
 
 #define P_COMP_BAYER     119 ///< compressor bayer (before  applying P_COMPMOD_BYRSH)
 #define P_MEMSENSOR_DLY  120 ///< sensor-to-memory channel frame sync delay in mclk cycles (5ns @200MHz)
+
+#define P_TRIG_DECIMATE  121 ///< Decimate trigger by (P_TRIG_DECIMATE + 1) - trigger sensor less frequent than incoming trigger
+
 // Obsolete in x393, may need something different
 #ifdef NC353
 #define P_SDRAM_CHN20    125 ///< data to be written to the SDRAM CH2 REG 0  (last moment) TODO: Obsolete in x393, may need something different
@@ -1243,6 +1246,7 @@ struct p_names_t {
           P_NAME_ENTRY(RFOCUS_HEIGHT), \
           P_NAME_ENTRY(COMP_BAYER), \
           P_NAME_ENTRY(MEMSENSOR_DLY), \
+          P_NAME_ENTRY(TRIG_DECIMATE), \
           P_NAME_ENTRY(SENSOR_IFACE_TIM0), \
           P_NAME_ENTRY(SENSOR_IFACE_TIM1), \
           P_NAME_ENTRY(SENSOR_IFACE_TIM2), \

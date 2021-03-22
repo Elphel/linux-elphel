@@ -1283,9 +1283,10 @@ int compare_to_trig_period_mt9f002(int sensor_port,               ///< sensor po
 
 	// in triggered mode fps is exact
 	if (thispars->pars[P_TRIG]!=0){
-		trig_period = camsync_to_sensor(thispars->pars[P_TRIG_PERIOD],thispars->pars[P_CLK_SENSOR]);
-		//if ((pix_period>trig_period)&&((pix_period-1)<trig_period)){
-		if (pix_period<trig_period){
+//		trig_period = camsync_to_sensor(thispars->pars[P_TRIG_PERIOD],thispars->pars[P_CLK_SENSOR]);
+		trig_period = camsync_to_sensor((thispars->pars[P_TRIG_PERIOD] * (thispars->pars[P_TRIG_DECIMATE] + 1)),
+				                         thispars->pars[P_CLK_SENSOR]);
+		if (pix_period < trig_period){
 			new_pix_period = trig_period;
 		}
 	}
