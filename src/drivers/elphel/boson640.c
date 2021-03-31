@@ -335,6 +335,18 @@ static u16 uart_cs16[4];                        ///< last received checksum
 static int uart_extif_en[] = {-1,-1,-1,-1};     ///< extif enabled (set initially to -1,-1,-1,-1
 static int uart_length[4];                      ///< received/transmitted packet length
 static u8  uart_data[4][BOSON_PACKET_MAX_DATA]; ///< received/transmitted packet data
+static u16 drp_read_data[4];                    /// last received DRP register data
+static u8  drp_read_phase[8];                   /// last received DRP clock phase data
+static u8 DRP_CLK_REG_ADDR [][2] = {
+		{0x14, 0x15},
+		{0x08, 0x09},
+		{0x0a, 0x0b},
+		{0x0c, 0x0d},
+		{0x0e, 0x0f},
+		{0x10, 0x11},
+		{0x06, 0x07},
+		{0x12, 0x13}};
+
 void boson640_reset_release      (int sensor_port); // should be called during boson640_pgm_detectsensor
 //int  boson640_is_booted          (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 int  boson640_is_booted          (int sensor_port, struct framepars_t * thispars);
@@ -351,6 +363,8 @@ int  boson640_pgm_triggermode    (int sensor_port, struct sensor_t * sensor,  st
 int  boson640_pgm_sensorregs     (int sensor_port, struct sensor_t * sensor,  struct framepars_t * thispars, struct framepars_t * prevpars, int frame16);
 
 void io_autoupdate_status       (int chn);
+x393_status_sens_io_t io_new_status(int chn);
+
 void set_sensor_uart_ctl_boson  (int chn, int uart_extif_en, int uart_xmit_rst, int uart_recv_rst, int uart_xmit_start, int uart_recv_next);
 void set_sensor_uart_start_send (int chn);
 void set_sensor_uart_recv_next  (int chn);
@@ -365,6 +379,14 @@ int  uart_skip_byte             (int chn);
 int  uart_wait_receive          (int chn);
 int  uart_wait_transmit         (int chn);
 
+void drp_open                   (int sensor_port);
+void drp_close                  (int sensor_port);
+int drp_read_reg                (int sensor_port, u8 daddr);
+int drp_write_reg               (int sensor_port, int daddr, u16 data,u16 mask);
+u8* drp_phase_addr              (int clk_out);
+int drp_read_clock_phase        (int sensor_port, int clk_out);
+int drp_write_clock_phase       (int sensor_port, int clk_out, u8 phase);
+
 // SysFS interface functions
 static int     get_channel_from_name(struct device_attribute *attr);
 static ssize_t store_uart_seq(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
@@ -377,6 +399,11 @@ static ssize_t show_extif(struct device *dev, struct device_attribute *attr, cha
 static ssize_t store_uart_packet(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 static ssize_t show_uart_packet(struct device *dev, struct device_attribute *attr, char *buf);
 static ssize_t get_uart_help(struct device *dev,  struct device_attribute *attr, char *buf);
+static ssize_t store_drp_register(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+static ssize_t show_drp_register(struct device *dev, struct device_attribute *attr, char *buf);
+static ssize_t store_drp_phase(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+static ssize_t show_drp_phase(struct device *dev, struct device_attribute *attr, char *buf);
+static ssize_t get_drp_help(struct device *dev, struct device_attribute *attr, char *buf);
 /* Sysfs functionality */
 //======== UART interface ==========
 // reset and enable UART communications
@@ -665,7 +692,157 @@ int uart_wait_transmit (int chn)
     return 0; // OK
 }
 
+/**
+ * Enable DRP communication by resetting MMCM/PLL
+ * @param sensor_port sensor port number (0..3)
+ */
+void drp_open (int sensor_port){
+    x393_sensio_ctl_t  sensio_ctl = {.d32=0};
+    sensio_ctl.mmcm_rst =        1;
+    sensio_ctl.mmcm_rst_set =    1;
+    x393_sensio_ctrl(sensio_ctl,sensor_port);
+}
 
+/**
+ * Complete DRP communication by releasing reset to MMCM/PLL
+ * @param sensor_port sensor port number (0..3)
+ */
+void drp_close (int sensor_port){
+    x393_sensio_ctl_t  sensio_ctl = {.d32=0};
+    sensio_ctl.mmcm_rst =        0;
+    sensio_ctl.mmcm_rst_set =    1;
+    x393_sensio_ctrl(sensio_ctl,sensor_port);
+}
+
+/**
+ * Read specified DRP register. DRP should be open (MMCM/PLL in reset)
+ * @param sensor_port sensor port number (0..3)
+ * @param daddr DRP 7-bit address
+ * @return
+ */
+int drp_read_reg (int sensor_port, u8 daddr){
+	int data, i;
+	u32 odd_bit, odd_bit1;
+    x393_status_sens_io_t io_status;
+    x393_sensio_ctl_t  sensio_ctl = {.d32=0};
+
+    for (i = DRP_ADDRESS_LENGTH - 1; i >= 0; i--){
+    	sensio_ctl.drp_cmd = ((daddr >> i) & 1) + 1;
+        x393_sensio_ctrl(sensio_ctl, sensor_port);
+    }
+    io_status =  io_new_status(sensor_port);
+    odd_bit = io_status.drp_odd_bit;
+    odd_bit1 = odd_bit;
+	sensio_ctl.drp_cmd = 3; // execute
+    x393_sensio_ctrl(sensio_ctl, sensor_port);
+    for (i = 0; i < 10; i++){ // wait DREADY
+        io_status =  io_new_status(sensor_port);
+        odd_bit1 = io_status.drp_odd_bit;
+        if (odd_bit1 != odd_bit) break;
+    }
+    if (odd_bit1 == odd_bit) return -ETIMEDOUT;
+    sensio_ctl.drp_cmd = 1;
+    for (i = 0; i < DRP_DATA_LENGTH; i++){
+        io_status =  io_new_status(sensor_port);
+        data = (data << 1) + io_status.drp_bit;
+        x393_sensio_ctrl(sensio_ctl, sensor_port);
+    }
+    sensio_ctl.drp_cmd = 3; // nop execute, finish command to reset state machine
+    x393_sensio_ctrl(sensio_ctl, sensor_port);
+	return data; // u16 or negative error
+}
+
+/**
+ * Write specified DRP register. DRP should be open (MMCM/PLL in reset)
+ * @param sensor_port sensor port number (0..3)
+ * @param daddr DRP 7-bit address
+ * @param data 16-bit data to write
+ * @param mask if mask != 0xffff, first read register, then write updating only those bits where mask bit ==1
+ * @return 0 or negative error (-ETIMEOUT)
+ */
+int drp_write_reg (
+		int sensor_port,
+		int daddr,
+		u16 data,
+		u16 mask){ // bit == 1 - use new value, 0 - use old one
+	int old_data, i;
+	u32 odd_bit, odd_bit1;
+    x393_status_sens_io_t io_status;
+    x393_sensio_ctl_t  sensio_ctl = {.d32=0};
+	if (mask != 0xffff){
+		if ((old_data = drp_read_reg (sensor_port, daddr))<0){
+			return old_data; // negaqtive error (ETIMEOUT)
+		}
+		data = ((old_data ^ data) & mask) ^ old_data;
+	}
+	// shift address
+    for (i = DRP_ADDRESS_LENGTH - 1; i >= 0; i--){
+    	sensio_ctl.drp_cmd = ((daddr >> i) & 1) + 1;
+        x393_sensio_ctrl(sensio_ctl, sensor_port);
+    }
+    // shift data to write
+    for (i = DRP_DATA_LENGTH - 1; i >= 0; i--){
+    	sensio_ctl.drp_cmd = ((data >> i) & 1) + 1;
+        x393_sensio_ctrl(sensio_ctl, sensor_port);
+    }
+    // get odd/even before "execute"
+    io_status =  io_new_status(sensor_port);
+    odd_bit = io_status.drp_odd_bit;
+    odd_bit1 = odd_bit;
+	sensio_ctl.drp_cmd = 3; // execute
+    x393_sensio_ctrl(sensio_ctl, sensor_port);
+    for (i = 0; i < 10; i++){ // wait DREADY
+        io_status =  io_new_status(sensor_port);
+        odd_bit1 = io_status.drp_odd_bit;
+        if (odd_bit1 != odd_bit) break;
+    }
+    if (odd_bit1 == odd_bit) return -ETIMEDOUT;
+	return 0; // OK
+}
+
+/**
+ * Get DRP register pair for phase control (LSB - ClkReg1, MSB - ClkReg2
+ * as defined in xapp888)
+ * @param clk_out -1 - CLKFBOUT, 0..6 - CLKOUT0...CLKOUT6
+ * @return address pair ClkReg1 + (ClkReg2 << 8)
+ */
+u8* drp_phase_addr(int clk_out){
+	return DRP_CLK_REG_ADDR[clk_out + 1];
+}
+
+/**
+ * Read phase shift for the selected clock output of the MMCM/PLL. Phase 3 LSBs
+ * are 1/8ths of the VCO period, 5 MSBs full VCO periods
+ * @param sensor_port sensor port (0..3)
+ * @param clk_out clock output index: -1 - CLKFBOUT, 0..6 - CLKOUT0...CLKOUT6
+ * @return 8-bit phase shift in 1/8 VCO periods or -ETIMEOUT
+ */
+int drp_read_clock_phase (int sensor_port, int clk_out){
+	u8* addr_pair = drp_phase_addr(clk_out);
+	int data1, data2;
+	if ((data1 = drp_read_reg (sensor_port, addr_pair[0])) < 0) return data1;
+	if ((data2 = drp_read_reg (sensor_port, addr_pair[1])) < 0) return data2;
+    return ((data1 >> 13) & 7) | ((data2 & 0x1f) << 3);
+}
+
+/**
+ * Read phase shift for the selected clock output of the MMCM/PLL. Phase 3 LSBs
+ * are 1/8ths of the VCO period, 5 MSBs full VCO periods
+ * @param sensor_port sensor port (0..3)
+ * @param clk_out clock output index: -1 - CLKFBOUT, 0..6 - CLKOUT0...CLKOUT6
+ * @param phase 8-bit phase shift in 1/8 VCO periods or -ETIMEOUT
+ * @return 0-OK, <0 - error (-ETIMEOUT)
+ */
+int drp_write_clock_phase (int sensor_port, int clk_out, u8 phase)
+{
+	u8* addr_pair = drp_phase_addr(clk_out);
+	int data1, data2, rslt;
+    data1 = (phase & 7) << 13;
+    data2 = (phase >> 3) & 0x1f;
+    if ((rslt = drp_write_reg(sensor_port, addr_pair[0], data1, 0xe000)) < 0) return rslt;
+    if ((rslt = drp_write_reg(sensor_port, addr_pair[1], data2, 0x001f)) < 0) return rslt;
+    return 0;
+}
 
 void io_autoupdate_status(int chn)  ///< Sensor port
 {
@@ -700,44 +877,45 @@ void io_autoupdate_status(int chn)  ///< Sensor port
     }
 }
 
-
-
 /**
- * Wait sensor is booted and ready: TODO - use timer interrupts to avoid blocking CPU by multiple channels waiting for i2c (add interrupts?)
+ * Get new status
+ * @param chn sensor port
+ * @return status - current
  */
-/*
-int boson640_wait_ready(int sensor_port,     ///< sensor port number (0..3)
-                      int sa7,               ///< I2C slave address
-                      int num_retries ){     ///< number of retries, 0 - forever
-*/                                             ///< @return > 0 number of retries0 - OK, negative - error
-/*
-	int ntry;
-	    u32  i2c_read_dataw;
-	    boson640_status_t * status = (boson640_status_t *) &i2c_read_dataw;
-		dev_dbg(g_dev_ptr,"boson640_wait_ready(%d), sa7 =0x%x,  P_BOSON640_STATUS= 0x%x\n",sensor_port, sa7, P_BOSON640_STATUS);
-// If Lepton is not booted, reading status each ~600ms or sooner delays boot status indefinitely, so if not booted - shut up for 2 seconds
-// See if that influences frame times, if yes - delay silently.
-    	X3X3_I2C_RCV2(sensor_port, sa7, P_BOSON640_STATUS, &i2c_read_dataw);
-    	if ((status->boot_mode == 0) || (status->boot_status == 0)) {
-    		dev_dbg(g_dev_ptr,"Lepton on port %d is not booted, wait 1.5 s silently\n",sensor_port);
-    		udelay1000(1500);
-    	} else if (status->rsv5 != 0){
-    		dev_dbg(g_dev_ptr,"Lepton on port %d returned invalid status 0x%x, probably it does not exist - giving up\n",sensor_port, i2c_read_dataw);
-    		return -ENODEV;
-    	}
+x393_status_sens_io_t io_new_status(int chn)  ///< Sensor port
+{
+#ifndef LOCK_BH_SENSORIO
+    unsigned long flags;
+#endif
+    x393_status_sens_io_t  status;
+    x393_status_ctrl_t status_ctrl = get_x393_sensio_status_cntrl(chn); // last written data to status_cntrl
+#ifdef LOCK_BH_SENSORIO
+	spin_lock_bh(sensorio_locks[chn]);
+#else
+	spin_lock_irqsave(sensorio_locks[chn],flags);
+#endif
+	status =  x393_sensio_status (chn);
+	status_ctrl.mode = 3;
+	status_ctrl.seq_num = status.seq_num ^ 0x20;
+	set_x393_sensio_status_cntrl(status_ctrl, chn);
+	{
+		int i;
+		for (i = 0; i < 10; i++) {
+			status = x393_sensio_status(chn);
+			if (likely(status.seq_num = status_ctrl.seq_num)) break;
+		}
+	}
+#ifdef LOCK_BH_SENSORIO
+	spin_unlock_bh(sensorio_locks[chn]);
+#else
+	spin_unlock_irqrestore(sensorio_locks[chn],flags);
+#endif
+	dev_dbg(g_dev_ptr, "io_new_status(%d): mode set to 3, status updated to 0x%08x\n",chn, (int) status.d32);
+	return status;
+}
 
-	    for (ntry = num_retries; (ntry > 0) || (num_retries == 0); ntry--){
-	    	X3X3_I2C_RCV2(sensor_port, sa7, P_BOSON640_STATUS, &i2c_read_dataw);
-	    	if ((status->busy == 0) && (status->boot_mode == 1) && (status->boot_status == 1)){
-	    		dev_dbg(g_dev_ptr,"boson640_wait_ready(%d) = 0x%x, ntry = %d (of %d)\n",sensor_port, i2c_read_dataw, (num_retries - ntry), num_retries);
-	    		return (num_retries - ntry) & 0x7ffffff;
-	    	}
-	    	udelay1000(1); // wait 1 ms
-	    }
-		dev_dbg(g_dev_ptr,"boson640_wait_ready(%d) = 0x%x, timeout (%d tries)\n",sensor_port, i2c_read_dataw, num_retries);
-*/
-//	    return -ETIMEDOUT;
-//}
+
+
 
 /**
  * Get single internal Lepton register (data length = 1), wait no longer than specified (in ms)
@@ -1751,12 +1929,17 @@ static ssize_t show_uart_packet(struct device *dev, struct device_attribute *att
     return cp - buf;
 }
 
-/** Sysfs function - output instructions text of how to communicate with i2c devices attached to the sensor ports.
- * Output buffer *buf will contain multi-line instructions text */
-static ssize_t get_uart_help(struct device *dev,              ///< Linux kernel basic device structure
-        struct device_attribute *attr,   ///< Linux kernel interface for exporting device attributes
-        char *buf)                       ///< 4K buffer to receive response
-///< @return offset to the end of the output data in the *buf buffer
+
+
+/**
+ * Sysfs function - output instructions text of how to communicate with i2c devices attached to the sensor ports.
+ * Output buffer *buf will contain multi-line instructions text
+ * @param dev Linux kernel basic device structure
+ * @param attr Linux kernel interface for exporting device attributes
+ * @param buf 4K buffer to receive response
+ * @return offset to the end of the output data in the *buf buffer
+ */
+static ssize_t get_uart_help(struct device *dev, struct device_attribute *attr, char *buf)
 {
     return sprintf(buf,"Numeric suffix in the file names selects sensor port\n"
             "uart_seq:    read - last received sequence number, write - next transmit sequence number (will skip lower 0x10000 for extif)\n"
@@ -1766,80 +1949,156 @@ static ssize_t get_uart_help(struct device *dev,              ///< Linux kernel 
             "uart:        write command+data, read - last received data\n"
     );
 }
+//============================================== DRP-related functions (TODO: make common for other sensors) =================
+/**
+ * Read/write DRP register data
+ * Format:
+ * drp<i> address - read register, store result in  drp_read_data[i] for subsecuent show_drp<i> command
+ * drp<i> address data - write data to register[address]
+ * drp<i> address data mask - write data to register[address] using mask (1 - new, 0 - old)
+ * @param dev Linux kernel basic device structure
+ * @param attr  Linux kernel interface for exporting device attributes
+ * @param buf 4K buffer to receive response
+ * @param count length of data in the buffer buf
+ * @return offset to the end of processed buffer or negative error
+ */
+static ssize_t store_drp_register(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int chn =  get_channel_from_name(attr);
+    int ni, daddr, data, mask, rslt;
+    ni = sscanf(buf, "%i %i %i", &daddr, &data, &mask);
+    if (ni < 1) {
+        dev_err(dev, "Requires at least 1 parameter: register address (for read operation), 2 or 3 parameters (addr, data, mask) for write.\n");
+        return -EINVAL;
+    }
+    if (ni == 1){
+    	drp_open(chn);
+    	data = drp_read_reg (chn, daddr);
+    	drp_close(chn);
+    	if (data <0) return data; // -ETIMEOUT
+    	drp_read_data[chn] = data;
+    } else {
+    	if (ni <3) {
+    		mask = 0xffff;
+    	}
+    	drp_open(chn);
+    	rslt = drp_write_reg(chn, daddr, data, mask);
+    	drp_close(chn);
+    	if (rslt < 0) return rslt;
+    }
+    return count;
+}
+
+/**
+ * Show value of the previously (by store_drp_register()) read DRP register data
+ * @param dev Linux kernel basic device structure
+ * @param attr  Linux kernel interface for exporting device attributes
+ * @param buf 4K buffer to receive response
+ * @return offset to the end of the output data in the *buf buffer
+ */
+static ssize_t show_drp_register(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    int chn = get_channel_from_name(attr) ;
+    return sprintf(buf,"%d\n",drp_read_data[chn]);
+}
+
+/**
+ * Read/write DRP register data
+ * Format:
+ * drp_phase<i> clock - read clock phase, store result in  drp_read_phase[i] for subsecuent show_drp_phase<i> command
+ * drp<i> clock data - write data to phase[clock]
+ * @param dev Linux kernel basic device structure
+ * @param attr  Linux kernel interface for exporting device attributes
+ * @param buf 4K buffer to receive response
+ * @param count length of data in the buffer buf
+ * @return offset to the end of processed buffer or negative error
+ */
+static ssize_t store_drp_phase(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int chn =  get_channel_from_name(attr);
+    int ni, clock_index, phase, rslt;
+    char c;
+    ni = sscanf(buf, "%c %i %i", &c, &clock_index, &phase);
+    if (ni < 1) {
+        dev_err(dev, "Requires at least 1 parameter: clock identifier (f,0,1,2,3,4,5,6) for read operation, 2 parameters (clock, phase) for write.\n");
+        return -EINVAL;
+    }
+    switch (c){
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    	clock_index = c - '0';
+    	break;
+    case 'f':
+    case 'F':
+    	clock_index = -1;
+    	break;
+    default:
+        dev_err(dev, "Invalid clock identifier: %c. Valid are f,0,1,2,3,4,5,6.\n",c);
+    	return -EINVAL; // invalid clock index
+    }
+    if (ni == 1){
+    	drp_open(chn);
+    	phase = drp_read_clock_phase (chn, clock_index);
+    	drp_close(chn);
+    	if (phase <0) return phase; // -ETIMEOUT
+    	drp_read_phase[chn] = phase;
+    } else {
+    	drp_open(chn);
+    	rslt = drp_write_clock_phase(chn, clock_index, phase);
+    	drp_close(chn);
+    	if (rslt < 0) return rslt;
+    }
+    return count;
+}
+
+/**
+ * Show value of the previously (by store_drp_phase()) read DRP register data
+ * @param dev Linux kernel basic device structure
+ * @param attr  Linux kernel interface for exporting device attributes
+ * @param buf 4K buffer to receive response
+ * @return offset to the end of the output data in the *buf buffer
+ */
+static ssize_t show_drp_phase(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    int chn = get_channel_from_name(attr) ;
+    return sprintf(buf,"%d\n",drp_read_phase[chn]);
+}
+
+/**
+ * Sysfs function - output instructions text of how to communicate with i2c devices attached to the sensor ports.
+ * Output buffer *buf will contain multi-line instructions text
+ * @param dev Linux kernel basic device structure
+ * @param attr Linux kernel interface for exporting device attributes
+ * @param buf 4K buffer to receive response
+ * @return offset to the end of the output data in the *buf buffer
+ */
+static ssize_t get_drp_help(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf,"Control MMCM/PLL clock phases and other register using DRP\n"
+    		"Numeric suffix in the file names selects sensor port\n"
+    		"drp_reg<n>:     read - last read DRP register\n"
+    		"             write [[[drp_reg_addr] drp_reg_data] write_mask]\n"
+    		"             address only - read DRP register (to be shown with drp_reg<n> read)\n"
+    		"             address and data - write 16-bit DRP register\n"
+    		"             address, data, and mask  - write only selected bits (ones) of the 16-bit DRP register\n"
+    		"drp_phase<n> - contol clock phase in 1/8 of the VCO period, total 8 bits (max 31-7/8 of the VCO period)\n"
+            "             clocks are identified as 'f' - CLKFBOUT, '0'..'6' - CLKOUT0...CLKOUT6"
+    		"             read - last read DRP phaser\n"
+    		"             write [[clock_id] phase]\n"
+    		"             clock_id only - read clock phase (to be shown with drp_phase<n> read)\n"
+    		"             clock_id and phase - write 8-bit clock phase\n"
+    );
+}
+
+
 
 //============================================== end of sysfs functions =================
-/*
-// Dump 256 16-bit sensor registers
-static ssize_t show_sensor_regs(struct device *dev, struct device_attribute *attr, char *buf)
-{
-    int chn =  get_channel_from_name(attr);
-    char * cp = buf;
-    int i,j, ij=0;
-    for (i=0; i < 16; i++){
-        cp += sprintf(cp,"%02x:",i*16);
-        for (j=0;j<16;j++) cp += sprintf(cp," %04x", sensor_reg_copy[chn][ij++]);
-        cp += sprintf(cp,"\n");
-    }
-    return cp - buf;
-}
 
-// Ignore data, re-read 256 sensor registers
-static ssize_t store_sensor_regs(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-    int chn =  get_channel_from_name(attr);
-    u32 datai2c;
-    int i;
-    if (first_sensor_sa7[chn]) for (i = 0; i< 256;i++) {
-        X3X3_I2C_RCV2(chn, first_sensor_sa7[chn], i, &datai2c);
-        sensor_reg_copy[chn][i] = datai2c;
-    }
-    return count;
-}
-
-static ssize_t show_debug_delays(struct device *dev, struct device_attribute *attr, char *buf)
-{
-    return sprintf(buf,"0x%08x\n", debug_delays);
-}
-
-
-static ssize_t store_debug_delays(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-    if (!sscanf(buf, "%x", &debug_delays)) {
-        return - EINVAL;
-    }
-    return count;
-}
-static ssize_t show_debug_modes(struct device *dev, struct device_attribute *attr, char *buf)
-{
-    return sprintf(buf,"0x%08x\n", debug_modes);
-}
-
-
-static ssize_t store_debug_modes(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-    if (!sscanf(buf, "%x", &debug_modes)) {
-        return - EINVAL;
-    }
-    return count;
-}
-
-static DEVICE_ATTR(sensor_regs0,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
-static DEVICE_ATTR(sensor_regs1,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
-static DEVICE_ATTR(sensor_regs2,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
-static DEVICE_ATTR(sensor_regs3,               SYSFS_PERMISSIONS,     show_sensor_regs,                store_sensor_regs);
-static DEVICE_ATTR(debug_delays,               SYSFS_PERMISSIONS,     show_debug_delays,               store_debug_delays);
-static DEVICE_ATTR(debug_modes,                SYSFS_PERMISSIONS,     show_debug_modes,                store_debug_modes);
-
-static struct attribute *root_dev_attrs[] = {
-        &dev_attr_sensor_regs0.attr,
-        &dev_attr_sensor_regs1.attr,
-        &dev_attr_sensor_regs2.attr,
-        &dev_attr_sensor_regs3.attr,
-        &dev_attr_debug_delays.attr,
-        &dev_attr_debug_modes.attr,
-        NULL
-};
-*/
 static DEVICE_ATTR(uart_seq0,               SYSFS_PERMISSIONS,     show_uart_seq,                store_uart_seq);
 static DEVICE_ATTR(uart_seq1,               SYSFS_PERMISSIONS,     show_uart_seq,                store_uart_seq);
 static DEVICE_ATTR(uart_seq2,               SYSFS_PERMISSIONS,     show_uart_seq,                store_uart_seq);
@@ -1860,7 +2119,18 @@ static DEVICE_ATTR(uart0,                   SYSFS_PERMISSIONS,     show_uart_pac
 static DEVICE_ATTR(uart1,                   SYSFS_PERMISSIONS,     show_uart_packet,             store_uart_packet);
 static DEVICE_ATTR(uart2,                   SYSFS_PERMISSIONS,     show_uart_packet,             store_uart_packet);
 static DEVICE_ATTR(uart3,                   SYSFS_PERMISSIONS,     show_uart_packet,             store_uart_packet);
-static DEVICE_ATTR(help,   SYSFS_PERMISSIONS & SYSFS_READONLY,     get_uart_help,                NULL);
+static DEVICE_ATTR(uart_help, SYSFS_PERMISSIONS & SYSFS_READONLY,  get_uart_help,                NULL);
+
+static DEVICE_ATTR(drp_reg0,                SYSFS_PERMISSIONS,     show_drp_register,            store_drp_register);
+static DEVICE_ATTR(drp_reg1,                SYSFS_PERMISSIONS,     show_drp_register,            store_drp_register);
+static DEVICE_ATTR(drp_reg2,                SYSFS_PERMISSIONS,     show_drp_register,            store_drp_register);
+static DEVICE_ATTR(drp_reg3,                SYSFS_PERMISSIONS,     show_drp_register,            store_drp_register);
+static DEVICE_ATTR(drp_phase0,              SYSFS_PERMISSIONS,     show_drp_phase,               store_drp_phase);
+static DEVICE_ATTR(drp_phase1,              SYSFS_PERMISSIONS,     show_drp_phase,               store_drp_phase);
+static DEVICE_ATTR(drp_phase2,              SYSFS_PERMISSIONS,     show_drp_phase,               store_drp_phase);
+static DEVICE_ATTR(drp_phase3,              SYSFS_PERMISSIONS,     show_drp_phase,               store_drp_phase);
+static DEVICE_ATTR(drp_help, SYSFS_PERMISSIONS & SYSFS_READONLY,   get_drp_help,                 NULL);
+
 
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_uart_seq0.attr,
@@ -1883,7 +2153,16 @@ static struct attribute *root_dev_attrs[] = {
         &dev_attr_uart1.attr,
         &dev_attr_uart2.attr,
         &dev_attr_uart3.attr,
-        &dev_attr_help.attr,
+        &dev_attr_uart_help.attr,
+        &dev_attr_drp_reg0.attr,
+        &dev_attr_drp_reg1.attr,
+        &dev_attr_drp_reg2.attr,
+        &dev_attr_drp_reg3.attr,
+        &dev_attr_drp_phase0.attr,
+        &dev_attr_drp_phase1.attr,
+        &dev_attr_drp_phase2.attr,
+        &dev_attr_drp_phase3.attr,
+        &dev_attr_drp_help.attr,
         NULL
 	};
 

@@ -18,6 +18,9 @@
 #ifndef _BOSON640_H
 #define _BOSON640_H
 
+#define DRP_ADDRESS_LENGTH   7
+#define DRP_DATA_LENGTH     16
+
 #define BOSON640_I2C_ADDR      0x81 ///< Boson UART ext mode = 1 instead of the I2C slave address (7 bit)
 #define BOSON640_BOOT_FRAME    75   ///< do not communicate with the sensor if frame number is less than this
 // encoding number of data bytes in 2 msb of the 16-bit register address, will be encoded in sa field
