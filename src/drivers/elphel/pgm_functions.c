@@ -682,6 +682,11 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
 ///< @return always 0
 
 {
+	// bypasses sequencer - OK?
+	// trying change phases with Boson:
+	// does not clear "modified", loops forever
+	// always comes with ASAP
+	// try prevpars?
 #ifndef NC353
     int fpga_interface = x393_sensor_interface();
     x393_sensio_ctl_t  sensio_ctl = {.d32=0};
@@ -710,20 +715,27 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
     		MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim1,  0x%x)\n", sensor_port, frame16, sensio_tim1 .d32)
     	}
     }
-    if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM2)) {
+
+//    if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM2)) {
+    if (thispars->pars[P_SENSOR_IFACE_TIM2] != prevpars->pars[P_SENSOR_IFACE_TIM2]) {
         sensio_tim2.d32 = thispars->pars[P_SENSOR_IFACE_TIM2];
 //        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim2, sensio_tim2);
         set_x393_sensio_tim2  (sensio_tim2, sensor_port); // write directly, sequencer may be not operational
         sensio_ctl.set_dly = 1;
-        dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim2,  0x%x)\n",sensor_port, sensor_port, frame16, sensio_tim2.d32);
+//        dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim2,  0x%x)\n",sensor_port, sensor_port, frame16, sensio_tim2.d32);
+//        dev_info(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim2,  0x%x)\n",sensor_port, sensor_port, frame16, sensio_tim2.d32);
+        dev_info(g_dev_ptr,"{%d} frame16= 0x%x, thispars->pars[P_SENSOR_IFACE_TIM2] = 0x%lx prevpars->pars[P_SENSOR_IFACE_TIM2]=0x%lx\n",
+        		sensor_port, frame16, thispars->pars[P_SENSOR_IFACE_TIM2], prevpars->pars[P_SENSOR_IFACE_TIM2]);
         MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim2,  0x%x)\n",sensor_port, frame16, sensio_tim2.d32)
     }
-    if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM3)) {
+//    if (FRAMEPAR_MODIFIED(P_SENSOR_IFACE_TIM3)) {
+    if (thispars->pars[P_SENSOR_IFACE_TIM3] != prevpars->pars[P_SENSOR_IFACE_TIM3]) {
         sensio_tim3.d32 = thispars->pars[P_SENSOR_IFACE_TIM3];
 //        X393_SEQ_SEND1 (sensor_port, frame16, x393_sensio_tim3, sensio_tim3);
         set_x393_sensio_tim3  (sensio_tim3, sensor_port); // write directly, sequencer may be not operational
         sensio_ctl.set_dly = 1;
-        dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim3,  0x%x)\n",sensor_port, sensor_port, frame16, sensio_tim3.d32);
+//        dev_dbg(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim3,  0x%x)\n",sensor_port, sensor_port, frame16, sensio_tim3.d32);
+        dev_info(g_dev_ptr,"{%d}  X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim3,  0x%x)\n",sensor_port, sensor_port, frame16, sensio_tim3.d32);
         MDP(DBGB_PADD, sensor_port,"X393_SEQ_SEND1(0x%x,  0x%x, x393_sensio_tim3,  0x%x)\n", sensor_port, frame16, sensio_tim3.d32)
     }
 
@@ -732,15 +744,24 @@ int pgm_sensorphase    (int sensor_port,               ///< sensor port number (
             sensio_ctl.quadrants = thispars->pars[P_SENSOR_PHASE] & 0x7f;
             sensio_ctl.quadrants_set = 1;
         }
+        /*
         if (sensio_ctl.d32) {
             x393_sensio_ctrl(sensio_ctl, sensor_port);
             dev_dbg(g_dev_ptr,"{%d} x393_sensio_ctrl(0x%08x, %d))\n",sensor_port, sensio_ctl.d32, sensor_port);
             MDP(DBGB_PADD, sensor_port,"x393_sensio_ctrl(0x%08x, %d))\n", sensio_ctl.d32, sensor_port)
         }
+        */
 
     } else {
         /* TODO 393: Add HISPI code */
     }
+    if (sensio_ctl.d32) { // for all sensors (parallel, boson)!
+        x393_sensio_ctrl(sensio_ctl, sensor_port);
+//        dev_dbg(g_dev_ptr,"{%d} x393_sensio_ctrl(0x%08x, %d))\n",sensor_port, sensio_ctl.d32, sensor_port);
+        dev_info(g_dev_ptr,"{%d} x393_sensio_ctrl(0x%08x, %d))\n",sensor_port, sensio_ctl.d32, sensor_port);
+        MDP(DBGB_PADD, sensor_port,"x393_sensio_ctrl(0x%08x, %d))\n", sensio_ctl.d32, sensor_port)
+    }
+
     return 0;
 
 #else

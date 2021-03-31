@@ -1009,7 +1009,7 @@ int boson640_pgm_initsensor     (int sensor_port,               ///< sensor port
     dev_info(g_dev_ptr,"boson640_pgm_initsensor(): {%d}  frame16=%d frame=%ld: Enable EXTIF (Boson UART control from the sequencer)\n",sensor_port,frame16,getThisFrameNumber(sensor_port));
 
     if (boson640_is_booted (sensor_port, thispars) < 2){ // not yet booted
-        dev_info(g_dev_ptr,"boson640_pgm_initsensor(): {%d}  frame16=%d frame=%ld ABORTED as Boson not yet booted\n",sensor_port,frame16,getThisFrameNumber(sensor_port));
+        dev_info(g_dev_ptr,"boson640_pgm_initsensor(): {%d}  frame16=%d frame=%ld ABORTED as Boson is not yet booted\n",sensor_port,frame16,getThisFrameNumber(sensor_port));
     	return -1; // Not yet fully booted.
     }
 

@@ -2059,7 +2059,7 @@ static ssize_t store_fpga_time(struct device *dev, struct device_attribute *attr
 {
     sec_usec_t sec_usec={.sec=0, .usec=0};
     // avoiding floating point calcualtions in the kernel
-    const char *cp = buf;
+    char *cp = (char *) buf;
     int i;
     if (sscanf(buf, "%lu.%s", &sec_usec.sec, cp)>0){
         sscanf(cp,"%lu",&sec_usec.usec);
