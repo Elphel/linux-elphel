@@ -1348,7 +1348,7 @@ int pgm_triggermode(int sensor_port,               ///< sensor port number (0..3
     x393_camsync_mode_t camsync_mode = {.d32=0};
     int is_master = (thispars->pars[P_TRIG_MASTER] == sensor_port)? 1 : 0;
 
-    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, is_master=%d\n",sensor_port,frame16, is_master);
+    dev_dbg(g_dev_ptr,"{%d}  frame16=%d, is_master=%d, this_frame=%ld\n",sensor_port,frame16, is_master, getThisFrameNumber(sensor_port));
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     camsync_mode.trig =     (thispars->pars[P_TRIG] & 4)?1:0;
@@ -1382,6 +1382,8 @@ int pgm_triggermode(int sensor_port,               ///< sensor port number (0..3
         for (i=0; i<SENSOR_PORTS; i++) if (i != sensor_port) {
             common_pars->updated[i] = 1;
         }
+    } else {
+        dev_dbg(g_dev_ptr,"{%d}   No change to common trigger mode, old=0x%lx, new=0x%lx\n",sensor_port,common_pars->trig_mode,thispars->pars[P_TRIG]);
     }
 
     return 0;

@@ -24,6 +24,8 @@
 //#define DEBUG // should be before linux/module.h - enables dev_dbg at boot in this file (needs "debug" in bootarg)
 #include <linux/types.h>        // div for 64
 #include <asm/div64.h>          // div for 64
+#include <linux/math64.h>       // newer divisions https://mymusing.co/division-functions-in-linux-kernel/
+
 
 #include <linux/module.h>
 #include <linux/mm.h>
@@ -66,7 +68,7 @@
 //#include "cci2c.h" // to use void i2c_reset_wait(void), reset shadow static 'i2c_hardware_on'
 #include "x393_macro.h"
 #include "x393.h"
-#include "sensor_i2c.h" // read_xi2c_frame()
+#include "sensor_i2c.h" // read_xi2c_frame(), i2c_stop_run_reset
 #include "klogger_393.h"
 
 /**
@@ -183,13 +185,17 @@ static const int framepars_minor[] = {
 static struct class *framepars_dev_class;
 
 static int hardware_initialized = 0;
+static u64 master_ts = 0;     // Stores timestamp in microseconds converted from frame number
+static u32 master_frame = 0;  // stores ts converted to frame (for master channel)
 
 
 /* 393: sFrameParsAll is an array of 4per-port structures */
 static struct framepars_all_t sFrameParsAll[SENSOR_PORTS] __attribute__ ((aligned(PAGE_SIZE)));  ///< Sensor Parameters, currently 16 pages all and 2048 pages some, static struct
 unsigned int frameParsInitialized[SENSOR_PORTS];                                                     // set to 0 at startup, 1 after initialization that is triggered by setParsAtomic()
-#define  thisFrameNumber(p)            GLOBALPARS(p,G_THIS_FRAME)                       // Current frame number (may lag from the hardware)
-#define  thisCompressorFrameNumber(p)  GLOBALPARS(p,G_COMPRESSOR_FRAME)                 // Current compressed frame number (lags from thisFrameNumber)
+//#define  thisFrameNumber(p)              GLOBALPARS(p,G_THIS_FRAME)                       // Current frame number (may lag from the hardware)
+//#define  thisCompressorFrameNumber(p)    GLOBALPARS(p,G_COMPRESSOR_FRAME)                 // Current compressed frame number (lags from thisFrameNumber)
+//#define  thisCompressorTimestamp_sec(p)  GLOBALPARS(p,G_COMPRESSOR_SEC)                   // Current compressed frame timestamp seconds
+//#define  thisCompressorTimestamp_usec(p) GLOBALPARS(p,G_COMPRESSOR_USEC)                  // Current compressed frame timestamp microseconds seconds
 
 #ifdef NC353
 	struct framepars_all_t  *frameparsall = NULL;           // - will be mmap-ed
@@ -386,7 +392,6 @@ void resetFrameNumber(int sensor_port, ///< sensor_port sensor port number (0..3
         x393_cmdframeseq_ctrl(cmdframeseq_mode, sensor_port);
         dev_dbg(g_devfp_ptr,"Reset command sequencer (all channels !): port= %d,  thisFrameNumber=0x%lx\n", sensor_port, thisFrameNumber(sensor_port));
 	}
-
 	/* Check if the status update mode for command sequencer is not 3 (auto), set/wait if needed */
 	stat_ctrl =  get_x393_cmdseqmux_status_ctrl();
 	if (stat_ctrl.mode !=3) {
@@ -399,7 +404,7 @@ void resetFrameNumber(int sensor_port, ///< sensor_port sensor port number (0..3
 			if (likely(stat.seq_num == stat_ctrl.seq_num))
 				break;
 		}
-	} else {
+	} else { // correct frame numbers should be set after resetting frame number (first call to x393_cmdframeseq_ctrl())
 		stat = x393_cmdseqmux_status();
 	}
 	switch (sensor_port) {
@@ -410,7 +415,8 @@ void resetFrameNumber(int sensor_port, ///< sensor_port sensor port number (0..3
 	default:
 	    frame16 = stat.frame_num3; break;
 	}
-    thisFrameNumber(sensor_port) = (aframe & PARS_FRAMES_MASK) | frame16;
+//    thisFrameNumber(sensor_port) = (aframe & PARS_FRAMES_MASK) | frame16; // OLD BUG???
+    thisFrameNumber(sensor_port) = (aframe & ~PARS_FRAMES_MASK) | frame16;
 #ifdef NC353
 	thisFrameNumber(sensor_port) = X3X3_I2C_FRAME;
 #endif
@@ -1839,6 +1845,7 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
 			}
 			while (first < count) {
 				while ((first < count) && ((pars[first].num & 0xff00) == 0xff00)) { // process special instructions
+				    dev_dbg(g_devfp_ptr, "sensor_port = %d this_frame = 0x%lx\n",sensor_port, getThisFrameNumber(sensor_port));
 				    dev_dbg(g_devfp_ptr, "pars[%d].num = 0x%lx pars[%d].val = 0x%lx\n",first,pars[first].num, first,pars[first].val);
 					switch (pars[first].num & 0xff0f) {
 #if 0
@@ -1867,7 +1874,7 @@ ssize_t framepars_write(struct file * file, const char * buf, size_t count, loff
                     case FRAMEPARS_SETFRAME:
                         frame = pars[first].val;
                         port_mask = (pars[first].num >> 4) & ((1 << SENSOR_PORTS) - 1);
-                        // No correction - frames should be exctly synchronized to work this way, otherwise use relative
+                        // No correction - frames should be exactly synchronized to work this way, otherwise use relative
                         if (port_mask){
                             int ii;
                             for (ii =0; ii < SENSOR_PORTS; ii++) if (port_mask & (1 << ii)){
@@ -1989,6 +1996,7 @@ static int get_channel_from_name(struct device_attribute *attr) ///< Linux kerne
     return reg;
 }
 
+
 static ssize_t show_this_frame(struct device *dev, struct device_attribute *attr, char *buf)
 {
     return sprintf(buf,"%u\n", (int) GLOBALPARS(get_channel_from_name(attr), G_THIS_FRAME));
@@ -2072,6 +2080,69 @@ static ssize_t store_fpga_time(struct device *dev, struct device_attribute *attr
     }
     return count;
 }
+/**
+ * Reset frame numbers for command and i2c sequencers, if specified frame < PARS_FRAMES - reset hardware sequencers
+ * 2^15 @60Hz - 414 days, so assuming there is no overflow
+ * treat number of frames: :
+ * frame <= -PARS_FRAMES - wait for absolute frame number (-frame), then hardware reset and reset frame to zero
+ * -PARS_FRAMES < frame < 0 : skip -frame frames, then hardware reset and reset frame to zero
+ * 0 >= frame < PARS_FRAMES :  no wait, hardware reset and reset frame to zero (treat as frame == 0)
+ * PARS_FRAMES <frame: no hardware reset, set only high order bits, keep low 4 bits from the hardware
+ * @param dev
+ * @param attr
+ * @param buf
+ * @param count
+ * @return
+ */
+static ssize_t store_all_frames(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int chn, mchn;
+    u32 aframe, wframe;
+    int sframe;
+    int skip=0;
+	FLAGS_IBH;
+	if (sscanf(buf, "%d", &sframe) > 0) {
+		aframe = (sframe > 0) ? sframe: 0;
+		skip =  -sframe;
+	}
+
+	if (!common_pars){
+		dev_err(g_devfp_ptr,"*** common_pars not found, can not set frames! ***\n");
+		return -ENXIO;
+	}
+
+//	get master channel
+	mchn = common_pars->master_chn;
+	if (skip > 0){
+		wframe =  getThisFrameNumber(mchn);
+		if (skip >= PARS_FRAMES) {
+			if (wframe < skip){ // do not try to wait if it is too late
+				wframe = skip + 1; // Skip 1 frame?
+			}
+		} else {
+			wframe += skip;
+		}
+		dev_dbg(g_devfp_ptr,"master port= %d, now frame=%d, wait frame %ld\n", mchn, wframe, getThisFrameNumber(mchn));
+		waitFrame(mchn, aframe);
+	}
+	// Do next chn iteration with IRQ disabled ? Lock with master channel lock. Or should each channel be locked (reset channel is not thread safe anyway)
+	LOCK_IBH(framepars_locks[common_pars->master_chn]);
+    for (chn = 0; chn < SENSOR_PORTS; chn++){
+        resetFrameNumber(chn,
+                         aframe,
+                         (aframe < PARS_FRAMES)?1:0); // reset hardware if aframe is small
+
+    }
+	UNLOCK_IBH(framepars_locks[common_pars->master_chn]);
+    // nothing to do with i2c sequencers if hardware command sequencers are not reset
+	if (aframe < PARS_FRAMES){ // reset hardware sequencers and copy to i2c sequencers
+	    for (chn = 0; chn < SENSOR_PORTS; chn++){
+            i2c_stop_run_reset      (chn, I2C_CMD_RESET);
+            i2c_stop_run_reset      (chn, I2C_CMD_RUN);
+	    }
+	}
+	return count;
+}
 
 static ssize_t show_all_frames(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -2111,6 +2182,112 @@ static ssize_t show_all_frames(struct device *dev, struct device_attribute *attr
     buf += sprintf(buf,"\n");
     return buf-buf0;
 }
+/**
+ * Convert frame number into a timestamp (a pair of seconds, microseconds)
+ * @param dev
+ * @param attr
+ * @param buf
+ * @param count
+ * @return
+ */
+static ssize_t store_frame2ts(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int mchn;
+    u32 aframe=0;
+    u32 period10ns; // trigger period in 10 ns increments
+    u32 ts_pair[2];
+    s64 delta_ts;
+    int delta_frame;
+	sscanf(buf, "%u", &aframe);
+	if (!common_pars){
+		dev_err(g_devfp_ptr,"*** common_pars not found, can not set frames! ***\n");
+		return -ENXIO;
+	}
+	//	get master channel
+	mchn = common_pars->master_chn;
+	// get last compressed frame number and timestamp
+	master_frame = thisCompressorFrameNumber(mchn);
+	ts_pair[1] = thisCompressorTimestamp_sec(mchn);
+	ts_pair[0] = thisCompressorTimestamp_usec(mchn);
+	if (master_frame != thisCompressorFrameNumber(mchn)) { // updated in ISR -> retry once
+		master_frame = thisCompressorFrameNumber(mchn);
+		ts_pair[1] = thisCompressorTimestamp_sec(mchn);
+		ts_pair[0] = thisCompressorTimestamp_usec(mchn);
+	}
+	master_ts = ((long long) ts_pair[1]) * 1000000 + ts_pair[0]; // timestamp in microseconds
+	if (aframe > 0) { // if 0 - keep last ts to be read
+		period10ns = aframepars[mchn][thisFrameNumber(mchn) & PARS_FRAMES_MASK].pars[P_TRIG_PERIOD];
+		delta_frame = aframe - master_frame;
+		delta_ts =  ((long long) period10ns) * delta_frame * 2 + 1; // to round afrter division by 100
+		dev_info(g_devfp_ptr,"delta_frame = %d, delta_ts = %lld us, period10ns=%d\n", delta_frame, delta_ts,period10ns);
+//		do_div(delta_ts, 200); // 64 by 32, delta_ts now in microseconds
+//		s64 div_s64(s64 dividend, s32 divisor) : Signed division of 64-bit dividend by 32-bit divisor.
+		delta_ts = div_s64(delta_ts,200); // linux/math64.h
+		dev_info(g_devfp_ptr,"delta_ts = %lld us\n", delta_ts);
+		master_ts += delta_ts;
+	}
+	return count;
+}
+static ssize_t show_frame2ts(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf,"%lld", master_ts);
+}
+
+static ssize_t store_ts2frame(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	u64 ts = 0;
+    u32 ts_pair[2];
+    int mchn;
+    u32 period10ns; // trigger period in 10 ns increments
+    s64 delta_ts;
+    s32 delta_frame;
+	sscanf(buf, "%llu", &ts);
+	if (!common_pars){
+		dev_err(g_devfp_ptr,"*** common_pars not found, can not set frames! ***\n");
+		return -ENXIO;
+	}
+	//	get master channel
+	mchn = common_pars->master_chn;
+	// get last compressed frame number and timestamp
+	master_frame = thisCompressorFrameNumber(mchn);
+	ts_pair[1] = thisCompressorTimestamp_sec(mchn);
+	ts_pair[0] = thisCompressorTimestamp_usec(mchn);
+	if (master_frame != thisCompressorFrameNumber(mchn)) { // updated in ISR -> retry once
+		master_frame = thisCompressorFrameNumber(mchn);
+		ts_pair[1] = thisCompressorTimestamp_sec(mchn);
+		ts_pair[0] = thisCompressorTimestamp_usec(mchn);
+	}
+	master_ts = ((long long) ts_pair[1]) * 1000000 + ts_pair[0]; // timestamp in microseconds
+	if (ts) { // if ts 0 (or not specified, e.g. echo "" > ... , then keep last comprfessed frame and timestamp to be read out
+		period10ns = aframepars[mchn][thisFrameNumber(mchn) & PARS_FRAMES_MASK].pars[P_TRIG_PERIOD];
+		delta_ts = 100*(ts - master_ts) + (period10ns/2); // for rounding
+//		do_div(delta_ts, period10ns);
+//		delta_ts /= period10ns;
+		delta_frame =  div_s64(delta_ts, period10ns); // linux/math64.h
+		master_frame += delta_frame;
+		dev_info(g_devfp_ptr,"delta_frame = %d, delta_ts = %lld us, period10ns=%d\n", delta_frame, delta_ts, period10ns);
+	}
+	return count;
+}
+
+
+static ssize_t show_ts2frame(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf,"%d", master_frame);
+}
+/*
+aframepars[sensor_port][(i+frame16) & PARS_FRAMES_MASK].pars[P_FRAME] = thisFrameNumber(sensor_port) + i;#define  thisCompressorFrameNumber(p)    GLOBALPARS(p,G_COMPRESSOR_FRAME)                 // Current compressed frame number (lags from thisFrameNumber)
+#define  thisCompressorTimestamp_sec(p)  GLOBALPARS(p,G_COMPRESSOR_SEC)                   // Current compressed frame timestamp seconds
+#define  thisCompressorTimestamp_usec(p) GLOBALPARS(p,G_COMPRESSOR_USEC)                  // Current compressed frame timestamp microseconds seconds
+
+static u64 master_ts = 0;     // Stores timestamp in microseconds converted from frame number
+static u32 master_frame = 0;  // stores ts converted to frame (for master channel)
+
+static u32 master_ts[2];      // [0] - microseconds, [1] - seconds. Stores timestamp pair converted from frame number
+static u32 master_frame = 0;  // stores ts converted to frame (for master channel)
+
+ */
+
 
 static DEVICE_ATTR(this_frame0,               SYSFS_PERMISSIONS,     show_this_frame,                store_this_frame);
 static DEVICE_ATTR(this_frame1,               SYSFS_PERMISSIONS,     show_this_frame,                store_this_frame);
@@ -2120,15 +2297,14 @@ static DEVICE_ATTR(chn_en0,                   SYSFS_PERMISSIONS,     NULL,      
 static DEVICE_ATTR(chn_en1,                   SYSFS_PERMISSIONS,     NULL,                           store_endis_chn);
 static DEVICE_ATTR(chn_en2,                   SYSFS_PERMISSIONS,     NULL,                           store_endis_chn);
 static DEVICE_ATTR(chn_en3,                   SYSFS_PERMISSIONS,     NULL,                           store_endis_chn);
-//static DEVICE_ATTR(chn_en0,                 SYSFS_WRITEONLY,       NULL,                           store_endis_chn);
-//static DEVICE_ATTR(chn_en1,                 SYSFS_WRITEONLY,       NULL,                           store_endis_chn);
-//static DEVICE_ATTR(chn_en2,                 SYSFS_WRITEONLY,       NULL,                           store_endis_chn);
-//static DEVICE_ATTR(chn_en3,                 SYSFS_WRITEONLY,       NULL,                           store_endis_chn);
-
-static DEVICE_ATTR(all_frames,                SYSFS_READONLY,        show_all_frames,                NULL);
+static DEVICE_ATTR(all_frames,                SYSFS_PERMISSIONS,     show_all_frames,                store_all_frames);
 static DEVICE_ATTR(fpga_time,                 SYSFS_PERMISSIONS,     show_fpga_time,                 store_fpga_time);
 static DEVICE_ATTR(fpga_version,              SYSFS_READONLY,        show_fpga_version,              NULL);
 static DEVICE_ATTR(fpga_sensor_interface,     SYSFS_READONLY,        show_fpga_sensor_interface,     NULL);
+static DEVICE_ATTR(frame2ts,                  SYSFS_PERMISSIONS,     show_frame2ts,                  store_frame2ts);
+static DEVICE_ATTR(ts2frame,                  SYSFS_PERMISSIONS,     show_ts2frame,                  store_ts2frame);
+
+
 
 static struct attribute *root_dev_attrs[] = {
         &dev_attr_this_frame0.attr,
@@ -2143,6 +2319,8 @@ static struct attribute *root_dev_attrs[] = {
         &dev_attr_chn_en3.attr,
         &dev_attr_fpga_version.attr,
         &dev_attr_fpga_sensor_interface.attr,
+        &dev_attr_frame2ts.attr,
+        &dev_attr_ts2frame.attr,
         NULL
 };
 

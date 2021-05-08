@@ -385,7 +385,7 @@ int drp_read_reg                (int sensor_port, u8 daddr);
 int drp_write_reg               (int sensor_port, int daddr, u16 data,u16 mask);
 u8* drp_phase_addr              (int clk_out);
 int drp_read_clock_phase        (int sensor_port, int clk_out);
-int drp_write_clock_phase       (int sensor_port, int clk_out, u8 phase);
+int drp_write_clock_phase       (int sensor_port, int clk_out, u16 phase); // 0..1ff
 
 // SysFS interface functions
 static int     get_channel_from_name(struct device_attribute *attr);
@@ -822,7 +822,7 @@ int drp_read_clock_phase (int sensor_port, int clk_out){
 	int data1, data2;
 	if ((data1 = drp_read_reg (sensor_port, addr_pair[0])) < 0) return data1;
 	if ((data2 = drp_read_reg (sensor_port, addr_pair[1])) < 0) return data2;
-    return ((data1 >> 13) & 7) | ((data2 & 0x1f) << 3);
+    return ((data1 >> 13) & 7) | ((data2 & 0x3f) << 3);
 }
 
 /**
@@ -833,14 +833,14 @@ int drp_read_clock_phase (int sensor_port, int clk_out){
  * @param phase 8-bit phase shift in 1/8 VCO periods or -ETIMEOUT
  * @return 0-OK, <0 - error (-ETIMEOUT)
  */
-int drp_write_clock_phase (int sensor_port, int clk_out, u8 phase)
+int drp_write_clock_phase (int sensor_port, int clk_out, u16 phase)
 {
 	u8* addr_pair = drp_phase_addr(clk_out);
 	int data1, data2, rslt;
     data1 = (phase & 7) << 13;
-    data2 = (phase >> 3) & 0x1f;
+    data2 = (phase >> 3) & 0x3f;
     if ((rslt = drp_write_reg(sensor_port, addr_pair[0], data1, 0xe000)) < 0) return rslt;
-    if ((rslt = drp_write_reg(sensor_port, addr_pair[1], data2, 0x001f)) < 0) return rslt;
+    if ((rslt = drp_write_reg(sensor_port, addr_pair[1], data2, 0x003f)) < 0) return rslt;
     return 0;
 }
 
@@ -1039,26 +1039,29 @@ int set_initial_phase(int sensor_port,
 {
     // just setting clock and 3 lanes delays (5 MSBs 3 LSB are not used)
 	x393_sensio_tim2_t tim2 ={.d32=0};
-	x393_sensio_tim3_t tim3 ={.d32=0};
+//	x393_sensio_tim3_t tim3 ={.d32=0};
     x393_sensio_ctl_t  sensio_ctl = {.d32=0};
-    u8 initial_delays[] = {0x10, 0x00, 0x00, 0x00,  // clock, lane0, lanel, lane2
-                           0xe0, 0x00, 0x00, 0x00,
-                           0x00, 0x30, 0x30, 0x30,
-	                       0xf8, 0x40, 0x38, 0xd0};
-    tim2.dly_lane0 = initial_delays[4*sensor_port + 1];
-    tim2.dly_lane1 = initial_delays[4*sensor_port + 2];
-    tim2.dly_lane2 = initial_delays[4*sensor_port + 3];
-    tim3.phase_h =   initial_delays[4*sensor_port + 0];
+    u8 initial_delays[] = {0x00, 0x80, 0x80, 0x80, 0x80,  // clock, lane0, lanel, lane2
+                           0x00, 0x80, 0x80, 0x80, 0x80,
+                           0x00, 0x80, 0x80, 0x80, 0x80,
+	                       0x00, 0x80, 0x80, 0x88, 0x80};
+    tim2.dly_lane0 = initial_delays[5*sensor_port + 1];
+    tim2.dly_lane1 = initial_delays[5*sensor_port + 2];
+    tim2.dly_lane2 = initial_delays[5*sensor_port + 3];
+    tim2.dly_lane3 = initial_delays[5*sensor_port + 4]; // not available in rev 0, added for revA
+//    tim3.phase_h =   initial_delays[4*sensor_port + 0]; // may be restored for revA - it is 9 bits for MMCM phase
+//  Will use DRP (immediate mode only, not through tghe sequencer)
 
     set_x393_sensio_tim2(tim2, sensor_port);
-    set_x393_sensio_tim3(tim3, sensor_port);
+//    set_x393_sensio_tim3(tim3, sensor_port);
     sensio_ctl.set_dly = 1;
     x393_sensio_ctrl(sensio_ctl,sensor_port);
-    dev_info(g_dev_ptr,"**set_initial_phase**: {%d}  setting delays tim2 = 0x%x tim3 = 0x%x \n",sensor_port, tim2.d32, tim3.d32);
+//    dev_info(g_dev_ptr,"**set_initial_phase**: {%d}  setting delays tim2 = 0x%x tim3 = 0x%x \n",sensor_port, tim2.d32, tim3.d32);
+    dev_info(g_dev_ptr,"**set_initial_phase**: {%d}  setting delays tim2 = 0x%x \n",sensor_port, tim2.d32);
 
 //P_SENSOR_IFACE_TIM2
     setFramePar(sensor_port, thispars, P_SENSOR_IFACE_TIM2,  tim2.d32);
-    setFramePar(sensor_port, thispars, P_SENSOR_IFACE_TIM3,  tim3.d32);
+//    setFramePar(sensor_port, thispars, P_SENSOR_IFACE_TIM3,  tim3.d32);
 	return 0;
 }
 
@@ -1481,8 +1484,9 @@ int boson640_pgm_window_common  (int sensor_port,               ///< sensor port
     if (unlikely(thispars->pars[P_SENSOR_REGS + P_BOSON_TELEMETRY] != need_telemetry)) {
         SETFRAMEPARS_SET(P_SENSOR_PIXV, wh); // probably already set by pgm_window_common
         SETFRAMEPARS_SET(P_WOI_HEIGHT, wh); // probably already set by pgm_window_common
-        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_BOSON_TELEMETRY, need_telemetry); // set sensor register and parameter
-        dev_dbg(g_dev_ptr,"boson640_pgm_window_common() SET_SENSOR_MBPAR_LUT(%d, %d, P_BOSON_TELEMETRY, %d)\n",sensor_port, frame16, need_telemetry);
+//        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_BOSON_TELEMETRY, need_telemetry); // set sensor register and parameter
+        SET_SENSOR_PAR_LUT  (sensor_port, frame16, P_BOSON_TELEMETRY, need_telemetry); // set sensor register and parameter
+        dev_dbg(g_dev_ptr,"boson640_pgm_window_common() SET_SENSOR_PAR_LUT(%d, %d, P_BOSON_TELEMETRY, %d)\n",sensor_port, frame16, need_telemetry);
     }
     dev_dbg(g_dev_ptr,"boson640_pgm_window_common(exit): {%d} thispars->pars[P_WOI_HEIGHT]=%lx thispars->pars[P_WOI_WIDTH]=%lx\n", sensor_port,thispars->pars[P_WOI_HEIGHT], thispars->pars[P_WOI_WIDTH]);
     dev_dbg(g_dev_ptr,"boson640_pgm_window_common(exit): {%d} thispars->pars[P_SENSOR_PIXV]=%lx thispars->pars[P_SENSOR_PIXH]=%lx\n", sensor_port,thispars->pars[P_SENSOR_PIXV], thispars->pars[P_SENSOR_PIXH]);
@@ -1616,6 +1620,7 @@ int boson640_pgm_triggermode        (int sensor_port,               ///< sensor 
     	return -1; // Not yet fully booted.
     }
     if (thispars->pars[P_TRIG] & 4) { // turn external
+        dev_dbg(g_dev_ptr,"boson640_pgm_triggermode(): {%d}  frame16=%d frame=%ld TURN EXTERNAL (%ld)\n",sensor_port,frame16,getThisFrameNumber(sensor_port),thispars->pars[P_TRIG]);
     	// always apply P_BOSON_DVO_DISPLAY_MODE
 //    	if (thispars->pars[P_SENSOR_REGS + P_BOSON_DVO_DISPLAY_MODE] != 1){
     		SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_BOSON_DVO_DISPLAY_MODE, 1);
@@ -1624,6 +1629,7 @@ int boson640_pgm_triggermode        (int sensor_port,               ///< sensor 
     		SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_BOSON_BOSON_EXT_SYNC_MODE, 2);
     	}
     } else { // turn internal
+        dev_dbg(g_dev_ptr,"boson640_pgm_triggermode(): {%d}  frame16=%d frame=%ld TURN INTERNAL (%ld)\n",sensor_port,frame16,getThisFrameNumber(sensor_port),thispars->pars[P_TRIG]);
     	if (thispars->pars[P_SENSOR_REGS + P_BOSON_BOSON_EXT_SYNC_MODE] != 0){
     		SET_SENSOR_MBPAR_LUT(sensor_port, frame16, P_BOSON_BOSON_EXT_SYNC_MODE, 0);
     	}
@@ -1651,14 +1657,16 @@ int boson640_pgm_sensorregs     (int sensor_port,               ///< sensor port
     unsigned long bmask32= ((thispars->mod32) >> (P_SENSOR_REGS>>5)) & (( 1 << (P_SENSOR_NUMREGS >> 5))-1) ;
     unsigned long mask;
     int index,index32, reg_index;
+    int I, ADDR;
     struct frameparspair_t pars_to_update[sizeof(boson640_par2addr)/sizeof(short)/2]; ///
-    int nupdate=0;
+    int nupdate=0; // No need to update any parameter w/o multiplexer !
     dev_dbg(g_dev_ptr,"boson640_pgm_sensorregs(): {%d}  frame16=%d frame=%ld\n",sensor_port,frame16,getThisFrameNumber(sensor_port));
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
     if (boson640_is_booted (sensor_port, thispars) < 2){ // not yet booted
     	return -1; // Not yet fully booted.
     }
     dev_dbg(g_dev_ptr,"{%d}  bmask32=0x%lx, thispars->mod32=0x%lx, P_SENSOR_REGS=0x%x, P_SENSOR_NUMREGS=0x%x\n",sensor_port,bmask32,thispars->mod32,P_SENSOR_REGS,P_SENSOR_NUMREGS);
+//    dev_info(g_dev_ptr,"{%d}  bmask32=0x%lx, thispars->mod32=0x%lx, P_SENSOR_REGS=0x%x, P_SENSOR_NUMREGS=0x%x\n",sensor_port,bmask32,thispars->mod32,P_SENSOR_REGS,P_SENSOR_NUMREGS);
 	if (bmask32) {
 		for (index32=(P_SENSOR_REGS>>5); bmask32; index32++, bmask32 >>= 1) {
 			dev_dbg(g_dev_ptr,"{%d}  index32=0x%x, bmask32=0x%lx\n",sensor_port,index32,bmask32);
@@ -1668,20 +1676,16 @@ int boson640_pgm_sensorregs     (int sensor_port,               ///< sensor port
 				for (index=(index32<<5); mask; index++, mask >>= 1) {
 					reg_index = (index-P_SENSOR_REGS);
 					if (mask & 1) {
-                        X3X3_I2C_SEND2(sensor_port, frame16, sensor->i2c_addr,(index-P_SENSOR_REGS),thispars->pars[index]);
-                        dev_dbg(g_dev_ptr,"Boson640 {%d} X3X3_I2C_SEND2(0x%x, 0x%x, 0x%lx,0x%x,0x%lx)\n",sensor_port,sensor_port, frame16,sensor->i2c_addr,(index-P_SENSOR_REGS),thispars->pars[index]);
+                        dev_dbg(g_dev_ptr,"Boson640 {%d} X3X3_I2C_SEND2_LUT(0x%x, 0x%x, 0, 0x%lx,0x%x,0x%lx)\n",sensor_port,sensor_port, frame16,sensor->i2c_addr,(index-P_SENSOR_REGS),thispars->pars[index]);
+//                        dev_info(g_dev_ptr,"Boson640 {%d} X3X3_I2C_SEND2_LUT(0x%x, 0x%x, 0, 0x%lx,0x%x,0x%lx)\n",sensor_port,sensor_port, frame16,sensor->i2c_addr,(index-P_SENSOR_REGS),thispars->pars[index]);
+//                        X3X3_I2C_SEND2(sensor_port, frame16, sensor->i2c_addr,(index-P_SENSOR_REGS),thispars->pars[index]);
+//						X3X3_I2C_SEND2_LUT(sensor_port,frame16,0,(index-P_SENSOR_REGS),thispars->pars[index]);
+						I = pSensorPortConfig[sensor_port].broadcast_addr;
+						ADDR = pSensorPortConfig[sensor_port].par2addr[I][(index-P_SENSOR_REGS)];\
+                        dev_dbg(g_dev_ptr,"Boson640 {%d} pSensorPortConfig[sensor_port].broadcast_addr=0x%x \n",sensor_port, I);
+                        dev_dbg(g_dev_ptr,"Boson640 {%d} pSensorPortConfig[(p)].par2addr[_I][(r)] = 0x%x \n",sensor_port,ADDR);
 
-/*// from lepton (disabled)
-						if (reg_index >= FIRST_BOSON640_INT) {
-//								X3X3_I2C_SEND2(sensor_port, frame16, sensor->i2c_addr,reg_index,thispars->pars[index]);
-							SET_BOSON640_PAR_NOWAIT(sensor_port, frame16, reg_index, thispars->pars[index]);
-							dev_dbg(g_dev_ptr,"{%d} SET_BOSON640_PAR_NOWAIT(0x%x, 0x%x, 0x%lx,0x%lx)\n",
-									sensor_port,sensor_port, frame16,reg_index,thispars->pars[index]);
-						}else {
-							X3X3_I2C_SEND2(sensor_port, frame16, sensor->i2c_addr,reg_index,thispars->pars[index]);
-							dev_dbg(g_dev_ptr,"{%d} X3X3_I2C_SEND2(0x%x, 0x%x, 0x%lx,0x%x,0x%lx)\n",sensor_port,sensor_port, frame16,sensor->i2c_addr,reg_index,thispars->pars[index]);
-						}
-*/
+                        SET_SENSOR_MBPAR_LUT(sensor_port, frame16, (index-P_SENSOR_REGS), thispars->pars[index]); // set sensor register and parameter
 					}
 				}
 				thispars->mod[index32]=0;
@@ -1689,14 +1693,12 @@ int boson640_pgm_sensorregs     (int sensor_port,               ///< sensor port
 		}
 		thispars->mod32=0;
 	}
-    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // save changes to sensor register shadows
-
+//    if (nupdate)  setFramePars(sensor_port,thispars, nupdate, pars_to_update);  // No need to update anything w/o multiplexer and broadcast
     //  send all parameters marked as "needed to be processed" to the sensor, clear those flags
     // mask out all non sensor pars
     //  unsigned long bmask32= ((thispars->mod32) >> (P_SENSOR_REGS>>5)) & (P_SENSOR_NUMREGS-1) ;
     // It will be the first for the frame (before automatic sensor changes).
     // Add testing for programmed sensor and move values to later frames (not here butin the pgm_functions)
-
 	// nothing to do here now, use similar approach to program non-i2c Lepton registers
     return 0;
 }

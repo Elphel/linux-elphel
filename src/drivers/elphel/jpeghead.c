@@ -364,6 +364,7 @@ loff_t jpeghead_lseek(struct file *file, loff_t offset, int orig,
 			file->f_pos = jpeghead_priv[chn].jpeg_h_sz + offset;
 		} else {
 			file->f_pos = 0;                     // reset it to 0 anyway
+			// frame_length = timestamp_sec (same field). Should it be fixed below?
 			if ((fp->signffff != MARKER_FFFF) || // signature is overwritten
 					((fp->timestamp_sec) & X313_LENGTH_MASK)) return -EINVAL; //! acquisition of this frame is not done yet - length word high byte is non-zero
 			if ((offset & 0x1f) == 0x2)

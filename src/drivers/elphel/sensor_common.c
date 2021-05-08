@@ -516,6 +516,9 @@ inline void updateIRQ_Exif(struct jpeg_ptr_t *jptr,                ///< pointer 
 //    int frame_index = frame & PASTPARS_SAVE_ENTRIES_MASK;
     // NC393: current parameters are valid at compressor done interrupt (after frame sync interrupts latest valid is new frame number - 2
     if (index_time<0) index_time+=get_globalParam (sensor_port, G_CIRCBUFSIZE)>>2;
+    thisCompressorTimestamp_sec(sensor_port) =  ccam_dma_buf_ptr[sensor_port][index_time];
+    thisCompressorTimestamp_usec(sensor_port) = ccam_dma_buf_ptr[sensor_port][index_time+1];
+
 	//   struct exif_datetime_t
 	// calculates datetime([20] and subsec[7], returns  pointer to char[27]
 	exif_meta_time_string=encode_time(time_buff, ccam_dma_buf_ptr[sensor_port][index_time], ccam_dma_buf_ptr[sensor_port][index_time+1]);

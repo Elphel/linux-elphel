@@ -10,6 +10,10 @@ extern struct common_pars_t    *common_pars;
 extern unsigned long           *aglobalPars[SENSOR_PORTS];
 extern unsigned long           *amultiSensIndex[SENSOR_PORTS];
 extern unsigned long           *amultiSensRvrsIndex[SENSOR_PORTS];
+#define  thisFrameNumber(p)              GLOBALPARS(p,G_THIS_FRAME)                       // Current frame number (may lag from the hardware)
+#define  thisCompressorFrameNumber(p)    GLOBALPARS(p,G_COMPRESSOR_FRAME)                 // Current compressed frame number (lags from thisFrameNumber)
+#define  thisCompressorTimestamp_sec(p)  GLOBALPARS(p,G_COMPRESSOR_SEC)                   // Current compressed frame timestamp seconds
+#define  thisCompressorTimestamp_usec(p) GLOBALPARS(p,G_COMPRESSOR_USEC)                  // Current compressed frame timestamp microseconds seconds
 extern wait_queue_head_t       aframepars_wait_queue[SENSOR_PORTS];
 ///TODO: init framepars (zero parameters) before initscripts (not when detecting the sensors) - then initscript will be able to overwrite some
 void init_framepars_ptr(int sensor_port);
