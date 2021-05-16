@@ -2195,6 +2195,7 @@ static ssize_t store_frame2ts(struct device *dev, struct device_attribute *attr,
     int mchn;
     u32 aframe=0;
     u32 period10ns; // trigger period in 10 ns increments
+    u32 trig_decimate = 1;
     u32 ts_pair[2];
     s64 delta_ts;
     int delta_frame;
@@ -2216,7 +2217,8 @@ static ssize_t store_frame2ts(struct device *dev, struct device_attribute *attr,
 	}
 	master_ts = ((long long) ts_pair[1]) * 1000000 + ts_pair[0]; // timestamp in microseconds
 	if (aframe > 0) { // if 0 - keep last ts to be read
-		period10ns = aframepars[mchn][thisFrameNumber(mchn) & PARS_FRAMES_MASK].pars[P_TRIG_PERIOD];
+		trig_decimate = aframepars[mchn][thisFrameNumber(mchn) & PARS_FRAMES_MASK].pars[P_TRIG_DECIMATE] + 1;
+		period10ns = aframepars[mchn][thisFrameNumber(mchn) & PARS_FRAMES_MASK].pars[P_TRIG_PERIOD] * trig_decimate;
 		delta_frame = aframe - master_frame;
 		delta_ts =  ((long long) period10ns) * delta_frame * 2 + 1; // to round afrter division by 100
 		dev_info(g_devfp_ptr,"delta_frame = %d, delta_ts = %lld us, period10ns=%d\n", delta_frame, delta_ts,period10ns);
@@ -2239,6 +2241,7 @@ static ssize_t store_ts2frame(struct device *dev, struct device_attribute *attr,
     u32 ts_pair[2];
     int mchn;
     u32 period10ns; // trigger period in 10 ns increments
+    u32 trig_decimate = 1;
     s64 delta_ts;
     s32 delta_frame;
 	sscanf(buf, "%llu", &ts);
@@ -2259,7 +2262,8 @@ static ssize_t store_ts2frame(struct device *dev, struct device_attribute *attr,
 	}
 	master_ts = ((long long) ts_pair[1]) * 1000000 + ts_pair[0]; // timestamp in microseconds
 	if (ts) { // if ts 0 (or not specified, e.g. echo "" > ... , then keep last comprfessed frame and timestamp to be read out
-		period10ns = aframepars[mchn][thisFrameNumber(mchn) & PARS_FRAMES_MASK].pars[P_TRIG_PERIOD];
+		trig_decimate = aframepars[mchn][thisFrameNumber(mchn) & PARS_FRAMES_MASK].pars[P_TRIG_DECIMATE] + 1;
+		period10ns = aframepars[mchn][thisFrameNumber(mchn) & PARS_FRAMES_MASK].pars[P_TRIG_PERIOD] * trig_decimate;
 		delta_ts = 100*(ts - master_ts) + (period10ns/2); // for rounding
 //		do_div(delta_ts, period10ns);
 //		delta_ts /= period10ns;
@@ -2276,6 +2280,8 @@ static ssize_t show_ts2frame(struct device *dev, struct device_attribute *attr, 
 	return sprintf(buf,"%d", master_frame);
 }
 /*
+ #define P_TRIG_DECIMATE  121 ///< Decimate trigger by (P_TRIG_DECIMATE + 1) - trigger sensor less frequent than incoming trigger
+
 aframepars[sensor_port][(i+frame16) & PARS_FRAMES_MASK].pars[P_FRAME] = thisFrameNumber(sensor_port) + i;#define  thisCompressorFrameNumber(p)    GLOBALPARS(p,G_COMPRESSOR_FRAME)                 // Current compressed frame number (lags from thisFrameNumber)
 #define  thisCompressorTimestamp_sec(p)  GLOBALPARS(p,G_COMPRESSOR_SEC)                   // Current compressed frame timestamp seconds
 #define  thisCompressorTimestamp_usec(p) GLOBALPARS(p,G_COMPRESSOR_USEC)                  // Current compressed frame timestamp microseconds seconds

@@ -2575,7 +2575,20 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
         dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_camsync_trig_delay,  0x%x)\n",
                 sensor_port, sensor_port, frame16, (int) thispars->pars[P_TRIG_DELAY]);
     }
+    if (FRAMEPAR_MODIFIED(P_TRIG_DECIMATE)) {
+        if (unlikely(thispars->pars[P_TRIG_DECIMATE] > 65535)) { // Wrong value, restore old one
+            SETFRAMEPARS_SET(P_TRIG_DECIMATE,prevpars->pars[P_TRIG_DECIMATE]);
+        } else {
+///            set_x393_camsync_trig_period(thispars->pars[P_TRIG_DECIMATE]);
+///            dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%lx)\n",sensor_port, thispars->pars[P_TRIG_DECIMATE]);
+///            MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_decimation(0x%lx)\n", thispars->pars[P_TRIG_DECIMATE])
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_trig_decimation, thispars->pars[P_TRIG_DECIMATE]);
+            dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_camsync_trig_decimation,  0x%x)\n",
+                    sensor_port, sensor_port, frame16, (int) thispars->pars[P_TRIG_DECIMATE]);
+        }
+    }
 
+    // Next parameters are applicable only to master channel
     if (!is_master){
         dev_dbg(g_dev_ptr,"{%d}  frame16=%d: nothing to do, master channel is %d\n",sensor_port,frame16, (int) thispars->pars[P_TRIG_MASTER]);
         return 0;
@@ -2642,6 +2655,8 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
                     sensor_port, sensor_port, frame16, (int) thispars->pars[P_TRIG_PERIOD]);
         }
     }
+    /*
+     * P_TRIG_DECIMATE is per-channel, here only master channel remains
     if (FRAMEPAR_MODIFIED(P_TRIG_DECIMATE)) {
         if (unlikely(thispars->pars[P_TRIG_DECIMATE] > 65535)) { // Wrong value, restore old one
             SETFRAMEPARS_SET(P_TRIG_DECIMATE,prevpars->pars[P_TRIG_DECIMATE]);
@@ -2654,6 +2669,7 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
                     sensor_port, sensor_port, frame16, (int) thispars->pars[P_TRIG_DECIMATE]);
         }
     }
+    */
 
 
     // P_EXTERN_TIMESTAMP changed? (0 - internal sequencer)
