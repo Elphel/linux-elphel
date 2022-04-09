@@ -883,6 +883,7 @@ int mt9x001_pgm_detectsensor   (int sensor_port,               ///< sensor port 
     sensio_ctl.mmcm_rst = 0;
     x393_sensio_ctrl(sensio_ctl,sensor_port);
     udelay(50); // is it needed?
+//    udelay(500); // is it needed? // trying 04/07/2022
     X3X3_I2C_RCV2(sensor_port, psensor->i2c_addr, P_MT9X001_CHIPVER, &i2c_read_dataw);
     dev_dbg(g_dev_ptr,"Read i2c (port = %d, sa7=0x%lx, reg=0x%x) chip ID=%x\n",sensor_port, psensor->i2c_addr, P_MT9X001_CHIPVER, i2c_read_dataw);
     //pr_info("Read i2c (port = %d, sa7=0x%lx, reg=0x%x) chip ID=%x\n",sensor_port, psensor->i2c_addr, P_MT9X001_CHIPVER, i2c_read_dataw);

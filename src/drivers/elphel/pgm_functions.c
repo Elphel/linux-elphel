@@ -350,11 +350,12 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         if (check_senspgmin_state(sensor_port)==1){
         	dev_info(g_dev_ptr,"No sensors connected to port %d \n",sensor_port);
         	// added new line to distinguish no sensor from not yet detected for Boson, avoiding triggerin on change for P_SENSOR
+// temporary disabling  next two lines
             sensor->sensorType=SENSOR_NONE;                 // to prevent from initializing again
         	return 0;
         }
     }
-
+//	dev_info(g_dev_ptr,"+Got sensor on port %d \n",sensor_port);
     //if ((thispars->pars[P_SENSOR]==0) ||  // multisensor not detected
     //   ((thispars->pars[P_SENSOR] & SENSOR_MASK) == SENSOR_MT9X001)) { // or is (from DT) SENSOR_MT9X001
     if ((fpga_interface == FPGA_PAR12) &&
@@ -370,6 +371,7 @@ int pgm_detectsensor   (int sensor_port,               ///< sensor port number (
         // ********************************* MT9x00x SENSOR (5MP) *****************************************
         // ************************************************************************************************
         mt9x001_pgm_detectsensor(sensor_port, sensor,  thispars, prevpars, frame16);
+//    	dev_info(g_dev_ptr,"Sensor on port %d -> %ld \n",sensor_port, sensor->sensorType);
         // ************************************************************************************************
         // ************************************************************************************************
         // ************************************************************************************************
