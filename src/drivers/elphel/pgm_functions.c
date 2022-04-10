@@ -2557,6 +2557,7 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
     x393_camsync_io_t camsync_dst =      {.d32=0};
     x393_gpio_set_pins_t gpio_set_pins = {.d32=0};
     x393_camsync_mode_t camsync_mode =   {.d32=0};
+    x393_camsync_decimate_t camsync_decimate =   {.d32=0}; // 04/09/2022
     dev_dbg(g_dev_ptr,"{%d} pgm_trigseq(): frame16=%d\n",sensor_port,frame16);
     MDP(DBGB_PSFN, sensor_port,"frame16=%d\n",frame16)
     if (frame16 >= PARS_FRAMES) return -1; // wrong frame
@@ -2584,7 +2585,9 @@ int pgm_trigseq    (int sensor_port,               ///< sensor port number (0..3
 ///            set_x393_camsync_trig_period(thispars->pars[P_TRIG_DECIMATE]);
 ///            dev_dbg(g_dev_ptr,"{%d}   set_x393_camsync_trig_period(0x%lx)\n",sensor_port, thispars->pars[P_TRIG_DECIMATE]);
 ///            MDP(DBGB_PADD, sensor_port,"set_x393_camsync_trig_decimation(0x%lx)\n", thispars->pars[P_TRIG_DECIMATE])
-            X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_trig_decimation, thispars->pars[P_TRIG_DECIMATE]);
+        	camsync_decimate.d32 = thispars->pars[P_TRIG_DECIMATE]; // 04/09/2022
+//            X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_trig_decimation, thispars->pars[P_TRIG_DECIMATE]);
+            X393_SEQ_SEND1 (sensor_port, frame16, x393_camsync_trig_decimation, camsync_decimate); // 04/09/2022
             dev_dbg(g_dev_ptr,"{%d}  X3X3_SEQ_SEND1(0x%x,  0x%x, x393_camsync_trig_decimation,  0x%x)\n",
                     sensor_port, sensor_port, frame16, (int) thispars->pars[P_TRIG_DECIMATE]);
         }
