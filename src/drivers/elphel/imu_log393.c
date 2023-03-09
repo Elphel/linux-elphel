@@ -71,7 +71,7 @@
 //#define MD8(x)
 //#define MD12(x)
 #endif
-
+//#define DEBUG2023 1
 //#define D1(x) x
 
 
@@ -86,6 +86,8 @@
 #define LOGGER_IRQ_DW_BIT 4     // Number of DWORD address bit to change to cause interrupt
 #define LOGGER_USE_IRQ 1
 
+//#define LOGGER_MIN_BYTES_AHEAD 128 // actual 64, but got some zeros, let's wait extra 64-byte record
+#define LOGGER_MIN_BYTES_AHEAD 256 // actual 64, but got some zeros, let's wait extra 64-byte record // with 128 was still getting 32x0?
 #ifdef NC353
 #define EXT_DMA_1_START \
         do { reg_bif_dma_rw_ch1_start c = {.run=1};\
@@ -131,8 +133,8 @@
 
 #define IMU_CONF(x,y)  (((((y) & ((1 << IMUCR__##x##__WIDTH)-1))) | (1 << IMUCR__##x##__WIDTH) ) << IMUCR__##x##__BITNM)
 #define  IMUCR__IMU_SLOT__BITNM 0    ///< slot, where 103695 (imu) board is connected: 0 - none, 1 - J9, 2 - J10, 3 - J11)
-#define  IMUCR__IMU_SLOT__WIDTH 2
-
+#define  IMUCR__IMU_SLOT__WIDTH 2    // Should be 3 for IMX-5
+// for IMX-5 slot should be == 1
 #define  IMUCR__GPS_CONF__BITNM 3    ///< slot, where 103695 (imu) board is connected: 0 - none, 1 - J9, 2 - J10, 3 - J11)
 #define  IMUCR__GPS_CONF__WIDTH 4    ///< bits 0,1 - slot #, same as for IMU_SLOT, bits 2,3:
 // 0 - ext pulse, leading edge,
@@ -145,23 +147,24 @@
 // bit 4 - invert polarity: 0 - timestamp leading edge, log at trailing edge, 1 - opposite
 // software may set (up to 56 bytes) log message before trailing end of the pulse
 #define  IMUCR__SYN_CONF__BITNM 14   ///< logging frame time stamps (may be synchronized by another camera and have timestamp of that camera)
-#define  IMUCR__SYN_CONF__WIDTH 4    ///< 0 - disable, 1 - enable, per channel (was width==1 in NC353)
+#define  IMUCR__SYN_CONF__WIDTH 5    ///< 0 - disable, 1 - enable, per channel (was width==1 in NC353)
+                                     ///< Was 4 bits, 2023 added 5-th (bit 18) to log incoming sync pulses
 
-#define  IMUCR__RST_CONF__BITNM 19   ///< reset module // was 16 in NC353
+#define  IMUCR__RST_CONF__BITNM 20   ///< reset module // was 16 in NC353 // was 19 before IMX-5
 #define  IMUCR__RST_CONF__WIDTH 1    ///< 0 - enable, 1 -reset (needs resettimng DMA address in ETRAX also)
 
-#define  IMUCR__DBG_CONF__BITNM 21   ///< several axtra IMU configuration bits (was 18 for NC353)
+#define  IMUCR__DBG_CONF__BITNM 22   ///< several extra IMU configuration bits (was 18 for NC353) // was 21 before IMX-5
 #define  IMUCR__DBG_CONF__WIDTH 4    ///< 0 - config_long_sda_en, 1 -config_late_clk, 2 - config_single_wire, should be set for 103695 rev "A"
 
-#define  IMUCR__SLOW_SPI__BITNM 26   ///< just for the driver, not written to FPGA (was 23 for NC353)
+#define  IMUCR__SLOW_SPI__BITNM 27   ///< just for the driver, not written to FPGA (was 23 for NC353) // was 26 before IMX-5
 #define  IMUCR__SLOW_SPI__WIDTH 1    ///< 0 - normal, 1 - slow SPI (programmed over i2c)
 
-#define  IMUCR__I2C_SA3__BITNM 28    ///< Low 3 bits of the SA7 of the PCA9500 slave address
+#define  IMUCR__I2C_SA3__BITNM 29    ///< Low 3 bits of the SA7 of the PCA9500 slave address // was 28 before IMX-5
 #define  IMUCR__I2C_SA3__WIDTH 3     ///< Should match jumpers
 
 #define   X313_IMU_REGISTERS_ADDR    0x4
 #define   X313_IMU_NMEA_FORMAT_ADDR  0x20
-#define   X313_IMU_MESSAGE_ADDR    0x40  ///< 40..4f, only first 0xe visible
+#define   X313_IMU_MESSAGE_ADDR      0x40  ///< 40..4f, only first 0xe visible
 
 // offsets in the file (during write)
 #define   X313_IMU_PERIOD_OFFS     0x0
@@ -171,10 +174,12 @@
 #define   X313_IMU_CONFIGURE_OFFS  0xc
 
 #define   X313_IMU_SLEEP_OFFS      0x10
-#define   X313_IMU_REGISTERS_OFFS  0x14 // .. 0x2f
+#define   X313_IMU_REGISTERS_OFFS  0x14  // .. 0x2f
 
 #define   X313_IMU_NMEA_FORMAT_OFFS  0x30
 #define   X313_IMU_MESSAGE_OFFS      0xB0 // 0xB0..0xE7
+#define   X313_IMU_EXTTRIG_OFFS      0xE8 // Program camsync - trigger condition and period if it is not zero
+//may ue 0x55555 for trigger conditiona as NOP
 
 #define   PCA9500_PP_ADDR            0x40 ///< PCA9500 i2c slave addr for the parallel port (read will be 0x41)
 
@@ -197,14 +202,28 @@
 #endif
 #define SLOW_SPI 0 ///< set to 1 for slower SPI (not ADIS-16375), it will increase SCLK period that does not end CS active
 
-#define DFLT_CONFIG ( IMU_CONF(IMU_SLOT,1) | \
+#define DFLT_IMX5 1
+#ifdef DFLT_IMX5
+  #define DFLT_CONFIG ( IMU_CONF(IMU_SLOT,3) | \
+        IMU_CONF(GPS_CONF, ( 1 | 8) ) | \
+        IMU_CONF(MSG_CONF,10)  | \
+        IMU_CONF(SYN_CONF, 0x30) | \
+        IMU_CONF(DBG_CONF, EXTRA_CONF) | \
+        ((SLOW_SPI & 1)<<27) | \
+        (DFLT_SLAVE_ADDR << 29))
+
+#else
+  #define DFLT_CONFIG ( IMU_CONF(IMU_SLOT,1) | \
         IMU_CONF(GPS_CONF, ( 2 | 8) ) | \
         IMU_CONF(MSG_CONF,10)  | \
         IMU_CONF(SYN_CONF, 1) | \
         IMU_CONF(DBG_CONF, EXTRA_CONF) | \
-        ((SLOW_SPI & 1)<<23) | \
-        (DFLT_SLAVE_ADDR << 24))
-
+        ((SLOW_SPI & 1)<<27) | \
+        (DFLT_SLAVE_ADDR << 29))
+// before IMX5 was
+//        ((SLOW_SPI & 1)<<23) |
+//        (DFLT_SLAVE_ADDR << 24))
+#endif
 #define  WHICH_INIT         1
 #define  WHICH_RESET        2
 #define  WHICH_RESET_SPI    4
@@ -217,6 +236,7 @@
 #define  WHICH_PERIOD     512
 #define  WHICH_EN_DMA    1024
 #define  WHICH_EN_LOGGER 2048
+#define  WHICH_CAMSYNC   4096
 
 #define LSEEK_IMU_NEW       1 ///< start from the new data, discard buffer
 #define LSEEK_IMU_STOP      2 ///< stop DMA1 and IMU
@@ -275,7 +295,9 @@ static unsigned char dflt_wbuf[]=
 
         // Message - up to 56 bytes
         'O', 'd', 'o', 'm', 'e', 't', 'e', 'r', ' ', 'm', 'e', 's', 's', 'a', 'g', 'e',
-        0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+        0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0,
+		0x55, 0x55, 0x05, 0x00, // camsync trigger source
+		0x00, 0x00, 0x00, 0x00  // camsync trigger period
 };
 static unsigned char wbuf[sizeof(dflt_wbuf)];
 
@@ -372,25 +394,30 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
     unsigned long * rs232_div=  (unsigned long *) &wbuf[X313_IMU_RS232DIV_OFFS];
     unsigned long * config=     (unsigned long *) &wbuf[X313_IMU_CONFIGURE_OFFS];
     unsigned long * message=    (unsigned long *) &wbuf[X313_IMU_MESSAGE_OFFS];
+    unsigned long * camsync=    (unsigned long *) &wbuf[X313_IMU_EXTTRIG_OFFS];
     char * nmea_format=         (char *) &wbuf[X313_IMU_NMEA_FORMAT_OFFS];
 
     x393_logger_address_t logger_address;
     x393_logger_data_t    logger_data;
     x393_gpio_set_pins_t  gpio_set_pins;
+    x393_camsync_io_t     camsync_src;
+    x393_camsync_mode_t   camsync_mode;
+//    x393_camsync_mode_t   camsync_mode; //  = {.d32=0};
+
 //    D(int i2c_err=0;)
     int i2c_err=0;
 
-//    dev_info(g_dev_ptr,"============ which = 0x%x =============== \n",which);
+    dev_info(g_dev_ptr,"============ which = 0x%x =============== \n",which);
     dev_dbg(g_dev_ptr,"============ which = 0x%x =============== \n",which);
 
-    D(for (i=0; i< sizeof (wbuf); i++ ) {  if ((i & 0x1f)==0) printk("\n %03x",i);  printk(" %02x",(int) wbuf[i]); });
+//    D(for (i=0; i< sizeof (wbuf); i++ ) {  if ((i & 0x1f)==0) printk("\n %03x",i);  printk(" %02x",(int) wbuf[i]); });
     if (which & WHICH_RESET) {
         if (logger_is_dma_on()!=0) {
+            dev_info(g_dev_ptr,"Stopping DMA\n");
             dev_dbg(g_dev_ptr,"Stopping DMA\n");
             logger_dma_stop();
         }
 
-        dev_dbg(g_dev_ptr,"Resetting logger\n");
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_CONFIGURE_ADDR;
         port_csp0_addr[X313_WA_IMU_DATA] = IMU_CONF(RST_CONF,1);
@@ -399,8 +426,11 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         x393_logger_address(logger_address);
         logger_data.d32=IMU_CONF(RST_CONF,1);
         x393_logger_data(logger_data);
+        dev_info(g_dev_ptr,"Resetting logger (0x%x)\n",logger_data.d32);
+        dev_dbg(g_dev_ptr,"Resetting logger (0x%x)\n",logger_data.d32);
 #endif
     }
+    dev_info(g_dev_ptr,"============ which = 0x%x WHICH_INIT = 0x%x=============== \n",which, (int) WHICH_INIT);
     dev_dbg(g_dev_ptr,"============ which = 0x%x WHICH_INIT = 0x%x=============== \n",which, (int) WHICH_INIT);
     if (which & WHICH_INIT) {
 //        unsigned char i2c_sa= PCA9500_PP_ADDR+((config[0]>>23) & 0xe);
@@ -432,11 +462,13 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
                 &enable_IMU,   //unsigned char *theData,
                 1,             // int size,
                 1);            // int stop (send stop in the end)
+        dev_info(g_dev_ptr,"Sent i2c command in raw mode - address=0x%x, data=0x%x, result=0x%x\n",(int)i2c_sa8, (int) enable_IMU, i2c_err);
         dev_dbg(g_dev_ptr,"Sent i2c command in raw mode - address=0x%x, data=0x%x, result=0x%x\n",(int)i2c_sa8, (int) enable_IMU, i2c_err);
 
         logger_init_fpga(0); // do not re-init if it already is
     }
     if (which & WHICH_RESET_SPI) {
+        dev_info(g_dev_ptr,"stopped IMU logger (set period=0)\n");
         dev_dbg(g_dev_ptr,"stopped IMU logger (set period=0)\n");
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_PERIOD_ADDR;
@@ -448,8 +480,10 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         x393_logger_data(logger_data);
 #endif
     }
+    dev_info(g_dev_ptr,"============ which = 0x%x WHICH_INIT = 0x%x=============== \n",which, (int) WHICH_INIT);
     dev_dbg(g_dev_ptr,"============ which = 0x%x WHICH_INIT = 0x%x=============== \n",which, (int) WHICH_INIT);
     if (which & WHICH_DIVISOR) {
+        dev_info(g_dev_ptr,"IMU clock divisor= %ld\n", divisor[0]);
         dev_dbg(g_dev_ptr,"IMU clock divisor= %ld\n", divisor[0]);
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_DIVISOR_ADDR;
@@ -462,6 +496,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 #endif
     }
     if (which & WHICH_RS232DIV) {
+        dev_info(g_dev_ptr,"RS232 clock divisor= %ld\n", rs232_div[0]);
         dev_dbg(g_dev_ptr,"RS232 clock divisor= %ld\n", rs232_div[0]);
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_RS232DIV_ADDR;
@@ -482,18 +517,22 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         }
         for (n=0;n<4;n++) {
             nmea_format[32*n+27]=0; // just in case
+            dev_info(g_dev_ptr,"Setting NMEA sentence format for $GP%s\n", &nmea_format[32*n]);
             dev_dbg(g_dev_ptr,"Setting NMEA sentence format for $GP%s\n", &nmea_format[32*n]);
+            dev_info(g_dev_ptr,"(0x%x, 0x%x, 0x%x\n",(int) nmea_format[32*n],(int) nmea_format[32*n+1],(int) nmea_format[32*n+2]);
             dev_dbg(g_dev_ptr,"(0x%x, 0x%x, 0x%x\n",(int) nmea_format[32*n],(int) nmea_format[32*n+1],(int) nmea_format[32*n+2]);
 
             f=0;
             for (i=2;i>=0;i--) {
                 b=nmea_format[32*n+i]; /// first 3 letters in each sentence
+                dev_info(g_dev_ptr,"n=%d, i=%d, b=0x%x\n", n,i,b);
                 dev_dbg(g_dev_ptr,"n=%d, i=%d, b=0x%x\n", n,i,b);
                 for (j=4; j>=0; j--) {
                     f<<=1;
                     if ((b & (1<<j))!=0) f++;
                 }
             }
+            dev_info(g_dev_ptr,"n=%d, f=0x%x\n", n,f);
             dev_dbg(g_dev_ptr,"n=%d, f=0x%x\n", n,f);
             for (i=0;i<15;i++)  if ((f & (1<<i))!=0) nmea_sel[i] |= (1<<n);
             f=0;
@@ -507,6 +546,14 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
             nmea_fpga_frmt[n*4+2]=(f>> 8)&0xff;
             nmea_fpga_frmt[n*4+3]=(f>>16)&0xff;
         }
+        dev_info(g_dev_ptr,"Selection data is %x%x%x%x%x%x%x%x%x%x%x%x%x%x%x\n", nmea_sel[0],nmea_sel[1],nmea_sel[2],
+                nmea_sel[3],nmea_sel[4],nmea_sel[5],nmea_sel[6],nmea_sel[7],nmea_sel[8],nmea_sel[9],
+                nmea_sel[10],nmea_sel[11],nmea_sel[12],nmea_sel[13],nmea_sel[14]);
+        dev_info(g_dev_ptr,"Format data for sentence 1 is %02x %02x %02x %02x\n", nmea_fpga_frmt[ 0],nmea_fpga_frmt[ 1],nmea_fpga_frmt[ 2],nmea_fpga_frmt[ 3]);
+        dev_info(g_dev_ptr,"Format data for sentence 2 is %02x %02x %02x %02x\n", nmea_fpga_frmt[ 4],nmea_fpga_frmt[ 5],nmea_fpga_frmt[ 6],nmea_fpga_frmt[ 7]);
+        dev_info(g_dev_ptr,"Format data for sentence 3 is %02x %02x %02x %02x\n", nmea_fpga_frmt[ 8],nmea_fpga_frmt[ 9],nmea_fpga_frmt[10],nmea_fpga_frmt[11]);
+        dev_info(g_dev_ptr,"Format data for sentence 4 is %02x %02x %02x %02x\n", nmea_fpga_frmt[12],nmea_fpga_frmt[13],nmea_fpga_frmt[14],nmea_fpga_frmt[15]);
+
         dev_dbg(g_dev_ptr,"Selection data is %x%x%x%x%x%x%x%x%x%x%x%x%x%x%x\n", nmea_sel[0],nmea_sel[1],nmea_sel[2],
                 nmea_sel[3],nmea_sel[4],nmea_sel[5],nmea_sel[6],nmea_sel[7],nmea_sel[8],nmea_sel[9],
                 nmea_sel[10],nmea_sel[11],nmea_sel[12],nmea_sel[13],nmea_sel[14]);
@@ -527,6 +574,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
             logger_data.d32=                   nmea_sel[i];
             x393_logger_data(logger_data);
 #endif
+            dev_info(g_dev_ptr,"Loaded imu fpga register 0x%x with 0x%x\n", X313_IMU_NMEA_FORMAT_ADDR+i, nmea_sel[i] );
             dev_dbg(g_dev_ptr,"Loaded imu fpga register 0x%x with 0x%x\n", X313_IMU_NMEA_FORMAT_ADDR+i, nmea_sel[i] );
         }
         for (i=0;i<16;i++) {
@@ -536,11 +584,13 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
             logger_data.d32=                   nmea_fpga_frmt[i];
             x393_logger_data(logger_data);
 #endif
+            dev_info(g_dev_ptr,"Loading imu fpga register 0x%x with 0x%x\n", X313_IMU_NMEA_FORMAT_ADDR+i+16, nmea_fpga_frmt[i] );
             dev_dbg(g_dev_ptr,"Loading imu fpga register 0x%x with 0x%x\n", X313_IMU_NMEA_FORMAT_ADDR+i+16, nmea_fpga_frmt[i] );
         }
     }
 
     if (which & WHICH_CONFIG) {
+        dev_info(g_dev_ptr,"Setting configuration= 0x%lx\n", config[0]);
         dev_dbg(g_dev_ptr,"Setting configuration= 0x%lx\n", config[0]);
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_CONFIGURE_ADDR;
@@ -562,7 +612,8 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 #endif
         for (i=X313_IMU_REGISTERS_OFFS; i< X313_IMU_NMEA_FORMAT_OFFS ;i++) {
             d=wbuf[i];
-            dev_dbg(g_dev_ptr,"%d: logging IMU register with 0x%lx\n", (i-X313_IMU_REGISTERS_OFFS+1),d);
+            dev_info(g_dev_ptr,"%d: logging IMU register with 0x%lx\n", (i-X313_IMU_REGISTERS_OFFS+1),d);
+            dev_dbg(g_dev_ptr,"%d: logging IMU register  with 0x%lx\n", (i-X313_IMU_REGISTERS_OFFS+1),d);
 #ifdef NC353
             port_csp0_addr[X313_WA_IMU_DATA] = d;
 #else
@@ -572,6 +623,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         }
     }
     if (which & WHICH_MESSAGE) {
+        dev_info(g_dev_ptr,"Setting odometer message %56s\n", (char *) message);
         dev_dbg(g_dev_ptr,"Setting odometer message %56s\n", (char *) message);
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_MESSAGE_ADDR;
@@ -579,7 +631,9 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
         logger_address.d32=                X313_IMU_MESSAGE_ADDR;
         x393_logger_address(logger_address);
 #endif
-        for (i=0; i<(((sizeof(wbuf)-X313_IMU_MESSAGE_OFFS))>>2);i++) {
+//        for (i=0; i<(((sizeof(wbuf)-X313_IMU_MESSAGE_OFFS))>>2);i++) {
+        for (i=0; i<(((X313_IMU_EXTTRIG_OFFS-X313_IMU_MESSAGE_OFFS))>>2);i++) {
+            dev_info(g_dev_ptr,"%d: message 4 bytes= 0x%x\n", i+1,(int) message[i]);
             dev_dbg(g_dev_ptr,"%d: message 4 bytes= 0x%x\n", i+1,(int) message[i]);
 #ifdef NC353
             port_csp0_addr[X313_WA_IMU_DATA] = message[i];
@@ -592,6 +646,7 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 
     // setting IMU SPI period, turning it on
     if (which & WHICH_PERIOD) {
+        dev_info(g_dev_ptr,"IMU cycle period= %ld\n", period[0]);
         dev_dbg(g_dev_ptr,"IMU cycle period= %ld\n", period[0]);
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_PERIOD_ADDR;
@@ -604,12 +659,14 @@ static void set_logger_params(int which){ // 1 - program IOPINS, 2 - reset first
 #endif
     }
     if (which & WHICH_EN_DMA) {
+        dev_info(g_dev_ptr,"Enabling DMA\n");
         dev_dbg(g_dev_ptr,"Enabling DMA\n");
         /*!
 TODO: (re)start DMA1 here !
          */
         /// for now - init everything again?
         if (logger_is_dma_on()!=0) {
+            dev_info(g_dev_ptr,"Stopping DMA\n");
             dev_dbg(g_dev_ptr,"Stopping DMA\n");
             logger_dma_stop();
         }
@@ -618,7 +675,6 @@ TODO: (re)start DMA1 here !
     }
 
     if (which & WHICH_EN_LOGGER) {
-        dev_dbg(g_dev_ptr,"Enabling logger\n");
 #ifdef NC353
         port_csp0_addr[X313_WA_IMU_CTRL] = X313_IMU_CONFIGURE_ADDR;
         port_csp0_addr[X313_WA_IMU_DATA] = IMU_CONF(RST_CONF,0);
@@ -627,9 +683,65 @@ TODO: (re)start DMA1 here !
         x393_logger_address(logger_address);
         logger_data.d32=                   IMU_CONF(RST_CONF,0);
         x393_logger_data(logger_data);
+        dev_info(g_dev_ptr,"Enabling logger (0x%x)\n",logger_data.d32);
+        dev_dbg(g_dev_ptr,"Enabling logger (0x%x)\n",logger_data.d32);
 #endif
     }
 
+    // Setting camsync to trigger (needed if no sensor exists)
+#ifndef NC353
+    if (which & WHICH_CAMSYNC) {
+    	if (camsync[1]) {
+    		// period needs to be != 0 to enable receiving timestamps. Maybe something else?
+            dev_info(g_dev_ptr,"Setting camsync bit duration= %d\n", 31);
+            dev_dbg(g_dev_ptr,"Setting camsync bit duration= %d\n", 31);
+            set_x393_camsync_trig_period(31);    // here in immediate mode, no sequencer
+
+            dev_info(g_dev_ptr,"Setting camsync period= %ld\n", camsync[1]);
+            dev_dbg(g_dev_ptr,"Setting camsync period= %ld\n", camsync[1]);
+            set_x393_camsync_trig_period(camsync[1]);    // here in immediate mode, no sequencer
+
+            camsync_mode.en =       1;
+            camsync_mode.en_set =   1;
+            camsync_mode.ext =      1;
+            camsync_mode.ext_set =  1;
+            camsync_mode.trig =     1;
+            camsync_mode.trig_set = 1;
+            /*
+typedef union {
+    struct {
+          u32              en: 1; // [    0] (1) Enable CAMSYNC module
+          u32          en_set: 1; // [    1] (1) Set 'en' bit
+          u32          en_snd: 1; // [    2] (1) Enable sending timestamps (valid with 'en_snd_set')
+          u32      en_snd_set: 1; // [    3] (0) Set 'en_snd'
+          u32             ext: 1; // [    4] (1) Use external (received) timestamps, if available. O - use local timestamps
+          u32         ext_set: 1; // [    5] (0) Set 'ext'
+          u32            trig: 1; // [    6] (1) Sensor triggered mode (0 - free running sensor)
+          u32        trig_set: 1; // [    7] (0) Set 'trig'
+          u32      master_chn: 2; // [ 9: 8] (0) master sensor channel (zero delay in internal trigger mode, delay used for flash output)
+          u32  master_chn_set: 1; // [   10] (0) Set 'master_chn'
+          u32         ts_chns: 4; // [14:11] (1) Channels to generate timestmp messages (bit mask)
+          u32     ts_chns_set: 4; // [18:15] (0) Sets for 'ts_chns' (each bit controls corresponding 'ts_chns' bit)
+          u32                :13;
+    };
+    struct {
+          u32             d32:32; // [31: 0] (0) cast to u32
+    };
+} x393_camsync_mode_t;
+             */
+            dev_info(g_dev_ptr,"Setting camsync mode= %08x\n", (int) camsync_mode.d32);
+            dev_dbg(g_dev_ptr, "Setting camsync mode= %08x\n", (int) camsync_mode.d32);
+            x393_camsync_mode(camsync_mode);    // here in immediate mode, no sequencer
+    	} else {
+            dev_info(g_dev_ptr,"Skipping camsync period setting as it is= %ld\n", camsync[1]);
+            dev_dbg(g_dev_ptr,"Skipping camsync period setting as it is= %ld\n", camsync[1]);
+    	}
+        dev_info(g_dev_ptr,"Setting camsync trigger source = 0x%lx\n", camsync[0]);
+        dev_dbg(g_dev_ptr,"Setting camsync trigger source = 0x%lx\n", camsync[0]);
+    	camsync_src.d32 =                  camsync[0];
+    	x393_camsync_trig_src(camsync_src); // here in immediate mode, no sequencer
+    }
+#endif
 }
 
 //filp->f_mode & FMODE_WRITE 
@@ -669,9 +781,11 @@ static int imu_open(struct inode *inode, struct file *filp) {
                     WHICH_MESSAGE |
                     WHICH_PERIOD |
                     WHICH_EN_DMA |
+					WHICH_CAMSYNC |
                     WHICH_EN_LOGGER );
             numBytesRead=0;
         } else {
+            dev_info(g_dev_ptr, "Skipping IMU initialization\n");
             dev_dbg(g_dev_ptr, "Skipping IMU initialization\n");
 #ifdef NC353
             updateNumBytesWritten();
@@ -690,6 +804,7 @@ static int imu_open(struct inode *inode, struct file *filp) {
                 //printk("imu opened in R/W mode, (numBytesWritten=0x%x, numBytesRead=0x%x\n", numBytesWritten, numBytesRead);
             } else { // read mode, use file pointer as read pointer, start from the latest data
                 filp->f_pos=numBytesWritten; // there is still a chance to lseek to an earlier position - reopening at the position of the total number of bytes written to the buffer
+                dev_info(g_dev_ptr, "imu opened in RDONLY mode, (numBytesWritten=0x%llx, numBytesRead=0x%llx\n", numBytesWritten, numBytesRead);
                 dev_dbg(g_dev_ptr, "imu opened in RDONLY mode, (numBytesWritten=0x%llx, numBytesRead=0x%llx\n", numBytesWritten, numBytesRead);
             }
         }
@@ -707,10 +822,12 @@ static int imu_release(struct inode *inode, struct file *filp) {
     switch ( p ) {
     case DEV393_MINOR(DEV393_LOGGER) :
     case DEV393_MINOR(DEV393_LOGGER_CTRL):
+        dev_info(g_dev_ptr,"Closing IMU device, numBytesWritten=0x%llx,  numBytesRead=0x%llx (only global pointer, does not include files opened in read mode)\n", numBytesWritten, numBytesRead);
         dev_dbg(g_dev_ptr,"Closing IMU device, numBytesWritten=0x%llx,  numBytesRead=0x%llx (only global pointer, does not include files opened in read mode)\n", numBytesWritten, numBytesRead);
         break;
     default: return -EINVAL;
     }
+    dev_info(g_dev_ptr,"imu_release:  done\n");
     dev_dbg(g_dev_ptr,"imu_release:  done\n");
     return 0;
 }
@@ -749,7 +866,7 @@ static ssize_t imu_write(struct file * file, const char * buf, size_t count, lof
         dev_dbg(g_dev_ptr,"which= 0x%x\n",which);
         if ((p<(X313_IMU_MESSAGE_OFFS)) && ((p+count)>X313_IMU_NMEA_FORMAT_OFFS)) which |= WHICH_NMEA;
         dev_dbg(g_dev_ptr,"which= 0x%x\n",which);
-        if ((p+count)>X313_IMU_MESSAGE_OFFS) which |= WHICH_MESSAGE;
+        if ((p+count)>X313_IMU_EXTTRIG_OFFS) which |= WHICH_CAMSYNC;
         dev_dbg(g_dev_ptr,"which= 0x%x\n",which);
         // will not add automatic restarts here
         set_logger_params(which);
@@ -834,7 +951,7 @@ static loff_t  imu_lseek(struct file * file, loff_t offset, int orig) {
     return (file->f_pos);
 }
 
-/** /dev/imu and /dev/imu read. If file is opened in R/W mode, reading updates global reade pointer, if readonly - each file
+/** /dev/imu and /dev/imu read. If file is opened in R/W mode, reading updates global read pointer, if readonly - each file
  * has own pointer */
 static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *off) {
     int err;
@@ -845,6 +962,10 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
     int byteIndexValid;
     int leftToRead;
     int pe;
+#ifdef DEBUG2023
+    x393_logger_status_t logger_status;
+    x393_mult_saxi_status_t mult_saxi_status;
+#endif
 
     //    loff_t numBytesWritten; - it is global now, made absolute from the IMU start
     loff_t thisNumBytesRead;
@@ -853,6 +974,14 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
     reg_bif_dma_r_ch1_stat ch1_stat;
 #endif
     dev_dbg(g_dev_ptr," file=%x, count=0x%x (%d), off=%x\n", (int) file, (int) count, (int) count, (int)(*off));
+#ifdef DEBUG2023
+    dev_info(g_dev_ptr," file=%x, count=0x%x (%d), off=%x\n", (int) file, (int) count, (int) count, (int)(*off));
+    // debugging logger
+    logger_status =  x393_logger_status();
+    mult_saxi_status = x393_mult_saxi_status();
+    dev_info(g_dev_ptr,"imu_read() : x393_logger_status=0x%08x, x393_mult_saxi_status=0x%08x\n", (int) logger_status.d32, (int) mult_saxi_status.d32);
+#endif
+
     switch ((int)file->private_data) {
     case DEV393_MINOR(DEV393_LOGGER_CTRL):
         //       if (*off >= sizeof(wbuf))  return -EINVAL; // bigger than all
@@ -886,7 +1015,8 @@ static ssize_t imu_read(struct file * file, char * buf, size_t count, loff_t *of
             idbg++;
         }
 #else
-        wait_event_interruptible(logger_wait_queue, (sleep[0]==0) || ((numBytesWritten-thisNumBytesRead) > 64)); // AF2016 Why sleep[0] here?
+        // sleep[0] == 0 (now it is 30000) - do not wait for bytes written.
+        wait_event_interruptible(logger_wait_queue, (sleep[0]==0) || ((numBytesWritten-thisNumBytesRead) > LOGGER_MIN_BYTES_AHEAD)); // 64)); // AF2016 Why sleep[0] here?
 #endif
         dev_dbg(g_dev_ptr,"After wait_event_interruptible: numBytesWritten=0x%08x thisNumBytesRead=0x%08x\n", (int) numBytesWritten, (int) thisNumBytesRead);
 
@@ -1057,7 +1187,11 @@ int logger_init_fpga(int force) ///< if 0, only do if not already initialized
     x393_mult_saxi_al_t    mult_saxi_a=   {.d32=0};
     x393_mult_saxi_al_t    mult_saxi_l=   {.d32=0};
     x393_mult_saxi_irqlen_t mult_saxi_irqlen=   {.d32=0};
-    if (logger_fpga_configured && !force) return 0; // Already initialized
+    dev_info(g_dev_ptr,"logger_init_fpga(%d)\n",force);
+    if (logger_fpga_configured && !force) {
+        dev_info(g_dev_ptr,"logger_init_fpga(%d) -> already initialized\n",force);
+    	return 0; // Already initialized
+    }
     mult_saxi_a.addr32 = logger_phys >> 2; // in DWORDs
     x393_mult_saxi_buf_address(mult_saxi_a,      MULT_SAXI_CHN);
     mult_saxi_l.addr32 = logger_size >> 2;
@@ -1077,6 +1211,7 @@ int logger_init_fpga(int force) ///< if 0, only do if not already initialized
     logger_irq_cmd(X393_IRQ_ENABLE);
 #endif /* LOGGER_USE_IRQ */
     logger_fpga_configured = 1;
+    dev_info(g_dev_ptr,"logger_init_fpga(%d) - done\n",force);
     return 0;
 }
 
