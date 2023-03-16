@@ -1555,6 +1555,10 @@ struct p_names_t {
 #define      LSEEK_HIST_REQ_EN    0x2a ///< enable histogram request when reading histogram (safer, but may be not desirable in HDR mode) - default after opening
 #define      LSEEK_HIST_REQ_DIS   0x2b ///< disable histogram request when reading histogram - will read latest available relying it is available
 #define      LSEEK_HIST_SET_CHN   0x30 ///< ..3F Select channel to wait for (4*port+subchannel)
+
+#define      LSEEK_HIST_DIS       0x40 ///< Disable histograms DMA
+#define      LSEEK_HIST_EN        0x41 ///< Enable  histograms DMA
+
 #define      LSEEK_HIST_NEEDED    0x10000 ///< set histogram "needed" mask - 0x10000..0x1ffff
 //#define      LSEEK_HIST_WAIT_AE   0x2a ///< wait for autoexposure enabled
 

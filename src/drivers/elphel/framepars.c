@@ -346,7 +346,7 @@ int initSequencers(int sensor_port)
     initFramePars(sensor_port);
     return 0;
 }
-/** Enable/disable sesnor channel (will not generate SoF/EoF pulses and interrupts if disabled). Used to turn off missing channels */
+/** Enable/disable sensor channel (will not generate SoF/EoF pulses and interrupts if disabled). Used to turn off missing channels */
 void enDisSensorChn(int sensor_port, ///< sensor_port sensor port number (0..3)
                     int en)          ///< enable channel
 {
@@ -355,6 +355,7 @@ void enDisSensorChn(int sensor_port, ///< sensor_port sensor port number (0..3)
     sens_mode.chn_en_set = 1;
     x393_sens_mode(sens_mode,sensor_port);
     dev_dbg(g_devfp_ptr,"enDisSensorChn(%d,%d)\n", sensor_port, en);
+    dev_info(g_devfp_ptr,"enDisSensorChn(%d,%d)\n", sensor_port, en);
 }
 
 
